@@ -87,7 +87,9 @@ fn to_integer(
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
     # We use memcmp to check that the number is not too large.
-    comptime max_standardized_x = String(UInt64.MAX).rjust(CONTAINER_SIZE, "0")
+    comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
+        CONTAINER_SIZE, "0"
+    )
     var too_large = (
         memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
     )

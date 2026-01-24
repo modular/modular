@@ -157,6 +157,7 @@ fn allreduce_test[
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
+    # Custom epilogue that negates values to distinguish from default
     @always_inline
     @parameter
     @__copy_capture(out_bufs_capture)
@@ -390,11 +391,11 @@ fn run_allreduce_sweep[
 ]() raises:
     # Run tests for each configuration.
     @parameter
-    for gpu_idx, dtype_idx, length_idx, use_custom_epilogue in product(
+    for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
-        List(True, False, __list_literal__=()),
+        range(2),  # Test both default and custom epilogue
     ):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:
@@ -407,6 +408,7 @@ fn run_allreduce_sweep[
 
         comptime dtype = test_dtypes[dtype_idx]
         comptime length = test_lengths[length_idx]
+        comptime use_custom_epilogue = epilogue_idx == 1
 
         print(
             _get_test_str[

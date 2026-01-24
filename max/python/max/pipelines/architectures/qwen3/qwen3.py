@@ -20,17 +20,13 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Llama3RotaryEmbedding,
-    Module,
-    RMSNorm,
-    Transformer,
-)
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import TransformerBlock
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import Transformer, TransformerBlock
 from max.pipelines.architectures.llama3.llama3 import (
     ConstantLayerNorm,
     StackedMLP,
@@ -174,6 +170,7 @@ class Qwen3(Transformer):
             kv_params=config.kv_params,
             rope=rope,
             return_logits=config.return_logits,
+            return_hidden_states=config.return_hidden_states,
             embedding_multiplier=config.embedding_multiplier,
         )
 

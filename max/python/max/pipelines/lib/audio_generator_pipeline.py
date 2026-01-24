@@ -23,8 +23,8 @@ from max.interfaces import (
     Pipeline,
     RequestID,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnLogits
+from max.kv_cache import PagedKVCacheManager
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TTSContext
 
 if TYPE_CHECKING:
@@ -104,6 +104,6 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager | NullKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManager:
         assert hasattr(self.pipeline_model, "kv_manager")
         return self.pipeline_model.kv_manager

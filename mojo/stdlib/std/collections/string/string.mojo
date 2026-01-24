@@ -889,29 +889,39 @@ struct String(
     fn __getitem__[
         I: Indexer, //
     ](self, *, byte: I) -> StringSlice[origin_of(self)]:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A StringSlice view containing the character at the specified position.
+            A StringSlice containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](byte, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new string containing the string at the specified positions.
+            A StringSlice containing the bytes in the specified range.
         """
         var start: Int
         var end: Int
@@ -1455,10 +1465,9 @@ struct String(
             The length of this string in bytes.
         """
         if self._is_inline():
-            return Int(
-                (self._capacity_or_data & Self.INLINE_LENGTH_MASK)
-                >> Self.INLINE_LENGTH_START
-            )
+            return (
+                self._capacity_or_data & Self.INLINE_LENGTH_MASK
+            ) >> Self.INLINE_LENGTH_START
         else:
             return self._len_or_data
 
@@ -1965,8 +1974,8 @@ struct String(
         """
         return _FormatUtils.format(self, args)
 
-    fn isdigit(self) -> Bool:
-        """A string is a digit string if all characters in the string are digits
+    fn is_ascii_digit(self) -> Bool:
+        """A string is a digit string if all characters in the string are ASCII digits
         and there is at least one character in the string.
 
         Note that this currently only works with ASCII strings.
@@ -1996,7 +2005,7 @@ struct String(
         """
         return self.as_string_slice().islower()
 
-    fn isprintable(self) -> Bool:
+    fn is_ascii_printable(self) -> Bool:
         """Returns True if all characters in the string are ASCII printable.
 
         Note that this currently only works with ASCII strings.
@@ -2006,11 +2015,11 @@ struct String(
         """
         return self.as_string_slice().is_ascii_printable()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Pads the string on the left with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2022,7 +2031,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2034,13 +2043,13 @@ struct String(
         print(s.rjust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().rjust(width, fillchar)
+        return self.as_string_slice().ascii_rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Pads the string on the right with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2052,7 +2061,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2064,7 +2073,7 @@ struct String(
         print(s.ljust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().ljust(width, fillchar)
+        return self.as_string_slice().ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
@@ -2098,7 +2107,8 @@ struct String(
         return self.as_string_slice().center(width, fillchar)
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
-        """Resize the string to a new length.
+        """Resize the string to a new length. Panics if new_len does not
+        lie on a codepoint boundary.
 
         Args:
             length: The new length of the string.
@@ -2117,11 +2127,19 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
+        else:
+            debug_assert[assert_mode="safe"](
+                self.as_string_slice().is_codepoint_boundary(UInt(length)),
+                "String shrunk to length ",
+                length,
+                " which does not lie on a codepoint boundary.",
+            )
         self.set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
-        uninitialized.
+        uninitialized. Panics if the new length does not lie on a codepoint
+        boundary.
 
         If the new size is smaller than the current one, elements at the end
         are discarded. If the new size is larger than the current one, the
@@ -2131,6 +2149,15 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
+        debug_assert(
+            unsafe_uninit_length >= self.byte_length()
+            or self.as_string_slice().is_codepoint_boundary(
+                UInt(unsafe_uninit_length)
+            ),
+            "String shrunk to length ",
+            unsafe_uninit_length,
+            " which does not lie on a codepoint boundary.",
+        )
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
@@ -2339,6 +2366,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     https://docs.python.org/3/reference/lexical_analysis.html#integers).
 
     This function is in the prelude, so you don't need to import it.
+
+    Notes:
+        This function only accepts ASCII digits (0-9 and a-z/A-Z for bases
+        greater than 10). Unicode digit characters are not supported. Leading
+        and trailing whitespace is trimmed, but only ASCII/POSIX whitespace
+        characters are recognized (space, tab, newline, etc.). Unicode
+        whitespace characters will cause a parsing error.
 
     Args:
         str_slice: A string to be parsed as an integer in the given base.
@@ -2647,7 +2681,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     var log2 = Int(
         (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[Int(log2)]) >> 32
+    return (n0 + lookup_table[log2]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:

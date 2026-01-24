@@ -3,6 +3,6 @@
 :lang: python
 
 
-.. automodule:: max.nn.attention.interfaces
+.. automodule:: max.nn.legacy.attention.interfaces
    :members:
    :undoc-members:

@@ -53,6 +53,7 @@ PINS = {
     "fastapi": "fastapi@0.124.4",
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
+    "flashinfer-cubin": "flashinfer-cubin@0.6.1",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.29.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.22.0",
@@ -77,6 +78,7 @@ PINS = {
     "logbar": "logbar@0.0.3",
     "markupsafe": "markupsafe@3.0.3",
     "matplotlib": "matplotlib@3.10.7",
+    "ml-dtypes": "ml-dtypes@0.5.4",
     "msgspec": "msgspec@0.20.0",
     "mteb": "mteb@1.29.12",
     "munch": "munch@4.0.0",
@@ -489,7 +491,27 @@ def targets():
 
     _anthropic_0_71_0_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":anyio@4.4.0",
+            ":distro@1.9.0",
+            ":docstring-parser@0.17.0",
+            ":httpx@0.27.2",
+            ":jiter@0.12.0",
+            ":pydantic@2.12.5",
+            ":sniffio@1.3.1",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":anyio@4.4.0",
+            ":distro@1.9.0",
+            ":docstring-parser@0.17.0",
+            ":httpx@0.27.2",
+            ":jiter@0.12.0",
+            ":pydantic@2.12.5",
+            ":sniffio@1.3.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":anyio@4.4.0",
             ":distro@1.9.0",
             ":docstring-parser@0.17.0",
@@ -509,7 +531,37 @@ def targets():
             ":sniffio@1.3.1",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":anyio@4.4.0",
+            ":distro@1.9.0",
+            ":docstring-parser@0.17.0",
+            ":httpx@0.27.2",
+            ":jiter@0.12.0",
+            ":pydantic@2.12.5",
+            ":sniffio@1.3.1",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":anyio@4.4.0",
+            ":distro@1.9.0",
+            ":docstring-parser@0.17.0",
+            ":httpx@0.27.2",
+            ":jiter@0.12.0",
+            ":pydantic@2.12.5",
+            ":sniffio@1.3.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":anyio@4.4.0",
+            ":distro@1.9.0",
+            ":docstring-parser@0.17.0",
+            ":httpx@0.27.2",
+            ":jiter@0.12.0",
+            ":pydantic@2.12.5",
+            ":sniffio@1.3.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":anyio@4.4.0",
             ":distro@1.9.0",
             ":docstring-parser@0.17.0",
@@ -936,6 +988,9 @@ def targets():
 
     _blake3_1_0_8_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":typing-extensions@4.15.0",
         ],
@@ -1298,7 +1353,17 @@ def targets():
     _compressed_tensors_0_12_2_deps = [
         ":torch@multiple",
     ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -1308,12 +1373,32 @@ def targets():
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
         ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":loguru@0.7.3",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -1421,16 +1506,34 @@ def targets():
 
     _cuda_bindings_13_0_3_deps = [
     ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-pathfinder@1.3.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -1480,7 +1583,15 @@ def targets():
 
     _cuda_python_13_0_3_deps = [
     ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
@@ -1488,11 +1599,27 @@ def targets():
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":cuda-bindings@13.0.3",
+            ":cuda-pathfinder@1.3.2",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
@@ -1522,13 +1649,28 @@ def targets():
     _cupy_cuda12x_13_6_0_deps = [
         ":numpy@multiple",
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":fastrlock@0.8.3",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":fastrlock@0.8.3",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":fastrlock@0.8.3",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -1705,7 +1847,15 @@ def targets():
 
     _depyf_0_20_0_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":astor@0.8.1",
+            ":dill@0.3.8",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":astor@0.8.1",
+            ":dill@0.3.8",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
@@ -1713,7 +1863,19 @@ def targets():
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":astor@0.8.1",
+            ":dill@0.3.8",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":astor@0.8.1",
+            ":dill@0.3.8",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":astor@0.8.1",
+            ":dill@0.3.8",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
@@ -2177,11 +2339,48 @@ def targets():
         testonly = "fire" in _TESTONLY_DEPS,
     )
 
+    native.alias(
+        name = "_wheel_flashinfer-cubin@0.6.1",
+        actual = "@pycross_lock_file_wheel_flashinfer_cubin_0.6.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "flashinfer-cubin@0.6.1",
+        wheel = ":_wheel_flashinfer-cubin@0.6.1",
+        testonly = "flashinfer-cubin" in _TESTONLY_DEPS,
+    )
+
     _flashinfer_python_0_5_3_deps = [
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.3",
+            ":click@8.1.7",
+            ":einops@0.8.0",
+            ":ninja@1.13.0",
+            ":nvidia-cudnn-frontend@1.16.0",
+            ":nvidia-cutlass-dsl@4.3.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+            ":tqdm@4.66.5",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.3",
+            ":click@8.1.7",
+            ":einops@0.8.0",
+            ":ninja@1.13.0",
+            ":nvidia-cudnn-frontend@1.16.0",
+            ":nvidia-cutlass-dsl@4.3.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+            ":tqdm@4.66.5",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":apache-tvm-ffi@0.1.3",
             ":click@8.1.7",
             ":einops@0.8.0",
@@ -2207,7 +2406,46 @@ def targets():
             ":tabulate@0.9.0",
             ":tqdm@4.66.5",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.3",
+            ":click@8.1.7",
+            ":einops@0.8.0",
+            ":ninja@1.13.0",
+            ":nvidia-cudnn-frontend@1.16.0",
+            ":nvidia-cutlass-dsl@4.3.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+            ":tqdm@4.66.5",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.3",
+            ":click@8.1.7",
+            ":einops@0.8.0",
+            ":ninja@1.13.0",
+            ":nvidia-cudnn-frontend@1.16.0",
+            ":nvidia-cutlass-dsl@4.3.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+            ":tqdm@4.66.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":apache-tvm-ffi@0.1.3",
+            ":click@8.1.7",
+            ":einops@0.8.0",
+            ":ninja@1.13.0",
+            ":nvidia-cudnn-frontend@1.16.0",
+            ":nvidia-cutlass-dsl@4.3.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+            ":tqdm@4.66.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":apache-tvm-ffi@0.1.3",
             ":click@8.1.7",
             ":einops@0.8.0",
@@ -4094,7 +4332,19 @@ def targets():
 
     _lm_format_enforcer_0_11_3_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":interegular@0.3.3",
+            ":packaging@25.0",
+            ":pydantic@2.12.5",
+            ":pyyaml@6.0.3",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":interegular@0.3.3",
+            ":packaging@25.0",
+            ":pydantic@2.12.5",
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
             ":pydantic@2.12.5",
@@ -4106,7 +4356,25 @@ def targets():
             ":pydantic@2.12.5",
             ":pyyaml@6.0.3",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":interegular@0.3.3",
+            ":packaging@25.0",
+            ":pydantic@2.12.5",
+            ":pyyaml@6.0.3",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":interegular@0.3.3",
+            ":packaging@25.0",
+            ":pydantic@2.12.5",
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":interegular@0.3.3",
+            ":packaging@25.0",
+            ":pydantic@2.12.5",
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":interegular@0.3.3",
             ":packaging@25.0",
             ":pydantic@2.12.5",
@@ -4388,7 +4656,25 @@ def targets():
     _mistral_common_1_8_6_deps = [
         ":numpy@multiple",
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":jsonschema@4.23.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":pillow@12.0.0",
+            ":pydantic@2.12.5",
+            ":requests@2.32.3",
+            ":tiktoken@0.12.0",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":jsonschema@4.23.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":pillow@12.0.0",
+            ":pydantic@2.12.5",
+            ":requests@2.32.3",
+            ":tiktoken@0.12.0",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":jsonschema@4.23.0",
             ":opencv-python-headless@4.11.0.86",
             ":pillow@12.0.0",
@@ -4406,7 +4692,34 @@ def targets():
             ":tiktoken@0.12.0",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":jsonschema@4.23.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":pillow@12.0.0",
+            ":pydantic@2.12.5",
+            ":requests@2.32.3",
+            ":tiktoken@0.12.0",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":jsonschema@4.23.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":pillow@12.0.0",
+            ":pydantic@2.12.5",
+            ":requests@2.32.3",
+            ":tiktoken@0.12.0",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":jsonschema@4.23.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":pillow@12.0.0",
+            ":pydantic@2.12.5",
+            ":requests@2.32.3",
+            ":tiktoken@0.12.0",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":jsonschema@4.23.0",
             ":opencv-python-headless@4.11.0.86",
             ":pillow@12.0.0",
@@ -4475,9 +4788,62 @@ def targets():
         testonly = "mistune" in _TESTONLY_DEPS,
     )
 
+    _ml_dtypes_0_5_4_deps = [
+        ":numpy@multiple",
+    ]
+
+    native.alias(
+        name = "_wheel_ml-dtypes@0.5.4",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_macosx_10_9_universal2//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_macosx_10_9_universal2//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_macosx_10_13_universal2//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_macosx_10_13_universal2//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_macosx_10_13_universal2//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_macosx_10_13_universal2//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "ml-dtypes@0.5.4",
+        deps = _ml_dtypes_0_5_4_deps,
+        wheel = ":_wheel_ml-dtypes@0.5.4",
+        testonly = "ml-dtypes" in _TESTONLY_DEPS,
+    )
+
     _model_hosting_container_standards_0_1_12_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":fastapi@0.124.4",
+            ":httpx@0.27.2",
+            ":jmespath@1.0.1",
+            ":pydantic@2.12.5",
+            ":setuptools@80.9.0",
+            ":starlette@0.50.0",
+            ":supervisor@4.3.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":fastapi@0.124.4",
+            ":httpx@0.27.2",
+            ":jmespath@1.0.1",
+            ":pydantic@2.12.5",
+            ":setuptools@80.9.0",
+            ":starlette@0.50.0",
+            ":supervisor@4.3.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":fastapi@0.124.4",
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
@@ -4495,7 +4861,34 @@ def targets():
             ":starlette@0.50.0",
             ":supervisor@4.3.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":fastapi@0.124.4",
+            ":httpx@0.27.2",
+            ":jmespath@1.0.1",
+            ":pydantic@2.12.5",
+            ":setuptools@80.9.0",
+            ":starlette@0.50.0",
+            ":supervisor@4.3.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":fastapi@0.124.4",
+            ":httpx@0.27.2",
+            ":jmespath@1.0.1",
+            ":pydantic@2.12.5",
+            ":setuptools@80.9.0",
+            ":starlette@0.50.0",
+            ":supervisor@4.3.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":fastapi@0.124.4",
+            ":httpx@0.27.2",
+            ":jmespath@1.0.1",
+            ":pydantic@2.12.5",
+            ":setuptools@80.9.0",
+            ":starlette@0.50.0",
+            ":supervisor@4.3.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":fastapi@0.124.4",
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
@@ -5548,7 +5941,15 @@ def targets():
     _nvidia_cutlass_dsl_4_3_0_deps = [
         ":numpy@multiple",
     ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
@@ -5556,11 +5957,27 @@ def targets():
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":cuda-python@13.0.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
@@ -5781,13 +6198,28 @@ def targets():
 
     _openai_harmony_0_0_8_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -6401,7 +6833,15 @@ def targets():
 
     _prometheus_fastapi_instrumentator_7_1_0_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":prometheus-client@0.20.0",
+            ":starlette@0.50.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":prometheus-client@0.20.0",
+            ":starlette@0.50.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
@@ -6409,7 +6849,19 @@ def targets():
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":prometheus-client@0.20.0",
+            ":starlette@0.50.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":prometheus-client@0.20.0",
+            ":starlette@0.50.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":prometheus-client@0.20.0",
+            ":starlette@0.50.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
@@ -6768,7 +7220,17 @@ def targets():
 
     _pydantic_extra_types_2_10_6_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":pycountry@24.6.1",
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":pycountry@24.6.1",
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pycountry@24.6.1",
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
@@ -6778,7 +7240,22 @@ def targets():
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pycountry@24.6.1",
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pycountry@24.6.1",
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pycountry@24.6.1",
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":pycountry@24.6.1",
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
@@ -7331,7 +7808,29 @@ def targets():
 
     _ray_2_52_1_deps = [
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":click@8.1.7",
+            ":cupy-cuda12x@13.6.0",
+            ":filelock@3.16.1",
+            ":jsonschema@4.23.0",
+            ":msgpack@1.1.2",
+            ":packaging@25.0",
+            ":protobuf@6.31.1",
+            ":pyyaml@6.0.3",
+            ":requests@2.32.3",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":click@8.1.7",
+            ":cupy-cuda12x@13.6.0",
+            ":filelock@3.16.1",
+            ":jsonschema@4.23.0",
+            ":msgpack@1.1.2",
+            ":packaging@25.0",
+            ":protobuf@6.31.1",
+            ":pyyaml@6.0.3",
+            ":requests@2.32.3",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":click@8.1.7",
             ":cupy-cuda12x@13.6.0",
             ":filelock@3.16.1",
@@ -7353,7 +7852,40 @@ def targets():
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":click@8.1.7",
+            ":cupy-cuda12x@13.6.0",
+            ":filelock@3.16.1",
+            ":jsonschema@4.23.0",
+            ":msgpack@1.1.2",
+            ":packaging@25.0",
+            ":protobuf@6.31.1",
+            ":pyyaml@6.0.3",
+            ":requests@2.32.3",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":click@8.1.7",
+            ":cupy-cuda12x@13.6.0",
+            ":filelock@3.16.1",
+            ":jsonschema@4.23.0",
+            ":msgpack@1.1.2",
+            ":packaging@25.0",
+            ":protobuf@6.31.1",
+            ":pyyaml@6.0.3",
+            ":requests@2.32.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":click@8.1.7",
+            ":cupy-cuda12x@13.6.0",
+            ":filelock@3.16.1",
+            ":jsonschema@4.23.0",
+            ":msgpack@1.1.2",
+            ":packaging@25.0",
+            ":protobuf@6.31.1",
+            ":pyyaml@6.0.3",
+            ":requests@2.32.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":click@8.1.7",
             ":cupy-cuda12x@13.6.0",
             ":filelock@3.16.1",
@@ -9321,50 +9853,7 @@ def targets():
     _torch_2_9_1_dev20251204_rocm7_0_2_lw_git351ff442_deps = [
         ":triton@multiple",
     ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":filelock@3.16.1",
-            ":fsspec@2024.6.1",
-            ":jinja2@3.1.6",
-            ":networkx@3.2.1",
-            ":sympy@1.13.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":filelock@3.16.1",
-            ":fsspec@2024.6.1",
-            ":jinja2@3.1.6",
-            ":networkx@3.2.1",
-            ":sympy@1.13.3",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":filelock@3.16.1",
-            ":fsspec@2024.6.1",
-            ":jinja2@3.1.6",
-            ":networkx@3.2.1",
-            ":setuptools@80.9.0",
-            ":sympy@1.13.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":filelock@3.16.1",
-            ":fsspec@2024.6.1",
-            ":jinja2@3.1.6",
-            ":networkx@3.2.1",
-            ":setuptools@80.9.0",
-            ":sympy@1.13.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
-            ":filelock@3.16.1",
-            ":fsspec@2024.6.1",
-            ":jinja2@3.1.6",
-            ":networkx@3.2.1",
-            ":setuptools@80.9.0",
-            ":sympy@1.13.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
             ":jinja2@3.1.6",
@@ -9659,22 +10148,7 @@ def targets():
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
-            ":pillow@12.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
             ":pillow@12.0.0",
         ],
     })
@@ -10044,6 +10518,55 @@ def targets():
         ":torchaudio@multiple",
         ":torchvision@multiple",
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":aiohttp@3.13.2",
+            ":anthropic@0.71.0",
+            ":blake3@1.0.8",
+            ":cachetools@5.4.0",
+            ":cbor2@5.7.1",
+            ":cloudpickle@3.1.2",
+            ":compressed-tensors@0.12.2",
+            ":depyf@0.20.0",
+            ":diskcache@5.6.3",
+            ":einops@0.8.0",
+            ":filelock@3.16.1",
+            ":flashinfer-python@0.5.3",
+            ":gguf@0.17.1",
+            ":lark@1.2.2",
+            ":llguidance@1.3.0",
+            ":lm-format-enforcer@0.11.3",
+            ":model-hosting-container-standards@0.1.12",
+            ":msgspec@0.20.0",
+            ":ninja@1.13.0",
+            ":numba@0.63.1",
+            ":openai-harmony@0.0.8",
+            ":openai@2.11.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":outlines-core@0.2.11",
+            ":partial-json-parser@0.2.1.1.post7",
+            ":pillow@12.0.0",
+            ":prometheus-client@0.20.0",
+            ":prometheus-fastapi-instrumentator@7.1.0",
+            ":protobuf@6.31.1",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pybase64@1.4.3",
+            ":pydantic@2.12.5",
+            ":python-json-logger@2.0.7",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":regex@2025.11.3",
+            ":requests@2.32.3",
+            ":sentencepiece@0.2.1",
+            ":setproctitle@1.3.7",
+            ":tiktoken@0.12.0",
+            ":tokenizers@0.22.1",
+            ":tqdm@4.66.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+            ":watchfiles@1.1.1",
+            ":xgrammar@0.1.27",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.2",
             ":anthropic@0.71.0",
@@ -10085,6 +10608,57 @@ def targets():
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
             ":setproctitle@1.3.7",
+            ":tiktoken@0.12.0",
+            ":tokenizers@0.22.1",
+            ":tqdm@4.66.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+            ":watchfiles@1.1.1",
+            ":xgrammar@0.1.27",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":aiohttp@3.13.2",
+            ":anthropic@0.71.0",
+            ":blake3@1.0.8",
+            ":cachetools@5.4.0",
+            ":cbor2@5.7.1",
+            ":cloudpickle@3.1.2",
+            ":compressed-tensors@0.12.2",
+            ":depyf@0.20.0",
+            ":diskcache@5.6.3",
+            ":einops@0.8.0",
+            ":filelock@3.16.1",
+            ":flashinfer-python@0.5.3",
+            ":gguf@0.17.1",
+            ":lark@1.2.2",
+            ":llguidance@1.3.0",
+            ":lm-format-enforcer@0.11.3",
+            ":model-hosting-container-standards@0.1.12",
+            ":msgspec@0.20.0",
+            ":ninja@1.13.0",
+            ":numba@0.63.1",
+            ":openai-harmony@0.0.8",
+            ":openai@2.11.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":outlines-core@0.2.11",
+            ":partial-json-parser@0.2.1.1.post7",
+            ":pillow@12.0.0",
+            ":prometheus-client@0.20.0",
+            ":prometheus-fastapi-instrumentator@7.1.0",
+            ":protobuf@6.31.1",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pybase64@1.4.3",
+            ":pydantic@2.12.5",
+            ":python-json-logger@2.0.7",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":regex@2025.11.3",
+            ":requests@2.32.3",
+            ":sentencepiece@0.2.1",
+            ":setproctitle@1.3.7",
+            ":setuptools@80.9.0",
+            ":six@1.16.0",
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
@@ -10144,7 +10718,160 @@ def targets():
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.27",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":aiohttp@3.13.2",
+            ":anthropic@0.71.0",
+            ":blake3@1.0.8",
+            ":cachetools@5.4.0",
+            ":cbor2@5.7.1",
+            ":cloudpickle@3.1.2",
+            ":compressed-tensors@0.12.2",
+            ":depyf@0.20.0",
+            ":diskcache@5.6.3",
+            ":einops@0.8.0",
+            ":filelock@3.16.1",
+            ":flashinfer-python@0.5.3",
+            ":gguf@0.17.1",
+            ":lark@1.2.2",
+            ":llguidance@1.3.0",
+            ":lm-format-enforcer@0.11.3",
+            ":model-hosting-container-standards@0.1.12",
+            ":msgspec@0.20.0",
+            ":ninja@1.13.0",
+            ":numba@0.63.1",
+            ":openai-harmony@0.0.8",
+            ":openai@2.11.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":outlines-core@0.2.11",
+            ":partial-json-parser@0.2.1.1.post7",
+            ":pillow@12.0.0",
+            ":prometheus-client@0.20.0",
+            ":prometheus-fastapi-instrumentator@7.1.0",
+            ":protobuf@6.31.1",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pybase64@1.4.3",
+            ":pydantic@2.12.5",
+            ":python-json-logger@2.0.7",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":regex@2025.11.3",
+            ":requests@2.32.3",
+            ":sentencepiece@0.2.1",
+            ":setproctitle@1.3.7",
+            ":setuptools@80.9.0",
+            ":six@1.16.0",
+            ":tiktoken@0.12.0",
+            ":tokenizers@0.22.1",
+            ":tqdm@4.66.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+            ":watchfiles@1.1.1",
+            ":xgrammar@0.1.27",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":aiohttp@3.13.2",
+            ":anthropic@0.71.0",
+            ":blake3@1.0.8",
+            ":cachetools@5.4.0",
+            ":cbor2@5.7.1",
+            ":cloudpickle@3.1.2",
+            ":compressed-tensors@0.12.2",
+            ":depyf@0.20.0",
+            ":diskcache@5.6.3",
+            ":einops@0.8.0",
+            ":filelock@3.16.1",
+            ":flashinfer-python@0.5.3",
+            ":gguf@0.17.1",
+            ":lark@1.2.2",
+            ":llguidance@1.3.0",
+            ":lm-format-enforcer@0.11.3",
+            ":model-hosting-container-standards@0.1.12",
+            ":msgspec@0.20.0",
+            ":ninja@1.13.0",
+            ":numba@0.63.1",
+            ":openai-harmony@0.0.8",
+            ":openai@2.11.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":outlines-core@0.2.11",
+            ":partial-json-parser@0.2.1.1.post7",
+            ":pillow@12.0.0",
+            ":prometheus-client@0.20.0",
+            ":prometheus-fastapi-instrumentator@7.1.0",
+            ":protobuf@6.31.1",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pybase64@1.4.3",
+            ":pydantic@2.12.5",
+            ":python-json-logger@2.0.7",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":regex@2025.11.3",
+            ":requests@2.32.3",
+            ":sentencepiece@0.2.1",
+            ":setproctitle@1.3.7",
+            ":setuptools@80.9.0",
+            ":six@1.16.0",
+            ":tiktoken@0.12.0",
+            ":tokenizers@0.22.1",
+            ":tqdm@4.66.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+            ":watchfiles@1.1.1",
+            ":xgrammar@0.1.27",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":aiohttp@3.13.2",
+            ":anthropic@0.71.0",
+            ":blake3@1.0.8",
+            ":cachetools@5.4.0",
+            ":cbor2@5.7.1",
+            ":cloudpickle@3.1.2",
+            ":compressed-tensors@0.12.2",
+            ":depyf@0.20.0",
+            ":diskcache@5.6.3",
+            ":einops@0.8.0",
+            ":filelock@3.16.1",
+            ":flashinfer-python@0.5.3",
+            ":gguf@0.17.1",
+            ":lark@1.2.2",
+            ":llguidance@1.3.0",
+            ":lm-format-enforcer@0.11.3",
+            ":model-hosting-container-standards@0.1.12",
+            ":msgspec@0.20.0",
+            ":ninja@1.13.0",
+            ":numba@0.63.1",
+            ":openai-harmony@0.0.8",
+            ":openai@2.11.0",
+            ":opencv-python-headless@4.11.0.86",
+            ":outlines-core@0.2.11",
+            ":partial-json-parser@0.2.1.1.post7",
+            ":pillow@12.0.0",
+            ":prometheus-client@0.20.0",
+            ":prometheus-fastapi-instrumentator@7.1.0",
+            ":protobuf@6.31.1",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pybase64@1.4.3",
+            ":pydantic@2.12.5",
+            ":python-json-logger@2.0.7",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":regex@2025.11.3",
+            ":requests@2.32.3",
+            ":sentencepiece@0.2.1",
+            ":setproctitle@1.3.7",
+            ":setuptools@80.9.0",
+            ":six@1.16.0",
+            ":tiktoken@0.12.0",
+            ":tokenizers@0.22.1",
+            ":tqdm@4.66.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+            ":watchfiles@1.1.1",
+            ":xgrammar@0.1.27",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.2",
             ":anthropic@0.71.0",
             ":blake3@1.0.8",
@@ -10547,7 +11274,19 @@ def targets():
         ":torch@multiple",
         ":triton@multiple",
     ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":ninja@1.13.0",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":ninja@1.13.0",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":ninja@1.13.0",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -10559,7 +11298,25 @@ def targets():
             ":transformers@4.57.1",
             ":typing-extensions@4.15.0",
         ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":ninja@1.13.0",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":ninja@1.13.0",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":ninja@1.13.0",
+            ":pydantic@2.12.5",
+            ":transformers@4.57.1",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":ninja@1.13.0",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -13813,6 +14570,16 @@ def repositories():
         ],
         sha256 = "2082e5703d51fbf98ea75855d9d5527e33d8ff23099bec374a134febee6946b0",
         downloaded_file_path = "filelock-3.16.1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_flashinfer_cubin_0.6.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/8a/79/7325af801aa7a4704d5e35be7324d117d17739167e2fd1241c2e1d73499a/flashinfer_cubin-0.6.1-py3-none-any.whl",
+        ],
+        sha256 = "4fc4290169ba397e5b481d4d6daee1ec231743280e9232c8a92ec19dbce9c90b",
+        downloaded_file_path = "flashinfer_cubin-0.6.1-py3-none-any.whl",
     )
 
     maybe(
@@ -17143,6 +17910,186 @@ def repositories():
         ],
         sha256 = "71481854c30fdbc938963d3605b72501f5c10a9320ecd412c121c163a1c7d205",
         downloaded_file_path = "mistune-3.0.2-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/fe/3a/c5b855752a70267ff729c349e650263adb3c206c29d28cc8ea7ace30a1d5/ml_dtypes-0.5.4-cp310-cp310-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "b95e97e470fe60ed493fd9ae3911d8da4ebac16bd21f87ffa2b7c588bf22ea2c",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp310-cp310-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/41/79/7433f30ee04bd4faa303844048f55e1eb939131c8e5195a00a96a0939b64/ml_dtypes-0.5.4-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "b4b801ebe0b477be666696bda493a9be8356f1f0057a57f1e35cd26928823e5a",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/10/b1/8938e8830b0ee2e167fc75a094dea766a1152bde46752cd9bfc57ee78a82/ml_dtypes-0.5.4-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "388d399a2152dd79a3f0456a952284a99ee5c93d3e2f8dfe25977511e0515270",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_macosx_10_9_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/c6/5e/712092cfe7e5eb667b8ad9ca7c54442f21ed7ca8979745f1000e24cf8737/ml_dtypes-0.5.4-cp311-cp311-macosx_10_9_universal2.whl",
+        ],
+        sha256 = "6c7ecb74c4bd71db68a6bea1edf8da8c34f3d9fe218f038814fd1d310ac76c90",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp311-cp311-macosx_10_9_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/4f/cf/912146dfd4b5c0eea956836c01dcd2fce6c9c844b2691f5152aca196ce4f/ml_dtypes-0.5.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "bc11d7e8c44a65115d05e2ab9989d1e045125d7be8e05a071a48bc76eb6d6040",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/a9/80/19189ea605017473660e43762dc853d2797984b3c7bf30ce656099add30c/ml_dtypes-0.5.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "19b9a53598f21e453ea2fbda8aa783c20faff8e1eeb0d7ab899309a0053f1483",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_macosx_10_13_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/a8/b8/3c70881695e056f8a32f8b941126cf78775d9a4d7feba8abcb52cb7b04f2/ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl",
+        ],
+        sha256 = "a174837a64f5b16cab6f368171a1a03a27936b31699d167684073ff1c4237dac",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp312-cp312-macosx_10_13_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/54/0f/428ef6881782e5ebb7eca459689448c0394fa0a80bea3aa9262cba5445ea/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "a7f7c643e8b1320fd958bf098aa7ecf70623a42ec5154e3be3be673f4c34d900",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/3a/cb/28ce52eb94390dda42599c98ea0204d74799e4d8047a0eb559b6fd648056/ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "9ad459e99793fa6e13bd5b7e6792c8f9190b4e5a1b45c63aba14a4d0a7f1d5ff",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_macosx_10_13_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/d9/a1/4008f14bbc616cfb1ac5b39ea485f9c63031c4634ab3f4cf72e7541f816a/ml_dtypes-0.5.4-cp313-cp313-macosx_10_13_universal2.whl",
+        ],
+        sha256 = "8c760d85a2f82e2bed75867079188c9d18dae2ee77c25a54d60e9cc79be1bc48",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp313-cp313-macosx_10_13_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/d3/b7/dff378afc2b0d5a7d6cd9d3209b60474d9819d1189d347521e1688a60a53/ml_dtypes-0.5.4-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "ce756d3a10d0c4067172804c9cc276ba9cc0ff47af9078ad439b075d1abdc29b",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/eb/33/40cd74219417e78b97c47802037cf2d87b91973e18bb968a7da48a96ea44/ml_dtypes-0.5.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "533ce891ba774eabf607172254f2e7260ba5f57bdd64030c9a4fcfbd99815d0d",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_macosx_10_13_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/72/4e/1339dc6e2557a344f5ba5590872e80346f76f6cb2ac3dd16e4666e88818c/ml_dtypes-0.5.4-cp314-cp314-macosx_10_13_universal2.whl",
+        ],
+        sha256 = "2b857d3af6ac0d39db1de7c706e69c7f9791627209c3d6dedbfca8c7e5faec22",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314-macosx_10_13_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/04/f9/067b84365c7e83bda15bba2b06c6ca250ce27b20630b1128c435fb7a09aa/ml_dtypes-0.5.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "805cef3a38f4eafae3a5bf9ebdcdb741d0bcfd9e1bd90eb54abd24f928cd2465",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/c6/bb/82c7dcf38070b46172a517e2334e665c5bf374a262f99a283ea454bece7c/ml_dtypes-0.5.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "14a4fd3228af936461db66faccef6e4f41c1d82fcc30e9f8d58a08916b1d811f",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_macosx_10_13_universal2",
+        urls = [
+            "https://files.pythonhosted.org/packages/cd/02/48aa7d84cc30ab4ee37624a2fd98c56c02326785750cd212bc0826c2f15b/ml_dtypes-0.5.4-cp314-cp314t-macosx_10_13_universal2.whl",
+        ],
+        sha256 = "bfc534409c5d4b0bf945af29e5d0ab075eae9eecbb549ff8a29280db822f34f9",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314t-macosx_10_13_universal2.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/5a/e7/85cb99fe80a7a5513253ec7faa88a65306be071163485e9a626fce1b6e84/ml_dtypes-0.5.4-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "2314892cdc3fcf05e373d76d72aaa15fda9fb98625effa73c1d646f331fcecb7",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_ml_dtypes_0.5.4_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/79/2b/a826ba18d2179a56e144aef69e57fb2ab7c464ef0b2111940ee8a3a223a2/ml_dtypes-0.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "0d2ffd05a2575b1519dc928c0b93c06339eb67173ff53acb00724502cda231cf",
+        downloaded_file_path = "ml_dtypes-0.5.4-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(

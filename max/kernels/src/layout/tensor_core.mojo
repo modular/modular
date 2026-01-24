@@ -1165,7 +1165,7 @@ struct TensorCore[
                         )
                         var vec = _load_matrix_frag[
                             swizzle=swizzle, transposed=True
-                        ](mma_tile_shifted, Int(swizzle_offset))
+                        ](mma_tile_shifted, swizzle_offset)
                         var high_low = vec.split()
                         fragments[i, 0] = rebind[frag_type](high_low[0])
                         fragments[i + 1, 0] = rebind[frag_type](high_low[1])
@@ -1745,7 +1745,7 @@ fn _load_tr16_b64_warp[
     )
 
     var coords = idx2crd[row_layout](Int(lane_id() // 16))
-    var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
+    var shared_b_tile = tile.tile[4, 16](coords[0], coords[1])
     return _load_tr16_b64_row[swizzle](shared_b_tile)
 
 

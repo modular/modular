@@ -39,23 +39,16 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnHiddenStates, ReturnLogits
+from max.kv_cache import PagedKVCacheManager
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import (
-    GenerateMixin,
-    ModelOutputs,
-    PipelineModel,
-)
-from ..sampling import (
-    rejection_sampler_with_residuals,
-    token_sampler,
-)
+from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
+from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -144,8 +137,8 @@ def hidden_states_return_config(
     For Eagle and DeepSeek MTP, we share the embedding and lm_head weights between the target and draft models and only take the last hidden state from the target model.
 
     """
-    assert pipeline_config._speculative is not None
-    if pipeline_config._speculative.is_eagle():
+    assert pipeline_config.speculative is not None
+    if pipeline_config.speculative.is_eagle():
         if is_draft:
             return ReturnHiddenStates.LAST
         else:
@@ -231,10 +224,10 @@ class SpeculativeDecodingPipelineBase(
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            local_path = Path(target_hf_repo.repo_id)
             weight_paths = [
-                self.pipeline_config.model.model_path / x
-                for x in self.pipeline_config.model.weight_path
+                local_path / x for x in self.pipeline_config.model.weight_path
             ]
 
         target_weights = load_weights(weight_paths)
@@ -338,15 +331,18 @@ class SpeculativeDecodingPipelineBase(
                 max_workers=8,
             )
         else:
-            # Make sure the weight paths are absolute paths
+            # Use the resolved repo_id (which points to local cache in offline mode)
+            draft_local_path = Path(
+                self.pipeline_config.draft_model.huggingface_weight_repo.repo_id
+            )
             draft_weight_paths = [
-                self.pipeline_config.draft_model.model_path / x
+                draft_local_path / x
                 for x in self.pipeline_config.draft_model.weight_path
             ]
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
-        assert self.pipeline_config._speculative is not None
+        assert self.pipeline_config.speculative is not None
 
         # Use draft model's pipeline model and weight adapters if provided
         # Otherwise fall back to target model's (for backward compatibility)
@@ -419,7 +415,7 @@ class SpeculativeDecodingPipelineBase(
         self._target_session = target_session
 
         self._num_draft_steps = (
-            self.pipeline_config._speculative.num_speculative_tokens
+            self.pipeline_config.speculative.num_speculative_tokens
         )
 
     @traced
@@ -532,7 +528,7 @@ class SpeculativeDecodingPipelineBase(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
+    ) -> list[PagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @property
@@ -646,6 +642,10 @@ class SpeculativeDecodingPipelineBase(
         Args:
             request_id: Unique identifier for the finished request.
 
+        Note: Target model KV cache is released by the scheduler via batch_constructor.
+        This method only releases the draft model KV cache, which the scheduler
+        doesn't know about.
         """
+        # Release draft model KV cache (scheduler doesn't manage this)
         self._draft_model.kv_manager.release(request_id)
-        self._target_model.kv_manager.release(request_id)
+        # Target model KV cache is released by scheduler via batch_constructor

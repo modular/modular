@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import time
-import traceback
 import uuid
 from collections import deque
 from collections.abc import Generator
@@ -312,6 +311,9 @@ class AudioGenerationScheduler(Scheduler):
             if is_lora(req_data, self._lora_manager) and not is_active_lora(
                 req_data, self._lora_manager
             ):
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 req_data.reset()
                 self.pending_reqs.appendleft(req_data)
@@ -406,6 +408,9 @@ class AudioGenerationScheduler(Scheduler):
             if not response.is_done:
                 continue
             del self.decode_reqs[req_id]
+            # Release from paged cache (scheduler manages primary KV cache lifecycle)
+            self.paged_manager.release(req_id)
+            # Pipeline release handles audio_decoder_cache (special case)
             self.pipeline.release(req_id)
             num_terminated_reqs += 1
         return num_terminated_reqs
@@ -416,6 +421,9 @@ class AudioGenerationScheduler(Scheduler):
             # TODO: Support cancelling requests that are in the pending queue.
             if req_id in self.decode_reqs:
                 del self.decode_reqs[req_id]
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -438,10 +446,7 @@ class AudioGenerationScheduler(Scheduler):
                         self._prev_num_steps = response.steps_executed
                         break
         except Exception as exc:
-            logger.error(
-                "Exception during pipeline execution: %s",
-                traceback.format_exc(),
-            )
+            logger.exception("Exception during pipeline execution")
 
             # Send error results to ALL requests in the batch
             self.response_queue.put_nowait(
@@ -453,8 +458,10 @@ class AudioGenerationScheduler(Scheduler):
 
             # Release all requests from scheduler state
             for req_id in batch_request_ids:
-                if req_id in self.decode_reqs:
-                    del self.decode_reqs[req_id]
+                self.decode_reqs.pop(req_id, None)
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
 
             # Set a default num_steps for logging

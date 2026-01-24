@@ -29,36 +29,35 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    DistributedGemmConfig,
-    LayerList,
-    Module,
-    RMSNorm,
-    Signals,
-    VocabParallelEmbedding,
-)
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.moe import MoE, MoEFp8
-from max.nn.rotary_embedding import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import (
+    MLP,
+    ColumnParallelLinear,
+    DistributedGemmConfig,
+)
+from max.nn.legacy.moe import MoE, MoEFp8
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer.distributed_transformer import (
     distribute_value,
     forward_sharded_layers,
 )
@@ -427,6 +426,7 @@ class DeepseekV3(Module):
         else:
             self.subgraph_layer_groups = []
         self.return_logits = config.return_logits
+        self.return_hidden_states = config.return_hidden_states
         self.logits_scaling = 1.0
 
     def __call__(
@@ -613,7 +613,8 @@ class DeepseekV3(Module):
                 device=devices[0],
             )
             offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+                ops.unsqueeze(input_row_offsets_[0][1:], -1)
+                - return_n_logits_range
             )
             last_indices = ops.reshape(offsets, shape=(-1,))
             logits = ops.gather(
@@ -650,10 +651,22 @@ class DeepseekV3(Module):
             if logits is not None:
                 logits = logits / self.logits_scaling
 
+        ret_val: tuple[TensorValue, ...] = (last_logits,)
         if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
+            ret_val += (logits, offsets)
+
+        if self.return_hidden_states == ReturnHiddenStates.ALL:
+            hidden_states = h[0] if isinstance(h, list) else h
+            ret_val += (hidden_states,)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST:
+            ret_val += (last_token_h,)
+        elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
+            norm_h = forward_sharded_layers(self.norm_shards, h)[0]
+            ret_val += (norm_h,)
+        elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
+            ret_val += (norm_last_token[0],)
+
+        return ret_val
 
     def input_types(
         self, kv_params: KVCacheParams
@@ -681,7 +694,7 @@ class DeepseekV3(Module):
             device=DeviceRef.CPU(),
         )
         return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=device_ref
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
         data_parallel_splits_type = TensorType(
             DType.int64,

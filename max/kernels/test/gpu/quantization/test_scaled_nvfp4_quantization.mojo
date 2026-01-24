@@ -248,6 +248,14 @@ fn test_dynamic_fp4_quant[
 
 def main():
     with DeviceContext() as ctx:
+        # Zero-row inputs should not launch kernels.
+        test_dynamic_fp4_quant[
+            DType.bfloat16,
+            NVFP4_SF_DTYPE,
+            NVFP4_SF_VECTOR_SIZE,
+            M=None,
+            N = Int(128),
+        ](ctx, 0, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,

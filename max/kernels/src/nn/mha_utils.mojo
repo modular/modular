@@ -266,7 +266,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
+        self.padded_depth = align_up(depth, UInt(swizzle_granularity))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(Self.dtype)

@@ -46,7 +46,7 @@ fn use_blocked_product():
     var tile = Layout.col_major(3, 2)
     # Define a 2x5 tiler
     var tiler = Layout.col_major(2, 5)
-    var blocked = blocked_product(tile, tiler)
+    var blocked = blocked_product(tile.copy(), tiler.copy())
 
     print("Tile:")
     print_layout(tile)

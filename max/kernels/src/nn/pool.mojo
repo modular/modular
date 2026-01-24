@@ -162,7 +162,7 @@ fn pool_shape_impl[
 
     @parameter
     for i in range(0, input_buf.rank - 2):
-        var input_spatial_dim = Int(input_buf.dim(i + 1))
+        var input_spatial_dim = input_buf.dim(i + 1)
         var filter = Int(filter_buf[i])
         var stride = Int(strides_buf[i])
         var dilation = Int(dilations_buf[i])

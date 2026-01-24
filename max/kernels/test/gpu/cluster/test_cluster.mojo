@@ -52,8 +52,8 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
         alignment=8,
     ]()
 
-    bx: UInt32 = block_idx.x
-    tidx: UInt32 = bx * block_dim.x + thread_idx.x
+    bx = UInt32(block_idx.x)
+    tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
     if tidx < n:
         data[tidx] = 1.0
 
@@ -63,7 +63,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     if thread_idx.x == 0:
         mbar[0].init(1)
 
-    alpha: Int64 = thread_idx.x
+    alpha = Int64(thread_idx.x)
 
     # Work-straling loop.
     while True:
@@ -161,7 +161,7 @@ fn pipeline_test_kernel[
             empty_mbar[write_idx].wait(pipeline_state_write.phase())
             var pred: UInt32 = 1 if lane_id() < UInt(CLUSTER_SIZE) else 0
             full_mbar[write_idx].arrive_and_expect_bytes(
-                2 * size_of[UInt64](), lane_id(), pred
+                2 * size_of[UInt64](), UInt32(lane_id()), pred
             )
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():

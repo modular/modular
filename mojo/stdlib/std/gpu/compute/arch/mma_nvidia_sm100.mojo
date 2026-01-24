@@ -1285,11 +1285,11 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt32(base_ptr >> 4) & Self.mask_14_bits
+        var start_address = (base_ptr >> 4) & Self.mask_14_bits
 
         # Ignore 4 LSB.
-        var sbo = UInt32((stride_byte_offset >> 4) & Self.mask_14_bits)
-        var lbo = UInt32((leading_byte_offset >> 4) & Self.mask_14_bits)
+        var sbo: UInt32 = (stride_byte_offset >> 4) & Self.mask_14_bits
+        var lbo: UInt32 = (leading_byte_offset >> 4) & Self.mask_14_bits
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = Self(0, 0)

@@ -199,13 +199,22 @@ class TokenBuffer:
         0                              current_position ^
         0                                                     len(self) ^
 
+    In the above, `processed` tracks tokens which has already been processed,
+    `active` tracks tokens, which are scheduled to be processed in the next batch,
+    and `pending` tracks tokens, which have not yet been processed, but are not
+    actively scheduled to be processed in the next batch (this commonly
+    occurs during chunked prefill).
+
     This includes one attribute for accessing tokens:
-    - `active`: The slice of the array containing the active tokens.
+
+    - `active`: The slice of the array containing the tokens scheduled
+      for processing in the next batch.
 
     Along with three additional attributes for tracking their lengths:
 
     - `processed_length`: The number of tokens that have already been processed.
-    - `active_length`: The number of tokens that are currently active.
+    - `active_length`: The number of tokens that is currently scheduled for
+      processing in the next batch.
     - `current_position`: The global index marking the end of the current
       active processing window.
 
@@ -320,8 +329,7 @@ class TokenBuffer:
     # ============================================================================
 
     def __getitem__(self, index: int | slice) -> TokenSlice:
-        """
-        Retrieve token(s) from the buffer at the specified index or slice.
+        """Retrieve token(s) from the buffer at the specified index or slice.
 
         Args:
             index: An integer or slice specifying the token(s) to access.
@@ -400,6 +408,7 @@ class TokenBuffer:
         """Return the total number of valid tokens in the buffer.
 
         This includes both prompt and generated tokens currently held in the buffer.
+
         Returns:
             int: The current total number of tokens.
         """
@@ -423,7 +432,7 @@ class TokenBuffer:
     @property
     def active_length(self) -> int:
         """Count of tokens currently scheduled for processing."""
-        return len(self._processing_range)
+        return len(self._processing_range) - self._processing_offset
 
     @property
     def current_position(self) -> int:
@@ -591,8 +600,7 @@ class TokenBuffer:
 
     @property
     def has_outstanding_generated_tokens(self) -> bool:
-        """
-        Indicates whether there are generated tokens that have not yet been consumed.
+        """Indicates whether there are generated tokens that have not yet been consumed.
 
         Returns:
             bool: True if there are outstanding generated tokens to be streamed or processed; False otherwise.

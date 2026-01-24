@@ -43,30 +43,36 @@ struct MatmulConfig[
 
     fn __init__(
         out self,
-        M: Int,
-        N: Int,
-        K: Int,
+        m: Int,
+        n: Int,
+        k: Int,
         num_k_partitions: UInt = 1,
         partitioned_multicast: Bool = False,
         pdl_level: PDLLevel = PDLLevel.OFF,
         k_groups: OptionalReg[UInt] = None,
         consumer_groups: OptionalReg[Int] = None,
+        swapAB: Bool = False,
     ):
         """Initialize MatmulConfig by computing optimal values from M, N, K.
 
         Args:
-            M: The M dimension of the matmul.
-            N: The N dimension of the matmul.
-            K: The K dimension of the matmul.
+            m: The M dimension of the matmul.
+            n: The N dimension of the matmul.
+            k: The K dimension of the matmul.
             num_k_partitions: Number of K partitions.
             partitioned_multicast: Whether to use partitioned multicast.
             pdl_level: PDL level for grid controls.
             k_groups: How many pipeline (loads and stores) are grouped together.
             consumer_groups: The number of consumer groups.
+            swapAB: Whether to swap A and B.
         """
         constrained[
             Self.a_type == Self.b_type, "a_type and b_type must be the same"
         ]()
+
+        var M = n if swapAB else m
+        var N = m if swapAB else n
+        var K = k
 
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
         # TODO: Once SwapAB is added, this should probably always be 2
@@ -143,15 +149,15 @@ struct MatmulConfig[
         )
 
     fn _maximize_pipeline_stages_by_default(mut self):
-        var BM = Int(self.block_tile_shape[0])
-        var BN = Int(self.block_tile_shape[1])
-        var BK = Int(self.block_tile_shape[2])
+        var BM: Int = self.block_tile_shape[0]
+        var BN: Int = self.block_tile_shape[1]
+        var BK: Int = self.block_tile_shape[2]
 
         var MBAR_BYTES = size_of[Int64]()  # 8 bytes per barrier
         var tma_mbar_bytes_per_stage = MBAR_BYTES
         var mma_mbar_bytes_per_stage = MBAR_BYTES
 
-        comptime h100_smem = Int(H100.shared_memory_per_multiprocessor - 1024)
+        comptime h100_smem = H100.shared_memory_per_multiprocessor - 1024
         # Assume largest c smem tile is BM * 128
         var c_smem_bytes = BM * 128 * size_of[Self.c_type]()
 
@@ -283,6 +289,7 @@ fn build_configs[
     pdl_level: PDLLevel = PDLLevel.OFF,
     k_groups: OptionalReg[UInt] = None,
     consumer_groups: OptionalReg[Int] = None,
+    swapAB: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
@@ -296,6 +303,7 @@ fn build_configs[
             pdl_level=pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
+            swapAB=swapAB,
         )
         if config not in set:
             set.add(config)
@@ -310,6 +318,7 @@ fn build_configs[
             pdl_level=pdl_level,
             k_groups=k_groups,
             consumer_groups=consumer_groups,
+            swapAB=swapAB,
         )
         if config not in set:
             set.add(config)

@@ -94,14 +94,15 @@ fn _compute_distribute_layout[
     @parameter
     if axis:
         return zipped_divide(
-            data_layout, Layout(threads_layout.shape[axis.value()])
+            materialize[data_layout](),
+            Layout(threads_layout.shape[axis.value()]),
         )
 
     else:
         for dim in threads_layout.shape:
             thread_tile.append(Layout(dim))
 
-        return zipped_divide(data_layout, thread_tile)
+        return zipped_divide(materialize[data_layout](), thread_tile)
 
 
 fn _project_on_axis[
@@ -252,8 +253,8 @@ fn _distribute_is_masked[
 
     @parameter
     for i in range(layout.rank()):
-        comptime layout_dim = Int(product(layout.shape[i]))
-        comptime thread_dim = Int(product(threads_layout.shape[i]))
+        comptime layout_dim = product(layout.shape[i])
+        comptime thread_dim = product(threads_layout.shape[i])
 
         @parameter
         if layout_dim % thread_dim != 0:
@@ -365,11 +366,11 @@ struct LayoutTensor[
             ", dtype = ",
             Self.dtype,
             ", layout = ",
-            Self.layout,
+            materialize[Self.layout](),
             ", address_space = ",
             Self.address_space,
             ", element_layout = ",
-            Self.element_layout,
+            materialize[Self.element_layout](),
             ", layout_int_type = ",
             Self.layout_int_type,
             ", linear_idx_type = ",
@@ -1124,7 +1125,7 @@ struct LayoutTensor[
             @parameter
             if static_strides[i] == UNKNOWN_VALUE:
                 # Use runtime stride for unknown dimensions
-                offset += Int(self.runtime_layout.stride.value[i]) * coords[i]
+                offset += self.runtime_layout.stride.value[i] * coords[i]
             else:
                 # Use compile-time stride for known dimensions (enables
                 # constant folding)
@@ -2154,7 +2155,9 @@ struct LayoutTensor[
         ).store(self.ptr.mut_cast[True]() + offset)
 
     @always_inline("nodebug")
-    fn load[width: Int](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
+    fn load[
+        width: Int, load_alignment: Int = Self.alignment
+    ](self, m: Int, n: Int) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified 2D coordinates.
 
         Performs a vectorized load operation from the tensor's memory,
@@ -2164,6 +2167,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements to load into the SIMD vector. Should match
                   the target hardware's vector width for optimal performance.
+            load_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             m: The row index (first dimension).
@@ -2209,13 +2213,13 @@ struct LayoutTensor[
                 "LayoutTensor load out of bounds",
             )
 
-        return self.ptr.load[width=width, alignment = Self.alignment](
+        return self.ptr.load[width=width, alignment=load_alignment](
             self._offset(m, n)
         )
 
     @always_inline("nodebug")
     fn load[
-        width: Int
+        width: Int, load_alignment: Int = Self.alignment
     ](self, coords: IndexList[...]) -> SIMD[Self.dtype, width]:
         """Load a SIMD vector from the tensor at the specified coordinates.
 
@@ -2227,6 +2231,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements to load into the SIMD vector. Should match
                     the target hardware's vector width for optimal performance.
+            load_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             coords: The coordinates to index. Must have the same size as the tensor's rank.
@@ -2249,9 +2254,9 @@ struct LayoutTensor[
         - The elements are loaded according to the tensor's stride configuration.
         """
         __comptime_assert self.rank == coords.size
-        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
-        return self.ptr.load[width=width, alignment = Self.alignment](
+        return self.ptr.load[width=width, alignment=load_alignment](
             self._offset(coords)
         )
 
@@ -2414,7 +2419,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     fn store[
-        width: Int
+        width: Int, store_alignment: Int = Self.alignment
     ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
         """Store a SIMD vector to the tensor at the specified 2D coordinates.
 
@@ -2425,6 +2430,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements in the SIMD vector to store. Should
                 match the target hardware's vector width for optimal performance.
+            store_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             m: The row index (first dimension) where the store operation begins.
@@ -2480,13 +2486,13 @@ struct LayoutTensor[
                 "])",
             )
 
-        return self.ptr.store[alignment = Self.alignment](
+        return self.ptr.store[alignment=store_alignment](
             self._offset(m, n), val
         )
 
     @always_inline("nodebug")
     fn store[
-        width: Int
+        width: Int, store_alignment: Int = Self.alignment
     ](
         self, coords: IndexList[...], val: SIMD[Self.dtype, width]
     ) where Self.mut:
@@ -2499,6 +2505,7 @@ struct LayoutTensor[
         Parameters:
             width: The number of elements in the SIMD vector to store. Should
                 match the target hardware's vector width for optimal performance.
+            store_alignment: The alignment to use. Defaults to Self.alignment.
 
         Args:
             coords: The coordinates to index.
@@ -2520,9 +2527,9 @@ struct LayoutTensor[
         - This operation modifies the tensor's data in-place.
         """
         __comptime_assert self.rank == coords.size
-        debug_assert(Int(self.runtime_layout.stride.value[self.rank - 1]) == 1)
+        debug_assert(self.runtime_layout.stride.value[self.rank - 1] == 1)
 
-        return self.ptr.store[alignment = Self.alignment](
+        return self.ptr.store[alignment=store_alignment](
             self._offset(coords), val
         )
 
@@ -2727,7 +2734,7 @@ struct LayoutTensor[
         @parameter
         for i in range(len(t)):
             # Use product() to handle both scalar and nested tuples
-            st[i] = Int(product(t[i]))
+            st[i] = product(t[i])
         return st
 
     @staticmethod
@@ -3122,7 +3129,7 @@ struct LayoutTensor[
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
         comptime tiler = MakeTileLayoutList[*tile_sizes]()
-        return zipped_divide(Self.layout, materialize[tiler]())
+        return zipped_divide(materialize[Self.layout](), materialize[tiler]())
 
     @staticmethod
     fn _fast_varying_dim_tiler(shape: Int) -> Layout:
@@ -3180,8 +3187,8 @@ struct LayoutTensor[
         var tiler = Self._tuple_divide_tiler(shape, linear_vectorize)
         if is_int(shape) and not linear_vectorize:
             # legacy behavior
-            return zipped_divide(Self.layout, LayoutList(tiler))
-        return zipped_divide(Self.layout, tiler)
+            return zipped_divide(materialize[Self.layout](), LayoutList(tiler))
+        return zipped_divide(materialize[Self.layout](), tiler)
 
     @staticmethod
     @always_inline
@@ -3204,7 +3211,7 @@ struct LayoutTensor[
             else:
                 tiler.append(Layout(dim))
             i += 1
-        return zipped_divide(Self.layout, tiler)
+        return zipped_divide(materialize[Self.layout](), tiler)
 
     comptime TileType[*tile_sizes: Int] = LayoutTensor[
         Self.dtype,
@@ -3900,9 +3907,7 @@ struct LayoutTensor[
                 thread_shape_i
             )
             var tile_shape_i = ceildiv(self.dim[i](), thread_shape_i)
-            var bound_i = Int(
-                (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
-            )
+            var bound_i = (tile_shape_i - 1) * thread_shape_i + Int(tile_idx)
             tile_shape[i] = min(self.dim[i]() - bound_i, tile_shape_i)
 
         return tile_shape
@@ -4130,9 +4135,7 @@ struct LayoutTensor[
 
             @parameter
             for i in range(len(flatten(Self.layout.stride))):
-                var fragments_stride_i = Int(
-                    self.runtime_layout.stride.value[i]
-                )
+                var fragments_stride_i = self.runtime_layout.stride.value[i]
                 comptime shape_i = Int(thread_projected_shape[i])
                 comptime stride_i = Int(thread_projected_stride[i])
                 var thread_coord_i = (thread_id // UInt(stride_i)) % UInt(
@@ -4628,8 +4631,8 @@ struct LayoutTensor[
         ), "Only rank-2 tensors slices are supported for now!"
         return Layout(
             [
-                _get_slice_size(Self.layout, d0_slice, 0),
-                _get_slice_size(Self.layout, d1_slice, 1),
+                _get_slice_size(materialize[Self.layout](), d0_slice, 0),
+                _get_slice_size(materialize[Self.layout](), d1_slice, 1),
             ],
             Self.layout.stride,
         )
@@ -4640,7 +4643,9 @@ struct LayoutTensor[
     ) -> Layout:
         __comptime_assert Self.layout.rank() >= 2, "Rank should be >= 2"
 
-        var sliced_layout = sublayout(Self.layout, slice_0_axis, slice_1_axis)
+        var sliced_layout = sublayout(
+            materialize[Self.layout](), slice_0_axis, slice_1_axis
+        )
         return Layout(
             [
                 _get_slice_size(sliced_layout, slice_0, 0),
@@ -4652,7 +4657,7 @@ struct LayoutTensor[
     @staticmethod
     fn _compute_slice_layout(slice_0: Slice, slice_0_axis: Int) -> Layout:
         __comptime_assert Self.layout.shape.__len__() > 1, "Rank should be >= 1"
-        var sliced_layout = sublayout(Self.layout, slice_0_axis)
+        var sliced_layout = sublayout(materialize[Self.layout](), slice_0_axis)
         return Layout(
             [_get_slice_size(sliced_layout, slice_0, 0)],
             sliced_layout.stride[0],
@@ -5387,7 +5392,7 @@ struct LayoutTensor[
     #
     @always_inline
     fn _get_element_idx[elem_i: Int](self) -> Scalar[Self.linear_idx_type]:
-        comptime element_size = Int(self.element_size)
+        comptime element_size = self.element_size
 
         @parameter
         if Self.layout.all_dims_known():
@@ -5464,8 +5469,8 @@ struct LayoutTensor[
         """
         comptime other_layout = other.layout
 
-        comptime dst_element_size = Int(self.element_size)
-        comptime src_element_size = Int(other.element_size)
+        comptime dst_element_size = self.element_size
+        comptime src_element_size = other.element_size
 
         comptime dst_size = Self.layout.size()
         comptime src_size = other_layout.size()
@@ -5631,8 +5636,8 @@ struct LayoutTensor[
         comptime dst_size = Self.layout.size()
         comptime src_size = src.layout.size()
 
-        comptime dst_element_size = Int(self.element_size)
-        comptime src_element_size = Int(src.element_size)
+        comptime dst_element_size = self.element_size
+        comptime src_element_size = src.element_size
         __comptime_assert (
             dst_element_size == src_element_size
         ), "copy_from_async should move data of the same element size"

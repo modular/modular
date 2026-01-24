@@ -31,7 +31,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
@@ -45,6 +45,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    SamplingConfig,
     SupportedEncoding,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
@@ -139,11 +140,6 @@ class MockPipelineModel(PipelineModel[ContextT]):
             cache_strategy=KVCacheStrategy.PAGED,
             devices=[DeviceRef.from_device(d) for d in devices],
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        del huggingface_config
-        return 1
 
     @classmethod
     def infer_optional_batch_size(
@@ -307,8 +303,9 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = NonCallableMock(spec=PipelineConfig)
-    mock_config.max_length = 512
+    mock_config = PipelineConfig.model_construct(max_length=512)
+    mock_config.model.quantization_encoding = SupportedEncoding.float32
+    mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False
 
@@ -325,7 +322,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000
@@ -353,7 +349,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000
@@ -383,8 +378,8 @@ def execute_pipeline(
 
     if pipeline_type == PipelineType.TEXT_GENERATION:
         patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
-        inputs = TextGenerationInputs(
-            batches=[cast(dict[RequestID, TextContext], batch)],
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[list(cast(dict[RequestID, TextContext], batch).values())],
             num_steps=1,
         )
         with (

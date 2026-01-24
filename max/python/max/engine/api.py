@@ -51,11 +51,27 @@ InputType = DLPackArray | Buffer | int | float | bool | np.generic
 
 
 class GPUProfilingMode(str, Enum):
-    """The supported modes for GPU profiling."""
+    """The supported modes for GPU profiling.
+
+    GPU profiling modes control the level of instrumentation when profiling
+    MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
+    levels provide more detail but may introduce additional overhead.
+
+    See Also:
+        :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
+    """
 
     OFF = "off"
+    """Disable GPU profiling instrumentation. This is the default mode
+            and incurs no profiling overhead."""
     ON = "on"
+    """Enable basic GPU profiling. Adds CUDA driver calls and NVTX
+            markers for correlating kernel executions with host-side code."""
     DETAILED = "detailed"
+    """Enable detailed GPU profiling with additional NVTX markers
+            from Python code. This mode provides the most visibility into
+            which Python operations correspond to which GPU kernels, but
+            has the highest overhead."""
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -129,10 +145,35 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
+def _Model_capture(self: Model, *inputs: Buffer) -> None:
+    """Capture execution into a device graph keyed by input shapes/dtypes.
+
+    Capture is best-effort and model-dependent. If the model issues
+    capture-unsafe operations (for example, host-device synchronization),
+    graph capture may fail. Callers should choose capture-safe execution paths.
+    """
+    if not inputs:
+        raise ValueError("Model.capture requires input buffers.")
+    self._capture(list(inputs))
+
+
+def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+    """Verify inputs match the captured graph's baseline trace."""
+    self._debug_verify_replay(list(inputs))
+
+
+def _Model_replay(self: Model, *inputs: Buffer) -> None:
+    """Replay the captured device graph for these inputs."""
+    self._replay(list(inputs))
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
+Model.capture = _Model_capture  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[attr-defined]
+Model.replay = _Model_replay  # type: ignore[attr-defined]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
@@ -515,7 +556,58 @@ class InferenceSession:
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
-        """Enables end to end gpu profiling configuration."""
+        """Enables GPU profiling instrumentation for the session.
+
+        This enables GPU profiling instrumentation that works with NVIDIA
+        Nsight Systems and Nsight Compute. When enabled, the runtime adds CUDA
+        driver calls and NVTX markers that allow profiling tools to correlate
+        GPU kernel executions with host-side code.
+
+        For example, to enable detailed profiling for Nsight Systems analysis,
+        call ``gpu_profiling()`` before ``load()``:
+
+        .. code-block:: python
+
+            from max.engine import InferenceSession, GPUProfilingMode
+            from max.driver import Accelerator
+
+            session = InferenceSession(devices=[Accelerator()])
+            session.gpu_profiling(GPUProfilingMode.DETAILED)
+            model = session.load(my_graph)
+
+        Then run it with ``nsys``:
+
+        .. code-block:: bash
+
+            nsys profile --trace=cuda,nvtx python example.py
+
+        Or, instead of calling ``session.gpu_profiling()`` in the code, you can
+        set the ``MODULAR_ENABLE_PROFILING`` environment variable when you call
+        ``nsys profile``:
+
+        .. code-block:: bash
+
+            MODULAR_ENABLE_PROFILING=detailed nsys profile --trace=cuda,nvtx python script.py
+
+        Beware that ``gpu_profiling()`` overrides the
+        ``MODULAR_ENABLE_PROFILING`` environment variable if also used.
+
+        Note:
+            Profiling instrumentation adds runtime overhead and should be
+            disabled for production deployments.
+
+        Args:
+            mode: The profiling mode to set. One of:
+
+                - :attr:`GPUProfilingMode.OFF`: Disable profiling (default).
+                - :attr:`GPUProfilingMode.ON`: Enable basic profiling with
+                  NVTX markers for kernel correlation.
+                - :attr:`GPUProfilingMode.DETAILED`: Enable detailed profiling
+                  with additional Python-level NVTX markers.
+
+        See Also:
+            - `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_
+        """
         if mode == GPUProfilingMode.OFF:
             return
 

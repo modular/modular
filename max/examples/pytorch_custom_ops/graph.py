@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import max
 import torch
+from max.graph import TensorValue
 from max.torch import graph_op
 
 
 @graph_op
-def max_matmul(a: max.graph.TensorValue, b: max.graph.TensorValue):  # noqa: ANN201
+def max_matmul(a: TensorValue, b: TensorValue):  # noqa: ANN201
     """Custom PyTorch operation built using an internal MAX graph."""
     return a @ b  # Same as ops.matmul(a, b)
 

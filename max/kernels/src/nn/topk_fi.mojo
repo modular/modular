@@ -148,7 +148,7 @@ fn TopKMaskLogitsKernel[
 
     if k < d:
         var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, Int(row_idx), d
+            logits.ptr, row_idx, d
         )
         var min_val, max_val = min_max[0], min_max[1]
 
@@ -168,7 +168,7 @@ fn TopKMaskLogitsKernel[
             var max_le_high = Float32(low)
 
             for i in range(ceildiv(d, block_size * vec_size)):
-                if (i * block_size + Int(tx)) * vec_size < d:
+                if (i * block_size + tx) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
                         0, i * block_size * vec_size + tx * vec_size
                     ).cast[DType.float32]()
@@ -180,7 +180,7 @@ fn TopKMaskLogitsKernel[
                 for j in range(vec_size):
                     # Calculate the global index for this element in the row.
                     # Will only count if the index is within the valid range [0, d).
-                    var idx = (i * block_size + Int(tx)) * vec_size + j
+                    var idx = (i * block_size + tx) * vec_size + j
 
                     # Count elements greater than pivot_0 (higher ternary search bound).
                     probs_gt_pivot_0_count[j] = 1 if (
@@ -238,7 +238,7 @@ fn TopKMaskLogitsKernel[
 
     for i in range(ceildiv(d, block_size * vec_size)):
         logits_vec = 0
-        if (i * block_size + Int(tx)) * vec_size < d:
+        if (i * block_size + tx) * vec_size < d:
             logits_vec = logits_row.load[width=vec_size](
                 0, i * block_size * vec_size + tx * vec_size
             ).cast[DType.float32]()
@@ -247,7 +247,7 @@ fn TopKMaskLogitsKernel[
             logits_vec, Float32.MIN
         )
 
-        if (i * block_size + Int(tx)) * vec_size < d:
+        if (i * block_size + tx) * vec_size < d:
             masked_logits_row.store[width=vec_size](
                 0,
                 i * block_size * vec_size + tx * vec_size,
@@ -470,7 +470,7 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     for i in reversed(range(limit)):
         comptime offset = 1 << i
         result.value += warp.shuffle_down(result.value, offset)
-        result.count += warp.shuffle_down(Int32(result.count), offset)
+        result.count += warp.shuffle_down(result.count, offset)
     return result
 
 
@@ -533,14 +533,12 @@ fn _block_reduce_value_count[
     # block_size = 1024 and WARP_SIZE = 32, then only the first 32 threads from warp 0
     # will have valid results).
     var block_accum: ValueCount[T]
-    var thread_in_final_warp = thread_idx.x < UInt(
-        block_dim.x // UInt(WARP_SIZE)
-    )
+    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
 
     if thread_in_final_warp:
         block_accum = {
             value = value_sram[lane_id() * UInt(value_width)],
-            count = Int32(count_sram[lane_id() * UInt(count_width)]),
+            count = count_sram[lane_id() * UInt(count_width)],
         }
     else:
         # Initialize unused threads with zeros (identity for sum).
@@ -915,7 +913,7 @@ fn TopKSoftmaxSampleKernel[
 
     if k < d:
         var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, Int(row_idx), d
+            logits.ptr, row_idx, d
         )
         var min_val, max_val = min_max[0], min_max[1]
 
@@ -937,7 +935,7 @@ fn TopKSoftmaxSampleKernel[
             var max_le_high = Float32(low)
 
             for i in range(ceildiv(d, block_size * vec_size)):
-                if (i * block_size + Int(tx)) * vec_size < d:
+                if (i * block_size + tx) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
                         0, i * block_size * vec_size + tx * vec_size
                     ).cast[DType.float32]()
@@ -947,7 +945,7 @@ fn TopKSoftmaxSampleKernel[
 
                 @parameter
                 for j in range(vec_size):
-                    var idx = (i * block_size + Int(tx)) * vec_size + j
+                    var idx = (i * block_size + tx) * vec_size + j
 
                     probs_gt_pivot_0_count[j] = 1 if (
                         Float64(logits_vec[j]) > pivot_0 and idx < d
@@ -993,7 +991,7 @@ fn TopKSoftmaxSampleKernel[
     else:
         # If k >= d, include all elements.
         var min_max = get_min_max_value[vec_size, block_size](
-            logits.ptr, Int(row_idx), d
+            logits.ptr, row_idx, d
         )
         max_logit = min_max[1]
 

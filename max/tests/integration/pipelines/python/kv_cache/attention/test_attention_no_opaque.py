@@ -31,19 +31,19 @@ from max.graph import (
     ops,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.attention.attention_with_rope import (
+from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     NestedIterableDataclass,
     PagedCacheValues,
 )
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 AttentionFn = Callable[
@@ -192,7 +192,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(
-        *kv_manager.get_runtime_inputs(batch)[0]
+        *kv_manager.get_runtime_inputs([batch])[0]
     )
     kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 

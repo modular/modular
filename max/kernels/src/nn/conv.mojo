@@ -63,7 +63,7 @@ from algorithm import (
     vectorize,
 )
 from buffer.buffer import (
-    # NDBuffer,
+    # LayoutTensor,
     partial_simd_load,
     partial_simd_store,
     prod_dims,
@@ -1266,14 +1266,14 @@ struct ConvDirectNHWC[
         # [right_pad_impact_start, WO)
         var left_pad_impact_end = ceildiv(
             self.conv_shape.pad_w[0],
-            self.conv_shape.stride[Self.input_layout.rank() - 3],
+            self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)],
         )
         var right_pad_impact_start = (
             self.conv_shape.w()
             + self.conv_shape.pad_w[0]
             - self.conv_shape.s()
-            * self.conv_shape.dilation[Self.input_layout.rank() - 3]
-        ) // self.conv_shape.stride[Self.input_layout.rank() - 3] + 1
+            * self.conv_shape.dilation[comptime (Self.input_layout.rank() - 3)]
+        ) // self.conv_shape.stride[comptime (Self.input_layout.rank() - 3)] + 1
 
         @parameter
         if Self.input_layout.rank() == 3:
@@ -3509,7 +3509,7 @@ fn conv_gpu[
                 var spatial_idx = axis - 1
                 before = padding[2 * spatial_idx]
                 after = padding[2 * spatial_idx + 1]
-            padded_shape[axis] = Int(input_shape[axis]) + before + after
+            padded_shape[axis] = input_shape[axis] + before + after
 
         var padded_elements = padded_shape.flattened_length()
         var tmp_buffer = ctx.enqueue_create_buffer[input_type](padded_elements)

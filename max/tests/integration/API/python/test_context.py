@@ -20,6 +20,7 @@ import pytest
 from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
+    PixelGenerationContext,
     RequestID,
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
@@ -1099,9 +1100,11 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     )
 
     # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext and VLMTextGenerationContext are Protocols)
+    # (TextGenerationContext, VLMTextGenerationContext,
+    # and PixelGenerationContext are Protocols)
     _ = isinstance(ctx, TextGenerationContext)
     # The original bug report indicated that MAX threw a ValueError in call to
     # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
     # See GENAI-318 for details.
     _ = isinstance(ctx, VLMTextGenerationContext)
+    _ = isinstance(ctx, PixelGenerationContext)

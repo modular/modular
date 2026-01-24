@@ -41,24 +41,32 @@ def run_text_generation(  # noqa: ANN201
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation using standard data processor for both text and images."""
 
     def idefics_request_processor(
         request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
+        # Check if prompt already contains chat template tokens
+        has_chat_template = "<|begin_of_text|>" in request.prompt
+
         if request.is_multimodal:
             processed_images = [load_image(image) for image in request.images]
-            return data_processor(
+            inputs = data_processor(
                 images=processed_images,
                 text=request.prompt,
                 return_tensors="pt",
+                add_special_tokens=not has_chat_template,
             ).to(device)
         else:
-            return data_processor(
+            inputs = data_processor(
                 text=request.prompt,
                 return_tensors="pt",
+                add_special_tokens=not has_chat_template,
             ).to(device)
+
+        return inputs
 
     return run_text_generation_with_custom_image_processing(
         model=model,
@@ -69,6 +77,7 @@ def run_text_generation(  # noqa: ANN201
         print_outputs=print_outputs,
         use_cache=use_cache,
         request_processor_fn=idefics_request_processor,
+        generate_logprobs=generate_logprobs,
     )
 
 
@@ -86,9 +95,12 @@ def run_text_generation_with_custom_image_processing(  # noqa: ANN201
         [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ):
     """Run text generation with custom request processing for specialized models."""
-    saved_logits, store_logits = _create_logits_store()
+    saved_logits, store_logits = _create_logits_store(
+        generate_logprobs=generate_logprobs
+    )
     results = []
 
     for request in textgen_requests:

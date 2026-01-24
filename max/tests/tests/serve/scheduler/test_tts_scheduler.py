@@ -35,7 +35,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -211,11 +211,12 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         for context in ctxs:
             self.paged_manager.alloc(context, num_steps=num_tokens)
-        self.paged_manager.get_runtime_inputs(ctxs, num_steps=num_tokens)
+        self.paged_manager.get_runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
-        for req_id, context in inputs.batch.items():
+        for context in inputs.batch.values():
+            req_id = context.request_id
             resp = AudioGenerationOutput(
                 GenerationStatus.ACTIVE, steps_executed=num_tokens
             )
@@ -245,7 +246,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.paged_manager.release(request_id)
+        pass
 
 
 @dataclass(eq=True)

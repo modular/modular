@@ -37,8 +37,8 @@ from memory import bitcast
 # Add the col-major version as a work-around. Generalizing the above
 # may touch too many places.
 fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
-    comptime layout = t.layout
-    comptime size = layout.size()
+    var layout = materialize[t.layout]()
+    var size = layout.size()
 
     for i in range(size):
         idx = layout(i)

@@ -14,32 +14,36 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 
 from .context import Qwen2_5VLTextAndVisionContext
 
+if TYPE_CHECKING:
+    from ..qwen3vl_moe.context import Qwen3VLTextAndVisionContext
 
-def compute_scatter_gather_indices(
-    batch: Sequence[Qwen2_5VLTextAndVisionContext],
-) -> tuple[npt.NDArray[np.int32], npt.NDArray[np.int64]]:
-    """Compute scatter and gather indices for a batch of VLM contexts.
 
-    These scatter and gather indices are used to perform a masked_scatter operation
-    to merge image embeddings into the text embeddings.
+def compute_multimodal_merge_indices(
+    batch: Sequence[
+        Qwen2_5VLTextAndVisionContext | Qwen3VLTextAndVisionContext
+    ],
+) -> npt.NDArray[np.int32]:
+    """Compute indices for a batch of VLM contexts to use in merge_multimodal_embeddings.
 
     Args:
         batch: Sequence of VLM contexts.
 
     Returns:
-        tuple[npt.NDArray[np.int32], npt.NDArray[np.int64]]: Scatter and gather indices.
+        npt.NDArray[np.int32]: Multimodal merge indices, some of which may be negative.
     """
+    # Calculate sentinel OOB index value by finding the largest negative int32 value.
+    oob_idx = np.iinfo(np.int32).min
+
     # Collect indices and offsets.
-    scatter_indices_list = []
-    gather_indices_list = []
-    image_tokens_in_active_tokens = 0
-    image_tokens_in_all_tokens = 0
+    indices_list = []
+    total_active_tokens = 0
 
     for ctx in batch:
         if ctx.needs_vision_encoding:
@@ -47,64 +51,38 @@ def compute_scatter_gather_indices(
             # In the current approach, we run image decoding on all images.
             # We then select the rows of the image embeddings we want to use.
             # This may not be all of the rows in the event of a prefix cache
-            # hit. This selection is done via a gather.
-            #
-            # Then we scatter those selected rows to the rows of the text
-            # embeddings containing image placeholder tokens.
-            #
-            # This is essentially a masked_scatter operation.
+            # hit. This is done via a multimodal merge operation which filters
+            # out negative indices.
 
             # First, get the pre-computed indices of where the image placeholder
             # tokens are in the prompt. This is populated by tokenizer.
-            # eg: prompt = [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9]
-            #    indices = [4, 5, 6, 7]
+            # eg: prompt = [0, 1, 2, 3, IMG, IMG, IMG, IMG, 8, 9, IMG, IMG]
+            #    indices = [4, 5, 6, 7, 10, 11]
             indices = ctx.image_token_indices
 
             # Subtract all of the indices by the start_idx to get offsets
             # relative to the ragged next_tokens input sequence.
-            # eg: start_idx = 5
-            #     indices = [-1, 0, 1, 2]
+            # eg: start_idx = 6
+            #     indices = [-2, -1, 0, 1, 4, 5]
             indices = indices - ctx.tokens.processed_length
 
-            # Filter out any indices that are negative, which means that they
-            # are not included in next_tokens. Bump remaining by accumulated
-            # value for the batch.
+            # Set any negative indices to -1, which means that they are ignored.
+            # Bump remaining by accumulated value for the batch.
             indices_filtered = [
-                idx + image_tokens_in_active_tokens
+                idx + total_active_tokens if idx >= 0 else oob_idx
                 for idx in indices.tolist()
-                if idx >= 0
             ]
 
-            # Final scatter indices assuming this is sole request in batch.
-            # eg: indices_filtered = [0, 1, 2]
-            #     This means that we will copy the 3 image embeddings to the
-            #     rows 0-2 of the text embeddings.
-            scatter_indices_list.append(indices_filtered)
+            # Final scatter indices assuming the batch has 10 image tokens so far.
+            # eg: indices_filtered = [-999, -999, 10, 11, 14, 15]
+            #     This means that we will copy 4 image embeddings to the rows
+            #     10-11 and 14-15 of the text embeddings.
+            indices_list.append(indices_filtered)
 
-            num_gathered = len(indices_filtered)
-            num_skipped = indices.shape[0] - len(indices_filtered)
+        total_active_tokens += ctx.tokens.active_length
 
-            image_tokens_in_all_tokens += num_skipped
-            # This computes which rows of the image embeddings to gather.
-            # This calculation drops the image embedding for the first IMG
-            # but selects them for the next 3.
-            # eg: gathered_indices = [1, 2, 3]
-            gathered_indices = (
-                np.arange(num_gathered, dtype=np.int64)
-                + image_tokens_in_all_tokens
-            )
-            image_tokens_in_all_tokens += num_gathered
-            gather_indices_list.append(gathered_indices)
-
-        image_tokens_in_active_tokens += ctx.tokens.active_length
-
-    # ops.scatter_nd uses int32 indices.
-    # ops.gather_nd uses int64 indices.
-    if not scatter_indices_list:
-        scatter_indices = np.array([], dtype=np.int32)
-        gather_indices = np.array([], dtype=np.int64)
+    # scatter_nd_skip_oob_indices uses int32 indices.
+    if indices_list:
+        return np.concatenate(indices_list, dtype=np.int32)
     else:
-        scatter_indices = np.concatenate(scatter_indices_list, dtype=np.int32)
-        gather_indices = np.concatenate(gather_indices_list, dtype=np.int64)
-
-    return scatter_indices, gather_indices
+        return np.array([], dtype=np.int32)
