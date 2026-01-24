@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Layout, RuntimeLayout, LayoutTensor
@@ -73,7 +70,7 @@ fn scalar_copy_row[
     dtype: DType,
 ](
     input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -88,7 +85,7 @@ fn vector_copy_row[
     simd_width: Int,
 ](
     input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[Scalar[dtype]],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
     scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
@@ -204,7 +201,7 @@ fn _pad_constant_impl[
 fn pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype]],
     output_shape: IndexList[rank],
     input: UnsafePointer[Scalar[dtype]],
     input_shape: IndexList[rank],
