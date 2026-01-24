@@ -611,6 +611,9 @@ class PixelContext:
     tokens: TokenBuffer
     """Primary encoder tokens."""
 
+    mask: TokenBuffer
+    """Mask for text encoder's attention."""
+
     tokens_2: TokenBuffer | None = field(default=None)
     """Secondary encoder tokens. None for single-encoder models."""
 
@@ -620,9 +623,6 @@ class PixelContext:
 
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Secondary encoder negative tokens. None for single-encoder models."""
-
-    pooled_prompt_embeds: npt.NDArray | None = field(default=None)
-    """Pre-computed pooled embeddings (e.g., CLIP pooler output for Flux)."""
 
     extra_params: dict[str, npt.NDArray] = field(default_factory=dict)
     """Model-specific numeric parameters (e.g., cfg_normalization values)."""
@@ -638,7 +638,7 @@ class PixelContext:
     )
     """Precomputed sigmas schedule for denoising."""
 
-    initial_noise: npt.NDArray = field(
+    latents: npt.NDArray = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed initial noise (latents) for generation."""
