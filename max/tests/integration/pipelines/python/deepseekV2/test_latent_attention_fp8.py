@@ -360,7 +360,7 @@ def generate_max_outputs_fp8(
             for ctx in batch:
                 ctx.update(42)
 
-            kv_manager.step(batch)
+            kv_manager.step([batch])
             torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
             all_outputs.append(torch_output[:, None, :].to("cpu"))
         return torch.concat(all_outputs, dim=1)

@@ -97,7 +97,7 @@ async def test_prefix_caching_basic() -> None:
         len(initial_prompt_1),
     ]
     batch[0].update(15)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Check that we got new blocks
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0] == [0, 1, 2, 3, 4]
@@ -110,7 +110,7 @@ async def test_prefix_caching_basic() -> None:
             0
         ] == [1, 5 + i + 1]
         batch[0].update(toks[i + 1])
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
     # Seq 2: Claim
     initial_prompt_2 = [10, 11, 12, 13]
@@ -126,7 +126,7 @@ async def test_prefix_caching_basic() -> None:
         len(initial_prompt_2),
     ]
     batch[0].update(14)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Check that we got cached blocks, except for last token in prompt
     assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:3] == [0, 1, 2]
@@ -141,7 +141,7 @@ async def test_prefix_caching_basic() -> None:
         ] == [1, len(initial_prompt_2) + i + 1]
         assert get_blocks_from_kv_tuple(kv_tuple_list[0])[0][:4] == [0, 1, 2, 3]
         batch[0].update(toks[i + 1])
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
     # first and second ce have 5 + 4 tokens
     assert kv_manager.metrics.prompt_tokens == 9
@@ -167,7 +167,7 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     kv_manager.alloc(context_1)
     kv_manager.get_runtime_inputs([[context_1]])
     context_1.update(15)
-    kv_manager.step([context_1])
+    kv_manager.step([[context_1]])
     kv_manager.release(context_1.request_id)
     assert kv_manager.metrics.cache_tokens == 0
 
@@ -210,7 +210,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         assert available_blocks >= 0
 
         context.update(42)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         if i != 0:
             # During later fetches, we will just release the block we wrote to
@@ -239,7 +239,7 @@ async def test_prefix_caching_with_no_release() -> None:
             kv_manager.alloc(batch[0])
             _ = kv_manager.get_runtime_inputs([batch])
             batch[0].update(42)
-            kv_manager.step(batch)
+            kv_manager.step([batch])
 
             # We intentionally do not release the sequence here!
 
@@ -288,7 +288,7 @@ async def test_prefix_caching_with_random_prompts(
         new_tokens = gen_prompt(num_steps)
         for tok in new_tokens:
             context.update(tok)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         slots_used_in_curr_iter = prompt_len + num_steps - 1
         slots_used += slots_used_in_curr_iter
@@ -322,7 +322,7 @@ async def test_prefix_caching_with_random_prompts(
             new_tokens = gen_prompt(num_steps)
             for tok in new_tokens:
                 context.update(tok)
-            kv_manager.step(batch)
+            kv_manager.step([batch])
 
             slots_used += slots_used_in_curr_iter
 
@@ -353,7 +353,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
 
     for tok in [15, 16, 17]:
         batch[0].update(tok)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Seq 1: Token gen 18 - 19 in one pass
     for ctx in batch:
@@ -366,7 +366,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
 
     for tok in [18, 19]:
         batch[0].update(tok)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     assert kv_manager.metrics.cache_hit_rate == 0.0
 
@@ -386,7 +386,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(15)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Seq 1: Token gen 15
     kv_tuple_list = kv_manager.get_runtime_inputs([batch])
@@ -396,7 +396,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(16)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Seq 1: Token gen 16
     kv_tuple_list = kv_manager.get_runtime_inputs([batch])
@@ -406,7 +406,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
     ]
 
     batch[0].update(17)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     assert kv_manager.metrics.cache_hit_rate == 0.0
 
@@ -429,7 +429,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 
     for tok in [15, 16, 17]:
         batch[0].update(tok)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
     # Seq 1: Token gen 18 - 19 in one pass
     for ctx in batch:
@@ -443,7 +443,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 
     for tok in [18, 19]:
         batch[0].update(tok)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
 
 
 class FakeModel:
@@ -602,7 +602,7 @@ async def test_prefix_caching_grouped_prefixes(
             ctx = batch[request_id]
             for tok in request_ids_and_new_tokens_batch[request_id]:
                 ctx.update(tok)
-        kv_manager.step(ctxs)
+        kv_manager.step([ctxs])
 
     # Since our prompts have large grouped prefixes, we should have a high cache
     # hit rate.
@@ -638,7 +638,7 @@ async def test_prefix_caching_grouped_prefixes(
             ctx = batch[request_id]
             for tok in request_ids_and_new_tokens_subset[request_id]:
                 ctx.update(tok)
-        kv_manager.step(ctxs)
+        kv_manager.step([ctxs])
 
         # copying keys so we don't iterate over dict while deleting things
         copied_request_ids = list(batch.keys())
@@ -697,7 +697,7 @@ def run_forward(
     )
     if run_step:
         ctx.update(next_tok)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
 
 @pytest.mark.asyncio
@@ -766,7 +766,7 @@ def run_and_check_num_cached_tokens(
     magic_token_value = 42  # this is arbitrary
     if do_step:
         ctx.update(magic_token_value)
-        kv_manager.step([ctx])
+        kv_manager.step([[ctx]])
     return kv_manager.metrics.cache_tokens
 
 

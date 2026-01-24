@@ -129,7 +129,7 @@ def test_step() -> None:
         kv_manager.get_runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step(batches_by_replica)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
@@ -146,7 +146,7 @@ def test_step() -> None:
 def test_get_runtime_inputs_requires_per_replica_batches() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree=2, num_devices=2)
 
-    with pytest.raises(ValueError, match="Got 1 batches for 2 replicas"):
+    with pytest.raises(ValueError):
         kv_manager.get_runtime_inputs([[]])
 
 

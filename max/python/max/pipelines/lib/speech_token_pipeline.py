@@ -191,7 +191,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(context_batch)
+        self._pipeline_model.kv_manager.step([context_batch])
         tracer.pop()  # pops kv_manager.step
 
         return res

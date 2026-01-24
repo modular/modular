@@ -190,7 +190,7 @@ def _single_gpu_baseline(
         out = compiled.execute(tok, row_off.to(device0), *kv_inputs)
 
         ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]
@@ -437,7 +437,7 @@ def _run_distributed_dp(
         # Advance contexts
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step(batches_by_replica)
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]

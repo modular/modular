@@ -793,8 +793,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         res = self.build_response(context_batch=context_batch)
 
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
+        self._target_model.kv_manager.step([context_batch])
+        self._draft_model.kv_manager.step([context_batch])
 
         return res
 

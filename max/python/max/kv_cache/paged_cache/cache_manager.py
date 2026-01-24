@@ -61,7 +61,7 @@ class PagedKVCacheManager:
         ctx2.update(42)
 
         # Commit newly written blocks to prefix cache
-        kv_manager.step([ctx1, ctx2])
+        kv_manager.step([[ctx1, ctx2]])
 
         # Release metadata and KV blocks for these requests
         kv_manager.release(ctx1.request_id)
@@ -189,18 +189,9 @@ class PagedKVCacheManager:
             batches: Per-replica batches of requests
             num_steps: Number of steps to run for
         """
-        if len(batches) != self.num_replicas:
-            raise ValueError(
-                "Expected per-replica batches to match data parallel degree. "
-                f"Got {len(batches)} batches for {self.num_replicas} replicas."
-            )
         ret_list: list[RaggedKVCacheInputs] = []
-        for replica_idx, ctxs in enumerate(batches):
-            ret_list.extend(
-                self._replica_managers[replica_idx].get_runtime_inputs(
-                    ctxs, num_steps
-                )
-            )
+        for replica, ctxs in zip(self._replica_managers, batches, strict=True):
+            ret_list.extend(replica.get_runtime_inputs(ctxs, num_steps))
         return ret_list
 
     def release(self, request_id: RequestID) -> None:
@@ -226,10 +217,10 @@ class PagedKVCacheManager:
         self._request_to_replica_idx[request_id] = replica_idx
         self._request_count_per_replica[replica_idx] += 1
 
-    def step(self, batch: Sequence[TextGenerationContext]) -> None:
-        for ctx in batch:
-            replica_idx = self._request_to_replica_idx[ctx.request_id]
-            self._replica_managers[replica_idx].step([ctx])
+    def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
+        """Commit new tokens into the prefix cache for per-replica batches."""
+        for replica, ctxs in zip(self._replica_managers, batches, strict=True):
+            replica.step(ctxs)
 
     def contains(self, request_id: RequestID) -> bool:
         return request_id in self._request_to_replica_idx

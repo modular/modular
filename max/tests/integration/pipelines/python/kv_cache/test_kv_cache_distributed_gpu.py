@@ -106,7 +106,7 @@ async def test_swapping_to_host_multi_gpu(
     np.random.seed(42)
 
     # Enough blocks to hold 500 tokens
-    dp_kv_manager = create_paged_manager(
+    kv_manager = create_paged_manager(
         num_blocks=100,
         max_batch_size=100,
         max_seq_len=512,
@@ -114,16 +114,16 @@ async def test_swapping_to_host_multi_gpu(
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=enable_swapping_to_host,
     )
-    kv_manager = dp_kv_manager._replica_managers[0]
 
     if enable_swapping_to_host:
+        replica_manager = kv_manager._replica_managers[0]
         # Host tensor should be pinned
-        assert kv_manager.host_tensors is not None
-        for i in range(len(kv_manager.host_tensors)):
-            assert kv_manager.host_tensors[i].pinned
+        assert replica_manager.host_tensors is not None
+        for i in range(len(replica_manager.host_tensors)):
+            assert replica_manager.host_tensors[i].pinned
         # Evictions should be scheduled on auxiliary stream
-        assert kv_manager.block_manager.block_copy_engine is not None
-        assert kv_manager.block_manager.block_copy_engine.supports_multistream()
+        assert replica_manager.block_manager.block_copy_engine is not None
+        assert replica_manager.block_manager.block_copy_engine.supports_multistream()
 
     def gen_prompt(length: int) -> np.ndarray:
         # returns a binary sequence of length `length`
@@ -150,7 +150,7 @@ async def test_swapping_to_host_multi_gpu(
     cache_hit_rates = []
     for batch_idx, batch in enumerate(batches):
         for context in batch:
-            kv_manager.claim(context.request_id)
+            kv_manager.claim(context.request_id, replica_idx=0)
 
         # Run 1 CE batch and 4 TG batches
         for iter in range(5):
@@ -158,7 +158,7 @@ async def test_swapping_to_host_multi_gpu(
 
             for ctx in batch:
                 kv_manager.alloc(ctx, num_steps=1)
-            _ = kv_manager.get_runtime_inputs(batch)
+            _ = kv_manager.get_runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
@@ -174,7 +174,7 @@ async def test_swapping_to_host_multi_gpu(
             for ctx in batch:
                 ctx.update(999)
 
-            kv_manager.step(batch)
+            kv_manager.step([batch])
 
         for context in batch:
             kv_manager.release(context.request_id)

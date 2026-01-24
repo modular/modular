@@ -306,7 +306,7 @@ def test_rms_norm_new_key_cache(
     graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
     for ctx in batch:
         ctx.update(42)
-    kv_manager.step(batch)
+    kv_manager.step([batch])
     graph_inputs = kv_manager.get_runtime_inputs([batch])[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.

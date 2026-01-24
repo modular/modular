@@ -64,7 +64,7 @@ async def test_step() -> None:
         kv_manager.get_runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)

@@ -224,7 +224,7 @@ class FakeTokenGeneratorPipeline(
             responses[req_id] = context.to_generation_output()
 
         # Step the kv cache manager
-        self.kv_manager.step(inputs.flat_batch)
+        self.kv_manager.step(inputs.batches)
 
         return responses
 

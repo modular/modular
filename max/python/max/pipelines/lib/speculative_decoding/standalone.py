@@ -320,7 +320,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
+        self._target_model.kv_manager.step([context_batch])
+        self._draft_model.kv_manager.step([context_batch])
 
         return res

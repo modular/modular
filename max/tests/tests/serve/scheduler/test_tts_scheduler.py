@@ -241,7 +241,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
             responses[req_id] = resp
 
         # Step the kv cache manager
-        self.paged_manager.step(ctxs)
+        self.paged_manager.step([ctxs])
 
         return responses
 
