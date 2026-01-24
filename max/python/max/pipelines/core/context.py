@@ -643,6 +643,11 @@ class PixelContext:
     )
     """Precomputed initial noise (latents) for generation."""
 
+    latent_image_ids: npt.NDArray = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed latent image IDs for generation."""
+
     # Image generation parameters
     height: int = field(default=1024)
     width: int = field(default=1024)
