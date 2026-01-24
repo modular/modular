@@ -632,8 +632,8 @@ static ErrorOr<TypedAttr> foldIntLiteralConvert(TypedAttr input, Type outType) {
   SIMDType outSIMDTy = dyn_cast<SIMDType>(outType);
   if (outSIMDTy)
     outDType = outSIMDTy.getResolvedDType();
-  if (!outDType)
-    return Error("Must have resolved DType");
+  if (!outDType || outDType->isInvalid())
+    return Error("Must have resolved valid DType");
 
   DTypeValue value = [&]() {
     if (outDType->isBool())
