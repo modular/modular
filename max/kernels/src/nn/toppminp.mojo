@@ -13,9 +13,7 @@
 
 
 from math import iota
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import alloc
 from random import random_float64
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
@@ -121,9 +119,7 @@ fn _topp_minp_sampling[
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    var sorted_probs_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        batch_size * vocab_size
-    )
+    var sorted_probs_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
     var sorted_probs = LayoutTensor[
         dtype, Layout.row_major[2](), element_layout=out_token_element_layout
     ](
@@ -133,9 +129,7 @@ fn _topp_minp_sampling[
         ),
     )
 
-    var sorted_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
-        batch_size * vocab_size
-    )
+    var sorted_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * vocab_size)
     var sorted_ids = LayoutTensor[
         out_idx_type,
         Layout.row_major[2](),
@@ -292,10 +286,10 @@ fn merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
-    var right_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
-    var left_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(left_size)
-    var right_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(right_size)
+    var left_keys_ptr = alloc[Scalar[dtype]](left_size)
+    var right_keys_ptr = alloc[Scalar[dtype]](right_size)
+    var left_ids_ptr = alloc[Scalar[out_idx_type]](left_size)
+    var right_ids_ptr = alloc[Scalar[out_idx_type]](right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
