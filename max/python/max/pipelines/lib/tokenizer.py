@@ -962,15 +962,26 @@ class PixelGenerationTokenizer(
         return mu
 
     @staticmethod
-    def _prepare_latent_image_ids(height, width):
+    def _prepare_latent_image_ids(
+        height: int, width: int
+    ) -> npt.NDArray[np.float32]:
         latent_image_ids = np.zeros((height, width, 3), dtype=np.float32)
-        latent_image_ids[..., 1] = latent_image_ids[..., 1] + np.arange(height)[:, None]
-        latent_image_ids[..., 2] = latent_image_ids[..., 2] + np.arange(width)[None, :]
+        latent_image_ids[..., 1] = (
+            latent_image_ids[..., 1] + np.arange(height)[:, None]
+        )
+        latent_image_ids[..., 2] = (
+            latent_image_ids[..., 2] + np.arange(width)[None, :]
+        )
 
-        latent_image_id_height, latent_image_id_width, latent_image_id_channels = latent_image_ids.shape
+        (
+            latent_image_id_height,
+            latent_image_id_width,
+            latent_image_id_channels,
+        ) = latent_image_ids.shape
 
         latent_image_ids = latent_image_ids.reshape(
-            latent_image_id_height * latent_image_id_width, latent_image_id_channels
+            latent_image_id_height * latent_image_id_width,
+            latent_image_id_channels,
         )
 
         return latent_image_ids
@@ -997,7 +1008,9 @@ class PixelGenerationTokenizer(
         shape = (batch_size, num_channels_latents, height, width)
 
         latents = self._randn_tensor(shape, seed)
-        latent_image_ids = self._prepare_latent_image_ids(height // 2, width // 2)
+        latent_image_ids = self._prepare_latent_image_ids(
+            height // 2, width // 2
+        )
 
         return latents, latent_image_ids
 
@@ -1039,7 +1052,9 @@ class PixelGenerationTokenizer(
             timesteps = scheduler.timesteps
             num_inference_steps = len(timesteps)
         else:
-            scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
+            scheduler.set_timesteps(
+                num_inference_steps, device=device, **kwargs
+            )
             timesteps = scheduler.timesteps
         return timesteps, num_inference_steps
 
@@ -1068,7 +1083,9 @@ class PixelGenerationTokenizer(
         if prompt is not None:
             token_ids, attn_mask = await self.encode(prompt)
         elif messages is not None:
-            templated = self.apply_chat_template(messages, chat_template_options)
+            templated = self.apply_chat_template(
+                messages, chat_template_options
+            )
             token_ids, attn_mask = await self.encode(templated)
 
         token_ids_2: npt.NDArray[np.integer[Any]] | None = None
@@ -1081,7 +1098,9 @@ class PixelGenerationTokenizer(
         negative_token_ids: npt.NDArray[np.integer[Any]] | None = None
         negative_token_ids_2: npt.NDArray[np.integer[Any]] | None = None
         if do_true_cfg:
-            negative_token_ids, _attn_mask_neg = await self.encode(negative_prompt)
+            negative_token_ids, _attn_mask_neg = await self.encode(
+                negative_prompt
+            )
             if self.delegate_2 is not None:
                 negative_token_ids_2, _attn_mask_neg_2 = await self.encode(
                     negative_prompt_2 or negative_prompt,
@@ -1127,7 +1146,9 @@ class PixelGenerationTokenizer(
         """Transform the provided prompt into a token array."""
 
         delegate = self.delegate_2 if use_secondary else self.delegate
-        max_sequence_length = self.max_length_2 if use_secondary else self.max_length
+        max_sequence_length = (
+            self.max_length_2 if use_secondary else self.max_length
+        )
 
         tokenizer_output: npt.NDArray[np.integer[Any]]
 
@@ -1149,15 +1170,18 @@ class PixelGenerationTokenizer(
             )
 
         encoded_prompt = np.array(tokenizer_output.input_ids)
-        attention_mask = np.array(tokenizer_output.attention_mask).astype(np.bool_)
+        attention_mask = np.array(tokenizer_output.attention_mask).astype(
+            np.bool_
+        )
 
         return encoded_prompt, attention_mask
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        raise NotImplementedError("Decoding is not implemented for this tokenizer.")
-
+        raise NotImplementedError(
+            "Decoding is not implemented for this tokenizer."
+        )
 
     async def new_context(
         self, request: PixelGenerationRequest
@@ -1166,7 +1190,9 @@ class PixelGenerationTokenizer(
         prompt: str | None = request.prompt
         messages: list[TextGenerationRequestMessage] | None = None
 
-        do_true_cfg = request.true_cfg_scale > 1.0 and request.negative_prompt is not None
+        do_true_cfg = (
+            request.true_cfg_scale > 1.0 and request.negative_prompt is not None
+        )
 
         if self._wrap_prompt_as_chat:
             messages = [
@@ -1216,8 +1242,12 @@ class PixelGenerationTokenizer(
         # 3. Resolve image dimensions
         # Get defaults from diffusers_config
         vae_config = self.diffusers_config.components["vae"].config_dict
-        transformer_config = self.diffusers_config.components["transformer"].config_dict
-        scheduler_config = self.diffusers_config.components["scheduler"].config_dict
+        transformer_config = self.diffusers_config.components[
+            "transformer"
+        ].config_dict
+        scheduler_config = self.diffusers_config.components[
+            "scheduler"
+        ].config_dict
 
         # Compute vae_scale_factor from block_out_channels
         block_out_channels = vae_config.get("block_out_channels", None)
@@ -1244,12 +1274,25 @@ class PixelGenerationTokenizer(
 
         # Create scheduler from config
         scheduler_component = self.diffusers_config.components["scheduler"]
-        scheduler = SchedulerFactory.create(scheduler_component.class_name, scheduler_config)
+        scheduler = SchedulerFactory.create(
+            scheduler_component.class_name, scheduler_config
+        )
 
-        sigmas = np.linspace(1.0, 1 / request.num_inference_steps, request.num_inference_steps) if sigmas is None else sigmas
-        if hasattr(scheduler.config, "use_flow_sigmas") and scheduler.config.use_flow_sigmas:
+        sigmas = (
+            np.linspace(
+                1.0,
+                1 / request.num_inference_steps,
+                request.num_inference_steps,
+            )
+            if sigmas is None
+            else sigmas
+        )
+        if (
+            hasattr(scheduler.config, "use_flow_sigmas")
+            and scheduler.config.use_flow_sigmas
+        ):
             sigmas = None
-        timesteps, num_inference_steps = retrieve_timesteps(
+        timesteps, num_inference_steps = _retrieve_timesteps(
             scheduler,
             request.num_inference_steps,
             CPU(),
@@ -1260,7 +1303,9 @@ class PixelGenerationTokenizer(
             timesteps = (1000 - timesteps) / 1000
         else:
             timesteps = timesteps / 1000
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * scheduler.order, 0)
+        num_warmup_steps = max(
+            len(timesteps) - num_inference_steps * scheduler.order, 0
+        )
 
         latents, latent_image_ids = self._prepare_latents(
             request.num_images_per_prompt,
@@ -1272,7 +1317,9 @@ class PixelGenerationTokenizer(
         )
 
         if transformer_config.guidance_embeds:
-            guidance = Tensor.constant([request.guidance_scale], device=CPU(), dtype=DType.float32)
+            guidance = Tensor.constant(
+                [request.guidance_scale], device=CPU(), dtype=DType.float32
+            )
         else:
             guidance = None
 

@@ -19,7 +19,7 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol, runtime_checkable
+from typing import Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
@@ -29,10 +29,6 @@ from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from typing_extensions import TypeVar
-
-from .text_generation import (
-    TextGenerationRequestMessage,
-)
 
 
 @dataclass(frozen=True)
