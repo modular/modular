@@ -36,6 +36,8 @@ from .pointer import (
     AddressSpace,
     _GPUAddressSpace,
     GPUAddressSpace,
+    ImmutPointer,
+    MutPointer,
     Pointer,
 )
 from .span import Span
