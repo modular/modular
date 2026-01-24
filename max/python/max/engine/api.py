@@ -172,8 +172,8 @@ Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
-Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[attr-defined]
-Model.replay = _Model_replay  # type: ignore[attr-defined]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
+Model.replay = _Model_replay  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:

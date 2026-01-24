@@ -222,6 +222,12 @@ class Model:
         phases are safe to capture (e.g. decode-only in serving).
         """
 
+    def debug_verify_replay(self, *inputs: Buffer) -> None:
+        """Verify inputs match the captured graph's baseline trace."""
+
+    def replay(self, *inputs: Buffer) -> None:
+        """Replay the captured device graph for these inputs."""
+
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...

@@ -53,7 +53,7 @@ def test_execution_trace_capture_replay() -> None:
     )
 
     # Replay with original input values and verify output.
-    model.replay(input_tensor)  # type: ignore[attr-defined]
+    model.replay(input_tensor)
     np.testing.assert_allclose(
         captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
@@ -64,7 +64,7 @@ def test_execution_trace_capture_replay() -> None:
     )
     input_tensor.inplace_copy_from(updated_values)
 
-    model.replay(input_tensor)  # type: ignore[attr-defined]
+    model.replay(input_tensor)
     np.testing.assert_allclose(
         captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 4
     )
@@ -92,14 +92,14 @@ def test_debug_verify_replay_uses_captured_graph_key() -> None:
     model.capture(input_tensor)
 
     # Should verify successfully for the captured input signature.
-    model.debug_verify_replay(input_tensor)  # type: ignore[attr-defined]
+    model.debug_verify_replay(input_tensor)
 
     # Different shape should not match captured key and should error.
     other_input = Buffer.from_numpy(np.arange(5, dtype=np.float32)).to(
         model.input_devices[0]
     )
     with pytest.raises(RuntimeError, match="No captured graph"):
-        model.debug_verify_replay(other_input)  # type: ignore[attr-defined]
+        model.debug_verify_replay(other_input)
 
 
 def test_debug_verify_replay_detects_buffer_reuse() -> None:
@@ -170,6 +170,6 @@ def test_debug_verify_replay_detects_buffer_reuse() -> None:
 
     # TODO: Update this assertion once buffer address stability is guaranteed.
     with pytest.raises(RuntimeError, match="Launch trace mismatch"):
-        model.debug_verify_replay(input_buf)  # type: ignore[attr-defined]
+        model.debug_verify_replay(input_buf)
 
     del external_buffers
