@@ -29,6 +29,7 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
     RequestID,
     SamplingParams,
     TextGenerationContext,
@@ -611,7 +612,7 @@ class PixelContext:
     tokens: TokenBuffer
     """Primary encoder tokens."""
 
-    mask: TokenBuffer
+    mask: TokenBuffer | None = field(default=None)
     """Mask for text encoder's attention."""
 
     tokens_2: TokenBuffer | None = field(default=None)
@@ -624,26 +625,26 @@ class PixelContext:
     negative_token_ids_2: TokenBuffer | None = field(default=None)
     """Secondary encoder negative tokens. None for single-encoder models."""
 
-    extra_params: dict[str, npt.NDArray] = field(default_factory=dict)
+    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Model-specific numeric parameters (e.g., cfg_normalization values)."""
 
     # Precomputed tensors
-    timesteps: npt.NDArray = field(
+    timesteps: npt.NDArray[Any] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed timesteps schedule for denoising."""
 
-    sigmas: npt.NDArray = field(
+    sigmas: npt.NDArray[Any] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed sigmas schedule for denoising."""
 
-    latents: npt.NDArray = field(
+    latents: npt.NDArray[Any] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed initial noise (latents) for generation."""
 
-    latent_image_ids: npt.NDArray = field(
+    latent_image_ids: npt.NDArray[Any] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed latent image IDs for generation."""
