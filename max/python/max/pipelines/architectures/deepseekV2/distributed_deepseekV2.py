@@ -17,21 +17,20 @@ from __future__ import annotations
 import functools
 
 from max.graph import ShardingStrategy
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    DistributedTransformer,
-    DistributedTransformerBlock,
-    RMSNorm,
-    VocabParallelEmbedding,
-)
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.moe import MoE
-from max.nn.rotary_embedding import (
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
+)
+from max.nn.legacy.transformer import (
+    DistributedTransformer,
+    DistributedTransformerBlock,
 )
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,

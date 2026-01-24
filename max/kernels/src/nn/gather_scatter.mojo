@@ -708,7 +708,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
@@ -819,7 +819,7 @@ fn gather[
         @parameter
         if is_cpu[target]():
             if error_index != -1:
-                var invalid_index = Int(error_index)
+                var invalid_index = error_index
                 raise Error(
                     String(
                         "gather index {} is out of bounds for axis {} with"
@@ -1041,11 +1041,10 @@ fn scatter_nd_generator[
                         or idx_on_axis >= input_ax_dim
                     ):
                         return
-                    output_index_tensor[dim] = Int(idx_on_axis)
-                else:
-                    output_index_tensor[dim] = Int(
-                        _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
-                    )
+
+                output_index_tensor[dim] = Int(
+                    _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
 
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0

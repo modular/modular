@@ -107,6 +107,8 @@ from linalg.matmul.gpu.sm100.matmul import (
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
+from internal_utils import ufloordiv
+
 
 @always_inline
 fn copy_accum_to_gmem[
@@ -316,7 +318,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             2,
                             MMA_M,
                             BN,
@@ -372,7 +374,7 @@ fn copy_accum_to_gmem[
                             new_smem.layout,
                             swizzle,
                             elementwise_compute_lambda_fn.value(),
-                            UInt(num_output_warps),
+                            num_output_warps,
                             1,
                             MMA_M,
                             BN,
@@ -383,13 +385,11 @@ fn copy_accum_to_gmem[
                             UInt(c_col),
                             UInt(c_row),
                             new_smem,
-                            UInt(warp_id),
+                            warp_id,
                             UInt(0),
                         )
         else:
-            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
-                num_output_warps
-            )
+            comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
             var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
                 Int(warp_id), 0
             )
@@ -432,7 +432,7 @@ fn copy_accum_to_gmem[
                         c_smem_warp_tile_lower.layout,
                         swizzle,
                         elementwise_compute_lambda_fn.value(),
-                        UInt(num_output_warps),
+                        num_output_warps,
                     ](
                         M,
                         N,
@@ -520,8 +520,8 @@ fn copy_accum_to_gmem[
                 else:
                     c_tma_op.wait_group[0]()
         else:
-            if size_of[c_type]() != 2 or UInt32(coord_m) + UInt32(TMA_BM) >= M:
-                comptime output_threads = Int(num_output_warps) * Int(WARP_SIZE)
+            if size_of[c_type]() != 2 or coord_m + UInt32(TMA_BM) >= M:
+                comptime output_threads = num_output_warps * WARP_SIZE
                 comptime c_smem_M = c_smem_tile.layout.shape[0].value()
                 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                     layout,
@@ -543,9 +543,7 @@ fn copy_accum_to_gmem[
 
                 @parameter
                 for i in range(c_smem_M // TMA_BM):
-                    var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](
-                        Int(i), 0
-                    )
+                    var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](i, 0)
                     comptime split_layout = c_smem_split.layout
                     var split_rt = RLayout32Bits[split_layout]()
                     comptime zipped = zipped_divide(
@@ -559,7 +557,7 @@ fn copy_accum_to_gmem[
                         var input_crd = RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE, j),
                             element_type = DType.uint32,
-                        ](Int(thread_idx.x), Int(j))
+                        ](Int(thread_idx.x), j)
                         var linear_idx = zipped_rt(input_crd) * simd_size
                         var linear_tup = RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -569,8 +567,8 @@ fn copy_accum_to_gmem[
                         )
                         var local_i = cmem_crd[0].get_int()
                         var local_j = cmem_crd[1].get_int()
-                        var global_i = coord_m + UInt32(local_i)
-                        var global_j = coord_n + UInt32(local_j)
+                        var global_i = coord_m + local_i
+                        var global_j = coord_n + local_j
                         if global_i < M:
                             # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
                             src_ptr = c_smem_split.ptr + (
@@ -640,7 +638,6 @@ fn multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    max_tmem_cols: Int = 512,
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
@@ -780,9 +777,7 @@ struct B200BlockScaledMatmulSmem[
 
     comptime a_smem_size = Self.BM * Self.BK * Self.config.num_pipeline_stages
     comptime b_smem_size = Self.BN * Self.BK * Self.config.num_pipeline_stages
-    comptime c_smem_size = Self.OutputM * Self.OutputN * Int(
-        Self.config.num_output_stages
-    )
+    comptime c_smem_size = Self.OutputM * Self.OutputN * Self.config.num_output_stages
 
     comptime sfa_smem_size = (
         Self.config.num_sf_k_tiles
@@ -959,7 +954,7 @@ fn load_AB[
             tma_mbar[0].expect_bytes(expected_bytes)
 
         for j in range(UInt32(k_group_size)):
-            var offset = stage * UInt32(k_group_size) + UInt32(j)
+            var offset = stage * UInt32(k_group_size) + j
             var a_smem_tile = a_smem.next(offset)[]
             var b_smem_tile = b_smem.next(offset)[]
             var sfa_smem_tile = sfa_smem.next(offset)[]
@@ -975,7 +970,7 @@ fn load_AB[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_slice,
                 tma_mbar[0],
-                (UInt(iter_idx + j) * UInt(BK), UInt(a_gmem_slice_coord)),
+                (UInt(iter_idx + j) * UInt(BK), a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
@@ -994,11 +989,11 @@ fn load_AB[
                 sfa_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    work_tile_coord[0] // UInt(SF_MN_GROUP_SIZE)
-                    + UInt(a_scale_offset_vec[0]),
+                    0,
+                    0,
+                    Int(iter_idx + j) * num_sf_k_tiles,
+                    ufloordiv(Int(work_tile_coord[0]), SF_MN_GROUP_SIZE)
+                    + Int(a_scale_offset_vec[0]),
                 ),
             )
 
@@ -1008,11 +1003,13 @@ fn load_AB[
                 sfb_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(iter_idx + j) * UInt(num_sf_k_tiles),
-                    (work_tile_coord[1] + UInt(b_offset))
-                    // UInt(SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(iter_idx + j) * num_sf_k_tiles,
+                    ufloordiv(
+                        Int(work_tile_coord[1]) + Int(b_offset),
+                        SF_MN_GROUP_SIZE,
+                    ),
                 ),
             )
 
@@ -1296,7 +1293,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var N_maybe_swapped = b_device.dim[0]()
 
     constrained[
-        ceildiv(K, BK) % Int(config.k_group_size) == 0,
+        ceildiv(K, BK) % config.k_group_size == 0,
         "K iterations must be a multiple of k_group_size",
     ]()
 
@@ -1444,7 +1441,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ]
 
     var grid_dim = (
-        Int(B200.sm_count),
+        B200.sm_count,
         1,
         1,
     )
@@ -1608,8 +1605,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)
     comptime num_k_mmas = BK // config.mma_shape[2]
 
-    comptime CLUSTER_M = Int(config.cluster_shape[0])
-    comptime CLUSTER_N = Int(config.cluster_shape[1])
+    comptime CLUSTER_M: Int = config.cluster_shape[0]
+    comptime CLUSTER_N: Int = config.cluster_shape[1]
 
     comptime a_tma_load_size = a_desc_layout.size()
     comptime b_tma_load_size = b_desc_layout.size()
@@ -1844,8 +1841,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % UInt(config.cta_group)),
-        UInt(rank_m // UInt(config.cta_group)),
+        rank_m % UInt(config.cta_group),
+        rank_m // UInt(config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -2041,7 +2038,6 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     c_swizzle = config.c_swizzle,
                     cta_group = config.cta_group,
                     num_output_warps=num_output_warps,
-                    max_tmem_cols=max_tmem_cols,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     register_based_epilogue=register_based_epilogue,
                     transpose_c = config.AB_swapped,

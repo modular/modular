@@ -155,7 +155,7 @@ struct IteratorScatterGatherAmd[
 
 # Shared Memory and Register tiles type declarations, shared by TileOps and Tile Buffer objects
 
-comptime SMemTileType[
+comptime SMemTile[
     _dtype: DType,
     layout: Layout,
     /,
@@ -178,7 +178,7 @@ comptime SMemTileType[
 ]
 """Type alias for shared memory tile tensors."""
 
-comptime RegTileType[
+comptime RegTile[
     _dtype: DType,
     layout: Layout,
     /,
@@ -206,7 +206,7 @@ comptime SMemBarrier = UnsafePointer[
 ]
 """Type alias for shared memory barrier pointer."""
 
-comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArrayType[
+comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
     SharedMemBarrier, num_pipeline_stages
 ]
 """Type alias for shared memory pipeline barrier array."""
@@ -224,7 +224,7 @@ comptime SMemTileIter[
 
 
 @register_passable("trivial")
-struct SMemTileArrayType[
+struct SMemTileArray[
     dtype: DType,
     layout: Layout,
     num_tiles: Int,
@@ -239,7 +239,7 @@ struct SMemTileArrayType[
         alignment: Memory alignment.
     """
 
-    comptime Tile = SMemTileType[
+    comptime Tile = SMemTile[
         Self.dtype,
         Self.layout,
         alignment = Self.alignment,
@@ -249,19 +249,19 @@ struct SMemTileArrayType[
 
     comptime storage_size = Self.num_elements * size_of[Self.dtype]()
 
-    comptime StorageType = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], address_space = AddressSpace.SHARED
     ]
 
     fn __init__(
-        ref [AddressSpace.SHARED]storage: Self.StorageType,
+        ref [AddressSpace.SHARED]storage: Self.Storage,
     ) -> Self:
-        """Initialize with StorageType.
+        """Initialize with Storage.
 
         Args:
-            storage: StorageType.
+            storage: Storage.
         """
         return Self(storage.unsafe_ptr())
 
@@ -303,11 +303,11 @@ struct SMemTileArrayType[
     ](
         self,
         start: Int,
-        out result: SMemTileArrayType[
+        out result: SMemTileArray[
             Self.dtype, Self.layout, length, Self.alignment
         ],
     ):
-        return type_of(result)(self.ptr + eval[Self.layout.size()] * Int(start))
+        return type_of(result)(self.ptr + eval[Self.layout.size()] * start)
 
     @always_inline
     @staticmethod
@@ -322,7 +322,7 @@ struct SMemTileArrayType[
 
 
 @register_passable("trivial")
-struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
+struct SMemArray[type: __TypeOfAllTypes, size: Int]:
     """Shared memory array of fixed size.
 
     Parameters:
@@ -334,7 +334,7 @@ struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
         Self.type, address_space = AddressSpace.SHARED
     ]
     comptime storage_size = Self.size * size_of[Self.type]()
-    comptime StorageType = InlineArray[Self.type, Self.size]
+    comptime Storage = InlineArray[Self.type, Self.size]
 
     var ptr: Self.ptr_type
 
@@ -350,8 +350,8 @@ struct SMemArrayType[type: __TypeOfAllTypes, size: Int]:
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref [AddressSpace.SHARED]storage: Self.StorageType) -> Self:
-        """Initialize from StorageType."""
+    fn __init__(ref [AddressSpace.SHARED]storage: Self.Storage) -> Self:
+        """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
     @always_inline
@@ -423,17 +423,15 @@ struct NVIDIASharedMemoryBasePtr[
 
 
 struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
-    comptime Tile[dtype: DType, layout: Layout] = SMemTileType[
+    comptime Tile[dtype: DType, layout: Layout] = SMemTile[
         dtype, layout, alignment = Self.SMBP.alignment
     ]
 
     comptime TileArray[
         dtype: DType, layout: Layout, num_tiles: Int
-    ] = SMemTileArrayType[dtype, layout, num_tiles, Self.SMBP.alignment]
+    ] = SMemTileArray[dtype, layout, num_tiles, Self.SMBP.alignment]
 
-    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArrayType[
-        type, size
-    ]
+    comptime Array[type: __TypeOfAllTypes, size: Int] = SMemArray[type, size]
 
     var base_ptr: UnsafePointer[Int8, address_space = AddressSpace.SHARED]
     var offset: Int

@@ -20,7 +20,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import scatter_nd_skip_oob_indices
+from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
 
 
 @pytest.mark.parametrize(
@@ -31,6 +31,13 @@ from max.nn.kernels import scatter_nd_skip_oob_indices
             [1.0, 2.0, 3.0, 4.0, 5.0],
             [10.0, 15.0, 20.0],
             [[1], [-999], [3]],
+            [1.0, 10.0, 3.0, 20.0, 5.0],
+        ),
+        # 1D scatter with negative indices
+        (
+            [1.0, 2.0, 3.0, 4.0, 5.0],
+            [10.0, 15.0, 20.0],
+            [[-4], [999], [-2]],
             [1.0, 10.0, 3.0, 20.0, 5.0],
         ),
         # 2D scatter with 1D indices

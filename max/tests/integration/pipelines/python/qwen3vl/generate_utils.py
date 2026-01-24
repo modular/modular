@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
+from test_common.storage import load_image
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store
 from transformers import (
@@ -29,36 +30,33 @@ from transformers import (
 )
 
 INSTRUCT_REQUESTS = [
-    MockTextGenerationRequest.with_messages(
+    MockTextGenerationRequest.with_images(
         prompt="Describe this image.",
+        images=[
+            "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image.jpg"
+        ],
         messages=[
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image.jpg",
-                    },
+                    {"type": "image"},
                     {"type": "text", "text": "Describe this image."},
                 ],
             },
         ],
-        is_multimodal=True,
     ),
-    MockTextGenerationRequest.with_messages(
+    MockTextGenerationRequest.with_images(
         prompt="Compare these two images. What is the difference between them?",
+        images=[
+            "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_a.jpg",
+            "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_b.jpg",
+        ],
         messages=[
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_a.jpg",
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": "s3://modular-bazel-artifacts-public/artifacts/model_testdata/qwen2_5vl_instruct_image_b.jpg",
-                    },
+                    {"type": "image"},
+                    {"type": "image"},
                     {
                         "type": "text",
                         "text": "Compare these two images. What is the difference between them?",
@@ -66,7 +64,6 @@ INSTRUCT_REQUESTS = [
                 ],
             },
         ],
-        is_multimodal=True,
     ),
 ]
 
@@ -95,6 +92,7 @@ def run_text_generation(
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Run text generation using Qwen3VL processor for both text and images."""
 
@@ -102,9 +100,40 @@ def run_text_generation(
         request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
         if request.is_multimodal:
-            # Qwen3VL processor can handle images directly through messages
-            # Convert messages to the format expected by the processor
-            messages_data = [dict(msg) for msg in request.messages]
+            # Load images from request.images and inject into messages
+            loaded_images = [load_image(img) for img in request.images]
+            image_idx = 0
+
+            # Convert messages to dicts and inject images
+            messages_data: list[dict[str, Any]] = []
+            for msg in request.messages:
+                msg_content: list[dict[str, Any]] = []
+                content = msg.content
+                if isinstance(content, list):
+                    for item in content:
+                        if (
+                            isinstance(item, dict)
+                            and item.get("type") == "image"
+                        ):
+                            # Replace placeholder with actual image
+                            msg_content.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": loaded_images[image_idx],
+                                }
+                            )
+                            image_idx += 1
+                        elif isinstance(item, dict):
+                            msg_content.append(item)
+                        else:
+                            # Convert Pydantic model to dict
+                            msg_content.append(item.model_dump())
+                    messages_data.append(
+                        {"role": msg.role, "content": msg_content}
+                    )
+                else:
+                    messages_data.append({"role": msg.role, "content": content})
+
             inputs = data_processor.apply_chat_template(
                 messages_data,
                 tokenize=True,
@@ -132,6 +161,7 @@ def run_text_generation(
         print_outputs=print_outputs,
         use_cache=use_cache,
         request_processor_fn=request_processor,
+        generate_logprobs=generate_logprobs,
     )
 
 
@@ -148,10 +178,13 @@ def run_text_generation_with_custom_image_processing(
         [MockTextGenerationRequest], dict[str, torch.Tensor]
     ],
     use_cache: bool | None = None,
+    generate_logprobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Run text generation with custom request processing for specialized models."""
     del device, use_cache  # Unused.
-    saved_logits, store_logits = _create_logits_store()
+    saved_logits, store_logits = _create_logits_store(
+        generate_logprobs=generate_logprobs
+    )
     results = []
 
     for request in textgen_requests:

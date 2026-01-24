@@ -33,14 +33,13 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import NullKVCacheManager
 from max.kv_cache.paged_cache import PagedKVCacheManager
 
 
 @runtime_checkable
 class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager | NullKVCacheManager]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...
@@ -99,7 +98,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
 
         # Create inputs to the model. If data parallelism is enabled, group them
         # by replica.
-        batches: list[dict[RequestID, TextGenerationContextType]] = []
+        batches: list[list[TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
         if data_parallel_degree > 1 and len(kv_managers) > 1:
             # We don't support speculative decoding when data parallelism is
@@ -110,15 +109,15 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 " speculative decoding) is not supported when data "
                 "parallelism is enabled."
             )
-        batches = [{} for _ in range(data_parallel_degree)]
-        for context in context_batch:
+        batches = [[] for _ in range(data_parallel_degree)]
+        for i, context in enumerate(context_batch):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
-            replica_idx = kv_managers[0].get_or_recommend_replica(context)
+            replica_idx = i % data_parallel_degree
             # Claim the slot for all kv_managers (eg: main + draft model)
             for kv_manager in self.kv_managers:
                 kv_manager.claim(req_id, replica_idx=replica_idx)
-            batches[replica_idx][req_id] = context
+            batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
         num_steps = self.pipeline_config.max_num_steps
@@ -134,7 +133,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         try:
             while done < len(context_batch):
                 for replica_batch in batches:
-                    for ctx in replica_batch.values():
+                    for ctx in replica_batch:
                         for kv_manager in self.kv_managers:
                             kv_manager.alloc(ctx, num_steps=num_steps)
                 step_outputs = self.execute(inputs)
@@ -146,7 +145,16 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                         # Remove the request from the batch passed to the next
                         # call to execute.
                         replica_idx = batch_to_replica_idx[request_id]
-                        batches[replica_idx].pop(request_id)
+                        replica_batch = batches[replica_idx]
+                        for idx, ctx in enumerate(replica_batch):
+                            if ctx.request_id == request_id:
+                                replica_batch.pop(idx)
+                                break
+                        else:
+                            raise KeyError(
+                                "Request ID not found in replica batch: "
+                                f"{request_id}"
+                            )
 
                         self.release(request_id)
                 yield outputs
@@ -161,5 +169,5 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         finally:
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
-                for request_id in batch:
-                    self.release(request_id)
+                for context in batch:
+                    self.release(context.request_id)

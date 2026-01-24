@@ -10,6 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
@@ -18,6 +24,15 @@ from max.interfaces import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
+from transformers import AutoConfig
+
+from ..config_enums import RepoType
+from ..hf_utils import download_weight_files
+
+if TYPE_CHECKING:
+    from ..model_config import MAXModelConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 def calculate_num_steps(
@@ -96,3 +111,41 @@ def update_context_and_prepare_responses(
         res[context.request_id] = context.to_generation_output()
 
     return res
+
+
+def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
+    # Expand eos tokens if more are provided in pipeline_config
+    if "eos_token_id" not in hf_config:
+        return set([eos_token_id])
+
+    hf_eos_tokens = hf_config.eos_token_id
+    if isinstance(hf_eos_tokens, int):
+        if hf_eos_tokens != eos_token_id:
+            msg = f"eos_token_id provided in huggingface config ({hf_eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
+            logger.warning(msg)
+        return set([hf_eos_tokens])
+    elif isinstance(hf_eos_tokens, list):
+        if eos_token_id in hf_eos_tokens:
+            return set(hf_eos_tokens)
+        else:
+            return set([eos_token_id])
+    else:
+        msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
+        logger.warning(msg)
+        return set([eos_token_id])
+
+
+def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
+    weight_repo = model_config.huggingface_weight_repo
+    if weight_repo.repo_type == RepoType.online:
+        # Download weight files if not existent.
+        return download_weight_files(
+            huggingface_model_id=weight_repo.repo_id,
+            filenames=[str(x) for x in model_config.weight_path],
+            revision=model_config.huggingface_weight_revision,
+            force_download=model_config.force_download,
+        )
+    else:
+        # Use the resolved repo_id (which points to local cache in offline mode)
+        local_path = Path(weight_repo.repo_id)
+        return [local_path / x for x in model_config.weight_path]

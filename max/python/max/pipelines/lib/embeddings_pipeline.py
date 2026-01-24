@@ -38,7 +38,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationRequest,
 )
-from max.nn import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -153,5 +153,4 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
 
     def release(self, request_id: RequestID) -> None:
         # Nothing to release.
-        pass
         pass

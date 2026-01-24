@@ -225,12 +225,12 @@ struct TileScheduler[
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
             num_n_blocks, group_local_block_idx, num_dynamic_dim_blocks
         )
-        var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
-        var n = UInt32(n_block_idx) * UInt32(Self.cta_group_tile_shape[1])
+        var m = m_block_idx * UInt32(Self.tile_shape[0])
+        var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
         if Self.swapAB:
-            n += UInt32(start_idx)
+            n += start_idx
         else:
-            m += UInt32(start_idx)
+            m += start_idx
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -276,7 +276,7 @@ struct TileScheduler[
         var secondary_num_blocks: UInt32 = (
             num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
         )
-        var num_blocks_per_group = UInt32(
+        var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
         var div_num_blocks_per_group = FastDiv[DType.uint32](

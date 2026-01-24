@@ -432,7 +432,7 @@ class TokenBuffer:
     @property
     def active_length(self) -> int:
         """Count of tokens currently scheduled for processing."""
-        return len(self._processing_range)
+        return len(self._processing_range) - self._processing_offset
 
     @property
     def current_position(self) -> int:

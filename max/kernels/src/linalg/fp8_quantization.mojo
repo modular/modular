@@ -43,11 +43,11 @@ from utils.index import Index, IndexList, StaticTuple
 from utils.numerics import get_accum_type, max_finite, min_finite
 
 from .matmul import matmul
-from .matmul.gpu.sm100.warp_specialized_blockwise_fp8 import (
-    sm100_warp_specialized_blockwise_fp8,
+from .matmul.gpu.sm100_structured.blockwise_fp8_matmul import (
+    blockwise_fp8_matmul,
 )
 from .utils import elementwise_epilogue_type
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
 
 
 comptime logger = Logger()
@@ -227,9 +227,9 @@ fn quantize_fp8_kernel[
     with PDL():
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
-            input_vec = input_fn[simd_width, simd_width](
-                Int(row), Int(idx)
-            ).cast[accum_type]()
+            input_vec = input_fn[simd_width, simd_width](row, idx).cast[
+                accum_type
+            ]()
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
         var group_max = block.max[block_size=num_threads, broadcast=True](
@@ -266,9 +266,9 @@ fn quantize_fp8_kernel[
             if use_warp_tiling:
                 pass
             else:
-                input_vec = input_fn[simd_width, simd_width](
-                    Int(row), Int(idx)
-                ).cast[accum_type]()
+                input_vec = input_fn[simd_width, simd_width](row, idx).cast[
+                    accum_type
+                ]()
 
             var output_vec = input_vec * scale_factor_recip
 
@@ -1286,7 +1286,7 @@ fn blockwise_scaled_fp8_with_epilogue[
             if not c.ptr:
                 raise "c must be allocated!"
 
-            sm100_warp_specialized_blockwise_fp8[
+            blockwise_fp8_matmul[
                 transpose_b=transpose_b,
                 config=matmul_config,
             ](
@@ -1326,7 +1326,7 @@ fn blockwise_scaled_fp8_with_epilogue[
                 var m = c.dim[0]()
                 var n = c.dim[1]()
 
-                sm100_warp_specialized_blockwise_fp8[
+                blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     config=matmul_config,
                 ](

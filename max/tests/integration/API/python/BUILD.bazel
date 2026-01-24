@@ -91,7 +91,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_cli.py",
-        "test_use_module_v3.py",
+        "test_use_legacy_module.py",
     ],
     gpu_constraints = [
         "//:has_gpu",
@@ -194,6 +194,26 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_engine_device_graph",
+    srcs = [
+        "test_engine_device_graph.py",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

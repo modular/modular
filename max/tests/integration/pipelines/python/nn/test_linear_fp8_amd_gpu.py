@@ -13,21 +13,21 @@
 """Test Linear layer with FP8 quantization on AMD GPUs."""
 
 import torch
+from max import functional as F
+from max import random
 from max.driver import CPU
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph
-from max.nn import (
+from max.nn.legacy import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Linear,
 )
-from max.nn.float8_config import Float8WeightScaleSpec
+from max.nn.legacy.float8_config import Float8WeightScaleSpec
+from max.tensor import Tensor
 
 
 def test_linear_fp8_amd_conversion_static_scale(

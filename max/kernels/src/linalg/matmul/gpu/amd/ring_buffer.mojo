@@ -25,7 +25,7 @@ Key features:
 
 from gpu import thread_idx, WARP_SIZE
 from layout import Layout
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 from os.atomic import Atomic
 from sys._assembly import inlined_assembly
 from utils import StaticTuple

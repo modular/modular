@@ -62,10 +62,6 @@ for feature in available_features:
     assert not feature.startswith("$"), f"invalid feature: {feature}"
     llvm_config.config.available_features.add(feature)
 
-# Add emit-mojo feature when EMIT_MOJO environment variable is set
-if os.environ.get("EMIT_MOJO"):
-    llvm_config.config.available_features.add("emit-mojo")
-
 
 def _replace_substitution(
     literal_command,  # noqa: ANN001

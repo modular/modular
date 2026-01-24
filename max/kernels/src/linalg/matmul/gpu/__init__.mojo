@@ -50,7 +50,13 @@ from ...utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ...utils_gpu import MatmulConfig, MatmulKernels, _bk_base, select_config
+from ...utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    _bk_base,
+    select_config,
+    _vendor_blas_fallback_disabled,
+)
 from ..vendor.matmul import matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
@@ -134,13 +140,12 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            a_val = a[Int(row), Int(offset + Int(localCol))] if (
+            a_val = a[Int(row), offset + Int(localCol)] if (
                 row < UInt(m) and offset + Int(localCol) < k
             ) else 0.0
         else:
             a_val = (
-                a[Int(row), Int(offset + Int(localCol))] if row
-                < UInt(m) else 0.0
+                a[Int(row), offset + Int(localCol)] if row < UInt(m) else 0.0
             )
         a_shared[localRow * UInt(tile_size) + localCol] = a_val
 
@@ -149,13 +154,12 @@ fn matmul_kernel[
 
         @parameter
         if not full_tile:
-            b_val = b[Int(offset + Int(localRow)), Int(col)] if (
+            b_val = b[offset + Int(localRow), Int(col)] if (
                 col < UInt(n) and offset + Int(localRow) < k
             ) else 0.0
         else:
             b_val = (
-                b[Int(offset + Int(localRow)), Int(col)] if col
-                < UInt(n) else 0.0
+                b[offset + Int(localRow), Int(col)] if col < UInt(n) else 0.0
             )
         b_shared[localRow * UInt(tile_size) + localCol] = b_val
 
@@ -305,7 +309,7 @@ fn _amdgpu_matmul_config_from_block_shape[
 
 
 fn _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    comptime sm_count = Int(GPUInfo.from_name[_accelerator_arch()]().sm_count)
+    comptime sm_count = GPUInfo.from_name[_accelerator_arch()]().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
     comptime len_block_sizes = len(block_sizes_alias)
@@ -624,7 +628,7 @@ fn _matmul_gpu[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
 
-                comptime sm_count = Int(ctx.default_device_info.sm_count)
+                comptime sm_count = ctx.default_device_info.sm_count
                 comptime block_shape_list = _amdgpu_matmul_build_block_shape_list[
                     static_N
                 ]()
@@ -748,7 +752,7 @@ fn _matmul_gpu[
         and c_type in vendor_blas_fallback_dtypes
         and not has_apple_gpu_accelerator()
         # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
-        and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
+        and not _vendor_blas_fallback_disabled()
     ):
         logger.info("Executing: vendor BLAS fallback")
         try:

@@ -14,38 +14,68 @@
 """Tile pipeline for SM100 producer-consumer synchronization.
 
 Provides staged tile storage with producer-consumer barrier synchronization
-for TMA-MMA pipeline coordination.
+for TMA-MMA pipeline coordination. All barrier operations are encapsulated
+in context managers for safety and clarity.
 
-Key abstractions:
-- TilePipeline: Manages A/B tiles across pipeline stages with sync barriers
-- OutputTilePipeline: Manages TMEM accumulator stages for MMA→Epilogue pipeline
+Key Abstractions
+----------------
+- InputTilePipeline[Payload]: Generic pipeline with payload abstraction
+- TilePipeline: Standard pipeline with explicit A/B tile types  
+- OutputTilePipeline: TMEM accumulator stages for MMA→Epilogue pipeline
 
-Usage:
-    var tile_pipeline = TilePipeline[...](storage_ptr, a_tiles, b_tiles)
+Naming Conventions
+------------------
+- *Pipeline: Multi-stage buffer (InputTilePipeline, OutputTilePipeline)
+- *Producer/*Consumer: Role handles (InputProducer, OutputConsumer)
+- acquire(): Context manager to get one pipeline stage
 
-    # Producer (TMA Load warp):
-    with tile_pipeline.producer() as producer:
-        with producer.acquire() as tiles:
-            tiles.expect_bytes(expected_bytes)
-            for j in range(k_group_size):
-                var a_tile, b_tile = tiles.get_tile(j)
-                # TMA load into a_tile, b_tile
-        # Automatically signals completion on exit
+Context Manager Semantics
+-------------------------
+Each `with` block handles barrier synchronization automatically:
 
-    # Consumer (MMA warp):
-    with tile_pipeline.consumer() as consumer:
-        with consumer.acquire() as tiles:
-            for j in range(k_group_size):
-                var a_tile, b_tile = tiles.get_tile(j)
-                # MMA using a_tile, b_tile
-        # Automatically signals completion on exit
+    with producer.acquire() as tiles:   # BLOCKS until consumer releases stage
+        load_tiles(tiles)                # safe to write
+                                         # EXIT: signals producer barrier, advances
+
+    with consumer.acquire() as tiles:   # BLOCKS until producer fills stage
+        use_tiles(tiles)                 # safe to read
+                                         # EXIT: signals consumer barrier, advances
+
+Example: TMA Load Warp (Producer)
+---------------------------------
+    with input_pipeline.producer() as producer:  # producer role for this warp
+        while work_iter.has_work():
+            with work_iter.next() as current:
+                for i in range(num_iters):
+                    with producer.acquire() as tiles:  # waits for consumer
+                        tma_load(tiles.a_tile(), tiles.b_tile())
+        producer.drain()  # wait for all stages consumed before CTA exits
+
+Example: MMA Warp (Consumer + Output Producer)
+----------------------------------------------
+    with mma_ctx:  # TMEM lifecycle
+        while work_iter.has_work():
+            with work_iter.wait_and_advance():  # blocks on CLC response
+                with output_pipeline.producer() as output_stage:  # waits for epilogue
+                    with input_pipeline.consumer() as consumer:
+                        for i in range(num_iters):
+                            with consumer.acquire() as input_tiles:  # waits for TMA
+                                mma(output_stage.tmem, input_tiles)
+
+Example: Epilogue Warp (Output Consumer)
+----------------------------------------
+    with epi_ctx:  # signals TMEM dealloc on exit
+        while work_iter.has_work():
+            with work_iter.next() as current:
+                with output_pipeline.consumer() as output_stage:  # waits for MMA
+                    write_output(output_stage)
 """
 
 from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
-from linalg.structuring import SMemPtr, SMemTileArrayType, SMemArrayType
+from linalg.structuring import SMemPtr, SMemTileArray, SMemArray
 
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
@@ -73,10 +103,10 @@ struct StandardTilePayload[
 ](TilePayload):
     """Tile payload for standard matmul (A and B tiles)."""
 
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
     comptime ATile = Self.ATileArray.Tile
@@ -127,19 +157,19 @@ struct BlockScaledTilePayload[
 ](TilePayload):
     """Tile payload for block-scaled matmul (A, B, SFA, SFB tiles)."""
 
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime SFATileArray = SMemTileArrayType[
+    comptime SFATileArray = SMemTileArray[
         Self.sfa_type,
         Self.sfa_tile_layout,
         Self.num_pipeline_stages,
         alignment=128,
     ]
-    comptime SFBTileArray = SMemTileArrayType[
+    comptime SFBTileArray = SMemTileArray[
         Self.sfb_type,
         Self.sfb_tile_layout,
         Self.num_pipeline_stages,
@@ -212,6 +242,89 @@ struct BlockScaledTilePayload[
         return self.sfb_tiles[stage * k_group_size + k_idx]
 
 
+@register_passable("trivial")
+struct BlockwiseFP8TilePayload[
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    a_tile_layout: Layout,
+    b_tile_layout: Layout,
+    a_scales_tile_layout: Layout,
+    num_pipeline_stages: Int,
+](TilePayload):
+    """Tile payload for blockwise FP8 matmul (A, B, A-scales tiles).
+
+    Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.
+    B-scales are read directly from global memory during the epilogue phase.
+    """
+
+    comptime ATileArray = SMemTileArray[
+        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime BTileArray = SMemTileArray[
+        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    ]
+    comptime AScalesTileArray = SMemTileArray[
+        Self.a_scales_type,
+        Self.a_scales_tile_layout,
+        Self.num_pipeline_stages,
+        alignment=128,
+    ]
+    comptime ATile = Self.ATileArray.Tile
+    comptime BTile = Self.BTileArray.Tile
+    comptime AScalesTile = Self.AScalesTileArray.Tile
+
+    var a_tiles: Self.ATileArray
+    var b_tiles: Self.BTileArray
+    var a_scales_tiles: Self.AScalesTileArray
+
+    @always_inline
+    fn __init__(
+        out self,
+        a_tiles: Self.ATileArray,
+        b_tiles: Self.BTileArray,
+        a_scales_tiles: Self.AScalesTileArray,
+    ):
+        self.a_tiles = a_tiles
+        self.b_tiles = b_tiles
+        self.a_scales_tiles = a_scales_tiles
+
+    @always_inline
+    fn get_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Tuple[
+        Self.ATile, Self.BTile, Self.AScalesTile
+    ]:
+        """Get A, B, A-scales tiles at the specified stage and k-group index."""
+        var idx = stage * k_group_size + k_idx
+        return (
+            self.a_tiles[idx],
+            self.b_tiles[idx],
+            self.a_scales_tiles[idx],
+        )
+
+    @always_inline
+    fn get_a_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
+        """Get A tile at the specified stage and k-group index."""
+        return self.a_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_b_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
+        """Get B tile at the specified stage and k-group index."""
+        return self.b_tiles[stage * k_group_size + k_idx]
+
+    @always_inline
+    fn get_a_scales_tile[
+        k_group_size: Int
+    ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
+        """Get A-scales tile at the specified stage and k-group index."""
+        return self.a_scales_tiles[stage * k_group_size + k_idx]
+
+
 # ============================================================================
 # InputTilePipeline - Generic pipeline parameterized by payload type
 # ============================================================================
@@ -230,7 +343,7 @@ struct InputTilePipeline[
     """
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
-    comptime BarrierArray = SMemArrayType[
+    comptime BarrierArray = SMemArray[
         SharedMemBarrier, Self.num_group_stages * 2
     ]
 
@@ -297,20 +410,20 @@ struct InputTilePipeline[
     @always_inline
     fn producer[
         mut_origin: MutOrigin
-    ](ref [mut_origin]self) -> TileProducer[
+    ](ref [mut_origin]self) -> InputProducer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
         """Get producer view for TMA Load warp."""
-        return TileProducer(pipeline_ptr=Pointer(to=self))
+        return InputProducer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
     fn consumer[
         mut_origin: MutOrigin
-    ](ref [mut_origin]self) -> TileConsumer[
+    ](ref [mut_origin]self) -> InputConsumer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
         """Get consumer view for MMA warp."""
-        return TileConsumer(pipeline_ptr=Pointer(to=self))
+        return InputConsumer(pipeline_ptr=Pointer(to=self))
 
 
 # ============================================================================
@@ -428,13 +541,13 @@ struct InputConsumerStage[
 
 
 # ============================================================================
-# TileProducer/TileConsumer - Wrapper types with acquire()
+# InputProducer/InputConsumer - Role handles with acquire() for InputTilePipeline
 # ============================================================================
 
 
 @fieldwise_init
 @register_passable("trivial")
-struct TileProducer[
+struct InputProducer[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
@@ -480,7 +593,7 @@ struct TileProducer[
 
 @fieldwise_init
 @register_passable("trivial")
-struct TileConsumer[
+struct InputConsumer[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
@@ -548,10 +661,10 @@ struct TilePipeline[
     """
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
-    comptime ATileArray = SMemTileArrayType[
+    comptime ATileArray = SMemTileArray[
         Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
-    comptime BTileArray = SMemTileArrayType[
+    comptime BTileArray = SMemTileArray[
         Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
     ]
     comptime ATile = Self.ATileArray.Tile
@@ -571,7 +684,7 @@ struct TilePipeline[
         var pipeline = Self.Pipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
-    comptime BarrierArray = SMemArrayType[
+    comptime BarrierArray = SMemArray[
         SharedMemBarrier, Self.num_group_stages * 2
     ]
 
@@ -590,7 +703,7 @@ struct TilePipeline[
     @always_inline
     fn producer[
         origin: MutOrigin
-    ](ref [origin]self) -> InputProducer[
+    ](ref [origin]self) -> StandardTileProducer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -601,12 +714,12 @@ struct TilePipeline[
         Self.k_group_size,
     ]:
         """Get producer view for TMA Load warp."""
-        return InputProducer(pipeline_ptr=Pointer(to=self))
+        return StandardTileProducer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
     fn consumer[
         origin: MutOrigin
-    ](ref [origin]self) -> InputConsumer[
+    ](ref [origin]self) -> StandardTileConsumer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -617,7 +730,7 @@ struct TilePipeline[
         Self.k_group_size,
     ]:
         """Get consumer view for MMA warp."""
-        return InputConsumer(pipeline_ptr=Pointer(to=self))
+        return StandardTileConsumer(pipeline_ptr=Pointer(to=self))
 
     @always_inline
     fn _acquire_producer_stage(
@@ -675,7 +788,7 @@ struct TilePipeline[
 
 
 @register_passable("trivial")
-struct ProducerStage[
+struct StandardProducerStage[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -764,7 +877,7 @@ struct ProducerStage[
 
 
 @register_passable("trivial")
-struct ConsumerStage[
+struct StandardConsumerStage[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -849,7 +962,7 @@ struct ConsumerStage[
 
 @fieldwise_init
 @register_passable("trivial")
-struct InputProducer[
+struct StandardTileProducer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -859,7 +972,7 @@ struct InputProducer[
     num_group_stages: Int,
     k_group_size: Int,
 ]:
-    """Producer view for TMA Load warp (input pipeline)."""
+    """Producer view for TMA Load warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
@@ -893,7 +1006,7 @@ struct InputProducer[
     @always_inline
     fn acquire(
         mut self,
-    ) -> ProducerStage[
+    ) -> StandardProducerStage[
         Self.origin,
         Self.a_type,
         Self.b_type,
@@ -907,7 +1020,7 @@ struct InputProducer[
         var stage, barrier, a_tiles, b_tiles = (
             self.pipeline_ptr[]._acquire_producer_stage()
         )
-        return ProducerStage(
+        return StandardProducerStage(
             pipeline_ptr=self.pipeline_ptr,
             stage=stage,
             barrier=barrier,
@@ -918,7 +1031,7 @@ struct InputProducer[
 
 @fieldwise_init
 @register_passable("trivial")
-struct InputConsumer[
+struct StandardTileConsumer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
@@ -928,7 +1041,7 @@ struct InputConsumer[
     num_group_stages: Int,
     k_group_size: Int,
 ]:
-    """Consumer view for MMA warp (input pipeline)."""
+    """Consumer view for MMA warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
@@ -953,7 +1066,7 @@ struct InputConsumer[
     @always_inline
     fn acquire(
         mut self,
-    ) -> ConsumerStage[
+    ) -> StandardConsumerStage[
         Self.origin,
         Self.a_type,
         Self.b_type,
@@ -967,7 +1080,7 @@ struct InputConsumer[
         var stage, mbar, a_tiles, b_tiles = (
             self.pipeline_ptr[]._acquire_consumer_stage()
         )
-        return ConsumerStage(
+        return StandardConsumerStage(
             pipeline_ptr=self.pipeline_ptr,
             stage=stage,
             mbar=mbar,
@@ -1036,7 +1149,7 @@ struct OutputTilePipeline[
     """Pipeline for MMA→Epilogue TMEM stage synchronization."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
-    comptime BarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages * 2]
+    comptime BarrierArray = SMemArray[SharedMemBarrier, Self.num_stages * 2]
     comptime Tmem = TmemAllocation[Self.cta_group]
     comptime Stage = OutputStage[
         Self.num_stages, Self.stage_stride_cols, Self.cta_group
@@ -1136,6 +1249,61 @@ struct OutputTilePipeline[
         """Get underlying pipeline (used during barrier initialization)."""
         return self.pipeline
 
+    @always_inline
+    fn per_k[
+        origin: MutOrigin, //
+    ](ref [origin]self) -> OutputKPipeline[
+        origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]:
+        """Get per-K-iteration view for kernels with per-K signaling.
+
+        Unlike producer()/consumer() which signal once per tile (after all K
+        iterations), this view signals after each K iteration. Use for kernels
+        with per-K accumulation patterns (e.g., blockwise FP8).
+
+        Returns:
+            OutputKPipeline view that provides produce()/consume() context
+            managers for per-K-iteration barrier signaling.
+        """
+        return OutputKPipeline(Pointer(to=self))
+
+    @always_inline
+    fn per_k_epilogue[
+        output_origin: MutOrigin,
+        input_origin: MutOrigin,
+        num_input_stages: Int,
+    ](
+        ref [output_origin]self,
+        ref [input_origin]input_pipeline: ProducerConsumerPipeline[
+            num_input_stages
+        ],
+    ) -> EpilogueKContext[
+        output_origin,
+        input_origin,
+        Self.num_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        num_input_stages,
+    ]:
+        """Get combined per-K epilogue context for blockwise FP8.
+
+        Bundles output pipeline (MMA->Epilogue sync) and input pipeline
+        (A-scales consumption) into a single context manager.
+
+        Example:
+            for k_iter in range(num_iters):
+                with output_pipeline.per_k_epilogue(input_pipeline) as stage:
+                    accum.promote(stage, ...)
+                # Both pipelines signaled automatically
+
+        Args:
+            input_pipeline: The input pipeline for A-scales consumption.
+
+        Returns:
+            EpilogueKContext context manager that handles both pipelines.
+        """
+        return EpilogueKContext(Pointer(to=self), Pointer(to=input_pipeline))
+
 
 @register_passable("trivial")
 struct OutputProducer[
@@ -1210,3 +1378,341 @@ struct OutputConsumer[
     @always_inline
     fn __exit__(mut self):
         self.pipeline_ptr[].release_from_epilogue()
+
+
+# =============================================================================
+# Per-K Output Pipeline Views
+# =============================================================================
+# These types provide per-K-iteration signaling for kernels that need to
+# signal after each K iteration rather than once per tile (e.g., blockwise FP8).
+
+
+@register_passable("trivial")
+struct OutputKPipeline[
+    origin: MutOrigin,
+    num_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+]:
+    """Per-K-iteration view of OutputTilePipeline.
+
+    Unlike standard producer()/consumer() which signal once per tile (after
+    all K iterations), this view signals after each K iteration. Use for
+    kernels with per-K accumulation patterns (e.g., blockwise FP8).
+
+    Example (MMA warp):
+        for i in range(num_iters):
+            with mma_ctx.output_pipeline.per_k().produce() as stage:
+                mma(stage.tmem, ...)
+            # __exit__ signals mma_arrive for this K iteration
+
+    Example (Epilogue warp):
+        for k_iter in range(num_iters):
+            with epi_ctx.output_pipeline.per_k().consume() as stage:
+                promote(stage.tmem, ...)
+            # __exit__ signals consumer_step for this K iteration
+    """
+
+    comptime TilePipelineType = OutputTilePipeline[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+
+    var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+
+    @always_inline
+    fn __init__(
+        out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    ):
+        self.pipeline_ptr = pipeline_ptr
+
+    @always_inline
+    fn produce(
+        self,
+    ) -> MmaKStage[
+        Self.origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]:
+        """Get MMA stage context manager for one K iteration.
+
+        Returns:
+            Context manager that acquires stage on enter and signals
+            mma_arrive on exit.
+        """
+        return MmaKStage(self.pipeline_ptr)
+
+    @always_inline
+    fn consume(
+        self,
+    ) -> PerKConsumerStage[
+        Self.origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]:
+        """Get consumer context manager for one K iteration.
+
+        Returns:
+            Context manager that waits for MMA on enter and signals
+            consumer_step on exit.
+        """
+        return PerKConsumerStage(self.pipeline_ptr)
+
+
+@register_passable("trivial")
+struct MmaKStage[
+    origin: MutOrigin,
+    num_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+]:
+    """Per-K stage context for MMA warp in blockwise FP8.
+
+    __enter__: Acquires stage, waits for epilogue to release previous stage
+    __exit__: Signals mma_arrive to notify epilogue, advances producer stage
+    """
+
+    comptime TilePipelineType = OutputTilePipeline[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+
+    var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    var stage: Self.Stage
+
+    @always_inline
+    fn __init__(
+        out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        # Placeholder stage - set properly in __enter__
+        var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        self.stage = Self.Stage(
+            0,
+            placeholder_tmem,
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+        )
+
+    @always_inline
+    fn __enter__(mut self) -> Self.Stage:
+        self.stage = self.pipeline_ptr[].acquire_for_mma()
+        return self.stage
+
+    @always_inline
+    fn __exit__(mut self):
+        self.pipeline_ptr[].release_from_mma(self.stage)
+
+
+@register_passable("trivial")
+struct PerKConsumerStage[
+    origin: MutOrigin,
+    num_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+]:
+    """Context manager for per-K epilogue consumption.
+
+    __enter__: Acquires stage, waits for MMA to complete this K iteration
+    __exit__: Signals consumer barrier to release stage for MMA reuse
+
+    IMPORTANT: Unlike standard per-tile consumption, per-K consumption must
+    signal the consumer barrier explicitly. The MMA warp waits on this barrier
+    before each K iteration, so we must signal after each K iteration.
+    """
+
+    comptime TilePipelineType = OutputTilePipeline[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+
+    var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    var stage: Self.Stage
+
+    @always_inline
+    fn __init__(
+        out self, pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        # Placeholder stage - set properly in __enter__
+        var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        self.stage = Self.Stage(
+            0,
+            placeholder_tmem,
+            ProducerConsumerPipeline[Self.num_stages](MbarPtr()),
+        )
+
+    @always_inline
+    fn __enter__(mut self) -> Self.Stage:
+        self.stage = self.pipeline_ptr[].acquire_for_epilogue()
+        return self.stage
+
+    @always_inline
+    fn __exit__(mut self):
+        # Signal the consumer barrier to tell MMA we're done with this stage.
+        # This is critical for per-K synchronization - MMA waits on this
+        # barrier before each K iteration.
+        from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+
+        @parameter
+        if Self.cta_group == 1:
+            _ = mbarrier_arrive(
+                self.pipeline_ptr[].pipeline.consumer_mbar(self.stage.index)
+            )
+        else:
+            umma_arrive_leader_cta(
+                self.pipeline_ptr[].pipeline.consumer_mbar(self.stage.index)
+            )
+
+        self.pipeline_ptr[].release_from_epilogue()
+
+
+# =============================================================================
+# Epilogue Per-K Stage (for blockwise FP8)
+# =============================================================================
+
+
+@register_passable("trivial")
+struct EpilogueKStage[
+    num_output_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+    num_input_stages: Int,
+]:
+    """Per-K stage for epilogue warp in blockwise FP8.
+
+    Returned from `EpilogueKContext.__enter__()`. Bundles:
+    - output_stage: TMEM access (offset for reading MMA results)
+    - input_stage_index: Current A-scales stage
+    - input_pipeline: For signaling A-scales consumption
+    """
+
+    comptime OutputStageType = OutputStage[
+        Self.num_output_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime InputPipelineType = ProducerConsumerPipeline[Self.num_input_stages]
+
+    var output_stage: Self.OutputStageType
+    var input_stage_index: UInt32
+    var input_pipeline: Self.InputPipelineType
+
+    @always_inline
+    fn __init__(
+        out self,
+        output_stage: Self.OutputStageType,
+        input_stage_index: UInt32,
+        input_pipeline: Self.InputPipelineType,
+    ):
+        self.output_stage = output_stage
+        self.input_stage_index = input_stage_index
+        self.input_pipeline = input_pipeline
+
+    @always_inline
+    fn arrive_input(self):
+        """Arrive on the input pipeline's consumer barrier.
+
+        Use with lane-guarded patterns:
+            if lane_id() < cluster_size:
+                epi_stage.arrive_input()
+        """
+        _ = self.input_pipeline.consumer_mbar(self.input_stage_index)[
+            0
+        ].arrive()
+
+
+# =============================================================================
+# Epilogue Per-K Context Manager (for blockwise FP8)
+# =============================================================================
+
+
+@register_passable("trivial")
+struct EpilogueKContext[
+    origin: MutOrigin,
+    input_origin: MutOrigin,
+    num_output_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+    num_input_stages: Int,
+]:
+    """Per-K context manager for epilogue warp in blockwise FP8.
+
+    Bundles output pipeline (MMA→Epilogue sync) and input pipeline (A-scales)
+    into a single context manager for clean per-K iteration handling.
+
+    Example usage:
+        for k_iter in range(num_iters):
+            with epi_ctx.per_k_stage(input_pipeline) as epi_stage:
+                accum.promote(epi_stage, ...)
+            # __exit__ signals BOTH pipelines
+
+    __enter__: Waits for MMA to complete this K iteration, returns EpilogueKStage
+    __exit__: Signals both output consumer barrier AND input consumer_step
+    """
+
+    comptime OutputPipelineType = OutputTilePipeline[
+        Self.num_output_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime OutputStageType = OutputStage[
+        Self.num_output_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime InputPipelineType = ProducerConsumerPipeline[Self.num_input_stages]
+
+    # Combined stage type returned from __enter__
+    comptime CombinedStageType = EpilogueKStage[
+        Self.num_output_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        Self.num_input_stages,
+    ]
+
+    var output_pipeline_ptr: Pointer[Self.OutputPipelineType, Self.origin]
+    var input_pipeline_ptr: Pointer[Self.InputPipelineType, Self.input_origin]
+    var output_stage: Self.OutputStageType
+    var input_stage_index: UInt32
+
+    @always_inline
+    fn __init__(
+        out self,
+        output_pipeline_ptr: Pointer[Self.OutputPipelineType, Self.origin],
+        input_pipeline_ptr: Pointer[Self.InputPipelineType, Self.input_origin],
+    ):
+        self.output_pipeline_ptr = output_pipeline_ptr
+        self.input_pipeline_ptr = input_pipeline_ptr
+        self.input_stage_index = 0
+        # Placeholder stage - set properly in __enter__
+        var placeholder_tmem = Self.OutputStageType.Tmem(0, 0)
+        self.output_stage = Self.OutputStageType(
+            0,
+            placeholder_tmem,
+            ProducerConsumerPipeline[Self.num_output_stages](MbarPtr()),
+        )
+
+    @always_inline
+    fn __enter__(mut self) -> Self.CombinedStageType:
+        self.output_stage = self.output_pipeline_ptr[].acquire_for_epilogue()
+        self.input_stage_index = self.input_pipeline_ptr[].consumer_stage()
+        return Self.CombinedStageType(
+            self.output_stage, self.input_stage_index, self.input_pipeline_ptr[]
+        )
+
+    @always_inline
+    fn __exit__(mut self):
+        # Signal input pipeline consumer_step (for A-scales consumption)
+        self.input_pipeline_ptr[].consumer_step()
+
+        # Signal output pipeline consumer barrier (for MMA synchronization)
+        from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+
+        @parameter
+        if Self.cta_group == 1:
+            _ = mbarrier_arrive(
+                self.output_pipeline_ptr[].pipeline.consumer_mbar(
+                    self.output_stage.index
+                )
+            )
+        else:
+            umma_arrive_leader_cta(
+                self.output_pipeline_ptr[].pipeline.consumer_mbar(
+                    self.output_stage.index
+                )
+            )
+
+        self.output_pipeline_ptr[].release_from_epilogue()

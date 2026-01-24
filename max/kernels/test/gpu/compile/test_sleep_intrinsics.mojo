@@ -27,11 +27,6 @@ fn _verify_sleep_intrinsics_nvidia(asm: StringSlice) raises -> None:
     assert_true("nanosleep.u32" in asm)
 
 
-@always_inline
-fn _verify_sleep_intrinsics_mi300x(asm: StringSlice) raises -> None:
-    assert_true("s_sleep" in asm)
-
-
 def test_sleep_intrinsics_sm80():
     var asm = _compile_code[
         sleep_intrinsics, target = get_gpu_target["sm_80"]()
@@ -46,14 +41,12 @@ def test_sleep_intrinsics_sm90():
     _verify_sleep_intrinsics_nvidia(asm)
 
 
-def test_sleep_intrinsics_mi300x():
-    var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["mi300x"]()
-    ]().asm
-    _verify_sleep_intrinsics_mi300x(asm)
+# Note: AMD GPU sleep test removed because time.sleep() is not supported on
+# AMD GPUs. The s_sleep instruction only accepts values 0-15 and sleeps for
+# a hardware-dependent number of cycles, making accurate wall-clock sleep
+# impossible.
 
 
 def main():
     test_sleep_intrinsics_sm80()
     test_sleep_intrinsics_sm90()
-    test_sleep_intrinsics_mi300x()

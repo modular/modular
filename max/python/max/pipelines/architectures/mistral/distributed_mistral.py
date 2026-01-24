@@ -18,17 +18,16 @@ from __future__ import annotations
 import functools
 import logging
 
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
+from max.nn.legacy.attention import TensorParallelAttentionWithRope
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    RMSNorm,
-    RotaryEmbedding,
-    TensorParallelAttentionWithRope,
-    VocabParallelEmbedding,
 )
-from max.nn.kv_cache import KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 

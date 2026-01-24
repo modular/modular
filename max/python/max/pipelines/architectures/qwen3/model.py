@@ -21,8 +21,8 @@ from max.driver import Buffer
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Qwen3Config

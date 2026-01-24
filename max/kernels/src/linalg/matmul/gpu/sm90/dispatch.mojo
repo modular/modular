@@ -25,7 +25,7 @@ from logger import Logger
 from utils.index import Index, IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from ....utils_gpu import MatmulConfig
+from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
@@ -123,7 +123,7 @@ fn matmul_dispatch_sm90[
         return DISPATCH_MISS
 
     @parameter
-    if env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]():
+    if _vendor_blas_fallback_disabled():
         if _dispatch():
             return DISPATCH_HIT
         else:

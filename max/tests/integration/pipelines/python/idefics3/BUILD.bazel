@@ -128,14 +128,11 @@ modular_py_library(
     name = "torch_utils",
     testonly = True,
     srcs = ["torch_utils.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/tests/integration/pipelines/python/test_common",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("requests"),
+        "//max/tests/integration/pipelines/python/test_common:storage",
+        "//max/tests/integration/pipelines/python/test_common:test_data",
+        "//max/tests/integration/pipelines/python/test_common:torch_utils",
         requirement("torch"),
-        requirement("torchvision"),
         requirement("transformers"),
     ],
 )

@@ -28,7 +28,6 @@ from max.driver import Buffer, load_devices
 from max.graph import DeviceRef
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
-    BatchLogitsProcessor,
     Pipeline,
     PipelineOutputsDict,
     PipelineTokenizer,
@@ -38,17 +37,20 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.kv_cache import KVCacheInputsSequence
+from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
-from .utils import calculate_num_steps, update_context_and_prepare_responses
+from .utils import (
+    calculate_num_steps,
+    get_eos_tokens,
+    get_weight_paths,
+    update_context_and_prepare_responses,
+)
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
 
-from ..config_enums import RepoType
-from ..hf_utils import download_weight_files
 from ..interfaces import PipelineModel
 from ..interfaces.generate import GenerateMixin
 from ..sampling import (
@@ -99,38 +101,14 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._devices = load_devices(pipeline_config.model.device_specs)
-        self._weight_adapters = weight_adapters
+
+        model_config = pipeline_config.model
+        huggingface_config = model_config.huggingface_config
+
+        self._devices = load_devices(model_config.device_specs)
         self._tokenizer = tokenizer
 
-        # Expand eos tokens if more are provided in pipeline_config
-        if "eos_token_id" in self._pipeline_config.model.huggingface_config:
-            eos_tokens = (
-                self._pipeline_config.model.huggingface_config.eos_token_id
-            )
-            if isinstance(eos_tokens, int):
-                if eos_tokens != eos_token_id:
-                    msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-                    logger.warning(msg)
-
-                self._eos_token_id = set([eos_tokens])
-            elif isinstance(eos_tokens, list):
-                if eos_token_id in eos_tokens:
-                    self._eos_token_id = set(eos_tokens)
-                else:
-                    self._eos_token_id = set([eos_token_id])
-            else:
-                msg = f"eos_token_id in huggingface_config is neither int or list: {eos_tokens}"
-                logger.warning(msg)
-                self._eos_token_id = set([eos_token_id])
-
-        else:
-            self._eos_token_id = set([eos_token_id])
-
-        if pipeline_config.sampling.enable_structured_output:
-            raise ValueError(
-                "Structured output is not supported with overlap pipeline"
-            )
+        self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
         # Initialize Session.
         from max.engine import InferenceSession  # local import to avoid cycles
@@ -142,34 +120,11 @@ class OverlapTextGenerationPipeline(
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not self._pipeline_config.model.quantization_encoding:
+        if not model_config.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weights repo id (falls back to model_path when unset).
-        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
-
-        weight_paths: list[Path] = []
-        if (
-            self._pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
-        ):
-            # Download weight files if not existent.
-            weight_paths = download_weight_files(
-                huggingface_model_id=weight_model_id,
-                filenames=[
-                    str(x) for x in self._pipeline_config.model.weight_path
-                ],
-                revision=self._pipeline_config.model.huggingface_weight_revision,
-                force_download=self._pipeline_config.model.force_download,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            local_path = Path(
-                self._pipeline_config.model.huggingface_weight_repo.repo_id
-            )
-            weight_paths = [
-                local_path / x for x in self._pipeline_config.model.weight_path
-            ]
+        weight_paths: list[Path] = get_weight_paths(model_config)
 
         # late imports to minimize header deps
         from max.graph.weights import load_weights as _load_weights
@@ -178,14 +133,12 @@ class OverlapTextGenerationPipeline(
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model.huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
+            huggingface_config=huggingface_config,
+            encoding=model_config.quantization_encoding,
             devices=self._devices,
-            kv_cache_config=self._pipeline_config.model.kv_cache,
+            kv_cache_config=model_config.kv_cache,
             weights=_load_weights(weight_paths),
-            adapter=self._weight_adapters.get(
-                _weights_format(weight_paths), None
-            ),
+            adapter=weight_adapters.get(_weights_format(weight_paths)),
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
@@ -225,7 +178,7 @@ class OverlapTextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[
         Any,
@@ -238,7 +191,7 @@ class OverlapTextGenerationPipeline(
         ``num_steps`` per context, and builds initial model inputs.
 
         Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
+            batches: Per-replica list of contexts.
             num_steps: Desired number of steps to run.
 
         Returns:
@@ -247,29 +200,20 @@ class OverlapTextGenerationPipeline(
                 - int: The clamped number of steps to run.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
-        for replica_idx, replica_batch in enumerate(batches):
-            for request_id, context in replica_batch.items():
-                if not self._pipeline_model.kv_manager.contains(request_id):
-                    self._pipeline_model.kv_manager.claim(
-                        request_id, replica_idx=replica_idx
-                    )
-
+        for replica_batch in batches:
+            for context in replica_batch:
                 # Update num_steps.
                 num_steps = calculate_num_steps(
                     context, num_steps, self._pipeline_model.max_seq_len
                 )
 
         # Retrieve the KV Cache Inputs.
-        flat_batch = [
-            context for batch in batches for context in batch.values()
-        ]
+        flat_batch = [context for batch in batches for context in batch]
         kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
+            batches, num_steps
         )
 
-        replica_batches = [
-            [context for context in batch.values()] for batch in batches
-        ]
+        replica_batches = batches
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,
@@ -294,6 +238,11 @@ class OverlapTextGenerationPipeline(
                 "Log probabilities are not supported with overlap pipeline"
             )
 
+        if inputs.num_steps > 1:
+            raise ValueError(
+                "Max num steps > 1 is not supported with the Overlap scheduler."
+            )
+
         device0 = self._devices[0]
         pinned = not device0.is_host
         # Prepare the batch.
@@ -301,86 +250,48 @@ class OverlapTextGenerationPipeline(
             inputs.batches, inputs.num_steps
         )
 
-        batch_processors: list[BatchLogitsProcessor] = []
-        if len(flat_batch) > 0:
-            with Tracer("FusedSamplingProcessor"):
-                sampling_processor = FusedSamplingProcessor(
-                    sampler=self._sampler,
-                    pipeline_config=self._pipeline_config,
-                    context_batch=flat_batch,
-                    num_steps=num_steps,
-                    device=device0,
+        with Tracer("FusedSamplingProcessor"):
+            sampling_processor = FusedSamplingProcessor(
+                sampler=self._sampler,
+                pipeline_config=self._pipeline_config,
+                context_batch=flat_batch,
+                num_steps=num_steps,
+                device=device0,
+            )
+
+        with Tracer("pipeline_model.execute"):
+            # Execute the model and get next tokens.
+            try:
+                model_outputs = self._pipeline_model.execute(
+                    model_inputs=model_inputs
                 )
+            except Exception:
+                batch_size = len(flat_batch)
+                cache_tokens = sum(
+                    ctx.tokens.processed_length for ctx in flat_batch
+                )
+                input_tokens = sum(
+                    ctx.tokens.active_length for ctx in flat_batch
+                )
+                logger.error(
+                    "Encountered an exception while executing batch: "
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                )
+                raise  # re-raise the original exception
+        assert model_outputs.logit_offsets is None
 
-            batch_processors.append(sampling_processor)
-
-        curr_step_inputs = model_inputs
-        for i in range(num_steps):
-            with Tracer(f"multistep_execution_loop_step_{i}"):
-                # Execute the model and get next tokens.
-                try:
-                    model_outputs = self._pipeline_model.execute(
-                        model_inputs=curr_step_inputs
-                    )
-                except Exception:
-                    batch_size = len(flat_batch)
-                    cache_tokens = sum(
-                        ctx.tokens.processed_length for ctx in flat_batch
-                    )
-                    input_tokens = sum(
-                        ctx.tokens.active_length for ctx in flat_batch
-                    )
-                    logger.error(
-                        "Encountered an exception while executing batch: "
-                        f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
-                    )
-                    raise  # re-raise the original exception
-
-            assert model_outputs.logit_offsets is None
-
-            # Continue and execute the next step if the batch.
-            if len(flat_batch) == 0:
-                continue
-
-            # Sample next token.
-            with Tracer("sample_next_token_step_{i}"):
+        # Sample next token unless this is an empty batch.
+        # Empty batches still need to be run for deepseek DP / EP barrier.
+        if len(flat_batch) > 0:
+            with Tracer("sample_next_token"):
                 apply_logits_processors(
                     context_batch=flat_batch,
                     batch_logits=model_outputs.logits,
                     batch_logit_offsets=model_outputs.logit_offsets,
-                    batch_processors=batch_processors,
+                    batch_processors=[sampling_processor],
                 )
                 new_tokens = sampling_processor.new_tokens
                 assert new_tokens is not None
-
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
-
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
-                    curr_step_inputs,
-                )
-            )
-            with Tracer(f"prepare_next_token_inputs_{i}"):
-                curr_step_inputs = (
-                    self._pipeline_model.prepare_next_token_inputs(
-                        new_tokens, curr_step_inputs
-                    )
-                )
-
-        # Return early if the batch is empty.
-        if len(flat_batch) == 0:
-            return {}
 
         # Do the copy to host for each token generated.
         with Tracer("D2H generated_tokens"):
@@ -415,5 +326,10 @@ class OverlapTextGenerationPipeline(
         return res
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

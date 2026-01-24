@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -25,7 +25,7 @@ from . import weight_adapters
 from .model import DeepseekV3NextNModel
 
 deepseekV3_nextn_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLMNextN",
+    name="DeepseekV3ForCausalLMNextN_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "SGLang/DeepSeek-V3-NextN",
