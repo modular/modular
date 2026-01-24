@@ -111,10 +111,10 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 "parallelism is enabled."
             )
         batches = [[] for _ in range(data_parallel_degree)]
-        for context in context_batch:
+        for i, context in enumerate(context_batch):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
-            replica_idx = kv_managers[0].get_or_recommend_replica(context)
+            replica_idx = i % data_parallel_degree
             # Claim the slot for all kv_managers (eg: main + draft model)
             for kv_manager in self.kv_managers:
                 kv_manager.claim(req_id, replica_idx=replica_idx)

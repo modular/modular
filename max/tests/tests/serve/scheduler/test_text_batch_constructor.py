@@ -83,7 +83,6 @@ def create_mock_paged_cache() -> Mock:
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
-    cache.get_or_recommend_replica = Mock(return_value=0)
     cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.94)
 
     return cache

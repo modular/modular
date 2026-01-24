@@ -83,7 +83,7 @@ def test_claim() -> None:
     for i in range(max_batch_size * data_parallel_degree):
         # TokenBuffer requires at least one token, so start from 1
         context = create_text_context(np.empty(max(i, 1)))
-        replica_idx = kv_manager.get_or_recommend_replica(context)
+        replica_idx = i % data_parallel_degree
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
@@ -93,10 +93,6 @@ def test_claim() -> None:
     replica_idx, context = batch[0]
     kv_manager.release(context.request_id)
     assert not kv_manager.contains(context.request_id)
-
-    # Check that the KV Manager now recommends the same replica
-    new_replica_idx = kv_manager.get_or_recommend_replica(new_context)
-    assert new_replica_idx == replica_idx
 
     # Check that the new context can be claimed using the released slot.
     kv_manager.claim(new_context.request_id, replica_idx=replica_idx)
@@ -115,9 +111,9 @@ def test_step() -> None:
     batches_by_replica: list[list[TextGenerationContext]] = [
         [] for _ in range(kv_manager.num_replicas)
     ]
-    for prompt_len in prompt_lens:
+    for i, prompt_len in enumerate(prompt_lens):
         context = create_text_context(np.empty(prompt_len))
-        replica_idx = kv_manager.get_or_recommend_replica(context)
+        replica_idx = i % data_parallel_degree
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
         batch.append(context)
         batches_by_replica[replica_idx].append(context)

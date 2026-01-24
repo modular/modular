@@ -392,7 +392,9 @@ class TextBatchConstructor:
             token_budgets=token_budgets,
         )
 
-    def get_next_replica_idx(self, use_paged_cache_counts: bool = False) -> int:
+    def get_next_replica_idx(
+        self, external_requests_per_replica: list[int] | None = None
+    ) -> int:
         """Returns the next replica index to assign the request to.
 
         Uses load-based assignment by selecting the replica with the fewest
@@ -401,35 +403,21 @@ class TextBatchConstructor:
         different rates.
 
         Args:
-            use_paged_cache_counts: If True, count requests claimed in paged cache
-                (used by decode scheduler before enqueue). If False, count requests
-                in CE/TG queues (used during enqueue_new_request). These sources
-                overlap once requests are enqueued, so only one should be used.
+            external_requests_per_replica: The number of requests per replica
+                that are not managed by the batch constructor.
 
         Returns:
             The replica index that should receive the next request.
         """
-        if use_paged_cache_counts and self.paged_cache is None:
-            raise ValueError(
-                "use_paged_cache_counts=True requires a paged_cache, but paged_cache is None"
-            )
+        if external_requests_per_replica is None:
+            external_requests_per_replica = [0] * self.num_replicas
 
-        if use_paged_cache_counts:
-            # This is already verified to be true above. Assign to local variable for mypy.
-            paged_cache = self.paged_cache
-            assert paged_cache is not None
-            replica_idx = min(
-                range(self.num_replicas),
-                key=lambda idx: paged_cache.get_replica_request_count(idx),
-            )
-        else:
-            replica_idx = min(
-                range(self.num_replicas),
-                key=lambda idx: (
-                    len(self.replicas[idx].ce_reqs)
-                    + len(self.replicas[idx].tg_reqs)
-                ),
-            )
+        replica_idx = min(
+            range(self.num_replicas),
+            key=lambda idx: len(self.replicas[idx].ce_reqs)
+            + len(self.replicas[idx].tg_reqs)
+            + external_requests_per_replica[idx],
+        )
         return replica_idx
 
     def enqueue_new_request(

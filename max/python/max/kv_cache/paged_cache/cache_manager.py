@@ -132,38 +132,6 @@ class PagedKVCacheManager:
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, request_id: RequestID) -> int:
-        return self._request_to_replica_idx[request_id]
-
-    def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Return idx of the replica that should be used for the given request."""
-        if context.request_id in self._request_to_replica_idx:
-            return self._request_to_replica_idx[context.request_id]
-
-        # Choose the replica with the fewest requests.
-        replica_idx = min(
-            range(len(self._request_count_per_replica)),
-            key=self._request_count_per_replica.__getitem__,
-        )
-        return replica_idx
-
-    def get_replica_request_count(self, replica_idx: int) -> int:
-        """Get the number of active requests for a replica.
-
-        This count includes all requests that have been claimed but not yet released.
-        Used by schedulers to implement load-based replica assignment.
-
-        Args:
-            replica_idx: The replica index to query (0 to num_replicas-1)
-
-        Returns:
-            Number of active requests on the specified replica
-
-        Raises:
-            IndexError: If replica_idx is out of range
-        """
-        return self._request_count_per_replica[replica_idx]
-
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:

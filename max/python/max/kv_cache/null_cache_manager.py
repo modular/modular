@@ -60,39 +60,6 @@ class NullKVCacheManager:
 
         logger.info("Using NullKVCacheManager for compile-only mode")
 
-    def get_replica(self, request_id: RequestID) -> int:
-        """Gets the replica index for a request context.
-
-        Args:
-            request_id: The request ID to get the replica for.
-
-        Returns:
-            Always returns 0, as the null cache manager operates in single-replica mode.
-        """
-        return 0
-
-    def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Gets or recommends a replica index for a request context.
-
-        Args:
-            context: The text generation context containing the request.
-
-        Returns:
-            Always returns 0, as the null cache manager operates in single-replica mode.
-        """
-        return 0
-
-    def get_replica_request_count(self, replica_idx: int) -> int:
-        """Get the number of active requests for a replica.
-
-        Args:
-            replica_idx: The replica index to query
-
-        Returns:
-            Always returns 0 for null cache manager (compile-only mode)
-        """
-        return 0
-
     def get_data_parallel_splits(
         self, batch: Sequence[TextGenerationContext]
     ) -> Sequence[Sequence[int]]:
