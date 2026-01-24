@@ -422,6 +422,24 @@ ErrorOrSuccess M::parseTargetOptions(
   if (args.hasMultipleArgs(mtuneId))
     return Error("too many specified tune cpus, expected exactly one");
 
+  // Validate that LLVM-style options (--target-cpu, --target-features) are not
+  // mixed with GCC/Clang-style options (--march, --mcpu, --mtune).
+  // These are two separate option families that should not be mixed.
+  bool hasGccStyleOptions = !mArch.empty() || !mCpu.empty();
+  if (hasGccStyleOptions) {
+    if (!targetCpu.empty()) {
+      return Error("--target-cpu cannot be used with --march or --mcpu; "
+                   "use either --target-cpu/--target-features or "
+                   "--march/--mcpu/--mtune");
+    }
+    if (!targetFeatures.empty()) {
+      return Error(
+          "--target-features cannot be used with --march or --mcpu; "
+          "use --target-cpu with --target-features, or use --march/--mcpu with "
+          "extension syntax (e.g., --march=skylake-avx512)");
+    }
+  }
+
   StringRef targetAccelerator = args.getLastArgValue(targetAcceleratorId);
   if (args.hasMultipleArgs(targetAcceleratorId))
     return Error(
@@ -442,12 +460,19 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetTriple = targetTriple.str();
   if (!targetCpu.empty())
     compilationOptions.targetCpu = targetCpu.str();
-  else
+  else if (!mCpu.empty()) {
+    // Use -mcpu to set targetCpu when --target-cpu is not specified.
+    // Strip any extensions (e.g., "haswell+avx512f" -> "haswell").
+    compilationOptions.targetCpu = mCpu.split('+').first.str();
+  } else
     compilationOptions.setDefaultCPU();
 
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
-  else {
+  else if (mArch.empty() && mCpu.empty()) {
+    // Only compute features here if not using -march/-mcpu, since those will
+    // be handled later by getMArchFeatures() which computes the correct
+    // features for the specified architecture/CPU.
     ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
         compilationOptions.targetTriple, compilationOptions.targetCpu);
     if (featuresOr)
