@@ -21,7 +21,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy import RotaryEmbedding
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.architectures.llama4.layers.attention import (
@@ -114,7 +114,6 @@ def generate_torch_outputs(
 
 
 def unflatten_kv_inputs(
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
     kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[Value[Any]],
 ) -> list[PagedCacheValues]:
@@ -228,9 +227,7 @@ def generate_max_outputs(
             ),
         ) as graph:
             inputs, input_row_offsets, cache_positions, *kv_cache = graph.inputs
-            kv_collections = unflatten_kv_inputs(
-                kv_manager, kv_params, kv_cache
-            )
+            kv_collections = unflatten_kv_inputs(kv_params, kv_cache)
             graph.output(
                 attention(
                     [inputs.tensor],

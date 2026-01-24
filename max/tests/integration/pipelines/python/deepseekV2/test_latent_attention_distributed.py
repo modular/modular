@@ -23,7 +23,7 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
@@ -267,7 +267,7 @@ def _build_graph_and_compile(
     session: InferenceSession,
     attn: DataParallelLatentAttentionWithRope,
     rope: DeepseekYarnRotaryEmbedding,
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     devices: list[Accelerator],
 ) -> tuple:
     """Builds a per-device inputs graph and compiles it."""

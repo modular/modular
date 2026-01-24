@@ -33,14 +33,13 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import NullKVCacheManager
 from max.kv_cache.paged_cache import PagedKVCacheManager
 
 
 @runtime_checkable
 class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager | NullKVCacheManager]: ...
+    def kv_managers(self) -> list[PagedKVCacheManager]: ...
 
     @property
     def pipeline_config(self) -> PipelineConfig: ...

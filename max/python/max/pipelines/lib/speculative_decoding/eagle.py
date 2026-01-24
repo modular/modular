@@ -31,11 +31,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import NullKVCacheManager
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-)
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -184,7 +180,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             The calculated num_steps for the batch
         """
-        assert not isinstance(model.kv_manager, NullKVCacheManager)
         for context in batch:
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft

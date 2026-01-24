@@ -39,7 +39,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -47,15 +47,8 @@ from transformers import AutoConfig
 
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import (
-    GenerateMixin,
-    ModelOutputs,
-    PipelineModel,
-)
-from ..sampling import (
-    rejection_sampler_with_residuals,
-    token_sampler,
-)
+from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
+from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -535,7 +528,7 @@ class SpeculativeDecodingPipelineBase(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
+    ) -> list[PagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @property

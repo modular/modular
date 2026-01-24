@@ -15,12 +15,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from typing import Any
+from unittest.mock import Mock
 
 from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 
-from .null_cache_manager import NullKVCacheManager
 from .paged_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
@@ -36,7 +36,7 @@ def load_kv_manager(
     max_seq_len: int,
     session: InferenceSession,
     available_cache_memory: int | None = None,
-) -> PagedKVCacheManager | NullKVCacheManager:
+) -> PagedKVCacheManager:
     assert max_batch_size is not None, "Expected max_batch_size to be set"
     assert max_batch_size > 0, "max_batch_size must be greater than 0"
 
@@ -44,9 +44,9 @@ def load_kv_manager(
     # to avoid GPU memory allocation
     if is_virtual_device_mode():
         logger.info(
-            "Detected compile-only mode, using NullKVCacheManager to avoid GPU allocation"
+            "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
         )
-        return NullKVCacheManager(params=params)
+        return Mock()
 
     if params.cache_strategy != KVCacheStrategy.PAGED:
         raise ValueError(

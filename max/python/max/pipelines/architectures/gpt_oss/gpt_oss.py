@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.nn import Module
 from max.nn.embedding import Embedding
 from max.nn.legacy.attention import MHAMaskVariant
@@ -33,10 +33,7 @@ from max.tensor import Tensor
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
 from .layers.rms_norm import GptOssRMSNorm
-from .layers.rotary_embedding import (
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
+from .layers.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
 from .layers.transformer_block import GptOssTransformerBlock
 from .model_config import GptOssConfig
 
@@ -170,7 +167,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
     def __init__(
         self,
         config: GptOssConfig,
-        kv_manager: PagedKVCacheManager | NullKVCacheManager,
+        kv_manager: PagedKVCacheManager,
     ) -> None:
         super().__init__()
         self.language_model = GptOssTextModel(config)
@@ -194,7 +191,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
 
 def _unflatten_kv_inputs(
     config: GptOssConfig,
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     kv_inputs_flat: Sequence[Tensor],
 ) -> list[PagedCacheValues]:
     kv_params = config.kv_params
