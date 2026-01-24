@@ -570,3 +570,174 @@ def test_log_probabilities_randomized_gpu(
     assert len(outputs) == len(batch)
     for item, output in zip(batch, outputs, strict=True):
         verify_output(item, output)
+
+
+# ============================================================================
+# Tests for log probabilities without full logits (echo=False mode)
+# These tests verify the fix for computing log probs when enable_echo is False
+# ============================================================================
+
+
+def test_compute_log_probabilities_without_full_logits(
+    cpu_device: CPU, cpu_model: Model
+) -> None:
+    """Test log probs computation when logits=None (no echo mode).
+
+    When enable_echo=False, the model only returns next_token_logits (last token),
+    not full logits for all tokens. The compute_log_probabilities_ragged function
+    should handle this by using next_token_logits directly.
+    """
+    device = cpu_device
+    model = cpu_model
+
+    # Simulate a batch of 2 sequences, each with different lengths
+    input_row_offsets = np.array([0, 3, 5], dtype=np.uint32)
+
+    # Only next_token_logits are available (no full logits)
+    next_token_logits = np.array(
+        [
+            [0.5, 0.25, 0.7, 0.3, 1.0, 0.05],  # batch 0
+            [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # batch 1
+        ],
+        dtype=np.float32,
+    )
+
+    # Tokens for each sequence (not used when echo=False, but required by API)
+    tokens = np.array([0, 1, 2, 0, 1], dtype=np.int32)
+    sampled_tokens = np.array([4, 2], dtype=np.int32)
+
+    # Both sequences have echo=False
+    batch_echo = [False, False]
+    batch_top_n = [3, 2]
+
+    log_probs = log_softmax(next_token_logits, axis=-1)
+
+    # Call with logits=None to simulate no-echo mode
+    output = compute_log_probabilities_ragged(
+        device,
+        model,
+        input_row_offsets=input_row_offsets,
+        logits=None,  # Key: no full logits available
+        next_token_logits=Buffer.from_numpy(next_token_logits).to(device),
+        tokens=tokens,
+        sampled_tokens=sampled_tokens,
+        batch_top_n=batch_top_n,
+        batch_echo=batch_echo,
+    )
+
+    assert len(output) == 2
+
+    # Verify batch 0: should have 1 log prob entry (just the sampled token)
+    assert output[0] is not None
+    assert len(output[0].token_log_probabilities) == 1
+    assert len(output[0].top_log_probabilities) == 1
+    # The sampled token was 4, so log prob should match
+    np.testing.assert_allclose(
+        output[0].token_log_probabilities[0],
+        log_probs[0][4],
+        rtol=1e-5,
+    )
+    # Top 3 should include tokens with highest log probs
+    assert 4 in output[0].top_log_probabilities[0]  # token 4 (sampled)
+
+    # Verify batch 1: should have 1 log prob entry (just the sampled token)
+    assert output[1] is not None
+    assert len(output[1].token_log_probabilities) == 1
+    assert len(output[1].top_log_probabilities) == 1
+    # The sampled token was 2, so log prob should match
+    np.testing.assert_allclose(
+        output[1].token_log_probabilities[0],
+        log_probs[1][2],
+        rtol=1e-5,
+    )
+    # Top 2 should include the sampled token
+    assert 2 in output[1].top_log_probabilities[0]
+
+
+def test_compute_log_probabilities_mixed_echo_without_logits_fails(
+    cpu_device: CPU, cpu_model: Model
+) -> None:
+    """Test that requesting echo=True without logits raises an assertion error.
+
+    When logits=None but batch_echo contains True, it should fail because
+    we can't compute log probs for input tokens without full logits.
+    """
+    device = cpu_device
+    model = cpu_model
+
+    input_row_offsets = np.array([0, 2], dtype=np.uint32)
+    next_token_logits = np.array([[0.5, 0.25, 0.7]], dtype=np.float32)
+    tokens = np.array([0, 1], dtype=np.int32)
+    sampled_tokens = np.array([2], dtype=np.int32)
+
+    # Request echo=True but don't provide logits
+    batch_echo = [True]
+    batch_top_n = [1]
+
+    with pytest.raises(AssertionError):
+        compute_log_probabilities_ragged(
+            device,
+            model,
+            input_row_offsets=input_row_offsets,
+            logits=None,  # No logits
+            next_token_logits=Buffer.from_numpy(next_token_logits).to(device),
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,  # But echo=True
+        )
+
+
+def test_compute_log_probabilities_batch_mixed_top_n_no_echo(
+    cpu_device: CPU, cpu_model: Model
+) -> None:
+    """Test batch with different top_n values and no echo.
+
+    This tests the common case where different requests in a batch have
+    different logprobs settings, but none request echo.
+    """
+    device = cpu_device
+    model = cpu_model
+
+    input_row_offsets = np.array([0, 2, 5, 6], dtype=np.uint32)
+    next_token_logits = np.array(
+        [
+            [1.0, 2.0, 3.0, 4.0],  # batch 0: top is token 3
+            [4.0, 3.0, 2.0, 1.0],  # batch 1: top is token 0
+            [1.0, 1.0, 1.0, 1.0],  # batch 2: all equal
+        ],
+        dtype=np.float32,
+    )
+    tokens = np.array([0, 1, 0, 1, 2, 0], dtype=np.int32)
+    sampled_tokens = np.array([3, 0, 1], dtype=np.int32)
+
+    # Different top_n for each batch item
+    batch_top_n = [2, 0, 3]  # batch 1 doesn't want log probs
+    batch_echo = [False, False, False]
+
+    output = compute_log_probabilities_ragged(
+        device,
+        model,
+        input_row_offsets=input_row_offsets,
+        logits=None,
+        next_token_logits=Buffer.from_numpy(next_token_logits).to(device),
+        tokens=tokens,
+        sampled_tokens=sampled_tokens,
+        batch_top_n=batch_top_n,
+        batch_echo=batch_echo,
+    )
+
+    assert len(output) == 3
+
+    # Batch 0: requested top_n=2
+    assert output[0] is not None
+    assert len(output[0].token_log_probabilities) == 1
+    assert 3 in output[0].top_log_probabilities[0]  # sampled token
+
+    # Batch 1: requested top_n=0 (no log probs)
+    assert output[1] is None
+
+    # Batch 2: requested top_n=3
+    assert output[2] is not None
+    assert len(output[2].token_log_probabilities) == 1
+    assert 1 in output[2].top_log_probabilities[0]  # sampled token

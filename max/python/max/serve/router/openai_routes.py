@@ -71,6 +71,7 @@ from max.serve.schemas.openai import (
     ChatCompletionResponseMessage,
     ChatCompletionStreamOptions,
     ChatCompletionStreamResponseDelta,
+    ChatCompletionTokenLogprob,
     ChatCompletionTool,
     Choice,
     Choice1,
@@ -99,6 +100,7 @@ from max.serve.schemas.openai import (
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
     ResponseFormatText,
+    TopLogprob,
     UnloadLoraRequest,
     Usage,
 )
@@ -239,6 +241,14 @@ class OpenAIChatResponseGenerator(
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
+
+                # Process log probabilities for this chunk
+                chunk_logprobs = _process_chat_log_probabilities([chunk])
+                # Only include logprobs if there's content
+                logprobs_response = (
+                    chunk_logprobs if chunk_logprobs.content else None
+                )
+
                 if chunk.decoded_tokens is not None:
                     choices = [
                         Choice3(
@@ -249,7 +259,7 @@ class OpenAIChatResponseGenerator(
                                 role="assistant",
                                 refusal=None,
                             ),
-                            logprobs=None,
+                            logprobs=logprobs_response,
                             finish_reason=get_finish_reason_from_status(
                                 chunk.status, allow_none=True
                             ),
@@ -369,6 +379,9 @@ class OpenAIChatResponseGenerator(
                 for chunk in completed_outputs
             )
 
+            # Extract log probabilities if available
+            logprobs = _process_chat_log_probabilities(completed_outputs)
+
             stop_sequence = [
                 chunk.stop_sequence
                 for chunk in completed_outputs
@@ -397,6 +410,7 @@ class OpenAIChatResponseGenerator(
                         response_message,
                         response_choices,
                         finish_reason=finish_reason,
+                        logprobs=logprobs,
                     )
 
             else:
@@ -405,6 +419,7 @@ class OpenAIChatResponseGenerator(
                     response_message,
                     response_choices,
                     finish_reason=finish_reason,
+                    logprobs=logprobs,
                 )
 
             usage = None
@@ -451,6 +466,7 @@ class OpenAIChatResponseGenerator(
         response_message: str,
         response_choices: list[Choice1],
         finish_reason: str | None,
+        logprobs: Logprobs2 | None = None,
     ) -> None:
         """Handle regular text response by appending to response_choices."""
         response_choices.append(
@@ -464,7 +480,7 @@ class OpenAIChatResponseGenerator(
                     refusal="",
                 ),
                 finish_reason=finish_reason,
-                logprobs=Logprobs2(content=[], refusal=[]),
+                logprobs=logprobs or Logprobs2(content=[], refusal=[]),
             )
         )
 
@@ -800,6 +816,16 @@ async def openai_create_chat_completion(
             ),
             sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
         )
+        # For chat completions, logprobs is a bool and top_logprobs is the count.
+        # We pass top_logprobs (or 1 if logprobs=True but top_logprobs not set).
+        logprobs_count = 0
+        if completion_request.logprobs:
+            logprobs_count = (
+                completion_request.top_logprobs
+                if completion_request.top_logprobs is not None
+                else 1
+            )
+
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -810,6 +836,7 @@ async def openai_create_chat_completion(
             request_path=request.url.path,
             response_format=response_format,
             sampling_params=sampling_params,
+            logprobs=logprobs_count,
             target_endpoint=_get_target_endpoint(
                 request, completion_request.target_endpoint
             ),
@@ -1005,6 +1032,72 @@ def _process_log_probabilities(
         token_logprobs=token_log_probabilities,
         top_logprobs=top_log_probabilities,
     )
+
+
+def _process_chat_log_probabilities(
+    token_generator_outputs: list[TokenGeneratorOutput],
+) -> Logprobs2:
+    """Convert token generator outputs to chat completion log probabilities format.
+
+    Args:
+        token_generator_outputs: List of token generator outputs containing
+            log probability information.
+
+    Returns:
+        Logprobs2 object with content tokens and their log probabilities.
+    """
+    content: list[ChatCompletionTokenLogprob] = []
+
+    for output in token_generator_outputs:
+        if (
+            not output.token_log_probabilities
+            or not output.top_log_probabilities
+        ):
+            continue
+
+        # Iterate through each token's log probs
+        for token_logprob, top_logprobs_dict in zip(
+            output.token_log_probabilities,
+            output.top_log_probabilities,
+            strict=True,
+        ):
+            # Build top_logprobs list from the dict
+            top_logprobs_list: list[TopLogprob] = []
+            for token_str, logprob in top_logprobs_dict.items():
+                top_logprobs_list.append(
+                    TopLogprob(
+                        token=token_str,
+                        logprob=logprob,
+                        # TODO(SERVSYS-1032): This will not properly handle
+                        # incomplete characters.
+                        bytes=list(token_str.encode("utf-8")),
+                    )
+                )
+
+            # Sort by logprob descending
+            top_logprobs_list.sort(key=lambda x: x.logprob, reverse=True)
+
+            # Get the token string - it should be in top_logprobs_dict
+            # The token with the highest logprob that matches token_logprob is the sampled token
+            token_str = ""
+            for t, lp in top_logprobs_dict.items():
+                if abs(lp - token_logprob) < 1e-6:
+                    token_str = t
+                    break
+            # Fallback: use the first token if no exact match found
+            if not token_str and top_logprobs_list:
+                token_str = top_logprobs_list[0].token
+
+            content.append(
+                ChatCompletionTokenLogprob(
+                    token=token_str,
+                    logprob=token_logprob,
+                    bytes=list(token_str.encode("utf-8")),
+                    top_logprobs=top_logprobs_list,
+                )
+            )
+
+    return Logprobs2(content=content, refusal=[])
 
 
 def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:

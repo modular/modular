@@ -406,7 +406,6 @@ class Gemma3Model(
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 
@@ -417,6 +416,24 @@ class Gemma3Model(
         tokens = gemma3_inputs.tokens.to_numpy()
         assert gemma3_inputs.input_row_offsets[0].device == self.logprobs_device
         input_row_offsets = gemma3_inputs.input_row_offsets[0].to_numpy()
+
+        # Determine if we have full logits for all tokens or only last-token logits.
+        # Full logits are only available when return_logits is ALL or VARIABLE.
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        # If echo is requested but we don't have full logits, raise an error.
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        # Pass logits=None when we only have last-token logits.
+        # compute_log_probabilities_ragged will use next_token_logits instead.
+        logits = model_outputs.logits if has_full_logits else None
 
         return compute_log_probabilities_ragged(
             self.logprobs_device,
