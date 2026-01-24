@@ -108,6 +108,12 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
+    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager.claim(req_id1)
+    target_kv_manager.claim(req_id2)
+    target_kv_manager.alloc(context1, num_steps=num_steps)
+    target_kv_manager.alloc(context2, num_steps=num_steps)
+
     return SpeculativeDecodingSetup(
         model_name=model_name,
         tokenizer=tokenizer,

@@ -338,12 +338,6 @@ class TextGenerationPipeline(
                 - Optional[np.ndarray]: The structured decoding bitmask or None.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
-        # Initialize a flat batch of contexts and their replica ids.
-        replica_ids: list[int] = [
-            replica_idx
-            for replica_idx, batch in enumerate(batches)
-            for _ in batch
-        ]
         replica_batches: list[list[TextGenerationContextType]] = [
             self._maybe_sort_loras(batch) for batch in batches
         ]
@@ -353,21 +347,13 @@ class TextGenerationPipeline(
         bitmask = self.initialize_bitmask(flat_batch)
 
         # Keep a global index for bitmask indexing.
-        i = 0
-        for i, (replica_idx, context) in enumerate(
-            zip(replica_ids, flat_batch, strict=False)
-        ):
+        for i, context in enumerate(flat_batch):
             # Update state for structured output. Initialize a matcher if needed, this includes:
             # - Initializing a matcher if needed [once per request]
             # - Jumping ahead in generation if possible
             # - Updating the bitmask for the context.
             if bitmask is not None:
                 self.update_for_structured_output(context, bitmask, i)
-
-            if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.claim(
-                    context.request_id, replica_idx=replica_idx
-                )
 
             # Update num_steps.
             num_steps = calculate_num_steps(
@@ -623,5 +609,10 @@ class TextGenerationPipeline(
         return res
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

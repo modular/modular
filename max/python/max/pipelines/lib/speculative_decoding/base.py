@@ -649,6 +649,10 @@ class SpeculativeDecodingPipelineBase(
         Args:
             request_id: Unique identifier for the finished request.
 
+        Note: Target model KV cache is released by the scheduler via batch_constructor.
+        This method only releases the draft model KV cache, which the scheduler
+        doesn't know about.
         """
+        # Release draft model KV cache (scheduler doesn't manage this)
         self._draft_model.kv_manager.release(request_id)
-        self._target_model.kv_manager.release(request_id)
+        # Target model KV cache is released by scheduler via batch_constructor

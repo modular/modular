@@ -550,7 +550,14 @@ class TextBatchConstructor:
             if not lora_still_needed:
                 replica.active_loras.discard(lora_name)
 
+        # Release from paged cache (scheduler manages primary KV cache lifecycle)
+        if self.paged_cache is not None:
+            self.paged_cache.release(request_id)
+
+        # Pipeline release handles special cases (spec decoding draft model KV cache)
+        # For regular pipelines, release() is a no-op
         self.pipeline.release(request_id)
+
         # _request_id_to_replica_idx is the source of truth for whether a request
         # is managed by the scheduler (checked by contains()).
         # Remove from here, marking the request as fully released.
@@ -588,8 +595,16 @@ class TextBatchConstructor:
     ) -> None:
         """Resets a request and returns it to the request queue"""
 
-        # Release from Pipeline and reset the context, as new prompt
+        # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
+        if self.paged_cache is not None and self.paged_cache.contains(
+            context.request_id
+        ):
+            self.paged_cache.release(context.request_id)
+
+        # Pipeline release handles special cases (spec decoding draft model KV cache)
+        # For regular pipelines, release() is a no-op
         self.pipeline.release(context.request_id)
+
         context.reset()
 
         # Move to CE Queue

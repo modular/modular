@@ -229,7 +229,9 @@ class FakeTokenGeneratorPipeline(
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.kv_manager.release(request_id)
+        # No-op. Previously the pipeline was responsible for calling kv.release().
+        # but now the whole lifecycle is managed by the scheduler.
+        pass
 
 
 @dataclass(eq=True)

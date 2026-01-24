@@ -62,8 +62,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
-            if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.claim(context.request_id)
+            # For draft model: claim if not already claimed (target model is claimed by scheduler)
+            # For target model: scheduler handles claiming, so skip here
+            if is_draft:
+                if not model.kv_manager.contains(context.request_id):
+                    model.kv_manager.claim(context.request_id)
+            # For target model, scheduler handles claiming via batch_constructor
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)

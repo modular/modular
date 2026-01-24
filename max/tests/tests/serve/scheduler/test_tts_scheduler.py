@@ -246,7 +246,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.paged_manager.release(request_id)
+        pass
 
 
 @dataclass(eq=True)

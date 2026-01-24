@@ -200,14 +200,8 @@ class OverlapTextGenerationPipeline(
                 - int: The clamped number of steps to run.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
-        for replica_idx, replica_batch in enumerate(batches):
+        for replica_batch in batches:
             for context in replica_batch:
-                request_id = context.request_id
-                if not self._pipeline_model.kv_manager.contains(request_id):
-                    self._pipeline_model.kv_manager.claim(
-                        request_id, replica_idx=replica_idx
-                    )
-
                 # Update num_steps.
                 num_steps = calculate_num_steps(
                     context, num_steps, self._pipeline_model.max_seq_len
@@ -332,5 +326,10 @@ class OverlapTextGenerationPipeline(
         return res
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

@@ -151,6 +151,10 @@ class PrefillScheduler(Scheduler):
         for req_id, (context, transfer) in self.active_transfers.items():
             if self.transfer_engine.is_complete(transfer):
                 self.transfer_engine.cleanup_transfer(transfer)
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_cache.release(context.request_id)
+                # Pipeline release handles special cases (spec decoding draft model KV cache)
+                # For regular pipelines, release() is a no-op
                 self.pipeline.release(context.request_id)
                 to_be_deleted.append(req_id)
 
