@@ -14,9 +14,7 @@
 from collections import OptionalReg
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import stack_allocation
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -698,7 +696,9 @@ fn moe_create_indices[
         comptime topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
 
         var topk_2D = LayoutTensor[input_type, topk_layout, MutAnyOrigin](
-            rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
+            rebind[UnsafePointer[Scalar[input_type], MutAnyOrigin]](
+                topk_ids.ptr
+            ),
             RuntimeLayout[topk_layout].row_major(
                 IndexList[2](1, topk_ids.dim(0))
             ),
@@ -711,7 +711,7 @@ fn moe_create_indices[
         ](2)
         expert_usage_stats_host.enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
-            rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
+            rebind[UnsafePointer[UInt32, MutAnyOrigin]](expert_usage_stats.ptr),
             expert_usage_stats_host,
         )
 
