@@ -1609,6 +1609,68 @@ def LIT_RefFromPointerREPLOp : LITOp<"ref.from_pointer.repl",
 
 
 //===----------------------------------------------------------------------===//
+// RefToKgenPtrOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefToKgenPtrOp : LITOp<"ref.to_kgen_ptr", [Pure]> {
+  let summary = "Cast a lit.ref to a kgen.pointer with lowered element type";
+  let description = [{
+    Converts a `lit.ref` to a `kgen.pointer`, lowering the element type from
+    LIT to KGEN (e.g., `lit.struct` → `kgen.struct`). The address space is
+    preserved. Origin information is discarded.
+
+    This enables using `kgen.struct.gep` on LIT references by first converting
+    to a KGEN pointer with a KGEN struct element type.
+
+    Example:
+    ```mlir
+    %ptr = lit.ref.to_kgen_ptr %ref : !lit.ref<!lit.struct<...>, origin>
+                                    -> !kgen.pointer<!kgen.struct<...>>
+    ```
+  }];
+
+  let arguments = (ins LIT_RefType:$ref);
+  let results = (outs PointerType:$result);
+
+  let assemblyFormat = [{
+    $ref attr-dict `:` type($ref) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// RefFromKgenPtrOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefFromKgenPtrOp : LITOp<"ref.from_kgen_ptr", [Pure]> {
+  let summary = "Cast a kgen.pointer to a lit.ref with origin";
+  let description = [{
+    Converts a `kgen.pointer` to a `lit.ref`, lifting the element type from
+    KGEN to LIT (e.g., `kgen.struct` → `lit.struct`). The origin must be
+    explicitly specified in the result type.
+
+    This enables converting back to LIT references after pointer manipulations
+    like `kgen.struct.gep`, preserving origin tracking.
+
+    Example:
+    ```mlir
+    %ref = lit.ref.from_kgen_ptr %ptr : !kgen.pointer<!kgen.struct<...>>
+                                      -> !lit.ref<!lit.struct<...>, origin>
+    ```
+  }];
+
+  let arguments = (ins PointerType:$pointer);
+  let results = (outs LIT_RefType:$result);
+
+  let assemblyFormat = [{
+    $pointer attr-dict `:` type($pointer) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 

@@ -696,6 +696,16 @@ static Value lowerOp(RefFromPointerREPLOp op,
   return adaptor.getPtr();
 }
 
+static Value lowerOp(RefToKgenPtrOp op, RefToKgenPtrOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return adaptor.getRef();
+}
+
+static Value lowerOp(RefFromKgenPtrOp op, RefFromKgenPtrOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  return adaptor.getPointer();
+}
+
 static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   return POP::LoadOp::create(b, op.getLoc(), adaptor.getRef());
@@ -844,8 +854,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<MaterializeIntoOp, StructInsertOp, StructExtractOp, RefImmutOp,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
-              RefStructGEROp, RefLoadOp, RefStoreOp, RebindOp, RefPackCreateOp,
-              RefPackExtractOp>(
+              RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
+              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

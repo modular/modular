@@ -1611,6 +1611,51 @@ void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
+// RefToKgenPtrOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefToKgenPtrOp::verify() {
+  auto refType = getRef().getType();
+  auto ptrType = getResult().getType();
+
+  // Note: Element type correspondence between lit.ref and kgen.pointer is
+  // intentionally not verified. The kgen element type should be the lowered
+  // form of the lit element type (e.g., lit.struct -> kgen.struct), but this
+  // correspondence is enforced by usage context rather than the verifier.
+  // This flexibility enables using kgen.struct.gep on lit references.
+
+  // Verify address spaces match - this is the critical safety invariant.
+  if (refType.getAddressSpace() != ptrType.getAddressSpace())
+    return emitOpError("address space mismatch: ref has address space ")
+           << refType.getAddressSpace() << " but result has "
+           << ptrType.getAddressSpace();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RefFromKgenPtrOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefFromKgenPtrOp::verify() {
+  auto ptrType = getPointer().getType();
+  auto refType = getResult().getType();
+
+  // Note: Element type correspondence between kgen.pointer and lit.ref is
+  // intentionally not verified. The lit element type should be the lifted
+  // form of the kgen element type (e.g., kgen.struct -> lit.struct), but this
+  // correspondence is enforced by usage context rather than the verifier.
+
+  // Verify address spaces match - this is the critical safety invariant.
+  if (ptrType.getAddressSpace() != refType.getAddressSpace())
+    return emitOpError("address space mismatch: pointer has address space ")
+           << ptrType.getAddressSpace() << " but result has "
+           << refType.getAddressSpace();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TraitDeclOp
 //===----------------------------------------------------------------------===//
 
