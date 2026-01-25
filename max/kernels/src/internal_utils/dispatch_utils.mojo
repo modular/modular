@@ -17,8 +17,8 @@ from builtin.sort import _quicksort
 
 
 # DO NOT CHANGE
-@register_passable("trivial")
-trait TuningConfig(ImplicitlyCopyable, Stringable):
+
+trait TuningConfig(ImplicitlyCopyable, Stringable, TrivialRegisterType):
     ...
 
 

@@ -21,8 +21,8 @@ from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable):
+
+struct RasterOrder(ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -38,8 +38,8 @@ struct RasterOrder(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+
+struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -91,7 +91,7 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # For simplicity, we always assume M is the static dimension here, because 2SM
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
-@register_passable("trivial")
+
 struct TileScheduler[
     offsets_layout: Layout,
     //,
@@ -104,7 +104,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-]:
+](TrivialRegisterType):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin

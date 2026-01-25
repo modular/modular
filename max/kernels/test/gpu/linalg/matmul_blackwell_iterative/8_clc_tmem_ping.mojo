@@ -87,8 +87,8 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable):
+
+struct WarpRole(ImplicitlyCopyable, TrivialRegisterType):
     var _role: Int32
 
     comptime Mma = Self(6)

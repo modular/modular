@@ -651,7 +651,7 @@ comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
 
 
 @fieldwise_init
-@register_passable("trivial")
+
 struct ManagedTensorSlice[
     mut: Bool,
     input: IO,
@@ -661,7 +661,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, ImplicitlyCopyable, Stringable, Writable):
+](DevicePassable, ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -1412,7 +1412,7 @@ comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @fieldwise_init
-@register_passable("trivial")
+
 struct VariadicTensors[
     mut: Bool,
     input: IO,
@@ -1423,7 +1423,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](ImplicitlyCopyable, Sized):
+](ImplicitlyCopyable, Sized, TrivialRegisterType):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 

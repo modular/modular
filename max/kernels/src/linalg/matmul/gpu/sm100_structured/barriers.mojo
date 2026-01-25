@@ -25,8 +25,8 @@ from linalg.structuring import SMemArray
 from .tmem import TmemAllocation
 
 
-@register_passable("trivial")
-struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0]:
+
+struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](TrivialRegisterType):
     """Named barrier for warp group synchronization.
 
     Wraps `named_barrier` and `named_barrier_arrive` with compile-time
@@ -52,8 +52,8 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0]:
         named_barrier[Self.num_threads](Self.barrier_id)
 
 
-@register_passable("trivial")
-struct TmemDeallocBarrier[cta_group: Int]:
+
+struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterType):
     """TMEM deallocation synchronization barrier.
 
     Handles cluster-aware synchronization patterns for TMEM deallocation,

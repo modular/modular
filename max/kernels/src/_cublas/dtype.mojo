@@ -14,8 +14,8 @@
 from os import abort
 
 
-@register_passable("trivial")
-struct Property:
+
+struct Property(TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
@@ -44,8 +44,8 @@ struct Property:
         return Int(self._value)
 
 
-@register_passable("trivial")
-struct DataType:
+
+struct DataType(TrivialRegisterType):
     var _value: Int32
     comptime R_16F = Self(2)
     comptime C_16F = Self(6)

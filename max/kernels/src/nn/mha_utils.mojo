@@ -63,10 +63,10 @@ comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 
-@register_passable("trivial")
+
 struct FlashAttentionAlgorithm(
     Defaultable, ImplicitlyCopyable, Stringable, Writable
-):
+, TrivialRegisterType):
     var _value: Int32
 
     comptime NAIVE = Self(0)
@@ -123,8 +123,8 @@ struct FlashAttentionAlgorithm(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
+
+struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable, TrivialRegisterType):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -750,8 +750,8 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-@register_passable("trivial")
-trait OptionallyStaticInt(Copyable, Intable):
+
+trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
     comptime static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -760,8 +760,8 @@ trait OptionallyStaticInt(Copyable, Intable):
 
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
-@register_passable("trivial")
-struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
+
+struct StaticInt[value: Int](Defaultable, OptionallyStaticInt, TrivialRegisterType):
     comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
 
     @always_inline("nodebug")
@@ -777,8 +777,8 @@ struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
         return UInt32(Self.value)
 
 
-@register_passable("trivial")
-struct DynamicInt(OptionallyStaticInt):
+
+struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
     var value: UInt32
     comptime static_value: OptionalReg[Int] = None
 
@@ -800,8 +800,8 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-@register_passable("trivial")
-trait MHAPartitionScheme(Copyable):
+
+trait MHAPartitionScheme(Copyable, TrivialRegisterType):
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -816,10 +816,10 @@ trait MHAPartitionScheme(Copyable):
         ...
 
 
-@register_passable("trivial")
+
 struct NoPartition[dtype: DType](
     Defaultable, ImplicitlyCopyable, MHAPartitionScheme
-):
+, TrivialRegisterType):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
 
@@ -838,8 +838,8 @@ struct NoPartition[dtype: DType](
         return UnsafePointer[Scalar[Self.accum_dtype]]()
 
 
-@register_passable("trivial")
-struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
+
+struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme, TrivialRegisterType):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]

@@ -86,8 +86,8 @@ from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable):
+
+struct WarpRole(ImplicitlyCopyable, TrivialRegisterType):
     var _role: Int32
 
     comptime Mma = Self(5)

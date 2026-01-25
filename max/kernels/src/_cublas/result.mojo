@@ -14,8 +14,8 @@
 from os import abort
 
 
-@register_passable("trivial")
-struct Result(Equatable, Writable):
+
+struct Result(Equatable, Writable, TrivialRegisterType):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)

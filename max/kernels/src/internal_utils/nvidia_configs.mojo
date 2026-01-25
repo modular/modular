@@ -15,8 +15,8 @@ from internal_utils import Table, TuningConfig
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TuningConfigNvidia(TuningConfig):
+
+struct TuningConfigNvidia(TuningConfig, TrivialRegisterType):
     var M: Int
     var N: Int
     var K: Int

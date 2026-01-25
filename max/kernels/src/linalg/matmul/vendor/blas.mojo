@@ -113,8 +113,8 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct Backend(Equatable, ImplicitlyCopyable, Writable):
+
+struct Backend(Equatable, ImplicitlyCopyable, Writable, TrivialRegisterType):
     var _value: Int32
 
     comptime AUTOMATIC = Self(0)

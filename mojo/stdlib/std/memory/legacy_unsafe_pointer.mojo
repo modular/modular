@@ -42,7 +42,6 @@ fn _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
 
 
-@register_passable("trivial")
 struct LegacyUnsafePointer[
     mut: Bool,
     //,
@@ -59,6 +58,7 @@ struct LegacyUnsafePointer[
     Intable,
     Stringable,
     Writable,
+    TrivialRegisterType,
 ):
     """`LegacyUnsafePointer` is a deprecated pointer type that is replaced by
     the new `UnsafePointer`. It is kept for backwards compatibility and will

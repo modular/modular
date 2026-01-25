@@ -263,7 +263,7 @@ fn _distribute_is_masked[
     return False
 
 
-@register_passable("trivial")
+
 struct LayoutTensor[
     mut: Bool,
     //,
@@ -284,8 +284,7 @@ struct LayoutTensor[
     Movable,
     Stringable,
     Writable,
-    _Expable,
-):
+    _Expable, TrivialRegisterType):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -6048,8 +6047,8 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-@register_passable("trivial")
-struct ThreadScope(ImplicitlyCopyable):
+
+struct ThreadScope(ImplicitlyCopyable, TrivialRegisterType):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -8138,7 +8137,7 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
+
 struct LayoutTensorIter[
     mut: Bool,
     //,
@@ -8154,7 +8153,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-](Defaultable):
+](Defaultable, TrivialRegisterType):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a

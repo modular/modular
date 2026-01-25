@@ -110,8 +110,8 @@ struct MakeMyIntMemory:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MyIntReg(Movable):
+
+struct MyIntReg(Movable, TrivialRegisterType):
     var val: Int
 
 

@@ -34,8 +34,8 @@ comptime hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Status(Equatable, Writable):
+
+struct Status(Equatable, Writable, TrivialRegisterType):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -91,8 +91,8 @@ struct Status(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipDataType_t:
+
+struct hipDataType_t(TrivialRegisterType):
     var _value: Int32
     comptime R_32F = Self(0)
     comptime R_64F = Self(1)
@@ -115,8 +115,8 @@ struct hipDataType_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasComputeType_t:
+
+struct hipblasComputeType_t(TrivialRegisterType):
     var _value: Int32
     comptime COMPUTE_16F = Self(0)
     comptime COMPUTE_16F_PEDANTIC = Self(1)
@@ -134,8 +134,8 @@ struct hipblasComputeType_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasOperation_t:
+
+struct hipblasOperation_t(TrivialRegisterType):
     var _value: Int32
     comptime OP_N = Self(111)
     comptime OP_T = Self(112)
@@ -152,8 +152,8 @@ struct hipblasOperation_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtOrder_t:
+
+struct hipblasLtOrder_t(TrivialRegisterType):
     var _value: Int32
     comptime COL = Self(0)
     comptime ROW = Self(1)
@@ -173,8 +173,8 @@ struct hipblasLtOrder_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtMatmulDescAttributes_t:
+
+struct hipblasLtMatmulDescAttributes_t(TrivialRegisterType):
     var _value: Int32
     comptime TRANSA = Self(0)
     comptime TRANSB = Self(1)
@@ -190,8 +190,8 @@ struct hipblasLtMatmulDescAttributes_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtMatmulLayoutAttribute_t:
+
+struct hipblasLtMatmulLayoutAttribute_t(TrivialRegisterType):
     var _value: Int32
     comptime BATCH_COUNT = Self(0)
     comptime STRIDED_BATCH_OFFSET = Self(1)
@@ -211,8 +211,8 @@ struct hipblasLtMatmulLayoutAttribute_t:
         return not (self == other)
 
 
-@register_passable("trivial")
-struct hipblasLtMatmulAlgo_t(Defaultable):
+
+struct hipblasLtMatmulAlgo_t(Defaultable, TrivialRegisterType):
     var data: StaticTuple[UInt8, 16]
     var maxWorkspaceBytes: Int
 
@@ -221,8 +221,8 @@ struct hipblasLtMatmulAlgo_t(Defaultable):
         self.maxWorkspaceBytes = 0
 
 
-@register_passable("trivial")
-struct hipblasLtMatmulHeuristicResult_t(Defaultable):
+
+struct hipblasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterType):
     var algo: hipblasLtMatmulAlgo_t
     var workspaceSize: Int
     var state: Status

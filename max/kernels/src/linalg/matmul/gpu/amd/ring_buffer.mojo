@@ -45,12 +45,12 @@ from .ring_buffer_traits import (
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
+
 struct ProducerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterType):
     """Context manager for producer access to a single ring buffer tile."""
 
     comptime ProducerViewType = ProducerView[
@@ -91,12 +91,12 @@ struct ProducerTile[
         self.producer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
 
 
-@register_passable("trivial")
+
 struct ConsumerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterType):
     """Context manager for consumer access to a single ring buffer tile."""
 
     comptime ConsumerViewType = ConsumerView[
@@ -142,12 +142,12 @@ struct ConsumerTile[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
+
 struct ProducerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterType):
     """Producer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -245,12 +245,12 @@ struct ProducerView[
         )
 
 
-@register_passable("trivial")
+
 struct ConsumerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterType):
     """Consumer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]

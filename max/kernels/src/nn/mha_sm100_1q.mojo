@@ -137,7 +137,7 @@ struct RegisterAccumulatorDescription:
 # consumer_group_size equals
 # sm90: 128 (warp group size)
 # sm100: num_softmax_threads
-@register_passable("trivial")
+
 struct RegisterAccumulatorLayout[
     MMA_M: Int,
     MMA_N: Int,
@@ -146,7 +146,7 @@ struct RegisterAccumulatorLayout[
     consumer_group_size: Int,
     *,
     frag_simdwidth: Int = 2,
-]:
+](TrivialRegisterType):
     comptime frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
     comptime num_row_blocks_per_mma = 2
     comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
@@ -183,7 +183,7 @@ struct RegisterAccumulatorLayout[
         )
 
 
-@register_passable("trivial")
+
 struct MMAOperandOffsetFn[
     dtype: DType,
     BMN: Int,
@@ -192,7 +192,7 @@ struct MMAOperandOffsetFn[
     is_k_major: Bool,
     WMMA_MN: Int,
     WMMA_K: Int,
-]:
+](TrivialRegisterType):
     comptime layout = tile_layout_k_major[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
     ]() if Self.is_k_major else tile_layout_mn_major[
@@ -216,8 +216,8 @@ struct MMAOperandOffsetFn[
         pass
 
 
-@register_passable("trivial")
-trait DescriptorPair:
+
+trait DescriptorPair(TrivialRegisterType):
     comptime a_t: MMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -230,8 +230,8 @@ trait DescriptorPair:
         ...
 
 
-@register_passable("trivial")
-trait WriteableMMAOperandDescriptor:
+
+trait WriteableMMAOperandDescriptor(TrivialRegisterType):
     @always_inline
     fn copy_from[
         src_type: DType, src_layout: Layout, src_element_layout: Layout, //
@@ -248,8 +248,8 @@ trait WriteableMMAOperandDescriptor:
         ...
 
 
-@register_passable("trivial")
-trait DescriptorPairTS:
+
+trait DescriptorPairTS(TrivialRegisterType):
     comptime a_t: WriteableMMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -278,8 +278,8 @@ fn local_tensor_type[
     }
 
 
-@register_passable("trivial")
-trait AccumulatorTile(ImplicitlyCopyable):
+
+trait AccumulatorTile(ImplicitlyCopyable, TrivialRegisterType):
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -331,8 +331,8 @@ trait AccumulatorTile(ImplicitlyCopyable):
         ...
 
 
-@register_passable("trivial")
-struct UMMADescriptorSS[operand_type: DType](DescriptorPair):
+
+struct UMMADescriptorSS[operand_type: DType](DescriptorPair, TrivialRegisterType):
     comptime operand_t = Self.operand_type
     comptime a_t = MMASmemDescriptor
     comptime b_t = MMASmemDescriptor
@@ -369,7 +369,7 @@ fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     return linear
 
 
-@register_passable("trivial")
+
 struct TMemAccumulator[
     dtype_: DType,
     MMA_M: Int,
@@ -377,7 +377,7 @@ struct TMemAccumulator[
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_softmax_threads: Int,
-](AccumulatorTile):
+](AccumulatorTile, TrivialRegisterType):
     comptime dtype: DType = Self.dtype_
     comptime layout_t = RegisterAccumulatorLayout[
         Self.MMA_M,
@@ -592,7 +592,7 @@ struct TMemAccumulator[
         tcgen05_load_wait()
 
 
-@register_passable("trivial")
+
 struct TMemOperand[
     dtype: DType,
     num_m_mmas: Int,
@@ -601,7 +601,7 @@ struct TMemOperand[
     MMA_N: Int,
     MMA_K: Int,
     num_softmax_threads: Int,
-](WriteableMMAOperandDescriptor):
+](WriteableMMAOperandDescriptor, TrivialRegisterType):
     var tmem_addr: UInt32
 
     comptime reg_layout = RegisterAccumulatorLayout[
@@ -780,7 +780,7 @@ struct TMemOperand[
         tcgen05_load_wait()
 
 
-@register_passable("trivial")
+
 struct UMMADescriptorTS[
     operand_type: DType,
     num_m_mmas: Int,
@@ -790,7 +790,7 @@ struct UMMADescriptorTS[
     MMA_N: Int,
     MMA_K: Int,
     consumer_group_size: Int,
-](DescriptorPairTS):
+](DescriptorPairTS, TrivialRegisterType):
     comptime operand_t = Self.operand_type
     comptime a_t = TMemOperand[
         Self.operand_type,
@@ -820,7 +820,7 @@ struct UMMADescriptorTS[
         return self.b
 
 
-@register_passable("trivial")
+
 struct SM100TensorAccumulatorSS[
     operand_type: DType,
     accum_type: DType,
@@ -837,7 +837,7 @@ struct SM100TensorAccumulatorSS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
-]:
+](TrivialRegisterType):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -1063,7 +1063,7 @@ struct SM100TensorAccumulatorSS[
         self.pipeline.step()
 
 
-@register_passable("trivial")
+
 struct SM100TensorAccumulatorTS[
     operand_type: DType,
     accum_type: DType,
@@ -1076,7 +1076,7 @@ struct SM100TensorAccumulatorTS[
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     cta_group: Int = 1,
-]:
+](TrivialRegisterType):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 

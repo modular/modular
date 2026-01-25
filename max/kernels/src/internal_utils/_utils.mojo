@@ -74,8 +74,8 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-@register_passable("trivial")
-struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
+
+struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -287,8 +287,8 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Mode(ImplicitlyCopyable, Stringable):
+
+struct Mode(ImplicitlyCopyable, Stringable, TrivialRegisterType):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")

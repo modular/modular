@@ -82,8 +82,8 @@ fn tma_wait_pipelined[
 # =============================================================================
 
 
-@register_passable("trivial")
-struct AccumTile[dtype: DType, size: Int]:
+
+struct AccumTile[dtype: DType, size: Int](TrivialRegisterType):
     """Upper + lower TMEM fragments (16 rows each) for SM100 output."""
 
     var upper: SIMD[Self.dtype, Self.size]
@@ -104,8 +104,8 @@ struct AccumTile[dtype: DType, size: Int]:
 # =============================================================================
 
 
-@register_passable("trivial")
-struct AccumBarrier[cta_group: Int]:
+
+struct AccumBarrier[cta_group: Int](TrivialRegisterType):
     """Pipeline barrier helper for single-CTA vs 2-CTA arrival patterns."""
 
     @staticmethod
@@ -212,14 +212,14 @@ fn store_fragment_to_smem[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct EpilogueConfig[
     MMA_M: Int,
     MMA_N: Int,
     stageN: Int,
     cta_group: Int,
     transpose_c: Bool,
-]:
+](TrivialRegisterType):
     """Computed epilogue parameters based on MMA and CTA configuration."""
 
     # Lower fragment needed except for cta_group=1, MMA_M=64
@@ -241,7 +241,7 @@ struct EpilogueConfig[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct TMAStoreCoords[
     BM: Int,
     BN: Int,
@@ -252,7 +252,7 @@ struct TMAStoreCoords[
     c_smem_shape0: Int,
     stage: Int,
     batched: Bool = False,
-]:
+](TrivialRegisterType):
     """TMA store coordinates and warp election for SM100 epilogue.
 
     When batched=True, includes a batch coordinate for 3D TMA stores.
@@ -341,7 +341,7 @@ struct TMAStoreCoords[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct TMAStoreExecutor[
     c_type: DType,
     c_smem_layout: Layout,
@@ -356,7 +356,7 @@ struct TMAStoreExecutor[
     transpose_c: Bool,
     is_lower_frag_required: Bool,
     batched: Bool = False,
-]:
+](TrivialRegisterType):
     """Execute TMA store from SMEM to GMEM with proper tiling.
 
     Handles 3 paths: transpose+cta_group2+MMA128, transpose+other, non-transpose.
@@ -545,8 +545,8 @@ struct TMAStoreExecutor[
 # =============================================================================
 
 
-@register_passable("trivial")
-struct FragmentCoords[stageN: Int, repeats: Int]:
+
+struct FragmentCoords[stageN: Int, repeats: Int](TrivialRegisterType):
     """Fragment element coordinates for tcgen05 16x256b matrix layout."""
 
     comptime load_width = 2
@@ -576,7 +576,7 @@ struct FragmentCoords[stageN: Int, repeats: Int]:
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct EpilogueApplier[
     MMA_M: Int,
     stageN: Int,
@@ -584,7 +584,7 @@ struct EpilogueApplier[
     repeats: Int,
     cta_group: Int,
     transpose_c: Bool,
-]:
+](TrivialRegisterType):
     """Apply element-wise epilogue lambda to register fragments."""
 
     comptime Coords = FragmentCoords[Self.stageN, Self.repeats]
@@ -726,7 +726,7 @@ struct EpilogueApplier[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct TMEMToSMemWriter[
     c_type: DType,
     accum_type: DType,
@@ -740,7 +740,7 @@ struct TMEMToSMemWriter[
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_c: Bool = False,
-]:
+](TrivialRegisterType):
     """Write TMEM accumulators to SMEM via st.matrix (SM100-specific)."""
 
     comptime Config = EpilogueConfig[
@@ -912,7 +912,7 @@ from layout.layout import coalesce, flatten
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct SMemEpilogueWriter[
     # Infer-only: deduced from c_tiles argument type
     c_type: DType,
@@ -935,7 +935,7 @@ struct SMemEpilogueWriter[
     stage: Int,
     rep_frag_size: Int,
     compute_lambda_fn: elementwise_compute_lambda_type,
-]:
+](TrivialRegisterType):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
     comptime N_dim = 0 if Self.transpose_c else 1

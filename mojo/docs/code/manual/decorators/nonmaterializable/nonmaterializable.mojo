@@ -13,8 +13,9 @@
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RuntimeStruct:
+struct RuntimeStruct(
+    TrivialRegisterType,
+):
     var value: Int
 
     @implicit
@@ -23,8 +24,9 @@ struct RuntimeStruct:
 
 
 @nonmaterializable(RuntimeStruct)
-@register_passable("trivial")
-struct ParamStruct[param_value: Int]:
+struct ParamStruct[param_value: Int](
+    TrivialRegisterType,
+):
     fn __init__(out self):
         pass
 

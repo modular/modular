@@ -64,8 +64,8 @@ from std.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
-@register_passable("trivial")
-struct ThreadInfo:
+
+struct ThreadInfo(TrivialRegisterType):
     """Thread identification within the warp group."""
 
     var warp_id: UInt
@@ -102,8 +102,8 @@ struct ThreadInfo:
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
 
-@register_passable("trivial")
-struct TileCoordinates:
+
+struct TileCoordinates(TrivialRegisterType):
     """Helper struct for managing tile coordinate offsets.
 
     This struct encapsulates corner and split coordinates used in epilogue
@@ -140,8 +140,8 @@ struct TileCoordinates:
         )
 
 
-@register_passable("trivial")
-trait SMemTileWriter:
+
+trait SMemTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing tiles from shared memory to global memory,
@@ -165,14 +165,14 @@ trait SMemTileWriter:
         ...
 
 
-@register_passable("trivial")
+
 struct TileWriterTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
     tma_layout: Layout,
     desc_layout: Layout,
     //,
-](SMemTileWriter):
+](SMemTileWriter, TrivialRegisterType):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
     This writer uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -234,7 +234,7 @@ struct TileWriterTMA[
         self.tma_op[].wait_group()
 
 
-@register_passable("trivial")
+
 struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: Layout,
@@ -249,7 +249,7 @@ struct TileWriterThreadwise[
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
-](SMemTileWriter):
+](SMemTileWriter, TrivialRegisterType):
     comptime _dtype = Self.dtype
 
     comptime DstType = LayoutTensor[
@@ -392,8 +392,8 @@ struct TileWriterThreadwise[
             )
 
 
-@register_passable("trivial")
-trait RegTileWriter:
+
+trait RegTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing register tiles to memory
@@ -415,7 +415,7 @@ trait RegTileWriter:
         ...
 
 
-@register_passable("trivial")
+
 struct FragmentToSMemWriter[
     c_type: DType,
     c_tile_layout: Layout,
@@ -428,7 +428,7 @@ struct FragmentToSMemWriter[
     WG_BN: Int,  # Warp group N dimension
     sub_wg_id: Int,  # Sub warp group ID in N dimension
     swapAB: Bool = False,
-](RegTileWriter):
+](RegTileWriter, TrivialRegisterType):
     """Writes WGMMA accumulator results from registers to shared memory using st.matrix.
 
     Stores 16-byte fragments with swizzling to avoid bank conflicts. Sub-warp groups
@@ -626,7 +626,7 @@ struct FragmentToSMemWriter[
             )
 
 
-@register_passable("trivial")
+
 struct RegisterToGMemWriter[
     c_type: DType,
     dst_layout: Layout,
@@ -644,7 +644,7 @@ struct RegisterToGMemWriter[
     compute_lambda_fn: OptionalReg[elementwise_compute_lambda_type] = None,
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
     swapAB: Bool = False,
-](RegTileWriter):
+](RegTileWriter, TrivialRegisterType):
     """Writer for transferring accumulator registers directly to global memory.
 
     This writer handles the direct copy from register tiles to global memory

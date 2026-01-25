@@ -37,8 +37,8 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+
+struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable, TrivialRegisterType):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -86,7 +86,7 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct AdvanceAfterWorkContextSplitK[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
@@ -96,7 +96,7 @@ struct AdvanceAfterWorkContextSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-]:
+](TrivialRegisterType):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue)."""
 
     comptime SchedulerType = TileScheduler[
@@ -141,10 +141,10 @@ struct AdvanceAfterWorkContextSplitK[
         self.consumer_state_ptr[].step()
 
 
-@register_passable("trivial")
+
 struct WaitAndAdvanceContextSplitK[
     work_origin: MutOrigin,
-]:
+](TrivialRegisterType):
     """Context for waiting on CLC barrier and advancing work iterator (Split-K).
 
     Encapsulates the CLC response barrier synchronization:
@@ -179,7 +179,7 @@ struct WaitAndAdvanceContextSplitK[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct WorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
@@ -187,7 +187,7 @@ struct WorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-]:
+](TrivialRegisterType):
     """Per-warp work iterator for split-K that owns work_info and pipeline state.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -280,7 +280,7 @@ struct WorkIteratorSplitK[
 # =============================================================================
 
 
-@register_passable("trivial")
+
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
@@ -288,7 +288,7 @@ struct SchedulerWorkIteratorSplitK[
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
-]:
+](TrivialRegisterType):
     """Work iterator for Scheduler warp (split-K) - owns work_info and both states.
     Throttle pipeline is obtained from the scheduler.
     """
@@ -366,7 +366,7 @@ struct SchedulerWorkIteratorSplitK[
             self.producer_state.step()
 
 
-@register_passable("trivial")
+
 struct TileScheduler[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
@@ -376,7 +376,7 @@ struct TileScheduler[
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
-]:
+](TrivialRegisterType):
     comptime UnderlyingScheduler = B200TileScheduler[
         Self.num_stages,
         Self.cluster_shape,

@@ -66,8 +66,8 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-trait SyncStrategy:
+
+trait SyncStrategy(TrivialRegisterType):
     """Interface for synchronization strategies between producers and consumers.
 
     All methods have the same signature regardless of the specific implementation,
@@ -152,13 +152,13 @@ trait SyncStrategy:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
+
 struct SingleCounterSync[
     pipeline_stages: Int,
     block_rows: Int,
     warp_rows: Int,
     reads_per_warp_block: Int,
-](SyncStrategy):
+](SyncStrategy, TrivialRegisterType):
     """Single counter synchronization strategy.
 
     Uses one atomic counter per tile that tracks both producer and consumer progress.
@@ -225,13 +225,13 @@ struct SingleCounterSync[
         return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
 
-@register_passable("trivial")
+
 struct SplitCounterSync[
     pipeline_stages: Int,
     block_rows: Int,
     warp_rows: Int,
     reads_per_warp_block: Int,
-](SyncStrategy):
+](SyncStrategy, TrivialRegisterType):
     """Split counter synchronization strategy.
 
     Uses separate producer and consumer counters per tile to reduce atomic contention.

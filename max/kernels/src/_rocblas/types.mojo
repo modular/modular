@@ -21,8 +21,8 @@ from os import abort
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Handle(Defaultable):
+
+struct Handle(Defaultable, TrivialRegisterType):
     var _value: OpaquePointer
 
     fn __init__(out self):
@@ -33,8 +33,8 @@ struct Handle(Defaultable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Operation:
+
+struct Operation(TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(111)
@@ -55,8 +55,8 @@ struct Operation:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Fill:
+
+struct Fill(TrivialRegisterType):
     var _value: Int32
 
     comptime UPPER = Self(121)
@@ -77,8 +77,8 @@ struct Fill:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Diagonal:
+
+struct Diagonal(TrivialRegisterType):
     var _value: Int32
 
     comptime NON_UNIT = Self(131)
@@ -98,8 +98,8 @@ struct Diagonal:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Side:
+
+struct Side(TrivialRegisterType):
     var _value: Int32
 
     comptime LEFT = Self(141)
@@ -120,8 +120,8 @@ struct Side:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct DataType:
+
+struct DataType(TrivialRegisterType):
     var _value: Int32
 
     comptime F16_R = Self(150)
@@ -175,8 +175,8 @@ struct DataType:
         return Int(self._value)
 
 
-@register_passable("trivial")
-struct ComputeType:
+
+struct ComputeType(TrivialRegisterType):
     var _value: Int32
 
     comptime F32 = Self(300)
@@ -200,8 +200,8 @@ struct ComputeType:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Status(Equatable, Writable):
+
+struct Status(Equatable, Writable, TrivialRegisterType):
     var _value: Int32
 
     comptime SUCCESS = Self(0)
@@ -273,8 +273,8 @@ struct Status(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PointerMode:
+
+struct PointerMode(TrivialRegisterType):
     var _value: Int32
 
     comptime HOST = Self(0)
@@ -294,14 +294,14 @@ struct PointerMode:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MallocBase:
+
+struct MallocBase(TrivialRegisterType):
     var _value: Int32
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Algorithm:
+
+struct Algorithm(TrivialRegisterType):
     var _value: Int32
 
     comptime STANDARD = Self(0)
@@ -321,8 +321,8 @@ struct Algorithm:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct GEAMExOp:
+
+struct GEAMExOp(TrivialRegisterType):
     var _value: Int32
 
     comptime MIN_PLUS = Self(0)

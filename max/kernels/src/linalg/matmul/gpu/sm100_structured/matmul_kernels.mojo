@@ -119,8 +119,8 @@ from .output_writer import TileWriter
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable, Movable):
+
+struct WarpRole(ImplicitlyCopyable, Movable, TrivialRegisterType):
     """Warp role identifiers for SM100 warp-specialized kernel."""
 
     var _role: Int32

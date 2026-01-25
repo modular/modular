@@ -32,7 +32,7 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile
 
 
-@register_passable("trivial")
+
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -41,7 +41,7 @@ struct TileLoaderTMA[
     /,
     *,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """TMA-based tile loader for SM100.
 
     Wraps a TMA descriptor and multicast mask for efficient tile loading.
@@ -104,7 +104,7 @@ struct TileLoaderTMA[
         )
 
 
-@register_passable("trivial")
+
 struct ScalesTileLoader[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -113,7 +113,7 @@ struct ScalesTileLoader[
     /,
     *,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """TMA-based scales tile loader for blockwise FP8.
 
     Unlike TileLoaderTMA, this loader:

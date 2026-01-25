@@ -14,7 +14,6 @@
 from math import sqrt
 
 
-@register_passable("trivial")
 struct Complex(
     Boolable,
     Equatable,
@@ -22,6 +21,7 @@ struct Complex(
     Representable,
     Stringable,
     Writable,
+    TrivialRegisterType,
 ):
     """Represents a complex value.
 
