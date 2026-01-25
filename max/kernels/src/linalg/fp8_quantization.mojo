@@ -438,8 +438,8 @@ fn matmul_dynamic_scaled_fp8[
     c: NDBuffer[mut=True, c_type, 2, _, _, _],
     a: NDBuffer[a_type, 2, _, _],
     b: NDBuffer[b_type, 2, _, _],
-    a_scales: NDBuffer[a_scales_type, 2, _, _],
-    b_scales: NDBuffer[b_scales_type, 2, _, _],
+    a_scales: NDBuffer[a_scales_type, 2, _, _, _],
+    b_scales: NDBuffer[b_scales_type, 2, _, _, _],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert a_type == b_type, "input A and B dtype should be the same"

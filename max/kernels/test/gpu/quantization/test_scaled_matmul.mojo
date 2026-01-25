@@ -135,23 +135,46 @@ fn test_matmul_dynamic_scaled_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a_ndbuffer = NDBuffer[in_dtype, 2, _, static_a_shape](
+    @parameter
+    fn stride_from_shape[shape: DimList]() -> DimList:
+        __comptime_assert len(shape) == 2, "rank must be 2"
+        return DimList(shape.at[1](), 1)
+
+    var a_ndbuffer = NDBuffer[
+        in_dtype, 2, _, static_a_shape, stride_from_shape[static_a_shape]()
+    ](
         a_device.unsafe_ptr(),
         DimList(m, k),
     )
-    var b_ndbuffer = NDBuffer[in_dtype, 2, _, static_b_shape](
+    var b_ndbuffer = NDBuffer[
+        in_dtype, 2, _, static_b_shape, stride_from_shape[static_b_shape]()
+    ](
         b_device.unsafe_ptr(),
         DimList(n, k) if transpose_b else DimList(k, n),
     )
-    var c_ndbuffer = NDBuffer[out_dtype, 2, _, static_c_shape](
+    var c_ndbuffer = NDBuffer[
+        out_dtype, 2, _, static_c_shape, stride_from_shape[static_c_shape]()
+    ](
         c_device.unsafe_ptr(),
         DimList(m, n),
     )
-    var a_scales_ndbuffer = NDBuffer[scales_dtype, 2, _, static_a_scales_shape](
+    var a_scales_ndbuffer = NDBuffer[
+        scales_dtype,
+        2,
+        _,
+        static_a_scales_shape,
+        stride_from_shape[static_a_scales_shape](),
+    ](
         a_scales_device.unsafe_ptr(),
         DimList(1, m),
     )
-    var b_scales_ndbuffer = NDBuffer[scales_dtype, 2, _, static_b_scales_shape](
+    var b_scales_ndbuffer = NDBuffer[
+        scales_dtype,
+        2,
+        _,
+        static_b_scales_shape,
+        stride_from_shape[static_b_scales_shape](),
+    ](
         b_scales_device.unsafe_ptr(),
         DimList(n, 1) if transpose_b else DimList(1, n),
     )
