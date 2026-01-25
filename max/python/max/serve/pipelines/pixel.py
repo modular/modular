@@ -24,12 +24,10 @@ from max.interfaces import (
     BaseContext,
     GenerationStatus,
     PipelineOutput,
+    PixelContext,
     PixelGenerationOutput,
     PixelGenerationRequest,
     Request,
-)
-from max.pipelines.core import (
-    PixelContext,
 )
 from max.serve.pipelines.llm import BasePipeline
 from max.serve.telemetry.metrics import METRICS
@@ -66,21 +64,7 @@ class PixelGeneratorPipeline(
 
         try:
             with record_ms(METRICS.input_time):
-                # context = await self.tokenizer.new_context(request)
-                # For image generation, create context directly from request
-                # since Qwen-3-4B haven't worked.
-                context = PixelContext(
-                    request_id=request.request_id,
-                    prompt=request.prompt,
-                    messages=request.messages,
-                    height=request.height,
-                    width=request.width,
-                    num_inference_steps=request.num_inference_steps,
-                    guidance_scale=request.guidance_scale,
-                    negative_prompt=request.negative_prompt,
-                    num_images_per_prompt=request.num_images_per_prompt,
-                    model_name=request.model,
-                )
+                context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
                 async for response in self.engine_queue.stream(
@@ -88,16 +72,15 @@ class PixelGeneratorPipeline(
                 ):
                     assert isinstance(response, PixelGenerationOutput)
 
-                    # Postprocess image: normalize [-1,1] → [0,1] and transpose NCHW → NHWC
-                    # This is analogous to tokenizer.decode() in text generation
+                    # Postprocess visual data: normalize and transpose
                     if (
                         response.pixel_data is not None
                         and response.pixel_data.size > 0
                     ):
-                        image_np = response.pixel_data
-                        image_np = (image_np * 0.5 + 0.5).clip(min=0.0, max=1.0)
-                        image_np = image_np.transpose(0, 2, 3, 1)  # NCHW → NHWC
-                        # Create new output with processed image
+                        image_np = await self.tokenizer.decode(
+                            response.pixel_data
+                        )
+                        # Create new output with processed visual data
                         response = PixelGenerationOutput(
                             pixel_data=image_np,
                             metadata=response.metadata,

@@ -111,7 +111,7 @@ class PixelGenerationRequest(Request):
 
 
 @runtime_checkable
-class PixelGenerationContext(BaseContext, Protocol):
+class PixelContext(BaseContext, Protocol):
     """Protocol for pixel generation contexts.
 
     This protocol defines the interface for diffusion model pipelines,
@@ -175,12 +175,12 @@ class PixelGenerationContext(BaseContext, Protocol):
 
 
 PixelGenerationContextType = TypeVar(
-    "PixelGenerationContextType", bound=PixelGenerationContext
+    "PixelGenerationContextType", bound=PixelContext
 )
-"""Type variable for pixel generation context types, constrained to PixelGenerationContext.
+"""Type variable for pixel generation context types, constrained to PixelContext.
 
 This allows generic typing of pixel generation pipeline components to accept any
-context type that implements the PixelGenerationContext protocol.
+context type that implements the PixelContext protocol.
 """
 
 
