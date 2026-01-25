@@ -1438,8 +1438,14 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
-/// Given a packtype, return the type of the field at the specified index, which
-/// may be parametric.
+/// Given a struct type, return the type of the field at the specified index,
+/// which may be parametric.
+///
+/// This uses POC::VariadicGet to extract from the struct's type list, which
+/// automatically folds when both the struct and index are constant. For
+/// parametric cases (including structs with VariadicSplatType elements or
+/// parametric indices), it returns a ParamType that will be resolved during
+/// elaboration.
 static Type getStructFieldTypeAtIndex(StructType structType, TypedAttr index) {
   // The result type is the type extracted from the type list.  Extract the
   // element from the type list.  This automatically folds if constant.
@@ -1463,31 +1469,30 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
   if (!indexAttr)
     return success();
 
-  // Unresolved structs cannot be verified until element types are resolved.
-  if (!container.isResolved())
-    return success();
-
-  auto elementTypesOpt = container.getElementTypes();
-  if (!elementTypesOpt)
-    return success(); // Cannot verify without resolved element types.
-  SmallVector<Type> elementTypes = *elementTypesOpt;
-  if (llvm::any_of(elementTypes,
-                   [](Type type) { return isa<VariadicSplatType>(type); })) {
-    if (elementTypes.size() != 1) {
-      // TODO: Support multiple types within `!kgen.struct`.
-      return op->emitOpError("only single `!kgen.variadic_splat` type allowed");
+  if (auto elementTypesOpt = container.getElementTypes()) {
+    if (!elementTypesOpt)
+      return success(); // Cannot verify without resolved element types.
+    SmallVector<Type> elementTypes = *elementTypesOpt;
+    if (llvm::any_of(elementTypes,
+                     [](Type type) { return isa<VariadicSplatType>(type); })) {
+      if (elementTypes.size() != 1) {
+        // TODO: Support multiple types within `!kgen.struct`.
+        return op->emitOpError(
+            "only single `!kgen.variadic_splat` type allowed");
+      }
+      // `!kgen.variadic_splat` type is not yet concretized, therefore we cannot
+      // verify correctness of this operation
+      return success();
     }
-    // `!kgen.variadic_splat` type is not yet concretized, therefore we cannot
-    // verify correctness of this operation
-    return success();
+    // If the index is concrete then we can verify it and the result type.
+    if (auto intAttr = dyn_cast_if_present<IntegerAttr>(indexAttr)) {
+      size_t index = intAttr.getInt();
+      if (index >= elementTypes.size())
+        return op->emitOpError("element index ")
+               << index << " out of bounds (>=" << elementTypes.size() << ")";
+    }
   }
-  // If the index is concrete then we can verify it and the result type.
-  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(indexAttr)) {
-    size_t index = intAttr.getInt();
-    if (index >= elementTypes.size())
-      return op->emitOpError("element index ")
-             << index << " out of bounds (>=" << elementTypes.size() << ")";
-  }
+
   auto expectedType = getStructFieldTypeAtIndex(container, indexAttr);
   if (expectedType != valueType) {
     return op->emitOpError(valueKind)
@@ -1502,20 +1507,6 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
 LogicalResult StructExtractOp::verify() {
   return verifyStructValueType(*this, getContainer().getType(), getIndexAttr(),
                                getType(), "result");
-}
-
-/// Given a struct type, return the type of the field at the specified index,
-/// which may be parametric.
-///
-/// This uses POC::VariadicGet to extract from the struct's type list, which
-/// automatically folds when both the struct and index are constant. For
-/// parametric cases (including structs with VariadicSplatType elements or
-/// parametric indices), it returns a ParamType that will be resolved during
-/// elaboration.
-static Type getStructFieldAtIndex(StructType structType, TypedAttr index) {
-  auto typeAttr = ParamOperatorAttr::get(
-      POC::VariadicGet, structType.getElementTypesVariadic(), index);
-  return ParamType::get(typeAttr);
 }
 
 LogicalResult StructExtractOp::inferReturnTypes(
@@ -1536,7 +1527,8 @@ LogicalResult StructExtractOp::inferReturnTypes(
   if (!indexAttr)
     return emitError("expected an index attribute");
 
-  inferredReturnTypes.push_back(getStructFieldAtIndex(structType, indexAttr));
+  inferredReturnTypes.push_back(
+      getStructFieldTypeAtIndex(structType, indexAttr));
   return success();
 }
 
