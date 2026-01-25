@@ -38,6 +38,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
+from max.tensor import Tensor
 from PIL import Image
 from transformers import (
     AutoProcessor,
