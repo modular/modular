@@ -40,7 +40,7 @@ class PixelGenerationRequest(Request):
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    prompt: str | None = None
+    prompt: str = ""
     """
     The text prompt to generate pixels for.
     """
@@ -90,7 +90,7 @@ class PixelGenerationRequest(Request):
     """
 
     def __post_init__(self) -> None:
-        if self.prompt is None:
+        if self.prompt == "":
             raise ValueError("Prompt must be provided.")
 
 
@@ -176,9 +176,7 @@ class PixelContext(BaseContext):
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
-    guidance: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
+    guidance: npt.NDArray[np.float32] | None = None
     true_cfg_scale: float = field(default=1.0)
     num_images_per_prompt: int = field(default=1)
 

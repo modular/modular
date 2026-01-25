@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import numpy.typing as npt
 from max.driver import CPU, Device
-from max.dtype import DType
 from max.interfaces import (
     ImageMetadata,
     PipelineTokenizer,
@@ -38,7 +37,6 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
-from max.tensor import Tensor
 from PIL import Image
 from transformers import (
     AutoProcessor,
@@ -976,10 +974,9 @@ class PixelGenerationTokenizer(
         latent_image_ids[..., 2] = (
             latent_image_ids[..., 2] + np.arange(width)[None, :]
         )
-        latent_image_ids = latent_image_ids.reshape(
-            -1, latent_image_ids.shape[-1]
+        return latent_image_ids.reshape(-1, latent_image_ids.shape[-1]).astype(
+            np.float32
         )
-        return latent_image_ids.astype(np.float32)
 
     def _randn_tensor(
         self,
@@ -1090,11 +1087,11 @@ class PixelGenerationTokenizer(
         negative_token_ids_2: npt.NDArray[np.integer[Any]] | None = None
         if do_true_cfg:
             negative_token_ids, _attn_mask_neg = await self.encode(
-                negative_prompt
+                negative_prompt or ""
             )
             if self.delegate_2 is not None:
                 negative_token_ids_2, _attn_mask_neg_2 = await self.encode(
-                    negative_prompt_2 or negative_prompt,
+                    negative_prompt_2 or negative_prompt or "",
                     use_secondary=True,
                 )
 
@@ -1144,9 +1141,10 @@ class PixelGenerationTokenizer(
 
         tokenizer_output: Any
 
-        def _encode_fn(prompt: str) -> Any:
+        def _encode_fn(prompt_str: str) -> Any:
+            assert delegate is not None
             return delegate(
-                prompt,
+                prompt_str,
                 padding="max_length",
                 max_length=max_sequence_length,
                 truncation=True,
@@ -1170,7 +1168,9 @@ class PixelGenerationTokenizer(
         return encoded_prompt, attention_mask
 
     async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        self,
+        encoded: tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.bool_]],
+        **kwargs,
     ) -> str:
         raise NotImplementedError(
             "Decoding is not implemented for this tokenizer."
@@ -1272,6 +1272,7 @@ class PixelGenerationTokenizer(
             1.0,
             1.0 / request.num_inference_steps,
             request.num_inference_steps,
+            dtype=np.float32,
         )
         if (
             hasattr(scheduler.config, "use_flow_sigmas")
@@ -1286,9 +1287,9 @@ class PixelGenerationTokenizer(
             mu=mu,
         )
         if request.model_name == "Tongyi-MAI/Z-Image-Turbo":
-            timesteps = (1000 - timesteps) / 1000
+            timesteps = ((1000.0 - timesteps) / 1000.0).astype(np.float32)
         else:
-            timesteps = timesteps / 1000
+            timesteps = (timesteps / 1000.0).astype(np.float32)
         num_warmup_steps = max(
             len(timesteps) - num_inference_steps * scheduler.order, 0
         )
@@ -1304,9 +1305,7 @@ class PixelGenerationTokenizer(
 
         guidance: npt.NDArray[np.float32] | None = None
         if transformer_config.guidance_embeds:
-            guidance = Tensor.constant(
-                [request.guidance_scale], device=CPU(), dtype=DType.float32
-            ).numpy()
+            guidance = np.array([request.guidance_scale], dtype=np.float32)
         else:
             guidance = None
 
@@ -1319,8 +1318,8 @@ class PixelGenerationTokenizer(
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
             negative_tokens_2=negative_token_buffer_2,
-            timesteps=timesteps.astype(np.float32),
-            sigmas=scheduler.sigmas.astype(np.float32),
+            timesteps=timesteps,
+            sigmas=scheduler.sigmas,
             latents=latents,
             latent_image_ids=latent_image_ids,
             height=height,
