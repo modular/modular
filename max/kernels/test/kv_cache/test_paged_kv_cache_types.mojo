@@ -21,14 +21,11 @@ from memory import alloc
 from testing import assert_true
 
 from utils.index import Index, IndexList
-from collections import OptionalReg
 
 comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
-def do_test[
-    page_size: Int, layout_block_size: Int, scale_dtype: DType = DType.invalid
-]():
+def do_test[page_size: Int, layout_block_size: Int]():
     comptime batch_size = 16
     comptime max_num_blocks = 100
     comptime shape = IndexList[6](
@@ -66,23 +63,8 @@ def do_test[
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
 
-    var scales: OptionalReg[
-        LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
-    ] = None
-
-    @parameter
-    if scale_dtype == DType.float8_e4m3fn:
-        # Use the same shape as the blocks
-        var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
-        scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-            scales_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
-        ).fill(0)
-
     var collection = PagedKVCacheCollection[
-        DType.float32,
-        kv_params,
-        page_size,
-        scale_dtype,
+        DType.float32, kv_params, page_size
     ](
         LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
             blocks.ptr,
@@ -109,7 +91,6 @@ def do_test[
         ),
         max_seq_length,
         max_cache_length,
-        scales,
     )
 
     comptime layout = Layout(
@@ -320,22 +301,9 @@ fn test_paged_kv_cache_offset_correctness() raises:
     lookup_table_ptr.free()
 
 
-fn test_paged_kv_cache_quantization() raises:
-    comptime CacheType = PagedKVCache[
-        DType.float32, kv_params, 16, DType.float8_e4m3fn, 256
-    ]
-    assert_true(CacheType.quantization_enabled, "Quantization not enabled")
-    assert_true(
-        CacheType.quantization_granularity == 256,
-        "Incorrect quantization granularity",
-    )
-
-
 def main():
     test_paged_kv_cache_stride_is_unknown()
     test_paged_kv_cache_offset_correctness()
-    test_paged_kv_cache_quantization()
     do_test[16, 16]()
     do_test[64, 16]()
     do_test[128, 64]()
-    do_test[128, 64, DType.float8_e4m3fn]()
