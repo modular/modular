@@ -187,8 +187,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             # For draft model: claim if not already claimed (target model is claimed by scheduler)
             # For target model: scheduler handles claiming, so skip here
             if is_draft:
-                if not model.kv_manager.contains(context.request_id):
-                    model.kv_manager.claim(context.request_id)
+                if not model.kv_manager.contains(
+                    context.request_id, replica_idx=0
+                ):
+                    model.kv_manager.claim(context.request_id, replica_idx=0)
             # For target model, scheduler handles claiming via batch_constructor
         return num_steps
 
@@ -237,7 +239,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     context.tokens.rewind_processing(-delta)
 
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
         kv_cache_inputs = model.kv_manager.get_runtime_inputs(
             [batch], num_steps
         )
@@ -298,7 +300,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Tuple of (ModelInputs for target model, 1)
         """
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
         kv_cache_inputs = model.kv_manager.get_runtime_inputs(
             [batch], num_steps
         )
@@ -341,7 +343,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Tuple of (Updated ModelInputs, num_steps)
         """
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
         kv_cache_inputs = model.kv_manager.get_runtime_inputs(
             [batch], num_steps
         )

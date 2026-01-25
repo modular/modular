@@ -46,10 +46,10 @@ async def test_kv_cache_multi_gpu() -> None:
             session=inference_session,
         )
         context = create_text_context(np.empty(1))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
 
         batch = [context]
-        kv_manager.alloc(context)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         list_of_kv_tuples = kv_manager.get_runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
@@ -157,7 +157,7 @@ async def test_swapping_to_host_multi_gpu(
             prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
             for ctx in batch:
-                kv_manager.alloc(ctx, num_steps=1)
+                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
             _ = kv_manager.get_runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
@@ -177,7 +177,7 @@ async def test_swapping_to_host_multi_gpu(
             kv_manager.step([batch])
 
         for context in batch:
-            kv_manager.release(context.request_id)
+            kv_manager.release(context.request_id, replica_idx=0)
 
     if enable_swapping_to_host:
         # cache hit rates are high!
@@ -188,8 +188,8 @@ async def test_swapping_to_host_multi_gpu(
         expected_cache_hit_rates = np.array([0.0, 0.02, 0.03, 0.02, 0.03])
         expected_blocks_copied = np.array([0, 0])  # d2h, h2d
 
-    d2h_blocks_copied = kv_manager.metrics.d2h_blocks_copied
-    h2d_blocks_copied = kv_manager.metrics.h2d_blocks_copied
+    d2h_blocks_copied = kv_manager.get_metrics(replica_idx=0).d2h_blocks_copied
+    h2d_blocks_copied = kv_manager.get_metrics(replica_idx=0).h2d_blocks_copied
     print(f"Blocks copied: D2H: {d2h_blocks_copied}, H2D: {h2d_blocks_copied}")
     blocks_copied_arr = np.array([d2h_blocks_copied, h2d_blocks_copied])
     assert np.allclose(blocks_copied_arr, expected_blocks_copied, atol=5)

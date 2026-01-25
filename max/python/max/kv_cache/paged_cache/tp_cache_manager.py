@@ -205,15 +205,14 @@ class _TPPagedKVCacheManager:
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:
         """Get the percentage of blocks used after allocating for a request."""
-        num_used_blocks = self.total_num_pages - self.num_free_blocks
         num_needed_blocks = (
-            num_used_blocks
+            self.num_used_pages
             + self.block_manager.num_blocks_to_allocate(ctx, num_steps)
         )
-        assert self.total_num_pages > 0
+        assert self.num_pages > 0
         return min(
             1.0,
-            num_needed_blocks / self.total_num_pages,
+            num_needed_blocks / self.num_pages,
         )
 
     @traced
@@ -374,37 +373,24 @@ class _TPPagedKVCacheManager:
             self.block_manager.step(ctx)
 
     @property
-    def num_free_blocks(self) -> int:
-        """Get the set of free blocks."""
-        return len(self.block_manager.device_block_pool.free_blocks)
+    def num_pages(self) -> int:
+        return self.total_num_pages
 
     @property
-    def used_blocks_pct(self) -> float:
-        """Get the percentage of blocks that are in usee."""
-        pct = (
-            self.total_num_pages - self.num_free_blocks
-        ) / self.total_num_pages
-        assert 0 <= pct <= 1
-        return pct
+    def num_used_pages(self) -> int:
+        """Get the set of used blocks."""
+        free_blocks = self.block_manager.device_block_pool.free_blocks
+        return self.total_num_pages - len(free_blocks)
 
     @property
-    def host_committed_block_pct(self) -> float:
-        """Get the percentage of host blocks that are committed."""
+    def num_host_pages(self) -> int:
+        return self.total_num_host_pages
+
+    @property
+    def num_used_host_pages(self) -> int:
         if self.block_manager.host_block_pool is None:
             return 0
-        host_committed_blocks = len(
-            self.block_manager.host_block_pool.hash_to_committed_block
-        )
-        pct = host_committed_blocks / self.total_num_host_pages
-        assert 0 <= pct <= 1
-        return pct
-
-    @property
-    def free_blocks_pct(self) -> float:
-        """Get the percentage of blocks that are free."""
-        pct = self.num_free_blocks / self.total_num_pages
-        assert 0 <= pct <= 1
-        return pct
+        return len(self.block_manager.host_block_pool.hash_to_committed_block)
 
     def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""

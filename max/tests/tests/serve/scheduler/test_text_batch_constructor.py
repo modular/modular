@@ -76,8 +76,8 @@ def create_mock_paged_cache() -> Mock:
     cache = Mock()
     cache.max_seq_len = 2048
     cache.page_size = 16
-    cache.total_num_pages = 128
-    cache.free_blocks_pct = 0.5
+    cache.get_total_num_pages = Mock(return_value=128)
+    cache.get_free_blocks_pct = Mock(return_value=0.5)
 
     cache.alloc = Mock()
     cache.claim = Mock()

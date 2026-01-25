@@ -107,7 +107,7 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks
+    assert kv_manager.get_num_pages(replica_idx=0) == num_blocks
     return kv_manager
 
 
@@ -210,7 +210,9 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         ctxs: list[TTSContext] = list(inputs.batch.values())
 
         for context in ctxs:
-            self.paged_manager.alloc(context, num_steps=num_tokens)
+            self.paged_manager.alloc(
+                context, replica_idx=0, num_steps=num_tokens
+            )
         self.paged_manager.get_runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses

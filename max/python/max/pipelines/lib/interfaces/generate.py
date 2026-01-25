@@ -135,7 +135,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 for replica_batch in batches:
                     for ctx in replica_batch:
                         for kv_manager in self.kv_managers:
-                            kv_manager.alloc(ctx, num_steps=num_steps)
+                            kv_manager.alloc(
+                                ctx, replica_idx=0, num_steps=num_steps
+                            )
                 step_outputs = self.execute(inputs)
                 outputs = []
                 for request_id, output in step_outputs.items():

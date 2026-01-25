@@ -330,7 +330,7 @@ def generate_max_outputs_fp8(
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         batch.append(context)
 
     input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
@@ -344,7 +344,7 @@ def generate_max_outputs_fp8(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.alloc(ctx, 1)
+                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
             kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
@@ -366,7 +366,7 @@ def generate_max_outputs_fp8(
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.alloc(ctx, 1)
+        kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())

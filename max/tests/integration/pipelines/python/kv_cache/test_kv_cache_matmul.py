@@ -84,12 +84,12 @@ def _dump_k_or_v_cache_to_torch_tensor(
 
     This should only be used for testing purposes.
     """
-    req_blocks = cache.get_req_blocks(ctx.request_id)
+    req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
 
     torch_dtype = cache.params.dtype.to_torch()
 
     # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
-    device_tensor = cache._replica_managers[0].device_tensors[device_id]
+    device_tensor = cache.get_device_tensors(replica_idx=0)[device_id]
     device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
 
     # [total_num_pages, num_layers, page_size, n_heads, head_dim]
@@ -215,8 +215,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     input_row_offsets = Buffer(
@@ -372,8 +372,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -504,8 +504,8 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.

@@ -207,8 +207,8 @@ def generate_max_outputs(
 
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id)
-    kv_manager.alloc(batch[0])
+    kv_manager.claim(batch[0].request_id, replica_idx=0)
+    kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.get_runtime_inputs([batch])[0]
     )

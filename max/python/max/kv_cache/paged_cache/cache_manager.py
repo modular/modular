@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from statistics import mean
 from typing import Any
 
 import numpy as np
@@ -47,8 +46,8 @@ class PagedKVCacheManager:
         kv_manager.claim(ctx2.request_id, replica_idx=1)
 
         # Allocate blocks for these requests
-        kv_manager.alloc(ctx1, num_steps=10)
-        kv_manager.alloc(ctx2, num_steps=10)
+        kv_manager.alloc(ctx1, replica_idx=0, num_steps=10)
+        kv_manager.alloc(ctx2, replica_idx=1, num_steps=10)
 
         # Get KVCache inputs to feed to graph
         kv_cache_inputs = kv_manager.get_runtime_inputs(
@@ -64,8 +63,8 @@ class PagedKVCacheManager:
         kv_manager.step([[ctx1, ctx2]])
 
         # Release metadata and KV blocks for these requests
-        kv_manager.release(ctx1.request_id)
-        kv_manager.release(ctx2.request_id)
+        kv_manager.release(ctx1.request_id, replica_idx=0)
+        kv_manager.release(ctx2.request_id, replica_idx=1)
     """
 
     def __init__(
@@ -116,13 +115,6 @@ class PagedKVCacheManager:
         self.enable_kvcache_swapping_to_host = (
             first_replica.enable_kvcache_swapping_to_host
         )
-        self.total_num_pages = sum(
-            manager.total_num_pages for manager in self._replica_managers
-        )
-
-        # Track requests to replicas.
-        self._request_to_replica_idx: dict[RequestID, int] = {}
-        self._request_count_per_replica: list[int] = [0] * self.num_replicas
 
         # Store session for model loading
         self.session = session
@@ -133,7 +125,7 @@ class PagedKVCacheManager:
         )
 
     def get_pct_used_blocks_after_allocation(
-        self, ctx: TextGenerationContext, num_steps: int = 1
+        self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
     ) -> float:
         """Get the percentage of blocks used after allocating for a request.
 
@@ -145,12 +137,13 @@ class PagedKVCacheManager:
             The percentage of total blocks used after allocating for the request.
         """
         return self._replica_managers[
-            self._request_to_replica_idx[ctx.request_id]
+            replica_idx
         ].get_pct_used_blocks_after_allocation(ctx, num_steps)
 
     def alloc(
         self,
         data: TextGenerationContext,
+        replica_idx: int,
         num_steps: int = 1,
     ) -> None:
         """Allocates blocks for a request to run for N steps.
@@ -168,11 +161,6 @@ class PagedKVCacheManager:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-        assert data.request_id in self._request_to_replica_idx, (
-            f"Request ID {data.request_id} must already be assigned to a "
-            "replica before reserving"
-        )
-        replica_idx = self._request_to_replica_idx[data.request_id]
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
     def get_runtime_inputs(
@@ -194,51 +182,20 @@ class PagedKVCacheManager:
             ret_list.extend(replica.get_runtime_inputs(ctxs, num_steps))
         return ret_list
 
-    def release(self, request_id: RequestID) -> None:
-        replica_idx = self._request_to_replica_idx.pop(request_id)
-        self._request_count_per_replica[replica_idx] -= 1
+    def release(self, request_id: RequestID, replica_idx: int) -> None:
         self._replica_managers[replica_idx].release(request_id)
 
-    def claim(
-        self, request_id: RequestID, replica_idx: int | None = None
-    ) -> None:
+    def claim(self, request_id: RequestID, replica_idx: int) -> None:
         """Reserve a sequence ID for the given request ID."""
-        if self.num_replicas > 1 and replica_idx is None:
-            raise ValueError(
-                "replica_idx must be specified when data parallelism is enabled"
-            )
-        if replica_idx is None:
-            replica_idx = 0
-        if request_id in self._request_to_replica_idx:
-            raise ValueError(
-                f"Request ID {request_id} is already claimed for replica {self._request_to_replica_idx[request_id]}"
-            )
         self._replica_managers[replica_idx].claim(request_id)
-        self._request_to_replica_idx[request_id] = replica_idx
-        self._request_count_per_replica[replica_idx] += 1
 
     def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
         """Commit new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
             replica.step(ctxs)
 
-    def contains(self, request_id: RequestID) -> bool:
-        return request_id in self._request_to_replica_idx
-
-    @property
-    def num_free_blocks(self) -> int:
-        """Get the set of free blocks."""
-        return sum(
-            [manager.num_free_blocks for manager in self._replica_managers],
-            start=0,
-        )
-
-    @property
-    def metrics(self) -> KVCacheMetrics:
-        return sum(
-            (manager.metrics for manager in self._replica_managers),
-            start=KVCacheMetrics(),
-        )
+    def contains(self, request_id: RequestID, replica_idx: int) -> bool:
+        return self._replica_managers[replica_idx].contains(request_id)
 
     def reset_metrics(self) -> None:
         for manager in self._replica_managers:
@@ -391,37 +348,27 @@ class PagedKVCacheManager:
         # are aware of what needs to be tweaked/changed.
         return 512
 
-    @property
-    def free_blocks_pct(self) -> float:
-        return mean(
-            [manager.free_blocks_pct for manager in self._replica_managers],
-        )
+    def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
+        return self._replica_managers[replica_idx].metrics
 
-    @property
-    def used_blocks_pct(self) -> float:
-        return 1 - self.free_blocks_pct
-
-    @property
-    def host_committed_block_pct(self) -> float:
-        return mean(
-            [
-                manager.host_committed_block_pct
-                for manager in self._replica_managers
-            ]
-        )
-
-    @property
-    def total_num_host_pages(self) -> int:
-        return sum(
-            [manager.total_num_host_pages for manager in self._replica_managers]
-        )
-
-    def get_req_blocks(self, request_id: RequestID) -> list[int]:
-        replica_idx = self._request_to_replica_idx[request_id]
+    def get_req_blocks(
+        self, request_id: RequestID, replica_idx: int
+    ) -> list[int]:
         return self._replica_managers[replica_idx].block_manager.get_req_blocks(
             request_id
         )
 
-    @property
-    def device_tensors(self) -> list[list[Buffer]]:
-        return [manager.device_tensors for manager in self._replica_managers]
+    def get_num_pages(self, replica_idx: int) -> int:
+        return self._replica_managers[replica_idx].num_pages
+
+    def get_num_used_pages(self, replica_idx: int) -> int:
+        return self._replica_managers[replica_idx].num_used_pages
+
+    def get_num_host_pages(self, replica_idx: int) -> int:
+        return self._replica_managers[replica_idx].num_host_pages
+
+    def get_num_used_host_pages(self, replica_idx: int) -> int:
+        return self._replica_managers[replica_idx].num_used_host_pages
+
+    def get_device_tensors(self, replica_idx: int) -> list[Buffer]:
+        return self._replica_managers[replica_idx].device_tensors

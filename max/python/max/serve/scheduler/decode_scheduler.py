@@ -93,8 +93,12 @@ class DecodeScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
-            total_num_pages=self.paged_manager.total_num_pages,
+            tensors=[
+                self.paged_manager.get_device_tensors(replica_idx)
+                for replica_idx in range(self.paged_manager.num_replicas)
+            ],
+            # Assume all replicas have the same number of pages.
+            total_num_pages=self.paged_manager.get_num_pages(replica_idx=0),
         )
 
         self.batch_constructor = TextBatchConstructor(
@@ -201,7 +205,12 @@ class DecodeScheduler(Scheduler):
             < self.scheduler_config.max_batch_size
             and (
                 self.paged_manager is None
-                or self.paged_manager.free_blocks_pct > 0.1
+                or any(
+                    self.paged_manager.get_num_used_pages(replica_idx)
+                    / self.paged_manager.get_num_pages(replica_idx)
+                    < 0.9
+                    for replica_idx in range(self.paged_manager.num_replicas)
+                )
             )
         ):
             # Pop off request queue
@@ -219,16 +228,20 @@ class DecodeScheduler(Scheduler):
             # The blocks allocated here will be written via a KVCache transfer
             # from prefill -> decode.
             try:
-                self.paged_manager.alloc(context, 1)
+                self.paged_manager.alloc(
+                    context, replica_idx=replica_idx, num_steps=1
+                )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.paged_manager.release(req_id)
+                self.paged_manager.release(req_id, replica_idx=replica_idx)
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.get_req_blocks(req_id)
+            dst_idxs = self.paged_manager.get_req_blocks(
+                req_id, replica_idx=replica_idx
+            )
             self.prefill_reqs[req_id] = (context, replica_idx)
             self.prefill_reqs_per_replica[replica_idx] += 1
             self.send_prefill_request(req_id, context, dst_idxs, replica_idx)

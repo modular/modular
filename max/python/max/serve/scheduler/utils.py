@@ -99,10 +99,10 @@ class BatchMetrics:
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
         if paged_cache is not None:
-            cache_metrics = paged_cache.metrics
-            paged_cache.reset_metrics()
-
-            cache_hit_tokens = cache_metrics.cache_tokens
+            cache_hit_tokens = sum(
+                paged_cache.get_metrics(replica_idx).cache_tokens
+                for replica_idx in range(paged_cache.num_replicas)
+            )
             all_tokens = cache_hit_tokens + cache_miss_tokens
             cache_hit_rate = 0.0
             # We have to handle case where denominator is 0 (empty batch)
@@ -112,10 +112,25 @@ class BatchMetrics:
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
             if paged_cache.enable_kvcache_swapping_to_host:
-                used_host_kv_pct = paged_cache.host_committed_block_pct
-                total_host_kv_blocks = paged_cache.total_num_host_pages
-                h2d_blocks_copied = cache_metrics.h2d_blocks_copied
-                d2h_blocks_copied = cache_metrics.d2h_blocks_copied
+                total_host_kv_blocks = sum(
+                    paged_cache.get_num_host_pages(replica_idx)
+                    for replica_idx in range(paged_cache.num_replicas)
+                )
+                used_host_kv_blocks = sum(
+                    paged_cache.get_num_used_host_pages(replica_idx)
+                    for replica_idx in range(paged_cache.num_replicas)
+                )
+                used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
+                h2d_blocks_copied = sum(
+                    paged_cache.get_metrics(replica_idx).h2d_blocks_copied
+                    for replica_idx in range(paged_cache.num_replicas)
+                )
+                d2h_blocks_copied = sum(
+                    paged_cache.get_metrics(replica_idx).d2h_blocks_copied
+                    for replica_idx in range(paged_cache.num_replicas)
+                )
+
+                paged_cache.reset_metrics()
 
         return cls(
             batch_type=inputs.batch_type,

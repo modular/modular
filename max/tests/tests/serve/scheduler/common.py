@@ -93,7 +93,7 @@ def create_paged_manager(
     session = InferenceSession(devices=[device])
 
     # CPU swap space is 100x the device cache memory
-    num_blocks = num_blocks * dp
+    num_blocks = num_blocks
     num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
@@ -103,7 +103,10 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks * dp
+    assert all(
+        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        for replica_idx in range(dp)
+    )
     return kv_manager
 
 
@@ -197,14 +200,18 @@ class FakeTokenGeneratorPipeline(
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
             for context in batch:
-                if not self.kv_manager.contains(context.request_id):
+                if not self.kv_manager.contains(
+                    context.request_id, replica_idx=replica_idx
+                ):
                     self.kv_manager.claim(
                         context.request_id, replica_idx=replica_idx
                     )
 
-        for batch in inputs.batches:
+        for replica_idx, batch in enumerate(inputs.batches):
             for ctx in batch:
-                self.kv_manager.alloc(ctx, num_steps=num_steps)
+                self.kv_manager.alloc(
+                    ctx, replica_idx=replica_idx, num_steps=num_steps
+                )
         self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses

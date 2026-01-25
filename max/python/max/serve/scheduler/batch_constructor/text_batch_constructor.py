@@ -540,7 +540,7 @@ class TextBatchConstructor:
 
         # Release from paged cache (scheduler manages primary KV cache lifecycle)
         if self.paged_cache is not None:
-            self.paged_cache.release(request_id)
+            self.paged_cache.release(request_id, replica_idx=replica_idx)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op
@@ -584,10 +584,11 @@ class TextBatchConstructor:
         """Resets a request and returns it to the request queue"""
 
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
-        if self.paged_cache is not None and self.paged_cache.contains(
-            context.request_id
-        ):
-            self.paged_cache.release(context.request_id)
+        if self.paged_cache is not None:
+            for replica_idx in range(self.num_replicas):
+                if self.paged_cache.contains(context.request_id, replica_idx):
+                    self.paged_cache.release(context.request_id, replica_idx)
+                    break
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op
@@ -673,7 +674,9 @@ class TextBatchConstructor:
             # Check if the request fits in memory
             if self.paged_cache is not None:
                 # Claim the request if needed.
-                if not self.paged_cache.contains(req_id):
+                if not self.paged_cache.contains(
+                    req_id, replica_idx=replica_idx
+                ):
                     self.paged_cache.claim(req_id, replica_idx=replica_idx)
 
                 # Check that the CE request does not go above the watermark
@@ -681,7 +684,7 @@ class TextBatchConstructor:
                     0.0,
                     min(
                         self.paged_cache.get_pct_used_blocks_after_allocation(
-                            ctx
+                            ctx, replica_idx=replica_idx
                         ),
                         1.0,
                     ),
@@ -695,7 +698,9 @@ class TextBatchConstructor:
 
                 # Try to allocate kv cache blocks
                 try:
-                    self.paged_cache.alloc(ctx, num_steps=1)
+                    self.paged_cache.alloc(
+                        ctx, replica_idx=replica_idx, num_steps=1
+                    )
                 except InsufficientBlocksError:
                     if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
                         raise
@@ -789,7 +794,11 @@ class TextBatchConstructor:
             # At this point, we can assume that the paged cache is active.
             while True:
                 try:
-                    self.paged_cache.alloc(candidate_context, batch.num_steps)
+                    self.paged_cache.alloc(
+                        candidate_context,
+                        replica_idx=replica_idx,
+                        num_steps=batch.num_steps,
+                    )
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:

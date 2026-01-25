@@ -71,10 +71,13 @@ class PrefillScheduler(Scheduler):
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.paged_cache = paged_cache
+
         # Initialize Scheduler state.
+
+        # Maps request_id to (context, replica_idx, transfer_data)
         self.active_transfers: dict[
             RequestID,
-            tuple[TextAndVisionContext | TextContext, TransferReqData],
+            tuple[TextAndVisionContext | TextContext, int, TransferReqData],
         ] = {}
         self.request_id_to_reply_context: dict[
             RequestID, tuple[ClientIdentity, TransferDest]
@@ -82,8 +85,12 @@ class PrefillScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
-            tensors=paged_cache.device_tensors,
-            total_num_pages=paged_cache.total_num_pages,
+            tensors=[
+                paged_cache.get_device_tensors(replica_idx)
+                for replica_idx in range(paged_cache.num_replicas)
+            ],
+            # Assume all replicas have the same number of pages.
+            total_num_pages=paged_cache.get_num_pages(replica_idx=0),
         )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
@@ -148,15 +155,17 @@ class PrefillScheduler(Scheduler):
         - Removes the transfer from active_transfers
         """
         to_be_deleted = []
-        for req_id, (context, transfer) in self.active_transfers.items():
+        for context, replica_idx, transfer in self.active_transfers.values():
             if self.transfer_engine.is_complete(transfer):
                 self.transfer_engine.cleanup_transfer(transfer)
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.paged_cache.release(context.request_id)
+                self.paged_cache.release(
+                    context.request_id, replica_idx=replica_idx
+                )
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
                 # For regular pipelines, release() is a no-op
                 self.pipeline.release(context.request_id)
-                to_be_deleted.append(req_id)
+                to_be_deleted.append(context.request_id)
 
         for id in to_be_deleted:
             del self.active_transfers[id]
@@ -185,7 +194,9 @@ class PrefillScheduler(Scheduler):
 
         # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.paged_cache.get_req_blocks(req_id)
+        src_idxs = self.paged_cache.get_req_blocks(
+            req_id, replica_idx=src_replica_idx
+        )
         dst_idxs = transfer_dest.dst_block_ids
         assert len(src_idxs) == len(dst_idxs)
 
@@ -204,7 +215,11 @@ class PrefillScheduler(Scheduler):
             src_replica_idx=src_replica_idx,
             dst_replica_idx=transfer_dest.dst_replica_idx,
         )
-        self.active_transfers[req_id] = (context, transfer_data)
+        self.active_transfers[req_id] = (
+            context,
+            src_replica_idx,
+            transfer_data,
+        )
 
         assert context.tokens.generated_length != 0, (
             f"Invalid Context: Expected generated tokens to be at least one. Found: {context}"

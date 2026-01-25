@@ -333,8 +333,8 @@ def generate_qwen3_max_outputs(
         for seq_len in seq_lens
     ]
     for context in batch:
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
     kv_cache_runtime = kv_manager.get_runtime_inputs([batch])[0]
     blocks_tensor = kv_cache_runtime[0]

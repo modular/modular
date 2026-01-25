@@ -187,8 +187,8 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         context = create_text_context(
             np.empty(max_seq_len), max_length=max_seq_len
         )
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     kv_inputs = PagedKVCacheTensorsNoOpaque(
