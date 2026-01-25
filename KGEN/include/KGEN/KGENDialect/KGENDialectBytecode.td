@@ -261,7 +261,7 @@ def StructAttr : DialectAttribute<(attr
 
 def WrappedStructExtractAttr : DialectAttribute<(attr
   TypedAttr:$structValue,
-  VarInt:$fieldNo,
+  TypedAttr:$fieldNo,
   Type:$type
 )>;
 

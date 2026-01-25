@@ -213,7 +213,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
   %idx0 = index.constant 0
   %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
 
-  // CHECK:  [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
+  // CHECK:  [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT:  [[V1:%.*]] = hlcf.for [%idx10 to %idx0 step %idx1 sgt sub] (%arg1 = %idx10 : index, %arg2 = %idx0 : index, %arg3 = [[V0]] : !kgen.pointer<scalar<f32>>) -> index {
   // CHECK:        [[V2:%.*]] = index.sub %arg1, %idx1
   // CHECK-NEXT:   [[V3:%.*]] = pop.load %arg3 align<1> : !kgen.pointer<scalar<f32>>

@@ -1801,11 +1801,17 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
   let arguments = (ins KGEN_StructType:$container, AttrOfType<Index>:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $container `[` custom<IndexParamValue>($index) `]` attr-dict `:` qualified(type($container))
+    $container `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($container)
   }];
 
   let hasVerifier = 1;
   let hasFolder = 1;
+
+  let builders = [
+    // Builder with constant integer index (infers result type).
+    OpBuilder<(ins "Value":$container, "unsigned":$index)>,
+  ];
+
 }
 
 //===----------------------------------------------------------------------===//

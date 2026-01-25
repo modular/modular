@@ -1500,24 +1500,26 @@ TypedAttr StructExtractAttr::get(TypedAttr structValue, unsigned fieldNo) {
   std::optional<SmallVector<Type>> elementTypes = structType.getElementTypes();
   assert(elementTypes && "cannot extract from parametric struct");
   assert(fieldNo < elementTypes->size() && "struct extract index out of range");
-  return get(structValue.getContext(), structValue, fieldNo,
-             (*elementTypes)[fieldNo]);
+  auto fieldNoAttr =
+      IntegerAttr::get(IndexType::get(structType.getContext()), fieldNo);
+  return get(structValue, fieldNoAttr, (*elementTypes)[fieldNo]);
 }
 
-TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
-                                 unsigned fieldNo, Type resultType) {
-  if (auto value = dyn_cast_if_present<StructAttr>(structValue))
-    return value.getValues()[fieldNo];
+TypedAttr StructExtractAttr::get(TypedAttr structValue, TypedAttr fieldIdx,
+                                 Type resultType) {
+  if (auto value = dyn_cast<StructAttr>(structValue))
+    if (auto fieldIdxAttr = dyn_cast<IntegerAttr>(fieldIdx))
+      return value.getValues()[fieldIdxAttr.getInt()];
   if (::isa<UninitMemAttr>(structValue))
     return UninitMemAttr::get(resultType);
 
-  return Base::get(context, structValue, fieldNo, resultType);
+  return Base::get(structValue.getContext(), structValue, fieldIdx, resultType);
 }
 
 StructExtractAttr StructExtractAttr::getFromBytecode(TypedAttr structValue,
-                                                     unsigned fieldNo,
+                                                     TypedAttr fieldIdx,
                                                      Type resultType) {
-  return Base::get(resultType.getContext(), structValue, fieldNo, resultType);
+  return Base::get(resultType.getContext(), structValue, fieldIdx, resultType);
 }
 
 //===----------------------------------------------------------------------===//

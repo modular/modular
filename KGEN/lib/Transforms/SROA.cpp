@@ -283,12 +283,12 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       for (OpOperand &loadUser : llvm::make_early_inc_range(load->getUses())) {
         // Peephole `extract[i](load(%alloc))` -> `load(%newAlloc_i)`.
         if (auto extract = dyn_cast<StructExtractOp>(loadUser.getOwner())) {
-          auto indexAttr = dyn_cast<IntegerAttr>(extract.getIndexAttr());
-          if (!indexAttr)
-            continue; // Parametric index, can't optimize.
-          Value newVal = getOrCreateLoad(indexAttr.getInt());
-          extract.replaceAllUsesWith(newVal);
-          toDelete.push_back(extract);
+          if (auto indexAttr = dyn_cast<IntegerAttr>(extract.getIndexAttr())) {
+            Value newVal = getOrCreateLoad(indexAttr.getInt());
+            extract.replaceAllUsesWith(newVal);
+            toDelete.push_back(extract);
+            continue;
+          }
         } else if (auto value =
                        dyn_cast<DebugInfo::ValueOp>(loadUser.getOwner())) {
           OpBuilder b(value);
@@ -304,10 +304,10 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
             }
           }
           toDelete.push_back(value);
-        } else {
-          // Replace any other value user with `create(load(%newAlloc_i), ...)`.
-          loadUser.set(getOrCreateAggregateLoad());
+          continue;
         }
+        // Replace any other value user with `create(load(%newAlloc_i), ...)`.
+        loadUser.set(getOrCreateAggregateLoad());
       }
     } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
       OpBuilder b(value);
