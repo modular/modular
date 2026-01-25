@@ -64,14 +64,14 @@ class PixelGeneratorPipeline(
                         response.pixel_data is not None
                         and response.pixel_data.size > 0
                     ):
-                        image_np = await self.tokenizer.decode(
+                        pixel_data = await self.tokenizer.postprocess(
                             response.pixel_data
                         )
                         # Create new output with processed visual data
                         response = PixelGenerationOutput(
                             request_id=response.request_id,
                             final_status=response.final_status,
-                            pixel_data=image_np,
+                            pixel_data=pixel_data,
                         )
 
                     yield response
