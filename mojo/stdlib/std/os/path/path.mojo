@@ -526,7 +526,7 @@ fn _split_extension(
         # skip all leading dots
         var file_start = head_end + 1
         while file_start < file_end:
-            if path[byte=file_start].as_string_slice() != extension_sep:
+            if StringSlice(path[byte=file_start]) != extension_sep:
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 

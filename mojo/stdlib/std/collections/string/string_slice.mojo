@@ -716,45 +716,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
 
     @implicit
-    fn __init__[
-        _origin: ImmutOrigin, //
-    ](out self: StringSlice[_origin], ref [_origin]value: String):
-        """Construct an immutable StringSlice.
+    fn __init__(out self, ref [Self.origin]value: String):
+        """Construct a StringSlice from a String.
 
-        Parameters:
-            _origin: The immutable origin.
-
-        Args:
-            value: The string value.
-        """
-        self = value.as_string_slice()
-
-    fn __init__[
-        _origin: MutOrigin, //
-    ](out self: StringSlice[_origin], ref [_origin]value: String):
-        """Construct a mutable StringSlice.
-
-        Parameters:
-            _origin: The mutable origin.
+        This constructor propagates the mutability of the reference. If you
+        have a mutable reference to a String, you get a mutable StringSlice.
+        If you have an immutable reference, you get an immutable StringSlice.
 
         Args:
             value: The string value.
         """
-        self = value.as_string_slice_mut()
-
-    @doc_private
-    @implicit
-    fn __init__(
-        out self: StaticString,
-        ref [__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`]value: String,
-    ):
-        """Construct an immutable StringSlice at comptime.
-        FIXME: This is a hack.
-
-        Args:
-            value: The string value.
-        """
-        self = rebind[StaticString](value.as_string_slice())
+        self._slice = Span[Byte, Self.origin](
+            ptr=value.unsafe_ptr()
+            .unsafe_mut_cast[Self.origin.mut]()
+            .unsafe_origin_cast[Self.origin](),
+            length=value.byte_length(),
+        )
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -979,7 +956,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             If the `StringSlice` is equal to the input in length and contents.
         """
-        return self == rhs.as_string_slice()
+        return self == StringSlice(rhs)
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -1088,7 +1065,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             If the `StringSlice` bytes are strictly less than the input in
             overlapping content.
         """
-        return self < rhs.as_string_slice()
+        return self < StringSlice(rhs)
 
     @always_inline
     fn __le__(self, rhs: String) -> Bool:
@@ -1100,7 +1077,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is less than or equal to the RHS String.
         """
-        return self <= rhs.as_string_slice()
+        return self <= StringSlice(rhs)
 
     @always_inline
     fn __gt__(self, rhs: String) -> Bool:
@@ -1112,7 +1089,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is strictly greater than the RHS String.
         """
-        return self > rhs.as_string_slice()
+        return self > StringSlice(rhs)
 
     @always_inline
     fn __ge__(self, rhs: String) -> Bool:
@@ -1124,7 +1101,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is greater than or equal to the RHS String.
         """
-        return rhs.as_string_slice() <= self
+        return StringSlice(rhs) <= self
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[Self.origin]:

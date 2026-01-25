@@ -363,7 +363,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var dict_ptr = cpy.PyDict_New()
         for entry in kwargs.items():
-            var key_ptr = cpy.PyUnicode_DecodeUTF8(entry.key.as_string_slice())
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
             if not key_ptr:
                 raise cpy.unsafe_get_error()
             var val = entry.value.copy().to_python_object()

@@ -256,10 +256,10 @@ def test_ord():
     assert_equal(multi_byte3, 128293)
 
     # Test StringSlice overload
-    assert_equal(ord("A".as_string_slice()), 65)
-    assert_equal(ord("α".as_string_slice()), 945)
-    assert_equal(ord("➿".as_string_slice()), 10175)
-    assert_equal(ord("🔥".as_string_slice()), 128293)
+    assert_equal(ord(StringSlice("A")), 65)
+    assert_equal(ord(StringSlice("α")), 945)
+    assert_equal(ord(StringSlice("➿")), 10175)
+    assert_equal(ord(StringSlice("🔥")), 128293)
 
 
 def test_chr():
@@ -1416,8 +1416,8 @@ def test_float_conversion():
 
 
 def test_slice_contains():
-    assert_true("hello world".as_string_slice().__contains__("world"))
-    assert_false("hello world".as_string_slice().__contains__("not-found"))
+    assert_true(StringSlice("hello world").__contains__("world"))
+    assert_false(StringSlice("hello world").__contains__("not-found"))
 
 
 def test_reserve():

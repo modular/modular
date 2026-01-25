@@ -51,7 +51,7 @@ def test_equality():
     assert_false(StringLiteral.__ne__("six", "six"))
 
     var hello = "hello"
-    var hello_ref = hello.as_string_slice()
+    var hello_ref = StringSlice(hello)
 
     assert_false(StringLiteral.__eq__("goodbye", hello))
     assert_true(StringLiteral.__eq__("hello", hello))
@@ -163,8 +163,8 @@ def test_comparison_operators():
     assert_true(StringLiteral.__ge__("", ""))
 
     # Test less than and greater than
-    def_slice = "def".as_string_slice()
-    abcd_slice = "abc".as_string_slice()
+    def_slice = StringSlice("def")
+    abcd_slice = StringSlice("abc")
     assert_true(StringLiteral.__lt__("abc", def_slice))
     assert_false(StringLiteral.__lt__("def", abcd_slice[0:3]))
     assert_false(StringLiteral.__lt__("abc", abcd_slice[0:3]))
@@ -180,12 +180,12 @@ def test_comparison_operators():
     assert_false(StringLiteral.__ge__("ab", abcd_slice[0:3]))
     assert_true(StringLiteral.__ge__("abcd", abcd_slice[0:3]))
 
-    abc_upper_slice = "ABC".as_string_slice()
+    abc_upper_slice = StringSlice("ABC")
     # Test case sensitivity in comparison (assuming ASCII order)
     assert_true(StringLiteral.__gt__("abc", abc_upper_slice))
     assert_false(StringLiteral.__le__("abc", abc_upper_slice))
 
-    empty_slice = "".as_string_slice()
+    empty_slice = StringSlice("")
     # Test comparisons involving empty strings
     assert_true(StringLiteral.__lt__("", abcd_slice[0:3]))
     assert_false(StringLiteral.__lt__("abc", empty_slice))

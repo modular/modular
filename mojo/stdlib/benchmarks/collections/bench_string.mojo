@@ -99,9 +99,9 @@ fn bench_string_split[
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = (
-        make_string[length](filename + ".txt").as_string_slice().get_immutable()
-    )
+    var items = StringSlice(
+        make_string[length](filename + ".txt")
+    ).get_immutable()
 
     @always_inline
     fn call_fn() unified {read}:
@@ -154,7 +154,7 @@ fn bench_string_join[short: Bool](mut b: Bencher) raises:
 fn bench_string_splitlines[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
-    var items = make_string[length](filename + ".txt").as_string_slice()
+    var items = StringSlice(make_string[length](filename + ".txt"))
 
     @always_inline
     fn call_fn() unified {read}:

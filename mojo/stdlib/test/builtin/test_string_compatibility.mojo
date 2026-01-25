@@ -24,19 +24,19 @@ def test_literals():
 
     # Concatenation with literals
     var concat_static = "foo" + StaticString("bar")
-    var concat_static2 = "foo".as_string_slice() + "bar"
+    var concat_static2 = StringSlice("foo") + "bar"
     assert_equal(concat_static, "foobar")
     assert_equal(concat_static2, "foobar")
 
     # Conditional expressions with literals
     var if_string1 = "foo" if cond else StaticString("bar")
-    var if_string2 = "foo".as_string_slice() if cond else "bar"
+    var if_string2 = StringSlice("foo") if cond else "bar"
     assert_equal(if_string1, "foo")
     assert_equal(if_string2, "foo")
 
     # Logical or with literals
     var or_string1 = "" or StaticString("foo")
-    var or_string2 = "foo".as_string_slice() or ""
+    var or_string2 = StringSlice("foo") or ""
     assert_equal(or_string1, "foo")
     assert_equal(or_string2, "foo")
 
@@ -128,7 +128,7 @@ def _test_string_slice_conversions(
 ):
     """Test explicit conversions between String and StringSlice."""
     # Convert String to StringSlice
-    var slice_from_string = string.as_string_slice()
+    var slice_from_string = StringSlice(string)
     assert_equal(String(slice_from_string), string)
 
     # Convert StringSlice to String
@@ -136,7 +136,7 @@ def _test_string_slice_conversions(
     assert_equal(string_from_slice, String(string_slice))
 
     # Test round-trip conversion
-    var round_trip = String(string.as_string_slice())
+    var round_trip = String(StringSlice(string))
     assert_equal(round_trip, string)
 
     # Test that StringSlice content matches when converted to String
@@ -149,7 +149,9 @@ def _test_equality_operations(
     """Test equality operations between different string types."""
     var string_a = String("hello")
     var static_a = "hello"
-    var slice_a = string_a.as_string_slice()
+    # Use a separate string for the slice to avoid aliasing issues
+    var string_for_slice = String("hello")
+    var slice_a = StringSlice(string_for_slice)
 
     var string_b = String("world")
     var static_b = "world"
@@ -313,27 +315,27 @@ def _test_conditional_edge_cases(
 def test_string_types_compatibility():
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_string_types_compatibility(string, static_string, string_slice)
 
 
 def test_string_slice_conversions():
     var string = "string"
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_string_slice_conversions(string, string_slice)
 
 
 def test_equality_operations():
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_equality_operations(string, static_string, string_slice)
 
 
 def test_chained_operations():
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_chained_operations(string, static_string, string_slice)
 
 

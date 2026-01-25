@@ -232,7 +232,7 @@ fn test_string_byte_span() raises:
 
 
 fn test_heap_string_from_string_slice() raises:
-    comptime static_str = "Hello".as_string_slice()
+    comptime static_str = StringSlice("Hello")
 
     comptime heap_string = String(static_str)
 
@@ -241,7 +241,7 @@ fn test_heap_string_from_string_slice() raises:
 
 fn test_string_substring() raises:
     var string = "Hello"
-    var str_slice = string.as_string_slice()
+    var str_slice = StringSlice(string)
 
     assert_equal(len(str_slice), 5)
     assert_equal(str_slice[byte=0], "H")
@@ -348,24 +348,24 @@ fn test_slice_eq() raises:
 
     # FIXME: the origin of the StringSlice origin should be the data in the
     # string, not the string itself.
-    # assert_true(str1.as_string_slice().__eq__(str1))
-    assert_true(str1.as_string_slice().__eq__(str2))
-    assert_true(str2.as_string_slice().__eq__(str2.as_string_slice()))
-    assert_true(str1.as_string_slice().__eq__(str3))
+    # assert_true(StringSlice(str1).__eq__(str1))
+    assert_true(StringSlice(str1).__eq__(str2))
+    assert_true(StringSlice(str2).__eq__(StringSlice(str2)))
+    assert_true(StringSlice(str1).__eq__(str3))
 
     # ne
 
-    assert_true(str1.as_string_slice().__ne__(str4))
-    assert_true(str1.as_string_slice().__ne__(str5))
-    assert_true(str1.as_string_slice().__ne__(str5.as_string_slice()))
-    assert_true(str1.as_string_slice().__ne__(str6))
+    assert_true(StringSlice(str1).__ne__(str4))
+    assert_true(StringSlice(str1).__ne__(str5))
+    assert_true(StringSlice(str1).__ne__(StringSlice(str5)))
+    assert_true(StringSlice(str1).__ne__(str6))
 
 
 fn test_slice_bool() raises:
     var str1: String = "abc"
-    assert_true(str1.as_string_slice().__bool__())
+    assert_true(StringSlice(str1).__bool__())
     var str2: String = ""
-    assert_true(not str2.as_string_slice().__bool__())
+    assert_true(not StringSlice(str2).__bool__())
 
 
 comptime REPR_MAPPINGS = [
@@ -430,51 +430,51 @@ def test_slice_write_repr_to():
 
 
 def test_find():
-    haystack = "abcdefg".as_string_slice()
-    haystack_with_special_chars = "abcdefg@#$".as_string_slice()
-    haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
+    haystack = StringSlice("abcdefg")
+    haystack_with_special_chars = StringSlice("abcdefg@#$")
+    haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
 
-    assert_equal(haystack.find("a".as_string_slice()), 0)
-    assert_equal(haystack.find("ab".as_string_slice()), 0)
-    assert_equal(haystack.find("abc".as_string_slice()), 0)
-    assert_equal(haystack.find("bcd".as_string_slice()), 1)
-    assert_equal(haystack.find("de".as_string_slice()), 3)
-    assert_equal(haystack.find("fg".as_string_slice()), 5)
-    assert_equal(haystack.find("g".as_string_slice()), 6)
-    assert_equal(haystack.find("z".as_string_slice()), -1)
-    assert_equal(haystack.find("zzz".as_string_slice()), -1)
+    assert_equal(haystack.find(StringSlice("a")), 0)
+    assert_equal(haystack.find(StringSlice("ab")), 0)
+    assert_equal(haystack.find(StringSlice("abc")), 0)
+    assert_equal(haystack.find(StringSlice("bcd")), 1)
+    assert_equal(haystack.find(StringSlice("de")), 3)
+    assert_equal(haystack.find(StringSlice("fg")), 5)
+    assert_equal(haystack.find(StringSlice("g")), 6)
+    assert_equal(haystack.find(StringSlice("z")), -1)
+    assert_equal(haystack.find(StringSlice("zzz")), -1)
 
-    assert_equal(haystack.find("@#$".as_string_slice()), -1)
-    assert_equal(haystack_with_special_chars.find("@#$".as_string_slice()), 7)
+    assert_equal(haystack.find(StringSlice("@#$")), -1)
+    assert_equal(haystack_with_special_chars.find(StringSlice("@#$")), 7)
 
-    assert_equal(haystack_repeated_chars.find("aaa".as_string_slice()), 0)
-    assert_equal(haystack_repeated_chars.find("AAa".as_string_slice()), -1)
+    assert_equal(haystack_repeated_chars.find(StringSlice("aaa")), 0)
+    assert_equal(haystack_repeated_chars.find(StringSlice("AAa")), -1)
 
-    assert_equal(haystack.find("hijklmnopqrstuvwxyz".as_string_slice()), -1)
+    assert_equal(haystack.find(StringSlice("hijklmnopqrstuvwxyz")), -1)
 
-    assert_equal(String().as_string_slice().find("abc".as_string_slice()), -1)
+    assert_equal(StringSlice(String()).find(StringSlice("abc")), -1)
 
 
 def test_find_compile_time():
-    comptime haystack = "abcdefg".as_string_slice()
-    comptime haystack_with_special_chars = "abcdefg@#$".as_string_slice()
-    comptime haystack_repeated_chars = "aaaaaaaaaaaaaaaaaaaaaaaa".as_string_slice()
+    comptime haystack = StringSlice("abcdefg")
+    comptime haystack_with_special_chars = StringSlice("abcdefg@#$")
+    comptime haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
 
-    comptime c1 = haystack.find("a".as_string_slice())
-    comptime c2 = haystack.find("ab".as_string_slice())
-    comptime c3 = haystack.find("abc".as_string_slice())
-    comptime c4 = haystack.find("bcd".as_string_slice())
-    comptime c5 = haystack.find("de".as_string_slice())
-    comptime c6 = haystack.find("fg".as_string_slice())
-    comptime c7 = haystack.find("g".as_string_slice())
-    comptime c8 = haystack.find("z".as_string_slice())
-    comptime c9 = haystack.find("zzz".as_string_slice())
-    comptime c10 = haystack.find("@#$".as_string_slice())
-    comptime c11 = haystack_with_special_chars.find("@#$".as_string_slice())
-    comptime c12 = haystack_repeated_chars.find("aaa".as_string_slice())
-    comptime c13 = haystack_repeated_chars.find("AAa".as_string_slice())
-    comptime c14 = haystack.find("hijklmnopqrstuvwxyz".as_string_slice())
-    comptime c15 = String().as_string_slice().find("abc".as_string_slice())
+    comptime c1 = haystack.find(StringSlice("a"))
+    comptime c2 = haystack.find(StringSlice("ab"))
+    comptime c3 = haystack.find(StringSlice("abc"))
+    comptime c4 = haystack.find(StringSlice("bcd"))
+    comptime c5 = haystack.find(StringSlice("de"))
+    comptime c6 = haystack.find(StringSlice("fg"))
+    comptime c7 = haystack.find(StringSlice("g"))
+    comptime c8 = haystack.find(StringSlice("z"))
+    comptime c9 = haystack.find(StringSlice("zzz"))
+    comptime c10 = haystack.find(StringSlice("@#$"))
+    comptime c11 = haystack_with_special_chars.find(StringSlice("@#$"))
+    comptime c12 = haystack_repeated_chars.find(StringSlice("aaa"))
+    comptime c13 = haystack_repeated_chars.find(StringSlice("AAa"))
+    comptime c14 = haystack.find(StringSlice("hijklmnopqrstuvwxyz"))
+    comptime c15 = StringSlice(String()).find(StringSlice("abc"))
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -708,26 +708,26 @@ def test_splitlines():
 
 def test_rstrip():
     # with default rstrip chars
-    var empty_string = "".as_string_slice()
+    var empty_string = StringSlice("")
     assert_true(empty_string.rstrip() == "")
 
-    var space_string = " \t\n\r\v\f  ".as_string_slice()
+    var space_string = StringSlice(" \t\n\r\v\f  ")
     assert_true(space_string.rstrip() == "")
 
-    var str0 = "     n ".as_string_slice()
+    var str0 = StringSlice("     n ")
     assert_true(str0.rstrip() == "     n")
 
-    var str1 = "string".as_string_slice()
+    var str1 = StringSlice("string")
     assert_true(str1.rstrip() == "string")
 
-    var str2 = "something \t\n\t\v\f".as_string_slice()
+    var str2 = StringSlice("something \t\n\t\v\f")
     assert_true(str2.rstrip() == "something")
 
     # with custom chars for rstrip
-    var str3 = "mississippi".as_string_slice()
+    var str3 = StringSlice("mississippi")
     assert_true(str3.rstrip("sip") == "m")
 
-    var str4 = "mississippimississippi \n ".as_string_slice()
+    var str4 = StringSlice("mississippimississippi \n ")
     assert_true(str4.rstrip("sip ") == "mississippimississippi \n")
     assert_true(str4.rstrip("sip \n") == "mississippim")
 
@@ -742,26 +742,26 @@ def test_rstrip():
 
 def test_lstrip():
     # with default lstrip chars
-    var empty_string = "".as_string_slice()
+    var empty_string = StringSlice("")
     assert_true(empty_string.lstrip() == "")
 
-    var space_string = " \t\n\r\v\f  ".as_string_slice()
+    var space_string = StringSlice(" \t\n\r\v\f  ")
     assert_true(space_string.lstrip() == "")
 
-    var str0 = "     n ".as_string_slice()
+    var str0 = StringSlice("     n ")
     assert_true(str0.lstrip() == "n ")
 
-    var str1 = "string".as_string_slice()
+    var str1 = StringSlice("string")
     assert_true(str1.lstrip() == "string")
 
-    var str2 = " \t\n\t\v\fsomething".as_string_slice()
+    var str2 = StringSlice(" \t\n\t\v\fsomething")
     assert_true(str2.lstrip() == "something")
 
     # with custom chars for lstrip
-    var str3 = "mississippi".as_string_slice()
+    var str3 = StringSlice("mississippi")
     assert_true(str3.lstrip("mis") == "ppi")
 
-    var str4 = " \n mississippimississippi".as_string_slice()
+    var str4 = StringSlice(" \n mississippimississippi")
     assert_true(str4.lstrip("mis ") == "\n mississippimississippi")
     assert_true(str4.lstrip("mis \n") == "ppimississippi")
 
@@ -775,44 +775,44 @@ def test_lstrip():
 
 def test_strip():
     # with default strip chars
-    var empty_string = "".as_string_slice()
+    var empty_string = StringSlice("")
     assert_true(empty_string.strip() == "")
-    comptime comp_empty_string_stripped = "".as_string_slice().strip()
+    comptime comp_empty_string_stripped = StringSlice("").strip()
     assert_true(comp_empty_string_stripped == "")
 
-    var space_string = " \t\n\r\v\f  ".as_string_slice()
+    var space_string = StringSlice(" \t\n\r\v\f  ")
     assert_true(space_string.strip() == "")
-    comptime comp_space_string_stripped = " \t\n\r\v\f  ".as_string_slice().strip()
+    comptime comp_space_string_stripped = StringSlice(" \t\n\r\v\f  ").strip()
     assert_true(comp_space_string_stripped == "")
 
-    var str0 = "     n ".as_string_slice()
+    var str0 = StringSlice("     n ")
     assert_true(str0.strip() == "n")
-    comptime comp_str0_stripped = "     n ".as_string_slice().strip()
+    comptime comp_str0_stripped = StringSlice("     n ").strip()
     assert_true(comp_str0_stripped == "n")
 
-    var str1 = "string".as_string_slice()
+    var str1 = StringSlice("string")
     assert_true(str1.strip() == "string")
     comptime comp_str1_stripped = ("string").strip()
     assert_true(comp_str1_stripped == "string")
 
-    var str2 = " \t\n\t\v\fsomething \t\n\t\v\f".as_string_slice()
+    var str2 = StringSlice(" \t\n\t\v\fsomething \t\n\t\v\f")
     comptime comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
     # with custom strip chars
-    var str3 = "mississippi".as_string_slice()
+    var str3 = StringSlice("mississippi")
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    comptime comp_str3_stripped = "mississippi".as_string_slice().strip("mips")
+    comptime comp_str3_stripped = StringSlice("mississippi").strip("mips")
     assert_true(comp_str3_stripped == "")
 
-    var str4 = " \n mississippimississippi \n ".as_string_slice()
+    var str4 = StringSlice(" \n mississippimississippi \n ")
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
     comptime comp_str4_stripped = (
-        " \n mississippimississippi \n ".as_string_slice().strip(" ")
+        StringSlice(" \n mississippimississippi \n ").strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
 
