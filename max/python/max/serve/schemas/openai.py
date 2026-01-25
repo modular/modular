@@ -485,6 +485,21 @@ class CreateImageRequest(BaseModel):
         description='A text description of the desired image(s). The maximum length is 1000 characters for `dall-e-2` and 4000 characters for `dall-e-3`.',
         examples=['A cute baby sea otter'],
     )
+    prompt_2: Optional[str] = Field(
+        None,
+        description='A second text description of the desired image(s). The maximum length is 1000 characters for `dall-e-2` and 4000 characters for `dall-e-3`.',
+        examples=['A cute baby sea otter'],
+    )
+    negative_prompt: Optional[str] = Field(
+        None,
+        description='Negative prompt to guide what NOT to generate.',
+        examples=['blurry, low quality'],
+    )
+    negative_prompt_2: Optional[str] = Field(
+        None,
+        description='Negative prompt to guide what NOT to generate.',
+        examples=['blurry, low quality'],
+    )
     model: Optional[Union[str, Literal['dall-e-2', 'dall-e-3']]] = Field(
         'dall-e-2',
         description='The model to use for image generation.',
@@ -494,6 +509,16 @@ class CreateImageRequest(BaseModel):
         1,
         description='The number of images to generate. Must be between 1 and 10. For `dall-e-3`, only `n=1` is supported.',
         examples=[1],
+    )
+    guidance_scale: Optional[float] = Field(
+        3.5,
+        description='Guidance scale for classifier-free guidance. Set to 0 to disable CFG. Typical values: 3.5-7.5. If not set, uses model default.',
+        examples=[3.5, 7.5],
+    )
+    num_inference_steps: Optional[int] = Field(
+        50,
+        description='Number of denoising steps. More steps = higher quality but slower. If not set, uses model default.',
+        examples=[8, 20, 50],
     )
     quality: Optional[Literal['standard', 'hd']] = Field(
         'standard',
@@ -522,7 +547,6 @@ class CreateImageRequest(BaseModel):
         description='A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/docs/guides/safety-best-practices/end-user-ids).\n',
         examples=['user-1234'],
     )
-
 
 class Image(BaseModel):
     b64_json: Optional[str] = Field(
