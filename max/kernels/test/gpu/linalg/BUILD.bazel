@@ -99,11 +99,15 @@ _FILECHECK_TESTS = [
     "test_grouped_matmul_tile_scheduler.mojo",
 ]
 
+_B200_SMOKE_TESTS = [
+    "test_matmul_sm100_smoke.mojo",
+    "test_matmul_sm100_blockwise_fp8_smoke.mojo",
+]
+
 _B200_TESTS = [
     "test_tma_mma_sm100.mojo",
     "test_tma_pair_mma_sm100.mojo",
     "test_matmul_sm100_fallback.mojo",
-    "test_matmul_sm100_smoke.mojo",
     "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
     "test_grouped_matmul_dynamic_scaled_fp8.mojo",
@@ -211,6 +215,33 @@ _GPU_MEMORY = {
     for src in _B200_TESTS
 ]
 
+# B200 smoke tests - tagged manual for local-only execution, not run in CI
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = [
+            "gpu",
+            "manual",  # Smoke tests are for quick local validation, not CI
+        ],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _B200_SMOKE_TESTS
+]
+
 [
     mojo_test(
         name = src + ".test",
@@ -239,7 +270,7 @@ _GPU_MEMORY = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS,
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS,
     )
 ]
 

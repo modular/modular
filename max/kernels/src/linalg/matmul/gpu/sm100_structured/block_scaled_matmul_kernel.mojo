@@ -702,8 +702,8 @@ struct BlackwellBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays from SMEM accessors
-        var input_barriers = smem.tma_mma_mbars()
-        var accum_barriers = smem.accum_mbars()
+        var input_barriers = smem.input_barriers()
+        var accum_barriers = smem.accum_barriers()
         var clc_full = smem.clc_mbars_full()
         var clc_empty = smem.clc_mbars_empty()
         var clc_throttle = smem.clc_throttle_mbars()

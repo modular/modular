@@ -583,8 +583,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         var c_tiles = smem.c_tiles()
         var a_scales_tiles = smem.a_scales_tiles()
 
-        var input_barriers = smem.tma_mma_mbars()
-        var accum_barriers = smem.accum_mbars()
+        var input_barriers = smem.input_barriers()
+        var accum_barriers = smem.accum_barriers()
         var clc_full = smem.clc_mbars_full()
         var clc_empty = smem.clc_mbars_empty()
         var clc_throttle = smem.clc_throttle_mbars()
@@ -629,7 +629,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 Self.clc_throttle_consumer_arv_count,
             )
 
-            smem.tmem_dealloc_mbar().ptr[].init(
+            smem.tmem_dealloc().ptr[].init(
                 Self.EPILOGUE_THREADS * Self.cta_group
             )
 
@@ -702,7 +702,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var mma_ctx = Self.MmaCtx.create(
                 smem.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc_mbar(),
+                smem.tmem_dealloc(),
                 ctx.mma_complete_mask,
             )
 
@@ -729,7 +729,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var epi_ctx = Self.EpilogueCtx.create(
                 smem.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc_mbar(),
+                smem.tmem_dealloc(),
                 ctx.mma_complete_mask,
             )
 
