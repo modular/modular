@@ -72,8 +72,8 @@ kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[v
 }
 
 // CHECK-LABEL: kgen.generator @parametric_struct
-// CHECK-SAME: !kgen.struct<Ts>
-// CHECK-SAME: !kgen.struct<Ts memoryOnly>
+// CHECK-SAME: !kgen.struct<:variadic<type> Ts>
+// CHECK-SAME: !kgen.struct<:variadic<type> Ts memoryOnly>
 // CHECK-SAME-LITERAL: !kgen.struct<[index, f32]>
 kgen.generator @parametric_struct<Ts: variadic<type>>(
   %arg0: !kgen.struct<Ts>,
