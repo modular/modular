@@ -19,7 +19,7 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, Protocol, runtime_checkable
+from typing import Any, Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
@@ -28,6 +28,7 @@ from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
+from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
 
@@ -93,87 +94,168 @@ class PixelGenerationRequest(Request):
             raise ValueError("Prompt must be provided.")
 
 
-@runtime_checkable
-class PixelGenerationContext(BaseContext, Protocol):
-    """Protocol for pixel generation contexts.
+@dataclass(kw_only=True)
+class PixelContext(BaseContext):
+    """A model-ready context for image/video generation requests.
 
-    This protocol defines the interface for diffusion model pipelines,
-    ensuring compatibility with the scheduler and serving infrastructure.
+    Per the design doc, this class contains only numeric data that the model
+    will execute against. User-facing strings (prompt, negative_prompt) are
+    consumed during tokenization and do not appear here.
+
+    All preprocessing is performed by PixelGenerationTokenizer.new_context():
+    - Prompt tokenization -> tokens field
+    - Negative prompt tokenization -> negative_tokens field
+    - Timestep schedule computation -> timesteps field
+    - Initial noise generation -> initial_noise field
+
+    Configuration:
+        request_id: A unique identifier for this generation request.
+        max_sequence_length: Maximum sequence length for text encoder.
+        tokens: Tokenized prompt IDs (TokenBuffer).
+        negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
+        timesteps: Precomputed timestep schedule for denoising.
+        initial_noise: Precomputed initial noise (latents).
+        height: Height of the generated image/video in pixels.
+        width: Width of the generated image/video in pixels.
+        num_inference_steps: Number of denoising steps.
+        guidance_scale: Guidance scale for classifier-free guidance.
+        num_images_per_prompt: Number of images/videos to generate per prompt.
+        model_name: Name of the model being used.
     """
 
-    @property
-    def prompt(self) -> str | None:
-        """Text prompt for pixel generation."""
-        ...
+    # Request identification (required)
+    request_id: RequestID = field(default_factory=RequestID)
+
+    max_sequence_length: int = field(default=512)
+    """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
+
+    model_name: str = field(default="")
+
+    # Tokenized prompts
+    tokens: TokenBuffer
+    """Primary encoder tokens."""
+
+    mask: TokenBuffer | None = field(default=None)
+    """Mask for text encoder's attention."""
+
+    tokens_2: TokenBuffer | None = field(default=None)
+    """Secondary encoder tokens. None for single-encoder models."""
+
+    negative_token_ids: TokenBuffer = field(
+        default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
+    )
+
+    negative_token_ids_2: TokenBuffer | None = field(default=None)
+    """Secondary encoder negative tokens. None for single-encoder models."""
+
+    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
+    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
+
+    # Precomputed tensors
+    timesteps: npt.NDArray[Any] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed timesteps schedule for denoising."""
+
+    sigmas: npt.NDArray[Any] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed sigmas schedule for denoising."""
+
+    latents: npt.NDArray[Any] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed initial noise (latents) for generation."""
+
+    latent_image_ids: npt.NDArray[Any] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed latent image IDs for generation."""
+
+    # Image generation parameters
+    height: int = field(default=1024)
+    width: int = field(default=1024)
+    num_inference_steps: int = field(default=50)
+    guidance_scale: float = field(default=3.5)
+    guidance: npt.NDArray[Any] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    true_cfg_scale: float = field(default=1.0)
+    num_images_per_prompt: int = field(default=1)
+
+    # Generation status
+    _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
-    def prompt_2(self) -> str | None:
-        """Second text prompt for pixel generation."""
-        ...
+    def status(self) -> GenerationStatus:
+        """Current generation status of the request."""
+        return self._status
+
+    @status.setter
+    def status(self, value: GenerationStatus) -> None:
+        """Update the generation status."""
+        self._status = value
 
     @property
-    def negative_prompt(self) -> str | None:
-        """Negative prompt for what NOT to generate."""
-        ...
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self._status.is_done
 
     @property
-    def negative_prompt_2(self) -> str | None:
-        """Second negative prompt for what NOT to generate."""
-        ...
+    def needs_ce(self) -> bool:
+        """Whether this context needs context encoding.
+
+        For image generation, we never need context encoding since
+        we process the full prompt at once through the text encoder.
+        """
+        return False
 
     @property
-    def max_sequence_length(self) -> int:
-        """Maximum sequence length for text encoder."""
-        ...
+    def active_length(self) -> int:
+        """Current sequence length for batch constructor compatibility."""
+        return 1
 
     @property
-    def height(self) -> int:
-        """Height of generated output in pixels."""
-        ...
+    def current_length(self) -> int:
+        """Current length for batch constructor compatibility."""
+        return 1
 
     @property
-    def width(self) -> int:
-        """Width of generated output in pixels."""
-        ...
+    def processed_length(self) -> int:
+        """Processed length for batch constructor compatibility."""
+        return 0
 
-    @property
-    def num_inference_steps(self) -> int:
-        """Number of denoising steps."""
-        ...
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Compute number of available steps for scheduler compatibility.
 
-    @property
-    def guidance_scale(self) -> float:
-        """Classifier-free guidance scale (1.0 to disable CFG)."""
-        ...
+        For image generation, this returns the number of inference steps.
+        """
+        return self.num_inference_steps
 
-    @property
-    def true_cfg_scale(self) -> float:
-        """True classifier-free guidance scale (1.0 to disable CFG)."""
-        ...
+    def reset(self) -> None:
+        """Resets the context's state."""
+        self.status = GenerationStatus.ACTIVE
 
-    @property
-    def num_images_per_prompt(self) -> int:
-        """Number of images to generate."""
-        ...
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
 
-    @property
-    def seed(self) -> int | None:
-        """Random seed for reproducible generation."""
-        ...
-
-    @property
-    def model_name(self) -> str:
-        """Name of the model."""
-        ...
+    def to_generation_output(self) -> PixelGenerationOutput:
+        """Convert this context to a PixelGenerationOutput object."""
+        return PixelGenerationOutput(
+            request_id=self.request_id,
+            final_status=self.status,
+            pixel_data=self.latents,
+        )
 
 
 PixelGenerationContextType = TypeVar(
-    "PixelGenerationContextType", bound=PixelGenerationContext
+    "PixelGenerationContextType", bound=PixelContext
 )
-"""Type variable for pixel generation context types, constrained to PixelGenerationContext.
+"""Type variable for pixel generation context types, constrained to PixelContext.
 
 This allows generic typing of pixel generation pipeline components to accept any
-context type that implements the PixelGenerationContext protocol.
+context type that implements the PixelContext protocol.
 """
 
 

@@ -29,13 +29,14 @@ from max.dtype import DType
 from max.interfaces import (
     ImageMetadata,
     PipelineTokenizer,
+    PixelContext,
     PixelGenerationRequest,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
@@ -1322,7 +1323,7 @@ class PixelGenerationTokenizer(
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
-            max_text_encoder_length=self.max_length,
+            max_sequence_length=self.max_length,
             tokens=token_buffer,
             mask=mask_buffer,
             tokens_2=token_buffer_2,
@@ -1336,7 +1337,9 @@ class PixelGenerationTokenizer(
             width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=request.guidance_scale,
+            guidance=guidance,
             num_images_per_prompt=request.num_images_per_prompt,
+            true_cfg_scale=request.true_cfg_scale,
             model_name=request.model_name,
         )
 

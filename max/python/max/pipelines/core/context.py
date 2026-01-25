@@ -29,7 +29,8 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
-    PixelGenerationContext,
+    PixelContext,
+    PixelGenerationOutput,
     RequestID,
     SamplingParams,
     TextGenerationContext,
@@ -570,143 +571,6 @@ class TTSContext(TextContext):
         return chunk, buffer or 0
 
 
-@dataclass(kw_only=True)
-class PixelContext:
-    """A model-ready context for image/video generation requests.
-
-    Per the design doc, this class contains only numeric data that the model
-    will execute against. User-facing strings (prompt, negative_prompt) are
-    consumed during tokenization and do not appear here.
-
-    All preprocessing is performed by PixelGenerationTokenizer.new_context():
-    - Prompt tokenization -> tokens field
-    - Negative prompt tokenization -> negative_tokens field
-    - Timestep schedule computation -> timesteps field
-    - Initial noise generation -> initial_noise field
-
-    Configuration:
-        request_id: A unique identifier for this generation request.
-        max_text_encoder_length: Maximum sequence length for text encoder.
-        tokens: Tokenized prompt IDs (TokenBuffer).
-        negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
-        timesteps: Precomputed timestep schedule for denoising.
-        initial_noise: Precomputed initial noise (latents).
-        height: Height of the generated image/video in pixels.
-        width: Width of the generated image/video in pixels.
-        num_inference_steps: Number of denoising steps.
-        guidance_scale: Guidance scale for classifier-free guidance.
-        num_images_per_prompt: Number of images/videos to generate per prompt.
-        seed: Random seed used for noise generation.
-        model_name: Name of the model being used.
-    """
-
-    # Request identification (required)
-    request_id: RequestID = field(default_factory=RequestID)
-
-    max_text_encoder_length: int = field(default=512)
-    """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
-
-    model_name: str = field(default="")
-
-    # Tokenized prompts
-    tokens: TokenBuffer
-    """Primary encoder tokens."""
-
-    mask: TokenBuffer | None = field(default=None)
-    """Mask for text encoder's attention."""
-
-    tokens_2: TokenBuffer | None = field(default=None)
-    """Secondary encoder tokens. None for single-encoder models."""
-
-    negative_token_ids: TokenBuffer = field(
-        default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
-    )
-
-    negative_token_ids_2: TokenBuffer | None = field(default=None)
-    """Secondary encoder negative tokens. None for single-encoder models."""
-
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
-
-    # Precomputed tensors
-    timesteps: npt.NDArray[Any] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Precomputed timesteps schedule for denoising."""
-
-    sigmas: npt.NDArray[Any] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Precomputed sigmas schedule for denoising."""
-
-    latents: npt.NDArray[Any] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Precomputed initial noise (latents) for generation."""
-
-    latent_image_ids: npt.NDArray[Any] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Precomputed latent image IDs for generation."""
-
-    # Image generation parameters
-    height: int = field(default=1024)
-    width: int = field(default=1024)
-    num_inference_steps: int = field(default=50)
-    guidance_scale: float = field(default=3.5)
-    true_cfg_scale: float = field(default=1.0)
-    num_images_per_prompt: int = field(default=1)
-
-    # Generation status
-    _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
-
-    @property
-    def status(self) -> GenerationStatus:
-        """Current generation status of the request."""
-        return self._status
-
-    @status.setter
-    def status(self, value: GenerationStatus) -> None:
-        """Update the generation status."""
-        self._status = value
-
-    @property
-    def is_done(self) -> bool:
-        """Whether the request has completed generation."""
-        return self._status.is_done
-
-    @property
-    def needs_ce(self) -> bool:
-        """Whether this context needs context encoding.
-
-        For image generation, we never need context encoding since
-        we process the full prompt at once through the text encoder.
-        """
-        return False
-
-    @property
-    def active_length(self) -> int:
-        """Current sequence length for batch constructor compatibility."""
-        return 1
-
-    @property
-    def current_length(self) -> int:
-        """Current length for batch constructor compatibility."""
-        return 1
-
-    @property
-    def processed_length(self) -> int:
-        """Processed length for batch constructor compatibility."""
-        return 0
-
-    def compute_num_available_steps(self, max_seq_len: int) -> int:
-        """Compute number of available steps for scheduler compatibility.
-
-        For image generation, this returns the number of inference steps.
-        """
-        return self.num_inference_steps
-
-
 if TYPE_CHECKING:
     # Verify that concrete classes implement their respective protocols
     def _verify_text_context_protocol() -> TextGenerationContext:
@@ -727,10 +591,10 @@ if TYPE_CHECKING:
             images=[],
         )
 
-    def _verify_pixel_context_protocol() -> PixelGenerationContext:
+    def _verify_pixel_context_protocol() -> BaseContext:
         return PixelContext(
             request_id=RequestID(),
-            max_text_encoder_length=512,
+            max_sequence_length=512,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
             negative_token_ids=TokenBuffer(np.array([0], dtype=np.int64)),
         )
