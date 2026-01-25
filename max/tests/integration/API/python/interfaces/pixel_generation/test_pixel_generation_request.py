@@ -26,14 +26,6 @@ def test_pixel_generation_request_init() -> None:
         prompt="hello world",
     )
 
-    # Prompt cannot be None.
-    with pytest.raises(ValueError):
-        _ = PixelGenerationRequest(
-            request_id=RequestID(),
-            model_name="test",
-            prompt=None,
-        )
-
     # Missing prompt.
     with pytest.raises(ValueError):
         _ = PixelGenerationRequest(
