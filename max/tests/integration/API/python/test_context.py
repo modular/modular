@@ -20,7 +20,7 @@ import pytest
 from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
-    PixelGenerationContext,
+    PixelContext,
     RequestID,
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
@@ -32,7 +32,6 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import (
-    PixelContext,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -1105,8 +1104,7 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     )
 
     # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext,
-    # and PixelGenerationContext are Protocols)
+    # (TextGenerationContext and VLMTextGenerationContext are Protocols)
     _ = isinstance(ctx, TextGenerationContext)
     # The original bug report indicated that MAX threw a ValueError in call to
     # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
@@ -1164,4 +1162,3 @@ def test_pixel_context_tuple_serializable() -> None:
 
     assert msgpack_decoded[0] == original_tuple[0]
     assert dataclass_equal(msgpack_decoded[1], original_tuple[1])
-    _ = isinstance(ctx, PixelGenerationContext)
