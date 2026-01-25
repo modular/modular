@@ -848,6 +848,14 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
             }
           }
         }
+        // If we didn't find it, check to see if it is on the enclosing struct.
+        if (!passingKind.has_value()) {
+          auto [curDecl, paramDecls, paramIdx] =
+              paramList.declScope.lookupParamReference(paramUse);
+          if (curDecl) // Any parameters from it are fine.
+            passingKind = PassingKind::Inferred;
+        }
+
         if (!passingKind.has_value()) {
           shared.emitError(loc, "INTERNAL ERROR: inferred parameter of type ")
               << boundParamType << " depends on unresolved parameter "
