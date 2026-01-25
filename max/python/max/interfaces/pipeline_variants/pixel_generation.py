@@ -109,9 +109,9 @@ class PixelContext(BaseContext):
     - Initial noise generation -> initial_noise field
 
     Configuration:
+        tokens: Tokenized prompt IDs (TokenBuffer).
         request_id: A unique identifier for this generation request.
         max_sequence_length: Maximum sequence length for text encoder.
-        tokens: Tokenized prompt IDs (TokenBuffer).
         negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
         timesteps: Precomputed timestep schedule for denoising.
         initial_noise: Precomputed initial noise (latents).
@@ -123,6 +123,10 @@ class PixelContext(BaseContext):
         model_name: Name of the model being used.
     """
 
+    # Tokenized prompts
+    tokens: TokenBuffer
+    """Primary encoder tokens."""
+
     # Request identification (required)
     request_id: RequestID = field(default_factory=RequestID)
 
@@ -130,10 +134,6 @@ class PixelContext(BaseContext):
     """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
 
     model_name: str = field(default="")
-
-    # Tokenized prompts
-    tokens: TokenBuffer
-    """Primary encoder tokens."""
 
     mask: npt.NDArray[np.bool_] | None = field(default=None)
     """Mask for text encoder's attention."""
