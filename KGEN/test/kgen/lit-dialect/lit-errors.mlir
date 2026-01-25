@@ -326,3 +326,23 @@ lit.fn @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.re
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
 }
+
+// -----
+
+lit.fn @ref_to_kgen_ptr_address_space_mismatch<life: origin<0>>(
+    %ref1: !lit.ref<index, imm life, 1>) {
+  // expected-error @below {{address space mismatch: ref has address space 1 : index but result has 0 : index}}
+  %ptr = lit.ref.to_kgen_ptr %ref1 : !lit.ref<index, imm life, 1>
+                                   -> !kgen.pointer<index>
+  lit.end_fn
+}
+
+// -----
+
+lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<0>>(
+    %ptr: !kgen.pointer<index, 2>) {
+  // expected-error @below {{address space mismatch: pointer has address space 2 : index but result has 0 : index}}
+  %ref = lit.ref.from_kgen_ptr %ptr : !kgen.pointer<index, 2>
+                                    -> !lit.ref<index, imm life>
+  lit.end_fn
+}

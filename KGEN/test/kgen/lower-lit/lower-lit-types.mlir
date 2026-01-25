@@ -170,14 +170,49 @@ lit.fn @raw_pointer_from_ref_type<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q
   kgen.return %ptr: !kgen.pointer<@Struct>
 }
 
-//===----------------------------------------------------------------------===//
-// Reference Lowering
-//===----------------------------------------------------------------------===//
+// CHECK-LABEL: kgen.generator @ref_to_kgen_ptr
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
+lit.fn @ref_to_kgen_ptr<q: !lit.origin<0>>(%a: !lit.ref<@Struct, imm q>)
+  -> !kgen.pointer<!kgen.struct<()>> {
+  // CHECK-NEXT: kgen.return %arg0
+  %ptr = lit.ref.to_kgen_ptr %a : !lit.ref<@Struct, imm q>
+                                -> !kgen.pointer<!kgen.struct<()>>
+  kgen.return %ptr: !kgen.pointer<!kgen.struct<()>>
+}
+
+// CHECK-LABEL: kgen.generator @ref_from_kgen_ptr
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<()>>) -> !kgen.pointer<struct<()>>
+lit.fn @ref_from_kgen_ptr<q: !lit.origin<0>>(%a: !kgen.pointer<!kgen.struct<()>>)
+  -> !lit.ref<@Struct, imm q> {
+  // CHECK-NEXT: kgen.return %arg0
+  %ref = lit.ref.from_kgen_ptr %a : !kgen.pointer<!kgen.struct<()>>
+                                  -> !lit.ref<@Struct, imm q>
+  kgen.return %ref: !lit.ref<@Struct, imm q>
+}
+
+// CHECK-LABEL: kgen.generator @ref_kgen_ptr_roundtrip
+// CHECK-SAME: (%arg0: !kgen.pointer<struct<(si32, ui32) memoryOnly>>)
+lit.fn @ref_kgen_ptr_roundtrip<q: !lit.origin<0>>
+  (%a: !lit.ref<!lit.struct<@PairStruct>, imm q>)
+  -> !lit.ref<!lit.struct<@PairStruct>, imm q> {
+  // Convert to kgen pointer - uses memoryOnly to match @PairStruct
+  // CHECK-NEXT: kgen.return %arg0
+  %ptr = lit.ref.to_kgen_ptr %a : !lit.ref<!lit.struct<@PairStruct>, imm q>
+                                -> !kgen.pointer<!kgen.struct<(si32, ui32) memoryOnly>>
+  // Convert back to ref
+  %ref = lit.ref.from_kgen_ptr %ptr : !kgen.pointer<!kgen.struct<(si32, ui32) memoryOnly>>
+                                    -> !lit.ref<!lit.struct<@PairStruct>, imm q>
+  kgen.return %ref: !lit.ref<!lit.struct<@PairStruct>, imm q>
+}
 
 lit.struct.decl @PairStruct {
   lit.struct.field x : si32
   lit.struct.field y : ui32
 }
+
+//===----------------------------------------------------------------------===//
+// Reference Lowering
+//===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: kgen.generator @gerToGEPFooFromBar
 lit.fn @gerToGEPFooFromBar<l: !lit.origin<1>, l2: !lit.origin<1>>

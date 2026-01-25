@@ -135,6 +135,17 @@ lit.fn @ref_pointer<life: origin<1>, ilife: origin<0>>
   lit.end_fn
 }
 
+lit.fn @ref_kgen_ptr<life: origin<1>, ilife: origin<0>>
+     (%ref1: !lit.ref<@MyStruct, mut life>) {
+  // CHECK: %0 = lit.ref.to_kgen_ptr %ref1 : <!lit.struct<@MyStruct>, mut life> -> <struct<(i64)>>
+  %ptr = lit.ref.to_kgen_ptr %ref1 : !lit.ref<!lit.struct<@MyStruct>, mut life>
+                                   -> !kgen.pointer<!kgen.struct<(i64)>>
+  // CHECK: %1 = lit.ref.from_kgen_ptr %0 : <struct<(i64)>> -> <!lit.struct<@MyStruct>, imm ilife>
+  %ref2 = lit.ref.from_kgen_ptr %ptr : !kgen.pointer<!kgen.struct<(i64)>>
+                                     -> !lit.ref<!lit.struct<@MyStruct>, imm ilife>
+  lit.end_fn
+}
+
 // CHECK-LABEL: lit.fn @nested_function_region
 lit.fn @nested_function_region() {
   // CHECK-NEXT: hlcf.loop
