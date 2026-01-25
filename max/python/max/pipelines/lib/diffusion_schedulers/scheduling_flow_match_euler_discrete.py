@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .scheduler_factory import SchedulerFactory
-from .scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteScheduler,
-)
+
+class FlowMatchEulerDiscreteScheduler:
+    pass

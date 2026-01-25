@@ -1111,7 +1111,7 @@ class PixelGenerationTokenizer(
         templated_message = self.delegate.apply_chat_template(
             [message.flatten_content() for message in messages],
             tokenize=False,
-            **chat_template_options,
+            **(chat_template_options or {}),
         )
         if not isinstance(templated_message, str):
             raise ValueError("Chat template did not return a string")
@@ -1155,9 +1155,12 @@ class PixelGenerationTokenizer(
         # Add a standard (non-async) lock in the executor thread if needed.
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
-        if max_sequence_length and len(tokenizer_output) > max_sequence_length:
+        if (
+            max_sequence_length
+            and len(tokenizer_output.input_ids) > max_sequence_length
+        ):
             raise ValueError(
-                f"Input string is larger than tokenizer's max length ({len(tokenizer_output)} > {max_sequence_length})."
+                f"Input string is larger than tokenizer's max length ({len(tokenizer_output.input_ids)} > {max_sequence_length})."
             )
 
         encoded_prompt = np.array(tokenizer_output.input_ids)
@@ -1184,6 +1187,7 @@ class PixelGenerationTokenizer(
             request.true_cfg_scale > 1.0 and request.negative_prompt is not None
         )
         messages: list[TextGenerationRequestMessage] | None = None
+        chat_template_options: dict[str, Any] | None = None
         if self._wrap_prompt_as_chat:
             messages = [
                 TextGenerationRequestMessage(
@@ -1290,7 +1294,7 @@ class PixelGenerationTokenizer(
             timesteps = ((1000.0 - timesteps) / 1000.0).astype(np.float32)
         else:
             timesteps = (timesteps / 1000.0).astype(np.float32)
-        num_warmup_steps = max(
+        num_warmup_steps: int = max(
             len(timesteps) - num_inference_steps * scheduler.order, 0
         )
 
@@ -1329,6 +1333,7 @@ class PixelGenerationTokenizer(
             guidance=guidance,
             num_images_per_prompt=request.num_images_per_prompt,
             true_cfg_scale=request.true_cfg_scale,
+            num_warmup_steps=num_warmup_steps,
             model_name=request.model_name,
         )
 

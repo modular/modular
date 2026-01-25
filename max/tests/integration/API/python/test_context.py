@@ -1118,7 +1118,7 @@ def test_pixel_context_serializable() -> None:
     # Test that we can encode a sample PixelContext with Pickle
     original_context = PixelContext(
         request_id=RequestID(),
-        max_length=50,
+        max_sequence_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
         negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
     )
@@ -1142,7 +1142,7 @@ def test_pixel_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, PixelContext) with Pickle
     original_context = PixelContext(
         request_id=RequestID(),
-        max_length=50,
+        max_sequence_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
         negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
     )

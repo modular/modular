@@ -178,6 +178,7 @@ class PixelContext(BaseContext):
     guidance_scale: float = field(default=3.5)
     guidance: npt.NDArray[np.float32] | None = None
     true_cfg_scale: float = field(default=1.0)
+    num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
 
     # Generation status
@@ -252,7 +253,7 @@ PixelGenerationContextType = TypeVar(
 """Type variable for pixel generation context types, constrained to PixelContext.
 
 This allows generic typing of pixel generation pipeline components to accept any
-context type that implements the PixelContext protocol.
+context type that inherits from PixelContext.
 """
 
 
