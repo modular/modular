@@ -15,16 +15,16 @@ import numbers
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-import max.experimental.functional as F
-import max.nn.module_v3 as nn
+import max.functional as F
+import max.nn as nn
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 from max.graph.type import ConvInputLayout, FilterLayout
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.module_v3.norm.rms_norm import rms_norm
-from max.nn.module_v3.sequential import ModuleList
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.norm.rms_norm import rms_norm
+from max.nn.sequential import ModuleList
 from typing_extensions import TypeVar
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)

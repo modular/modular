@@ -16,14 +16,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-import max.experimental.functional as F
-import max.nn.module_v3 as nn
+import max.functional as F
+import max.nn as nn
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.module_v3.sequential import ModuleList
+from max.tensor import Tensor
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.sequential import ModuleList
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 from .layers import (

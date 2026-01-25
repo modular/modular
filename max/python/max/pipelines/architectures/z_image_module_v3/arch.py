@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask, PixelGenerationContext
-from max.nn.kv_cache import KVCacheStrategy
+from max.interfaces import PipelineTask, PixelContext
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.lib import (
     RopeType,
@@ -39,7 +39,7 @@ z_image_module_v3_arch = SupportedArchitecture(
     # text_encoder=Qwen3,
     tokenizer=TextTokenizer,
     # transformer=ZImageTransformer2DModel,
-    context_type=PixelGenerationContext,
+    context_type=PixelContext,
     rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict

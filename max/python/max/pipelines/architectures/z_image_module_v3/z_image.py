@@ -17,15 +17,11 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from max.driver import Device
-from max.nn.module_v3 import Module
+from max.nn import Module
 from max.pipelines.architectures.qwen3.qwen3 import Qwen3
 
 from .model_config import ZImageConfig
-from .nn.autoencoder_kl import AutoencoderKL
 from .nn.transformer_z_image import ZImageTransformer2DModel
-from .scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteScheduler,
-)
 
 
 class ZImage(Module):

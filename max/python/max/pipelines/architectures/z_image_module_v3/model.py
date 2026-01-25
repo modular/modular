@@ -26,10 +26,9 @@ from max.driver import Device
 from max.driver import Tensor as DriverTensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.realization_context import set_seed
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max import random
+from max.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
@@ -38,10 +37,8 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn import ReturnLogits
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.module_v3 import Module
-from max.pipelines.architectures.qwen3.qwen3 import Qwen3
-from max.pipelines.core import TextContext
+from max.nn import Module
+from max.pipelines import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -51,11 +48,10 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 
-# from tqdm.auto import tqdm  # TODO: Re-enable when tqdm is added to deps
+# from tqdm.auto import tqdm
 from transformers import AutoConfig
 
 from .model_config import ZImageConfig
-from .nn.autoencoder_kl import AutoencoderKL
 from .nn.transformer_z_image import ZImageTransformer2DModel
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
@@ -270,7 +266,7 @@ class ZImageModel(
     """The VAE to be used for image generation."""
 
     # TODO: ?
-    text_encoder: Qwen3
+    text_encoder: Qwen3Encoder
     """The text encoder to be used for image generation."""
 
     transformer: ZImageTransformer2DModel
@@ -642,63 +638,6 @@ class ZImageModel(
             graph.output(hidden_states)
             return graph
 
-    def prepare_latents(
-        self,
-        batch_size: int,
-        num_channels_latents: int,
-        height: int,
-        width: int,
-        dtype: DType,
-        device: Device,
-        seed: int | None = None,
-        latents: Tensor | None = None,
-    ) -> Tensor:
-        """Prepare latents for the diffusion process.
-
-        Args:
-            batch_size: Number of images to generate.
-            num_channels_latents: Number of channels in the latent space.
-            height: Target image height.
-            width: Target image width.
-            dtype: Data type for the latents.
-            device: Device to place the latents on.
-            seed: Optional seed for reproducible random generation.
-                If None, uses random seed (non-deterministic).
-            latents: Optional pre-generated latents to use instead.
-
-        Returns:
-            Latent tensor of shape (batch_size, num_channels_latents, height, width).
-        """
-
-        height = 2 * (int(height) // (self.vae_scale_factor * 2))
-        width = 2 * (int(width) // (self.vae_scale_factor * 2))
-
-        shape = (batch_size, num_channels_latents, height, width)
-
-        if latents is None:
-            # Use Modular's native seeded random generation
-            if seed is not None:
-                set_seed(seed)
-            # Generate standard normal random tensor using native Modular API
-            latents = random.gaussian(
-                shape, mean=0.0, std=1.0, dtype=DType.float32, device=device
-            )
-
-            # Uncomment for exact diffusers parity
-            # import torch
-            # generator = torch.Generator("cpu")
-            # if seed is not None:
-            #     generator.manual_seed(seed)
-            # latents_torch = torch.randn(shape, generator=generator, dtype=torch.float32)
-            # latents = Tensor.from_dlpack(latents_torch.numpy()).to(device)
-        else:
-            if latents.shape != shape:
-                raise ValueError(
-                    f"Unexpected latents shape, got {latents.shape}, expected {shape}"
-                )
-            latents = latents.to(device)
-        return latents
-
     @property
     def guidance_scale(self) -> float:
         return self._guidance_scale
@@ -822,94 +761,10 @@ class ZImageModel(
         #     Tensor.from_dlpack(prompt_embeds_np).to(device).cast(DType.bfloat16)
         # )
 
-        # 4. Prepare latent variables
-        num_channels_latents = self.model.transformer.in_channels
-
-        # Extract seed for reproducible latent generation
-        seed = model_inputs.seed
-
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            DType.float32,
-            device,
-            seed=seed,
-            latents=latents,
-        )
-
-        # Prepare prompt_embeds and negative_prompt_embeds as batched tensors
-        if prompt_embeds is not None:
-            if isinstance(prompt_embeds, list):
-                prompt_embeds = F.stack(prompt_embeds, axis=0)
-
-            # Repeat for num_images_per_prompt if needed
-            if num_images_per_prompt > 1:
-                # Shape: (batch_size, seq_len, dim) -> (batch_size * num_images_per_prompt, seq_len, dim)
-                prompt_embeds = F.repeat(
-                    prompt_embeds, num_images_per_prompt, axis=0
-                )
-
-        if (
-            self.do_classifier_free_guidance
-            and negative_prompt_embeds is not None
-        ):
-            if isinstance(negative_prompt_embeds, list):
-                negative_prompt_embeds = F.stack(negative_prompt_embeds, axis=0)
-
-            if num_images_per_prompt > 1:
-                negative_prompt_embeds = F.repeat(
-                    negative_prompt_embeds, num_images_per_prompt, axis=0
-                )
-
-        actual_batch_size = batch_size * num_images_per_prompt
-        # Compute image_seq_len from height/width Python ints to avoid GPU sync
-        latent_h = height // self.vae_scale_factor
-        latent_w = width // self.vae_scale_factor
-        image_seq_len = (latent_h // 2) * (latent_w // 2)
-
-        # 5. Prepare timesteps
-        mu = calculate_shift(
-            image_seq_len,
-            self.model.scheduler.base_image_seq_len,
-            self.model.scheduler.max_image_seq_len,
-            self.model.scheduler.base_shift,
-            self.model.scheduler.max_shift,
-        )
-        self.model.scheduler.sigma_min = 0.0
-        scheduler_kwargs = {"mu": mu}
-        timesteps, num_inference_steps = retrieve_timesteps(
-            self.model.scheduler,
-            num_inference_steps,
-            device,
-            sigmas=sigmas,
-            **scheduler_kwargs,
-        )
-        # Use Python int from retrieve_timesteps instead of tensor.shape to avoid sync
-        num_warmup_steps = max(
-            num_inference_steps
-            - num_inference_steps * self.model.scheduler.order,
-            0,
-        )
-        self._num_timesteps = num_inference_steps
-
-        # Pre-set step index to avoid expensive lookup on each step
         self.model.scheduler._step_index = 0
-
         # 6. Denoising loop
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i in range(self._num_timesteps):
-                t = timesteps[i]
-                if self.interrupt:
-                    continue
-
-                # broadcast to batch dimension - use batch_size to avoid GPU sync
-                timestep = F.broadcast_to(t, (batch_size,))
-                timestep = (1000 - timestep) / 1000
-                # Normalized time for time-aware config (0 at start, 1 at end)
-                # Use loop index to avoid GPU sync from .item()
-                t_norm = i / max(1, self._num_timesteps - 1)
 
                 # Handle cfg truncation
                 current_guidance_scale = self.guidance_scale
