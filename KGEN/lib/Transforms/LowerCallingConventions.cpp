@@ -270,8 +270,8 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
         *cast<StructType>(load->getOperand(0).getType()).getElementTypes();
     elements.reserve(types.size());
     for (auto [i, _] : llvm::enumerate(types)) {
-      auto ptr =
-          StructExtractOp::create(b, op->getLoc(), load->getOperand(0), i);
+      auto ptr = StructExtractOp::create(b, op->getLoc(), load->getOperand(0),
+                                         b.getIndexAttr(i));
       elements.push_back(POP::LoadOp::create(b, op->getLoc(), ptr));
     }
     b.replaceOpWithNewOp<StructCreateOp>(load, load->getResultTypes(),
@@ -299,7 +299,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     auto discrType =
         cast<POP::SIMDType>((*structType.getElementTypes()).back());
     Value discrVal =
-        StructExtractOp::create(b, op->getLoc(), variantVal, /*index=*/1);
+        StructExtractOp::create(b, op->getLoc(), variantVal, b.getIndexAttr(1));
     Value discrCst = ParamConstantOp::create(
         b, op->getLoc(), POP::SIMDAttr::get(is.getIndex(), discrType));
     Value isEq = POP::CmpOp::create(b, op->getLoc(), POP::CmpPredicate::EQ,
@@ -310,7 +310,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   if (auto get = dyn_cast<VariantGetOp>(op)) {
     Value variantVal = get->getOperand(0);
     Value unionVal =
-        StructExtractOp::create(b, op->getLoc(), variantVal, /*index=*/0);
+        StructExtractOp::create(b, op->getLoc(), variantVal, b.getIndexAttr(0));
     b.replaceOpWithNewOp<POP::UnionUnwrapOp>(op, get.getType(), unionVal);
     return;
   }

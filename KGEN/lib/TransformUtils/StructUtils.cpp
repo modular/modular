@@ -29,7 +29,8 @@ void KGEN::flattenAndUnpackIfStruct(mlir::RewriterBase &b, Location loc,
   if (auto structType = dyn_cast<StructType>(value.getType())) {
     if (auto elementTypes = structType.getElementTypes()) {
       for (auto [i, type] : llvm::enumerate(*elementTypes)) {
-        Value element = StructExtractOp::create(b, loc, type, value, i);
+        Value element =
+            StructExtractOp::create(b, loc, type, value, b.getIndexAttr(i));
         flattenAndUnpackIfStruct(b, loc, element, values);
       }
       return;

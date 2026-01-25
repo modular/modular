@@ -346,3 +346,4 @@ kgen.generator @test_non_struct_type() {
   kgen.param.constant: variadic<type> = <#kgen.struct_field_types<i32>>
   kgen.return
 }
+

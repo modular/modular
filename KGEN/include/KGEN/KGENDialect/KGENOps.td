@@ -1789,13 +1789,19 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     // Extract the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
+
+    // Extract an element at a parametric index.
+    kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
+      %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
+      kgen.return
+    }
     ```
   }];
 
-  let arguments = (ins KGEN_StructType:$container, UnsignedIndexAttr:$index);
+  let arguments = (ins KGEN_StructType:$container, AttrOfType<Index>:$index);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    $container `[` $index `]` attr-dict `:` qualified(type($container))
+    $container `[` custom<IndexParamValue>($index) `]` attr-dict `:` qualified(type($container))
   }];
 
   let hasVerifier = 1;

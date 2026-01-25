@@ -894,8 +894,11 @@ struct ConvertKGENStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
   LogicalResult
   matchAndRewrite(StructExtractOp op, StructExtractOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    auto indexAttr = dyn_cast<IntegerAttr>(op.getIndexAttr());
+    if (!indexAttr)
+      return op.emitOpError("expected constant index for LLVM lowering");
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getContainer(), op.getIndexAttr().getInt());
+        op, adaptor.getContainer(), indexAttr.getInt());
     return success();
   }
 };

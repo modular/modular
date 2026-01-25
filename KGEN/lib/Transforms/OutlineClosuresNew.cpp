@@ -682,7 +682,8 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                                             Type loweredClosureType) {
   Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
-    return KGEN::StructExtractOp::create(b, loc, captureStructArg, index)
+    return KGEN::StructExtractOp::create(b, loc, captureStructArg,
+                                         b.getIndexAttr(index))
         ->getResults()
         .front();
   };

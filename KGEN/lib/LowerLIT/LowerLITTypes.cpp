@@ -673,7 +673,7 @@ static Value lowerOp(LIT::StructExtractOp op,
 
   int index = b.getField(op.getFieldAttr(), ref);
   return KGEN::StructExtractOp::create(b, op.getLoc(), adaptor.getContainer(),
-                                       index);
+                                       b.getIndexAttr(index));
 }
 
 static Value lowerOp(RefImmutOp op, RefImmutOpAdaptor adaptor,
