@@ -1188,13 +1188,20 @@ class StructExtractAttr(max._core.Attribute):
     def __init__(
         self,
         struct_value: max._core.dialects.builtin.TypedAttr,
-        field_no: int,
+        field_no: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        struct_value: max._core.dialects.builtin.TypedAttr,
+        field_no: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.Type,
     ) -> None: ...
     @property
     def struct_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def field_no(self) -> int: ...
+    def field_no(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
 
@@ -3869,6 +3876,14 @@ class StructExtractOp(max._core.Operation):
         location: Location,
         container: max._core.Value[StructType],
         index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        container: max._core.Value,
+        index: int,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[StructType]: ...
