@@ -26,6 +26,24 @@ comptime DTYPES = [
 ]
 
 
+# Regression test for cyclic dependency bug in MSTDL-2217
+# This helper must be declared before any test function that calls it.
+# The bug was triggered when a function using range(Int, Int) was declared
+# before main/test functions, causing a cyclic dependency during overload
+# resolution: range -> Int -> Equatable.__eq__ -> range.
+fn _range_with_int_params_helper(start: Int, end: Int) -> Int:
+    var sum = 0
+    for i in range(start, end):
+        sum += i
+    return sum
+
+
+def test_range_with_int_params_declaration_order():
+    assert_equal(_range_with_int_params_helper(0, 5), 10)  # 0+1+2+3+4
+    assert_equal(_range_with_int_params_helper(1, 4), 6)  # 1+2+3
+    assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
+
+
 def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
     var iter = range_iter^
     for i in range(len):
