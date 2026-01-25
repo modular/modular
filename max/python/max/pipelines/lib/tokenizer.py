@@ -970,9 +970,15 @@ class PixelGenerationTokenizer(
         height: int, width: int
     ) -> npt.NDArray[np.float32]:
         latent_image_ids = np.zeros((height, width, 3))
-        latent_image_ids[..., 1] = latent_image_ids[..., 1] + np.arange(height)[:, None]
-        latent_image_ids[..., 2] = latent_image_ids[..., 2] + np.arange(width)[None, :]
-        latent_image_ids = latent_image_ids.reshape(-1, latent_image_ids.shape[-1])
+        latent_image_ids[..., 1] = (
+            latent_image_ids[..., 1] + np.arange(height)[:, None]
+        )
+        latent_image_ids[..., 2] = (
+            latent_image_ids[..., 2] + np.arange(width)[None, :]
+        )
+        latent_image_ids = latent_image_ids.reshape(
+            -1, latent_image_ids.shape[-1]
+        )
         return latent_image_ids.astype(np.float32)
 
     def _randn_tensor(
@@ -1137,6 +1143,7 @@ class PixelGenerationTokenizer(
         )
 
         tokenizer_output: Any
+
         def _encode_fn(prompt: str) -> Any:
             return delegate(
                 prompt,
