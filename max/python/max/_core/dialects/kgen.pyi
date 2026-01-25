@@ -3844,6 +3844,12 @@ class StructExtractOp(max._core.Operation):
     // Extract the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
+
+    // Extract an element at a parametric index.
+    kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
+      %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
+      kgen.return
+    }
     ```
     """
 
@@ -3854,7 +3860,7 @@ class StructExtractOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3862,14 +3868,14 @@ class StructExtractOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[StructType]: ...
     @property
-    def index(self) -> int: ...
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
     @index.setter
-    def index(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class StructGepOp(max._core.Operation):
     """
