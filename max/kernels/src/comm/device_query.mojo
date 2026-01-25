@@ -115,6 +115,8 @@ fn _dispatch_max_num_blocks[
 
     # Override defaults for specific AMD CDNA3 parts regardless of sm_version aliasing
     comptime arch = _accelerator_arch()
+
+    @parameter
     if "gfx950" in arch:  # MI355 family
         default_num_blocks = 64
     elif "gfx942" in arch:  # MI300 family
