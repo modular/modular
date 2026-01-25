@@ -1651,7 +1651,7 @@ async def openai_create_image(
             num_inference_steps=image_request.num_inference_steps,
         )
 
-        response = await response_generator.generate_images(image_gen_request)
+        response = await response_generator.generate_images([image_gen_request])
         return response
 
     except JSONDecodeError as e:
