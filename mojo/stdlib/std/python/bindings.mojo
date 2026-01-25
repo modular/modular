@@ -40,6 +40,7 @@ from python._cpython import (
     PyType_Spec,
     PyTypeObject,
     PyTypeObjectPtr,
+    TypeSlots,
 )
 from python._python_func import PyObjectFunction
 from python.python_object import _unsafe_alloc, _unsafe_init
@@ -239,28 +240,28 @@ struct PyTypeObjectSlot(
     # Store the C constant for the type slot.
     var _type_slot: Int32
 
-    comptime mp_setitem = PyTypeObjectSlot(3)
+    comptime mp_setitem = PyTypeObjectSlot(TypeSlots.Py_mp_setitem)
     """Python Type Object slot for the Mapping Protocol `setitem` method.
     
     References:
     - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript .
     """
 
-    comptime mp_length = PyTypeObjectSlot(4)
+    comptime mp_length = PyTypeObjectSlot(TypeSlots.Py_mp_length)
     """Python Type Object slot for the Mapping Protocol `length` method.
     
     References:
     - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length .
     """
 
-    comptime mp_getitem = PyTypeObjectSlot(5)
+    comptime mp_getitem = PyTypeObjectSlot(TypeSlots.Py_mp_getitem)
     """Python Type Object slot for the Mapping Protocol `getitem` method.
     
     References:
     - https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript .
     """
 
-    comptime tp_richcompare = PyTypeObjectSlot(67)
+    comptime tp_richcompare = PyTypeObjectSlot(TypeSlots.Py_tp_richcompare)
     """Python Type Object slot for the Type Protocol `richcompare` method.
     
     References:
@@ -289,7 +290,7 @@ struct PyTypeObjectSlot(
         """Returns True if self represents a Mapping Protocol `length` slot.
 
         Returns:
-            True if the time slot is `mp_length`.
+            True if the type slot is `mp_length`.
         """
         return self._type_slot == Self.mp_length._type_slot
 
@@ -298,7 +299,7 @@ struct PyTypeObjectSlot(
         """Returns True if self represents a Mapping Protocol `getitem` slot.
 
         Returns:
-            True if the time slot is `mp_getitem`.
+            True if the type slot is `mp_getitem`.
         """
         return self._type_slot == Self.mp_getitem._type_slot
 
@@ -308,7 +309,7 @@ struct PyTypeObjectSlot(
         `setitem`/`delitem` slot.
 
         Returns:
-            True if the time slot is `mp_setitem`.
+            True if the type slot is `mp_setitem`.
         """
         return self._type_slot == Self.mp_setitem._type_slot
 
@@ -317,9 +318,27 @@ struct PyTypeObjectSlot(
         """Returns True if self represents a Type Protocol `richcompare` slot.
 
         Returns:
-            True if the time slot is `tp_richcompare`.
+            True if the type slot is `tp_richcompare`.
         """
         return self._type_slot == Self.tp_richcompare._type_slot
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct NotImplementedError(Writable):
+    """A custom error type to be returned from Mojo binding functions to signal NotImplemented.
+    """
+
+    comptime name: String = "NotImplementedError"
+    """Define a well known name so that we can dispatch on it until we get more compiler support."""
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """This always writes "NotImplemented".
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(Self.name)
 
 
 fn _mp_length_wrapper[
@@ -347,8 +366,9 @@ fn _mp_length_wrapper[
         return Py_ssize_t(result)
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
+        var msg = String(e)
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, msg.as_c_string_slice().unsafe_ptr()
         )
         return Py_ssize_t(-1)
 
@@ -382,22 +402,25 @@ fn _mp_subscript_wrapper[
         return result.steal_data()
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
+        var msg = String(e)
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
 
 fn _mp_ass_subscript_wrapper[
-    method: fn (PythonObject, PythonObject, PythonObject) raises -> None
+    method: fn (
+        PythonObject, PythonObject, Variant[PythonObject, Int]
+    ) raises -> None
 ](py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr) -> c_int:
     """Python-compatible wrapper for mapping assignment subscript protocol (__setitem__/__delitem__).
 
     This function serves as the `mp_ass_subscript` slot (slot 3) for Python type objects.
     It adapts user methods to the objobjargproc signature required by the mapping protocol.
 
-    When value is NULL, this indicates a deletion (__delitem__). Otherwise, it's an
-    assignment (__setitem__).
+    A value of NULL indicates a deletion (__delitem__) and the 3rd argument will be an Int
+    with value 0. Otherwise, it's an assignment (__setitem__) and the 3rd argument is the value.
 
     Parameters:
         method: The user's method that takes self, key, and value.
@@ -410,19 +433,25 @@ fn _mp_ass_subscript_wrapper[
     Returns:
         0 on success, -1 on failure (with Python exception set).
     """
+    comptime PassedValue = Variant[PythonObject, Int]
     ref cpython = Python().cpython()
 
     try:
+        var passed_value = PassedValue(
+            PythonObject(from_borrowed=value)
+        ) if value else PassedValue(Int(0))
+
         method(
             PythonObject(from_borrowed=py_self),
             PythonObject(from_borrowed=key),
-            PythonObject(from_borrowed=value),
+            passed_value,
         )
         return c_int(0)
     except e:
         var error_type = cpython.get_error_global("PyExc_Exception")
+        var msg = String(e)
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, msg.as_c_string_slice().unsafe_ptr()
         )
         return c_int(-1)
 
@@ -435,16 +464,19 @@ fn _richcompare_wrapper[
     This function serves as the `tp_richcompare` slot for Python type objects.
     It adapts user methods to the richcmpfunc signature required by Python.
 
+    If the user function raises NotImplementedError this wrapper returns Py_NotImplemented.
+
     Parameters:
-        method: The user's comparison method that returns a Bool.
+        method: The user's comparison method that returns a Bool and can mark
+            comparisons as NotImplemented.
 
     Args:
         py_self: Pointer to the first Python object.
         py_other: Pointer to the second Python object.
-        op: The comparison operator (Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE).
+        op: The comparison operator constants in RichCompareOps (Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE).
 
     Returns:
-        A Python boolean object (Py_True or Py_False), or null pointer if an
+        A Python boolean object (Py_True,Py_False or NotImplemented), or null pointer if an
         error occurs (with Python exception set).
     """
     ref cpython = Python().cpython()
@@ -457,9 +489,14 @@ fn _richcompare_wrapper[
         )
         return cpython.PyBool_FromLong(c_long(Int(result)))
     except e:
+        # Mojo does not have support for multiple `except` branches. It also does not have support for `isinstance`.
+        # For name dispatch on the string representation of the exception.
+        var msg = String(e)
+        if NotImplementedError.name == msg:
+            return cpython.Py_NewRef(cpython.Py_NotImplemented())
         var error_type = cpython.get_error_global("PyExc_Exception")
         cpython.PyErr_SetString(
-            error_type, e.data.as_c_string_slice().unsafe_ptr()
+            error_type, msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -1149,8 +1186,10 @@ struct PythonTypeBuilder(Copyable):
         """Sets the rich compare method, see https://peps.python.org/pep-0207.
 
         Parameters:
-            method: The user method to install as the compare method. The API matches the python richcompare protocol.
-            slot: The Python type slot to define, needs to be tp_richcompare.
+            method: The user method to install as the compare method. The API
+                matches the python richcompare protocol and can return
+                NotImplemented by setting the out parameter.
+            slot: The Python type slot to define, must be `tp_richcompare`.
 
         Returns:
             A refence to self for easier chaining.
@@ -1178,7 +1217,7 @@ struct PythonTypeBuilder(Copyable):
             method: The user method to install as the length method. It should
                 take self as a PythonObject and return an Int representing the
                 length of the container.
-            slot: The Python type slot to define, needs to be tp_richcompare.
+            slot: The Python type slot to define, must be `mp_length`.
 
         Returns:
             A reference to self for easier chaining.
@@ -1192,7 +1231,9 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_method[
-        method: fn (PythonObject, PythonObject, PythonObject) raises -> None,
+        method: fn (
+            PythonObject, PythonObject, Variant[PythonObject, Int]
+        ) raises -> None,
         slot: PyTypeObjectSlot,
     ](mut self: Self) -> ref [self] Self where slot.is_mp_setitem():
         """Sets the mapping assignment subscript method (__setitem__/__delitem__).
@@ -1207,7 +1248,7 @@ struct PythonTypeBuilder(Copyable):
             method: The user method to install as the setitem method. It should
                 take self, key, and value as PythonObjects. For deletion, value
                 will be None.
-            slot: The Python type slot to define, needs to be tp_richcompare.
+            slot: The Python type slot to define, must be `mp_setitem`.
 
         Returns:
             A reference to self for easier chaining.
@@ -1234,7 +1275,7 @@ struct PythonTypeBuilder(Copyable):
         Parameters:
             method: The user method to install as the getitem method. It should
                 take self and key as PythonObjects and return the value.
-            slot: The Python type slot to define, needs to be tp_richcompare.
+            slot: The Python type slot to define, must be `mp_getitem`.
 
         Returns:
             A reference to self for easier chaining.

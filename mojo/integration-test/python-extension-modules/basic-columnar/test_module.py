@@ -23,7 +23,6 @@ def test_mojo_columnar() -> None:
         raise Exception("ValueError expected due to unbalanced columns.")
     except Exception as ex:
         assert "not match" in str(ex)
-        pass
 
     df = mojo_module.DataFrame.with_columns([1.0, 2.0, 3.0], [0.1, 0.2, 0.3])
     assert "DataFrame" in str(df)
@@ -41,10 +40,36 @@ def test_mojo_columnar() -> None:
     # Verify other values unchanged
     assert df[0] == (1.0, 0.1)
     assert df[2] == (3.0, 0.3)
+    # Test the delete operation in mp_ass_subscript.
+    for_delete = mojo_module.DataFrame.with_columns(
+        [1.0, 2.0, 3.0], [0.1, 0.2, 0.3]
+    )
+    del for_delete[0]
+    assert for_delete[0] == (2.0, 0.2)
 
     big_df = mojo_module.DataFrame.with_columns(
         [1.0, 2.0, 30000.0], [0.1, 0.2, 1.0]
     )
+    # Test rich compare, LT (0) and EQ(2) are implemented, GT (4) is not.
+
+    def get_rich_compare_counts(
+        df: mojo_module.DataFrame,
+    ) -> tuple[int, int, int]:
+        """Helper function to get the call counts for the rich compare method."""
+        return tuple(
+            df.get_call_count(f"rich_compare[{op}]") for op in (0, 2, 4)
+        )
+
+    assert df < big_df
+    assert get_rich_compare_counts(df) == (1, 0, 0)
+    assert get_rich_compare_counts(big_df) == (0, 0, 0)
+
+    # Rich_compare GT is not directly implemented so we expect the Python
+    # interpreter to call us twice:
+    #   - call GT on `big_df` -> NotImplemented.
+    #   - call LT on `df` (in addition to the one above).
     assert big_df > df
+    assert get_rich_compare_counts(df) == (2, 0, 0)
+    assert get_rich_compare_counts(big_df) == (0, 0, 1)
 
     print("🎉🎉🎉 Mission Success! 🎉🎉🎉")

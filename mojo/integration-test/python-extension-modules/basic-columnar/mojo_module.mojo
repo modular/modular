@@ -13,13 +13,14 @@
 
 from os import abort
 
-from memory import UnsafePointer, alloc
-from utils import IndexList
+from memory import UnsafePointer
+from utils import IndexList, Variant
 from python import Python, PythonObject
-from python._cpython import PyObjectPtr, Py_LT, Py_GT
+from python._cpython import RichCompareOps
 from python.bindings import (
     PythonModuleBuilder,
     PyTypeObjectSlot,
+    NotImplementedError,
 )
 
 comptime Coord1DColumn = List[Float64]
@@ -56,6 +57,9 @@ struct DataFrame(Defaultable, Movable, Representable):
     var pos_x: Coord1DColumn
     var pos_y: Coord1DColumn
 
+    #: Track the number of method calls for debugging purposes.
+    var call_counts: Dict[String, Int]
+
     # The bounding box area that contains all points.
     var _bounding_box_area: Float64
 
@@ -64,6 +68,7 @@ struct DataFrame(Defaultable, Movable, Representable):
         self.pos_x = []
         self.pos_y = []
         self._bounding_box_area = 0
+        self.call_counts = {}
 
     fn __init__(
         out self,
@@ -73,6 +78,7 @@ struct DataFrame(Defaultable, Movable, Representable):
         self._bounding_box_area = _compute_bounding_box_area(x, y)
         self.pos_x = x^
         self.pos_y = y^
+        self.call_counts = {}
 
     @staticmethod
     fn _get_self_ptr(
@@ -90,6 +96,15 @@ struct DataFrame(Defaultable, Movable, Representable):
                     e,
                 )
             )
+
+    @staticmethod
+    fn get_call_count(
+        py_self: PythonObject, name: PythonObject
+    ) raises -> PythonObject:
+        """Return the number of times the method was called, just for debugging purposes.
+        """
+        var self_ptr = Self._get_self_ptr(py_self)
+        return self_ptr[].call_counts.get(String(py=name), 0)
 
     @staticmethod
     fn with_columns(
@@ -125,20 +140,33 @@ struct DataFrame(Defaultable, Movable, Representable):
         """For __getitem__ we will return a row of the DataFrame."""
         var self_ptr = Self._get_self_ptr(py_self)
         var index_mojo = Int(py=index)
+        var length = len(self_ptr[].pos_x)
+        if index_mojo < 0 or index_mojo >= length:
+            raise Error("index out of range")
         return Python().tuple(
             self_ptr[].pos_x[index_mojo], self_ptr[].pos_y[index_mojo]
         )
 
     @staticmethod
     fn py__setitem__(
-        py_self: PythonObject, index: PythonObject, value: PythonObject
+        py_self: PythonObject,
+        index: PythonObject,
+        value: Variant[PythonObject, Int],
     ) raises -> None:
         """For __setitem__ we set the x and y values at the given index."""
         var self_ptr = Self._get_self_ptr(py_self)
         var index_mojo = Int(py=index)
-        # Expect value to be a tuple of (x, y)
-        self_ptr[].pos_x[index_mojo] = Float64(py=value[0])
-        self_ptr[].pos_y[index_mojo] = Float64(py=value[1])
+        var length = len(self_ptr[].pos_x)
+        if index_mojo < 0 or index_mojo >= length:
+            raise Error("index out of range")
+        if value.isa[PythonObject]():
+            # Expect value to be a tuple of (x, y) to be saved at index.
+            self_ptr[].pos_x[index_mojo] = Float64(py=value[PythonObject][0])
+            self_ptr[].pos_y[index_mojo] = Float64(py=value[PythonObject][1])
+        else:
+            # Delete the index.
+            _ = self_ptr[].pos_x.pop(index_mojo)
+            _ = self_ptr[].pos_y.pop(index_mojo)
 
     fn __repr__(self) -> String:
         return String("DataFrame( length=", len(self.pos_x), ")")
@@ -150,15 +178,22 @@ struct DataFrame(Defaultable, Movable, Representable):
         """Implement the rich compare functionality.
 
         We use the bounding box area to order the DataFrame objects.
+
+        By design only LT and EQ are implemented so that we can exercise the
+        NotImplemented path and experience multiple calls from Python.
         """
         var self_df = Self._get_self_ptr(self_ptr)
+        var invocation = "rich_compare[{}]".format(op)
+        self_df[].call_counts[invocation] = (
+            self_df[].call_counts.get(invocation, 0) + 1
+        )
         var other_df = Self._get_self_ptr(other)
-        if op == Py_LT:
+        if op == RichCompareOps.Py_LT:
             return self_df[]._bounding_box_area < other_df[]._bounding_box_area
-        elif op == Py_GT:
-            return self_df[]._bounding_box_area > other_df[]._bounding_box_area
-        # For other comparisons, return False
-        return False
+        if op == RichCompareOps.Py_EQ:
+            return self_df[]._bounding_box_area == other_df[]._bounding_box_area
+        # For other comparisons, raise NotImplemented.
+        raise NotImplementedError()
 
 
 @export
@@ -171,10 +206,12 @@ fn PyInit_mojo_module() -> PythonObject:
             b.add_type[DataFrame]("DataFrame")
             .def_init_defaultable[DataFrame]()
             .def_staticmethod[DataFrame.with_columns]("with_columns")
+            .def_method[DataFrame.get_call_count]("get_call_count")
             # Mapping protocol.
             .def_method[DataFrame.py__len__, PyTypeObjectSlot.mp_length]()
             .def_method[DataFrame.py__getitem__, PyTypeObjectSlot.mp_getitem]()
             .def_method[DataFrame.py__setitem__, PyTypeObjectSlot.mp_setitem]()
+            # Rich compare protocol.
             .def_method[
                 DataFrame.rich_compare, PyTypeObjectSlot.tp_richcompare
             ]()
