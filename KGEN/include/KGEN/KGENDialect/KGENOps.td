@@ -1903,6 +1903,25 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// StructLoadIndirectOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
+    InferTypeOpAdaptor,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "load all elements of a struct containing pointers";
+  let description = [{
+    The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
+    values and loads each one into a struct without the pointer type.  This
+    requires elements with trivially loadable types supported by pop.load.
+  }];
+
+  let arguments = (ins KGEN_StructType:$structValue);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = "$structValue attr-dict `:` type($structValue)";
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
