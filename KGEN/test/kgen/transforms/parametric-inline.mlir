@@ -681,7 +681,7 @@ kgen.generator @callee<rank, shape: array<rank, index>>() always_inline {
 kgen.generator @struct_extract(%arg0: !kgen.struct<(simd<2, f32>)>) {
   kgen.param.declare size = <1>
   kgen.param.declare type: dtype = <si32>
-  // CHECK: kgen.struct.extract %0[0] : !kgen.struct<(simd<size0, type0>)>
+  // CHECK: kgen.struct.extract %0[0] : <(simd<size0, type0>)>
   kgen.call @callee<2, :dtype f32>(%arg0) : (!kgen.struct<(simd<2, f32>)>) -> ()
   kgen.return
 }

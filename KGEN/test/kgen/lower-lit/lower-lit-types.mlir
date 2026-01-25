@@ -361,7 +361,7 @@ kgen.func @structInsertBarToFoo(%arg0: !foo_ptr_ref, %arg1: ui32,  %arg2: !foo_r
 
 // CHECK-LABEL: @structExtractFooFromBar
 kgen.func @structExtractFooFromBar(%arg0: !bar_ref) -> !foo_ptr_ref {
-  // CHECK: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<none>, ui32) memoryOnly>
+  // CHECK: [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<none>, ui32) memoryOnly>
   // CHECK: kgen.return [[V0]] : !kgen.pointer<none>
   %0 = lit.struct.extract %arg0[x] : !foo_ptr_ref from !bar_ref
   kgen.return %0 : !foo_ptr_ref
@@ -369,7 +369,7 @@ kgen.func @structExtractFooFromBar(%arg0: !bar_ref) -> !foo_ptr_ref {
 
 // CHECK-LABEL: @structExtractBarFromFoo
 kgen.func @structExtractBarFromFoo(%arg0: !foo_ref) -> !bar_ref {
-  // CHECK: %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(struct<(pointer<none>, ui32) memoryOnly>, f32) memoryOnly>
+  // CHECK: %0 = kgen.struct.extract %arg0[0] : <(struct<(pointer<none>, ui32) memoryOnly>, f32) memoryOnly>
   // CHECK: kgen.return %0 : !kgen.struct<(pointer<none>, ui32) memoryOnly>
   %0 = lit.struct.extract %arg0[x] : !bar_ref from !foo_ref
   kgen.return %0 : !bar_ref

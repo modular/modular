@@ -151,7 +151,7 @@ kgen.func @loop_carried_dependency() {
 // CHECK-LABEL: @loop_has_side_effect
 kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
   // CHECK: [[IDX:%.*]] = index.constant 1
-  // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index
@@ -180,7 +180,7 @@ kgen.func @loop_has_side_effect(%arg0: !kgen.struct<(pointer<scalar<f32>>, index
 
 // CHECK-LABEL: @single_iteration_no_decorator
 kgen.func @single_iteration_no_decorator(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)>) -> index {
-  // CHECK:      [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<scalar<f32>>, index, dtype)>
+  // CHECK:      [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<scalar<f32>>, index, dtype)>
   // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] align<1> : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT: [[V2:%.*]] = pop.cast [[V1]] : !pop.scalar<f32> to !pop.scalar<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.cast_to_builtin [[V2]] : !pop.scalar<index> to index

@@ -1438,6 +1438,21 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
+/// Given a packtype, return the type of the field at the specified index, which
+/// may be parametric.
+static Type getStructFieldTypeAtIndex(StructType structType, TypedAttr index) {
+  // The result type is the type extracted from the type list.  Extract the
+  // element from the type list.  This automatically folds if constant.
+  auto typeAttr = ParamOperatorAttr::get(
+      POC::VariadicGet, structType.getElementTypesVariadic(), index);
+  return ParamType::get(typeAttr);
+}
+
+void StructExtractOp::build(OpBuilder &b, OperationState &state,
+                            Value structVal, unsigned fieldIdx) {
+  build(b, state, structVal, b.getIndexAttr(fieldIdx));
+}
+
 /// Verify the value type matches the struct element type at the given index.
 static LogicalResult verifyStructValueType(Operation *op, StructType container,
                                            Attribute indexAttrGeneric,
@@ -1466,16 +1481,21 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
     // verify correctness of this operation
     return success();
   }
-  size_t index = indexAttr.getInt();
-  if (index >= elementTypes.size())
-    return op->emitOpError("element index ")
-           << index << " out of bounds (>=" << elementTypes.size() << ")";
-  if (elementTypes[index] != valueType) {
+  // If the index is concrete then we can verify it and the result type.
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(indexAttr)) {
+    size_t index = intAttr.getInt();
+    if (index >= elementTypes.size())
+      return op->emitOpError("element index ")
+             << index << " out of bounds (>=" << elementTypes.size() << ")";
+  }
+  auto expectedType = getStructFieldTypeAtIndex(container, indexAttr);
+  if (expectedType != valueType) {
     return op->emitOpError(valueKind)
            << " type " << valueType
-           << " does not match struct element type at index " << index << ": "
-           << elementTypes[index];
+           << " does not match struct element type at index " << indexAttr
+           << ": " << expectedType;
   }
+
   return success();
 }
 

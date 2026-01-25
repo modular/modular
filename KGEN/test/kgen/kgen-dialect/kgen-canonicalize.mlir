@@ -274,11 +274,15 @@ kgen.func @struct_create() -> !kgen.struct<(si4, ui4)> {
 }
 
 // CHECK-LABEL: @struct_get
-kgen.func @struct_get() -> si4 {
+kgen.generator @struct_get<x: index>() -> (si4, !kgen.param<variadic_get(:variadic<type> [si4, ui4], x)>) {
+  // CHECK-NEXT: %struct = kgen.param.constant: struct<(si4, ui4)>
   // CHECK-NEXT: constant: si4 = <-3>
   %0 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
   %1 = kgen.struct.extract %0[0] : !kgen.struct<(si4, ui4)>
-  kgen.return %1 : si4
+  // CHECK-NEXT: kgen.struct.extract %struct[x] : <(si4, ui4)>
+  %2 = kgen.param.constant: struct<(si4, ui4)> = <{ -3, 7 }>
+  %3 = kgen.struct.extract %2[x] : !kgen.struct<(si4, ui4)>
+  kgen.return %1, %3 : si4, !kgen.param<variadic_get(:variadic<type> [si4, ui4], x)>
 }
 
 // CHECK-LABEL: @struct_replace

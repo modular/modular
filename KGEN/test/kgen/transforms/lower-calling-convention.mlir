@@ -128,7 +128,7 @@ kgen.func @pack_create(%arg0: i32, %arg1: i64) -> !kgen.pack<[i32, i64]> {
 
 // CHECK-LABEL: @pack_extract
 kgen.func @pack_extract(%arg0: !kgen.pack<[i32, i64]>) -> i64 {
-  // CHECK-NEXT: %0 = kgen.struct.extract %arg0[1] : !kgen.struct<(i32, i64)>
+  // CHECK-NEXT: %0 = kgen.struct.extract %arg0[1] : <(i32, i64)>
   %0 = kgen.pack.extract %arg0[1] : <[i32, i64]>
   kgen.return %0 : i64
 }
@@ -150,9 +150,9 @@ kgen.func @pack_size(%arg0: !kgen.pack<[i32, i64]>) -> index {
 
 // CHECK-LABEL: @pack_load
 kgen.func @pack_load(%arg0: !kgen.pack<[pointer<i32>, pointer<i64>]>) -> !kgen.pack<[i32, i64]> {
-  // CHECK-NEXT: [[PTR0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<i32>, pointer<i64>)>
+  // CHECK-NEXT: [[PTR0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<i32>, pointer<i64>)>
   // CHECK-NEXT: [[EL0:%.*]] = pop.load [[PTR0]]
-  // CHECK-NEXT: [[PTR1:%.*]] = kgen.struct.extract %arg0[1] : !kgen.struct<(pointer<i32>, pointer<i64>)>
+  // CHECK-NEXT: [[PTR1:%.*]] = kgen.struct.extract %arg0[1] : <(pointer<i32>, pointer<i64>)>
   // CHECK-NEXT: [[EL1:%.*]] = pop.load [[PTR1]]
   // CHECK-NEXT: [[RESULT:%.*]] = kgen.struct.create([[EL0]], [[EL1]]) : !kgen.struct<(i32, i64)>
   %0 = kgen.pack.load %arg0 : <[pointer<i32>, pointer<i64>]>

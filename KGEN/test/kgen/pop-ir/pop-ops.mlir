@@ -751,9 +751,9 @@ kgen.generator @struct<ty: type, dt: dtype>(
 ) -> (!kgen.param<ty>, !pop.scalar<dt>, !kgen.pointer<ty>) {
   // CHECK: %[[S0:.*]] = kgen.struct.create(%[[A]], %[[B]]) : !kgen.struct<(ty, scalar<dt>)>
   %0 = kgen.struct.create(%a, %b) : !kgen.struct<(ty, scalar<dt>)>
-  // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: %[[V0:.*]] = kgen.struct.extract %[[S0]][0] : <(ty, scalar<dt>)>
   %1 = kgen.struct.extract %0[0] : !kgen.struct<(ty, scalar<dt>)>
-  // CHECK: %[[V1:.*]] = kgen.struct.extract %[[S0]][1] : !kgen.struct<(ty, scalar<dt>)>
+  // CHECK: %[[V1:.*]] = kgen.struct.extract %[[S0]][1] : <(ty, scalar<dt>)>
   %2 = kgen.struct.extract %0[1] : !kgen.struct<(ty, scalar<dt>)>
   // CHECK: kgen.struct.replace %{{.*}}, %[[S0]][0] : !kgen.struct<(ty, scalar<dt>)>
   %3 = kgen.struct.replace %1, %0[0] : !kgen.struct<(ty, scalar<dt>)>
@@ -781,13 +781,13 @@ kgen.generator @struct_extract_parametric_index<I: index>(
   // CHECK-SAME: %[[S:.*]]: !kgen.struct<(i32, f32)>
   %s: !kgen.struct<(i32, f32)>
 ) {
-  // CHECK: kgen.struct.extract %[[S]][0] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][0] : <(i32, f32)>
   %0 = kgen.struct.extract %s[0] : !kgen.struct<(i32, f32)>
-  // CHECK: kgen.struct.extract %[[S]][1] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][1] : <(i32, f32)>
   %1 = kgen.struct.extract %s[1] : !kgen.struct<(i32, f32)>
-  // CHECK: kgen.struct.extract %[[S]][I] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][I] : <(i32, f32)>
   %2 = kgen.struct.extract %s[I] : !kgen.struct<(i32, f32)>
-  // CHECK: kgen.struct.extract %[[S]][add(I, 1)] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][add(I, 1)] : <(i32, f32)>
   %3 = kgen.struct.extract %s[add(I, 1)] : !kgen.struct<(i32, f32)>
   kgen.return
 }

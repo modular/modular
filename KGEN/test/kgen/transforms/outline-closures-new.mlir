@@ -192,7 +192,7 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>, %arg1: index) -> index {
 }
 
 // CHECK-LABEL: kgen.generator @foo_fn(%arg0: !kgen.struct<(index)>, %arg1: index) -> index
-// CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : !kgen.struct<(index)>
+// CHECK-NEXT: [[V0:%.*]] = kgen.struct.extract %arg0[0] : <(index)>
 // CHECK-NEXT: kgen.return [[V0]] : index
 // CHECK-NEXT: }
 

@@ -1545,10 +1545,12 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$structValue, "unsigned":$fieldNo,
+  let parameters = (ins "TypedAttr":$structValue, "TypedAttr":$fieldNo,
                         AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat =
-    "`<` custom<ColonTypeParamValue>($structValue) `,` $fieldNo `>`";
+  let assemblyFormat = [{
+    `<` custom<ColonTypeParamValue>($structValue) `,`
+        custom<IndexParamValue>($fieldNo) `>`
+  }];
 
   let skipDefaultBuilders = 1;
 
@@ -1558,15 +1560,20 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
     AttrBuilderWithInferredContext<
                 (ins "TypedAttr":$structValue, "unsigned":$fieldNo),
                      "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$structValue, "unsigned":$fieldNo,
-                     "Type":$resultType), "", "TypedAttr">
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$structValue,
+                                        "TypedAttr":$fieldNo,
+                                        "Type":$resultType), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$structValue, "TypedAttr":$fieldNo,
+                     "Type":$resultType), [{
+      return get(structValue, fieldNo, resultType);
+    }], "TypedAttr">
   ];
 
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
-    /// providing a slightly different context from the normal builder.
+    /// providing a different context from the normal builder.
     static StructExtractAttr getFromBytecode(
-        TypedAttr structValue, unsigned fieldNo, Type resultType);
+        TypedAttr structValue, TypedAttr fieldIdx, Type resultType);
   }];
 }
 
