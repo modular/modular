@@ -776,6 +776,22 @@ kgen.generator @empty_struct_syntax() -> !kgen.struct<()> {
   kgen.return %0 : !kgen.struct<()>
 }
 
+// CHECK-LABEL: @struct_extract_parametric_index
+kgen.generator @struct_extract_parametric_index<I: index>(
+  // CHECK-SAME: %[[S:.*]]: !kgen.struct<(i32, f32)>
+  %s: !kgen.struct<(i32, f32)>
+) {
+  // CHECK: kgen.struct.extract %[[S]][0] : !kgen.struct<(i32, f32)>
+  %0 = kgen.struct.extract %s[0] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][1] : !kgen.struct<(i32, f32)>
+  %1 = kgen.struct.extract %s[1] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][I] : !kgen.struct<(i32, f32)>
+  %2 = kgen.struct.extract %s[I] : !kgen.struct<(i32, f32)>
+  // CHECK: kgen.struct.extract %[[S]][add(I, 1)] : !kgen.struct<(i32, f32)>
+  %3 = kgen.struct.extract %s[add(I, 1)] : !kgen.struct<(i32, f32)>
+  kgen.return
+}
+
 // CHECK-LABEL: @pointer_types
 kgen.generator @pointer_types<dt: dtype>(
   // CHECK-SAME: %{{.*}}: !kgen.pointer<scalar<dt>>, %{{.*}}: !kgen.pointer<scalar<f32>>, %{{.*}}: !kgen.pointer<scalar<invalid>>

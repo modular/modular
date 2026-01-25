@@ -283,7 +283,10 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       for (OpOperand &loadUser : llvm::make_early_inc_range(load->getUses())) {
         // Peephole `extract[i](load(%alloc))` -> `load(%newAlloc_i)`.
         if (auto extract = dyn_cast<StructExtractOp>(loadUser.getOwner())) {
-          Value newVal = getOrCreateLoad(extract.getIndex());
+          auto indexAttr = dyn_cast<IntegerAttr>(extract.getIndexAttr());
+          if (!indexAttr)
+            continue; // Parametric index, can't optimize.
+          Value newVal = getOrCreateLoad(indexAttr.getInt());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
         } else if (auto value =

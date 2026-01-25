@@ -273,8 +273,12 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructType type) {
+  auto elementTypes = type.getElementTypes();
+  if (!elementTypes)
+    return DIUnspecifiedType::get(type.getContext(),
+                                  mlir::debugString(type) + " (unresolved)");
   return buildDebugStructTypeFromTypeAttrs(
-      *type.getElementTypes(),
+      *elementTypes,
       StringAttr::get(type.getContext(), mlir::debugString(type)));
 }
 

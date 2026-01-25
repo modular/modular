@@ -1351,7 +1351,12 @@ static Value foldTrivialStructCopy(StructCreateOp op) {
   // An empty create would have been folded above.
   auto getSourceContainer = [&](unsigned idx, Value operand) -> Value {
     auto extract = operand.getDefiningOp<StructExtractOp>();
-    if (extract && extract.getIndex() == idx &&
+    if (!extract)
+      return {};
+    auto indexAttr = dyn_cast<IntegerAttr>(extract.getIndexAttr());
+    if (!indexAttr)
+      return {}; // Parametric index, can't fold.
+    if (indexAttr.getInt() == idx &&
         extract.getContainer().getType() == op.getType())
       return extract.getContainer();
     return {};
@@ -1398,11 +1403,14 @@ StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
+  auto index = dyn_cast_or_null<IntegerAttr>(adaptor.getIndexAttr());
+  if (!index)
+    return {};
+
   if (auto container = adaptor.getContainer())
-    return StructExtractAttr::get(cast<TypedAttr>(container),
-                                  getIndexAttr().getInt());
+    return StructExtractAttr::get(cast<TypedAttr>(container), index.getInt());
   if (auto structCreate = getOperand().getDefiningOp<StructCreateOp>())
-    return structCreate.getOperand(adaptor.getIndex());
+    return structCreate.getOperand(index.getInt());
   return {};
 }
 
@@ -1414,8 +1422,27 @@ ErrorTreeOrSuccess StructExtractOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
-  auto result = StructExtractAttr::get(cast<TypedAttr>(operands.front()),
-                                       getIndexAttr().getInt());
+  auto index =
+      dyn_cast_or_null<IntegerAttr>(state.getReboundAttribute(getIndexAttr()));
+  if (!index)
+    return ErrorTree(getLoc(), "cannot resolve parametric index '" +
+                                   debugString(getIndexAttr()) +
+                                   "' to a constant");
+
+  auto structValue = cast<TypedAttr>(operands.front());
+  auto structType = cast<StructType>(structValue.getType());
+  auto elementTypes = structType.getElementTypes();
+  if (!elementTypes)
+    return ErrorTree(getLoc(), "cannot extract from unresolved struct type");
+
+  size_t idx = index.getInt();
+  if (idx >= elementTypes->size())
+    return ErrorTree(getLoc(), "struct extract index " + Twine(idx).str() +
+                                   " is out of bounds for struct with " +
+                                   Twine(elementTypes->size()).str() +
+                                   " elements");
+
+  auto result = StructExtractAttr::get(structValue, idx);
   state.mapResults(result);
   return success();
 }

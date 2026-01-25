@@ -3211,11 +3211,16 @@ namespace {
 static SmallVector<Type> expandOperandTypes(TypeRange types) {
   SmallVector<Type> operandTypes;
   operandTypes.reserve(types.size());
-  for (auto type : types)
-    if (auto structTy = dyn_cast<StructType>(type))
-      llvm::append_range(operandTypes, *structTy.getElementTypes());
-    else
+  for (auto type : types) {
+    if (auto structTy = dyn_cast<StructType>(type)) {
+      if (auto elementTypes = structTy.getElementTypes())
+        llvm::append_range(operandTypes, *elementTypes);
+      else
+        operandTypes.push_back(type); // Keep unexpanded if unresolved
+    } else {
       operandTypes.push_back(type);
+    }
+  }
   return operandTypes;
 }
 
