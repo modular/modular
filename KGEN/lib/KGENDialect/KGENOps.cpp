@@ -1716,6 +1716,27 @@ void StructGEPOp::print(OpAsmPrinter &p) {
 }
 
 //===----------------------------------------------------------------------===//
+// StructLoadIndirectOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult StructLoadIndirectOp::inferReturnTypes(
+    MLIRContext *ctx, std::optional<Location> loc, Adaptor adaptor,
+    SmallVectorImpl<Type> &types) {
+  auto structType = dyn_cast<StructType>(adaptor.getStructValue().getType());
+  if (!structType)
+    return mlir::emitError(loc.value_or(adaptor.getStructValue().getLoc()),
+                           "expected !kgen.struct operand, not ")
+           << adaptor.getStructValue().getType();
+  // The result type is the same as the input type, but with a layer of pointers
+  // stripped off. The struct type is parametric, so we need to use the
+  // ParamOperatorAttr to remove the pointer layer.
+  auto mappedTypes = ParamOperatorAttr::get(
+      POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
+  types.push_back(StructType::get(mappedTypes));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
