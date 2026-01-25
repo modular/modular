@@ -158,7 +158,6 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-@register_passable("trivial")
 struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Comparable,
     Defaultable,
@@ -167,6 +166,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     ImplicitlyCopyable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A base struct that implements size agnostic index functions.

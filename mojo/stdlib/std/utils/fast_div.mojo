@@ -23,8 +23,7 @@ from gpu.intrinsics import mulhi
 from sys.info import bit_width_of
 
 
-@register_passable("trivial")
-struct FastDiv[dtype: DType](Stringable, Writable):
+struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,

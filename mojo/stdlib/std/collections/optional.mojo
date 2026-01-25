@@ -35,6 +35,7 @@ print(d)  # prints 2
 from os import abort
 
 from utils import Variant
+from std.utils._select import _select_register_value as select
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
@@ -681,8 +682,9 @@ struct Optional[T: Movable](
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
+struct OptionalReg[T: __TypeOfAllTypes](
+    Boolable, Defaultable, DevicePassable, TrivialRegisterType
+):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register

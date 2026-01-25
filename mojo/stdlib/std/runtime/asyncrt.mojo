@@ -26,8 +26,7 @@ from utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _Chain(Boolable, Defaultable):
+struct _Chain(Boolable, Defaultable, TrivialRegisterType):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -40,8 +39,7 @@ struct _Chain(Boolable, Defaultable):
         return Bool(self.storage)
 
 
-@register_passable("trivial")
-struct _AsyncContext:
+struct _AsyncContext(TrivialRegisterType):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -278,8 +276,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TaskGroupContext(ImplicitlyCopyable):
+struct TaskGroupContext(ImplicitlyCopyable, TrivialRegisterType):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -432,8 +429,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct DeviceContextPtr(Defaultable):
+struct DeviceContextPtr(Defaultable, TrivialRegisterType):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -491,8 +487,7 @@ struct DeviceContextPtr(Defaultable):
         return self[]
 
 
-@register_passable("trivial")
-struct DeviceContextPtrList[size: Int](Sized):
+struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterType):
     """A fixed-size collection of `DeviceContextPtr` objects.
 
     This struct provides a lightweight, register-passable container for a fixed number

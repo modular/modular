@@ -31,7 +31,6 @@ from python import ConvertibleToPython, PythonObject
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 @nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
@@ -44,6 +43,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Representable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """This type represents a string literal.

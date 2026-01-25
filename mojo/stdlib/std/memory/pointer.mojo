@@ -27,12 +27,11 @@ from reflection.type_info import _unqualified_type_name
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct AddressSpace(
     Equatable,
-    ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Address space of the pointer.
@@ -196,14 +195,13 @@ Parameters:
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Stringable, Writable):
+](Stringable, TrivialRegisterType, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to

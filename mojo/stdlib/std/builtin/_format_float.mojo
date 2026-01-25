@@ -49,22 +49,21 @@ fn _uint128_low(x: UInt128) -> UInt64:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _MulParity:
+struct _MulParity(TrivialRegisterType):
     var parity: Bool
     var is_integer: Bool
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _MulResult[CarrierDType: DType]:
+struct _MulResult[CarrierDType: DType](TrivialRegisterType):
     var integer_part: Scalar[Self.CarrierDType]
     var is_integer: Bool
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
+struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
+    TrivialRegisterType
+):
     comptime CarrierType = Scalar[Self.CarrierDType]
     comptime total_bits = size_of[Self.dtype]() * 8
     comptime carrier_bits = size_of[Self.CarrierDType]() * 8

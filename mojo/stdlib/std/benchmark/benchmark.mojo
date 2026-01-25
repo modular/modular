@@ -148,8 +148,7 @@ from utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-@register_passable("trivial")
-struct Batch(ImplicitlyCopyable):
+struct Batch(ImplicitlyCopyable, TrivialRegisterType):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -367,8 +366,9 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
+struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int](
+    TrivialRegisterType
+):
     var num_warmup_iters: Int
     var max_iters: Int
     var min_runtime_secs: Float64

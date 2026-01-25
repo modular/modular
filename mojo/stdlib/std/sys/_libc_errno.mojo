@@ -63,8 +63,9 @@ comptime pm = platform_map
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
+struct ErrNo(
+    Equatable, ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable
+):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,

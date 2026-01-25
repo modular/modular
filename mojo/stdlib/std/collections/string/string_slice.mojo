@@ -459,7 +459,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         return result
 
 
-@register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
     ConvertibleToPython,
@@ -474,6 +473,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Representable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A non-owning view into encoded string data.

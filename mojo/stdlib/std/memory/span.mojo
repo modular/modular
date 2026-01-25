@@ -86,14 +86,13 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@register_passable("trivial")
 struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     Boolable,
     Defaultable,
     DevicePassable,
-    ImplicitlyCopyable,
     Iterable,
     Sized,
+    TrivialRegisterType,
 ):
     """A non-owning view of contiguous data.
 

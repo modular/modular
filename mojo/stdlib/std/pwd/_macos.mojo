@@ -21,8 +21,7 @@ comptime time_t = Int
 comptime char = UnsafePointer[c_char, MutExternalOrigin]
 
 
-@register_passable("trivial")
-struct _C_Passwd:
+struct _C_Passwd(TrivialRegisterType):
     var pw_name: char
     var pw_passwd: char
     var pw_uid: uid_t

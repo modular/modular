@@ -36,8 +36,7 @@ from .mma_amd_rdna import _mma_wmma_rdna
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _AMD_F8F6F4_MATRIX_FORMAT:
+struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterType):
     """Represents the matrix format value to control the type and shape for the inputs
     of the llvm.amdgcn.mfma.scale.f8f6f4 intrinsics.
     """
