@@ -850,7 +850,9 @@ def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
 
 class PixelGenerationTokenizer(
     PipelineTokenizer[
-        PixelContext, npt.NDArray[np.integer[Any]], PixelGenerationRequest
+        PixelContext,
+        tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.bool_]],
+        PixelGenerationRequest,
     ]
 ):
     """Encapsulates creation of PixelContext and specific token encode/decode logic.
@@ -967,30 +969,15 @@ class PixelGenerationTokenizer(
     def _prepare_latent_image_ids(
         height: int, width: int
     ) -> npt.NDArray[np.float32]:
-        latent_image_ids = np.zeros((height, width, 3), dtype=np.float32)
-        latent_image_ids[..., 1] = (
-            latent_image_ids[..., 1] + np.arange(height)[:, None]
-        )
-        latent_image_ids[..., 2] = (
-            latent_image_ids[..., 2] + np.arange(width)[None, :]
-        )
-
-        (
-            latent_image_id_height,
-            latent_image_id_width,
-            latent_image_id_channels,
-        ) = latent_image_ids.shape
-
-        latent_image_ids = latent_image_ids.reshape(
-            latent_image_id_height * latent_image_id_width,
-            latent_image_id_channels,
-        )
-
-        return latent_image_ids
+        latent_image_ids = np.zeros((height, width, 3))
+        latent_image_ids[..., 1] = latent_image_ids[..., 1] + np.arange(height)[:, None]
+        latent_image_ids[..., 2] = latent_image_ids[..., 2] + np.arange(width)[None, :]
+        latent_image_ids = latent_image_ids.reshape(-1, latent_image_ids.shape[-1])
+        return latent_image_ids.astype(np.float32)
 
     def _randn_tensor(
         self,
-        shape: tuple,
+        shape: tuple[int, ...],
         seed: int | None,
     ) -> npt.NDArray[np.float32]:
         rng = np.random.RandomState(seed)
@@ -1004,7 +991,7 @@ class PixelGenerationTokenizer(
         width: int,
         seed: int | None,
         vae_scale_factor: int,
-    ) -> npt.NDArray[np.float32]:
+    ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         height = 2 * (int(height) // (vae_scale_factor * 2))
         width = 2 * (int(width) // (vae_scale_factor * 2))
         shape = (batch_size, num_channels_latents, height, width)
@@ -1019,9 +1006,9 @@ class PixelGenerationTokenizer(
     def _retrieve_timesteps(
         self,
         scheduler: Any,
-        num_inference_steps: int | None = None,
+        num_inference_steps: int,
         device: Device | None = None,
-        sigmas: list[float] | None = None,
+        sigmas: npt.NDArray[np.float32] | None = None,
         **kwargs,
     ) -> tuple[npt.NDArray[np.float32], int]:
         r"""
@@ -1058,11 +1045,11 @@ class PixelGenerationTokenizer(
                 num_inference_steps, device=device, **kwargs
             )
             timesteps = scheduler.timesteps
-        return timesteps, num_inference_steps
+        return timesteps.astype(np.float32), num_inference_steps
 
     async def _generate_tokens_ids(
         self,
-        prompt: str | None,
+        prompt: str,
         prompt_2: str | None = None,
         negative_prompt: str | None = None,
         negative_prompt_2: str | None = None,
@@ -1071,9 +1058,9 @@ class PixelGenerationTokenizer(
         do_true_cfg: bool = False,
     ) -> tuple[
         npt.NDArray[np.integer[Any]],
-        npt.NDArray[np.bool],
+        npt.NDArray[np.bool_],
         npt.NDArray[np.integer[Any]] | None,
-        npt.NDArray[np.integer[Any]],
+        npt.NDArray[np.integer[Any]] | None,
         npt.NDArray[np.integer[Any]] | None,
     ]:
         """Tokenize prompt(s) with encoder model(s).
@@ -1082,13 +1069,9 @@ class PixelGenerationTokenizer(
             Tuple of (token_ids, token_ids_2, negative_token_ids, negative_token_ids_2).
             token_ids_2 and negative_token_ids_2 are None if no secondary tokenizer is configured.
         """
-        if prompt is not None:
-            token_ids, attn_mask = await self.encode(prompt)
-        elif messages is not None:
-            templated = self.apply_chat_template(
-                messages, chat_template_options
-            )
-            token_ids, attn_mask = await self.encode(templated)
+        if messages is not None:
+            prompt = self.apply_chat_template(messages, chat_template_options)
+        token_ids, attn_mask = await self.encode(prompt)
 
         token_ids_2: npt.NDArray[np.integer[Any]] | None = None
         if self.delegate_2 is not None:
@@ -1142,6 +1125,7 @@ class PixelGenerationTokenizer(
     async def encode(
         self,
         prompt: str,
+        add_special_tokens: bool = True,
         *,
         use_secondary: bool = False,
     ) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.bool_]]:
@@ -1152,14 +1136,14 @@ class PixelGenerationTokenizer(
             self.max_length_2 if use_secondary else self.max_length
         )
 
-        tokenizer_output: npt.NDArray[np.integer[Any]]
-
-        def _encode_fn(prompt: str) -> npt.NDArray[np.integer[Any]]:
+        tokenizer_output: Any
+        def _encode_fn(prompt: str) -> Any:
             return delegate(
                 prompt,
                 padding="max_length",
                 max_length=max_sequence_length,
                 truncation=True,
+                add_special_tokens=add_special_tokens,
             )
 
         # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
@@ -1189,18 +1173,16 @@ class PixelGenerationTokenizer(
         self, request: PixelGenerationRequest
     ) -> PixelContext:
         """Create a new PixelContext object, leveraging necessary information from PixelGenerationRequest."""
-        prompt: str | None = request.prompt
-        messages: list[TextGenerationRequestMessage] | None = None
-
         do_true_cfg = (
             request.true_cfg_scale > 1.0 and request.negative_prompt is not None
         )
-
+        messages: list[TextGenerationRequestMessage] | None = None
         if self._wrap_prompt_as_chat:
             messages = [
-                TextGenerationRequestMessage(role="user", content=prompt)
+                TextGenerationRequestMessage(
+                    role="user", content=request.prompt
+                )
             ]
-            prompt = None
             if self._default_chat_template_options:
                 chat_template_options = self._default_chat_template_options
 
@@ -1212,7 +1194,7 @@ class PixelGenerationTokenizer(
             negative_token_ids,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
-            prompt,
+            request.prompt,
             request.prompt_2,
             request.negative_prompt,
             request.negative_prompt_2,
@@ -1224,17 +1206,16 @@ class PixelGenerationTokenizer(
         token_buffer = TokenBuffer(
             array=token_ids.astype(np.int64, copy=False),
         )
-        mask_buffer = TokenBuffer(
-            array=attn_mask.astype(np.bool_, copy=False),
-        )
         token_buffer_2 = None
         if token_ids_2 is not None:
             token_buffer_2 = TokenBuffer(
                 array=token_ids_2.astype(np.int64, copy=False),
             )
-        negative_token_buffer = TokenBuffer(
-            array=negative_token_ids.astype(np.int64, copy=False),
-        )
+        negative_token_buffer = None
+        if negative_token_ids is not None:
+            negative_token_buffer = TokenBuffer(
+                array=negative_token_ids.astype(np.int64, copy=False),
+            )
         negative_token_buffer_2 = None
         if negative_token_ids_2 is not None:
             negative_token_buffer_2 = TokenBuffer(
@@ -1280,9 +1261,9 @@ class PixelGenerationTokenizer(
             scheduler_component.class_name, scheduler_config
         )
 
-        sigmas = np.linspace(
+        sigmas: npt.NDArray[np.float32] | None = np.linspace(
             1.0,
-            1 / request.num_inference_steps,
+            1.0 / request.num_inference_steps,
             request.num_inference_steps,
         )
         if (
@@ -1314,10 +1295,11 @@ class PixelGenerationTokenizer(
             vae_scale_factor,
         )
 
+        guidance: npt.NDArray[np.float32] | None = None
         if transformer_config.guidance_embeds:
             guidance = Tensor.constant(
                 [request.guidance_scale], device=CPU(), dtype=DType.float32
-            )
+            ).numpy()
         else:
             guidance = None
 
@@ -1326,12 +1308,12 @@ class PixelGenerationTokenizer(
             request_id=request.request_id,
             max_sequence_length=self.max_length,
             tokens=token_buffer,
-            mask=mask_buffer,
+            mask=attn_mask,
             tokens_2=token_buffer_2,
             negative_tokens=negative_token_buffer,
             negative_tokens_2=negative_token_buffer_2,
-            timesteps=timesteps,
-            sigmas=scheduler.sigmas,
+            timesteps=timesteps.astype(np.float32),
+            sigmas=scheduler.sigmas.astype(np.float32),
             latents=latents,
             latent_image_ids=latent_image_ids,
             height=height,

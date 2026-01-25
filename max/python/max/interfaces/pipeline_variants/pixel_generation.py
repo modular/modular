@@ -135,15 +135,13 @@ class PixelContext(BaseContext):
     tokens: TokenBuffer
     """Primary encoder tokens."""
 
-    mask: TokenBuffer | None = field(default=None)
+    mask: npt.NDArray[np.bool_] | None = field(default=None)
     """Mask for text encoder's attention."""
 
     tokens_2: TokenBuffer | None = field(default=None)
     """Secondary encoder tokens. None for single-encoder models."""
 
-    negative_tokens: TokenBuffer = field(
-        default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
-    )
+    negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
 
     negative_tokens_2: TokenBuffer | None = field(default=None)
@@ -153,22 +151,22 @@ class PixelContext(BaseContext):
     """Model-specific numeric parameters (e.g., cfg_normalization values)."""
 
     # Precomputed tensors
-    timesteps: npt.NDArray[Any] = field(
+    timesteps: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed timesteps schedule for denoising."""
 
-    sigmas: npt.NDArray[Any] = field(
+    sigmas: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed sigmas schedule for denoising."""
 
-    latents: npt.NDArray[Any] = field(
+    latents: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed initial noise (latents) for generation."""
 
-    latent_image_ids: npt.NDArray[Any] = field(
+    latent_image_ids: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """Precomputed latent image IDs for generation."""
@@ -178,7 +176,7 @@ class PixelContext(BaseContext):
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
-    guidance: npt.NDArray[Any] = field(
+    guidance: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     true_cfg_scale: float = field(default=1.0)

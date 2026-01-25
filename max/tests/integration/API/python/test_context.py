@@ -1120,7 +1120,7 @@ def test_pixel_context_serializable() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        negative_token_ids=TokenBuffer(np.array([5, 6], dtype=np.int64)),
+        negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
     )
 
     pickle_encoded = pickle.dumps(original_context)
@@ -1144,7 +1144,7 @@ def test_pixel_context_tuple_serializable() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        negative_token_ids=TokenBuffer(np.array([5, 6], dtype=np.int64)),
+        negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
     )
     original_tuple = ("test_key", original_context)
 
