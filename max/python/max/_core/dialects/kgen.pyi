@@ -4026,6 +4026,31 @@ class StructInstanceOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
 
+class StructLoadIndirectOp(max._core.Operation):
+    """
+    The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
+    values and loads each one into a struct without the pointer type.  This
+    requires elements with trivially loadable types supported by pop.load.
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: StructType,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @property
+    def struct_value(self) -> max._core.Value[StructType]: ...
+
 class StructReplaceOp(max._core.Operation):
     """
     The `kgen.struct.replace` operation inserts the given value into the struct
