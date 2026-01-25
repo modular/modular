@@ -633,20 +633,12 @@ class OpenAIPixelResponseGenerator:
         return base64.b64encode(buffer.read()).decode("utf-8")
 
     async def generate_videos(
-        self, requests: list[VideoGenerationRequest]
-    ) -> VideosResponse:
+        self, requests: list[PixelGenerationRequest]
+    ) -> None:
         raise NotImplementedError("Not implemented yet!")
-        self.logger.debug("Video generation: Start: %s", requests[0])
-        output = await self.pipeline.generate_full_video(requests[0])
-        assert output.pixel_data is not None
 
-    async def stream_video(
-        self, request: VideoGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    async def stream_video(self, request: PixelGenerationRequest) -> None:
         raise NotImplementedError("Not implemented yet!")
-        self.logger.debug("Streaming: Start: %s", request)
-        record_request_start()
-        request_timer = StopWatch(start_ns=request.timestamp_ns)
 
 
 async def openai_parse_chat_completion_request(
@@ -1649,9 +1641,8 @@ async def openai_create_image(
 
         image_gen_request = PixelGenerationRequest(
             request_id=RequestID(request_id),
-            model=image_request.model,
+            model_name=image_request.model,
             prompt=image_request.prompt,
-            messages=image_request.messages,
             height=height,
             width=width,
             num_images_per_prompt=image_request.n,

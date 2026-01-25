@@ -14,35 +14,22 @@
 from __future__ import annotations
 
 import logging
-import sys
 from collections.abc import AsyncGenerator
-from typing import Any, TypeVar
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
-    BaseContext,
     GenerationStatus,
-    PipelineOutput,
     PixelContext,
     PixelGenerationOutput,
     PixelGenerationRequest,
-    Request,
 )
 from max.serve.pipelines.llm import BasePipeline
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
-if sys.version_info < (3, 11):
-    pass
-else:
-    pass
-
 logger = logging.getLogger("max.serve")
-
-ContextType = TypeVar("ContextType", bound=BaseContext)
-RequestType = TypeVar("RequestType", bound=Request)
-OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 
 class PixelGeneratorPipeline(
@@ -82,10 +69,9 @@ class PixelGeneratorPipeline(
                         )
                         # Create new output with processed visual data
                         response = PixelGenerationOutput(
-                            pixel_data=image_np,
-                            metadata=response.metadata,
-                            steps_executed=response.steps_executed,
+                            request_id=response.request_id,
                             final_status=response.final_status,
+                            pixel_data=image_np,
                         )
 
                     yield response
@@ -104,16 +90,14 @@ class PixelGeneratorPipeline(
         image_chunks: list[PixelGenerationOutput] = []
         np_chunks: list[npt.NDArray[np.floating[Any]]] = []
         async for chunk in self.next_chunk(request):
-            if chunk.pixel_data.size == 0 or chunk.pixel_data.size == 0:
+            if chunk.pixel_data.size == 0:
                 continue
             np_chunks.append(chunk.pixel_data)
             image_chunks.append(chunk)
 
         if len(image_chunks) == 0:
             return PixelGenerationOutput(
-                steps_executed=sum(
-                    chunk.steps_executed for chunk in image_chunks
-                ),
+                request_id=request.request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
             )
 
@@ -125,10 +109,9 @@ class PixelGeneratorPipeline(
         assert last_chunk.is_done
 
         return PixelGenerationOutput(
-            pixel_data=combined_image,
-            metadata=last_chunk.metadata,
-            steps_executed=sum(chunk.steps_executed for chunk in image_chunks),
+            request_id=request.request_id,
             final_status=GenerationStatus.END_OF_SEQUENCE,
+            pixel_data=combined_image,
         )
 
     async def generate_full_video(
