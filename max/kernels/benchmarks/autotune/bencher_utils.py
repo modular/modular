@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import csv
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,3 +112,28 @@ def arg_parse(handle: str, default: Any = None, short_handle: str = "") -> str:
         elif short_handle and args[i].startswith("-" + short_handle):
             return args[i + 1]
     return default
+
+
+def check_mpirun() -> int:
+    """
+    Check environment to examine whether the benchmark is called via mpirun.
+    If so, use pe_rank=OMPI_COMM_WORLD_RANK as a suffix for output file.
+
+    Raises:
+        If the operation fails.
+
+    Returns:
+        An integer representing pe rank (default=-1).
+    """
+    pe_rank = -1
+    if (
+        "OMPI_COMM_WORLD_RANK" in os.environ
+        and "OMPI_COMM_WORLD_SIZE" in os.environ
+    ):
+        TORCHRUN_DEFAULT_PORT = "29500"
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = TORCHRUN_DEFAULT_PORT
+        os.environ["RANK"] = os.environ["OMPI_COMM_WORLD_RANK"]
+        os.environ["WORLD_SIZE"] = os.environ["OMPI_COMM_WORLD_SIZE"]
+        pe_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", 0))
+    return pe_rank

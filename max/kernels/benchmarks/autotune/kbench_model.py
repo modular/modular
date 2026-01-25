@@ -346,7 +346,7 @@ class SpecInstance:
         timeout_secs: int | None = None,
     ) -> ProcessOutput:
         if self.executor == SupportedLangs.PYTHON:
-            exec_prefix = [self.executor.path] + exec_prefix
+            exec_prefix = exec_prefix + [self.executor.path]
             vars = self._get_defines + self._get_vars
         else:
             vars = self._get_vars
@@ -359,7 +359,6 @@ class SpecInstance:
         if exec_suffix:
             cmd.extend(exec_suffix)
             logging.debug(f"exec-suffix: {exec_suffix}")
-
         out = _run_cmdline(cmd, dryrun, timeout=timeout_secs, env=env)
         return out
 
