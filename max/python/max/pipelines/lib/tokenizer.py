@@ -1172,11 +1172,20 @@ class PixelGenerationTokenizer(
 
     async def decode(
         self,
-        pixel_data: npt.NDArray[np.float32],
+        encoded: tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.bool_]],
         **kwargs,
     ) -> str:
+        raise NotImplementedError(
+            "Decoding is not implemented for this tokenizer."
+        )
+
+    async def postprocess(
+        self,
+        pixel_data: npt.NDArray[np.float32],
+    ) -> npt.NDArray[np.float32]:
+        """Post-process pixel data from model output (NCHW -> NHWC, normalized)."""
         pixel_data = (pixel_data * 0.5 + 0.5).clip(min=0.0, max=1.0)
-        pixel_data = pixel_data.transpose(0, 2, 3, 1)  # NCHW → NHWC
+        pixel_data = pixel_data.transpose(0, 2, 3, 1)
         return pixel_data
 
     async def new_context(
