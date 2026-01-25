@@ -1706,4 +1706,14 @@ struct TakesBool[B: Bool]:
 struct XOrigin[mut: Bool, *, value: TakesBool[mut]]:
     pass
 struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
-    pass
+
+    # This should be fine, even though MUT is from the struct.
+    fn foo[P: XOrigin[Self.MUT]](self):
+        pass
+
+# This makes sure we can associate 'origin' back to the inferred result type of
+# the Pointer construction.
+struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmutOrigin]:
+    var writable: Pointer[Self.X, Self.origin]
+    fn __init__(out self, ref [Self.origin]w: Self.X):
+        self.writable = Pointer(to=w)
