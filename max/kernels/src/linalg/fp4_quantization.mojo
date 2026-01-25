@@ -95,7 +95,7 @@ fn quantize_dynamic_scaled_fp4[
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
     __comptime_assert in_dtype in (
         DType.bfloat16,
@@ -340,7 +340,7 @@ fn block_scales_interleave_fp4[
     ],
 ) raises:
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
     __comptime_assert scales_dtype in (
         NVFP4_SF_DTYPE,
@@ -634,7 +634,7 @@ fn quantize_dynamic_block_scaled[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
     __comptime_assert in_dtype in (
         DType.bfloat16,
@@ -691,7 +691,7 @@ fn block_scales_interleave[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
     __comptime_assert scales_dtype in (
         NVFP4_SF_DTYPE,
@@ -1134,7 +1134,7 @@ fn block_scaled_matmul[
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
 
     __comptime_assert transpose_b, "Only support transposed B"
@@ -1223,7 +1223,7 @@ fn block_scaled_matmul_with_epilogue[
     """
 
     __comptime_assert (
-        ctx.default_device_info.compute == B200.compute
+        ctx.default_device_info.compute >= B200.compute
     ), "This kernel is only supported on SM100"
 
     __comptime_assert transpose_b, "Only support transposed B"

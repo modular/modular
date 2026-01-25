@@ -492,6 +492,12 @@ fn _is_sm_120x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_sm_121x() -> Bool:
+    """Returns True for NVIDIA GB10 (DGX Spark) SM121 Blackwell GPU."""
+    return is_nvidia_gpu["sm_121"]() or is_nvidia_gpu["sm_121a"]()
+
+
+@always_inline("nodebug")
 fn _has_blackwell_tcgen05() -> Bool:
     return is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]()
 
@@ -518,7 +524,7 @@ fn _is_sm_110x_or_newer() -> Bool:
 
 @always_inline("nodebug")
 fn _is_sm_120x_or_newer() -> Bool:
-    return _is_sm_120x()
+    return _is_sm_120x() or _is_sm_121x()
 
 
 @always_inline("nodebug")

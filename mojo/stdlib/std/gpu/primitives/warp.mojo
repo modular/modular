@@ -42,7 +42,7 @@ from sys import (
     _RegisterPackType,
 )
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
+from sys.info import _is_sm_100x_or_newer, _is_sm_100x, _is_sm_101x, _cdna_4_or_newer
 
 from bit import log2_floor
 from builtin.math import max as _max
@@ -942,7 +942,8 @@ fn prefix_sum[
 
 @always_inline("nodebug")
 fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
-    return _is_sm_100x_or_newer() and dtype == DType.float32 and simd_width == 1
+    # redux.f32 only supported on SM100/SM101 server Blackwell, not SM120/SM121
+    return (_is_sm_100x() or _is_sm_101x()) and dtype == DType.float32 and simd_width == 1
 
 
 @always_inline("nodebug")
