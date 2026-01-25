@@ -1120,8 +1120,12 @@ void StructType::print(AsmPrinter &p) const {
   TypedAttr variadic = getElementTypesVariadic();
   auto attr = dyn_cast<VariadicAttr>(variadic);
   if (!attr || !isa<TypeType>(attr.getType().getElementType())) {
-    // Parametric expression or complex metatype - print without parens.
-    printColonTypeParamValue(p, variadic);
+    // Parametric expression or complex metatype - print without parens.  We
+    // print :variadic<Movable> if the elements are not TypeType metatype.
+    if (!isa<TypeType>(cast<VariadicType>(variadic.getType()).getElementType()))
+      printColonTypeParamValue(p, variadic);
+    else
+      printParamValue(p, variadic, variadic.getType());
   } else {
     // Concrete types with simple metatype - print with parens.
     p << '(';
