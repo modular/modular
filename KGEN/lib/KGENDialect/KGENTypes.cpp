@@ -1049,12 +1049,12 @@ Type StructType::parse(AsmParser &p) {
   if (p.parseLess())
     return {};
 
-  auto metatype = TypeType::get(p.getContext());
-  auto variadicType = VariadicType::get(metatype);
   TypedAttr variadic;
 
   // Check for `(` which indicates concrete types.
   if (succeeded(p.parseOptionalLParen())) {
+    auto metatype = TypeType::get(p.getContext());
+    auto variadicType = VariadicType::get(metatype);
     // Check for empty struct case.
     if (succeeded(p.parseOptionalRParen())) {
       // Empty struct.
@@ -1075,6 +1075,14 @@ Type StructType::parse(AsmParser &p) {
         return {};
     }
   } else {
+    Type variadicType;
+    if (succeeded(p.parseOptionalColon())) {
+      if (parseKGENType(p, variadicType))
+        return {};
+    } else {
+      variadicType = VariadicType::get(TypeType::get(p.getContext()));
+    }
+
     // Parametric case - parse param value with implicit variadic<!kgen.type>.
     if (parseParamValue(p, variadic, variadicType))
       return {};
@@ -1111,11 +1119,11 @@ void StructType::print(AsmPrinter &p) const {
 
   TypedAttr variadic = getElementTypesVariadic();
   auto attr = dyn_cast<VariadicAttr>(variadic);
-  if (!attr) {
-    // Parametric expression - print without parens.
-    printParamValue(p, variadic);
+  if (!attr || !isa<TypeType>(attr.getType().getElementType())) {
+    // Parametric expression or complex metatype - print without parens.
+    printColonTypeParamValue(p, variadic);
   } else {
-    // Concrete types - print with parens.
+    // Concrete types with simple metatype - print with parens.
     p << '(';
     if (!attr.getValues().empty()) {
       SmallVector<Type> types;
