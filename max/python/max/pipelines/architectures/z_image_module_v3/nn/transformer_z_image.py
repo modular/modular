@@ -20,10 +20,10 @@ import max.functional as F
 import max.nn as nn
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.tensor import Tensor
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 from .layers import (

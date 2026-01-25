@@ -21,14 +21,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import max.functional as F
 from max._core.engine import Model
 from max.driver import Device
 from max.driver import Tensor as DriverTensor
 from max.dtype import DType
 from max.engine.api import InferenceSession
-import max.functional as F
-from max import random
-from max.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
@@ -36,8 +34,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import ReturnLogits
-from max.nn import Module
+from max.nn import Module, ReturnLogits
 from max.pipelines import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -47,6 +44,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
+from max.tensor import Tensor
 
 # from tqdm.auto import tqdm
 from transformers import AutoConfig
@@ -765,7 +763,6 @@ class ZImageModel(
         # 6. Denoising loop
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i in range(self._num_timesteps):
-
                 # Handle cfg truncation
                 current_guidance_scale = self.guidance_scale
                 if (
