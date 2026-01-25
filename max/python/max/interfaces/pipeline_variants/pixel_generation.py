@@ -141,12 +141,13 @@ class PixelContext(BaseContext):
     tokens_2: TokenBuffer | None = field(default=None)
     """Secondary encoder tokens. None for single-encoder models."""
 
-    negative_token_ids: TokenBuffer = field(
+    negative_tokens: TokenBuffer = field(
         default_factory=lambda: TokenBuffer(np.array([], dtype=np.int64))
     )
+    """Negative tokens for primary encoder."""
 
-    negative_token_ids_2: TokenBuffer | None = field(default=None)
-    """Secondary encoder negative tokens. None for single-encoder models."""
+    negative_tokens_2: TokenBuffer | None = field(default=None)
+    """Negative tokens for secondary encoder. None for single-encoder models."""
 
     extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
     """Model-specific numeric parameters (e.g., cfg_normalization values)."""

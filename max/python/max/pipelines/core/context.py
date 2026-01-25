@@ -590,12 +590,11 @@ if TYPE_CHECKING:
             images=[],
         )
 
-    def _verify_pixel_context_protocol() -> BaseContext:
+    def _verify_pixel_context_protocol() -> PixelContext:
         return PixelContext(
             request_id=RequestID(),
             max_sequence_length=512,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            negative_token_ids=TokenBuffer(np.array([0], dtype=np.int64)),
         )
 
 
