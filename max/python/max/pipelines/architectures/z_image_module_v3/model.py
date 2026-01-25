@@ -534,9 +534,13 @@ class ZImageModel(
         before_vae_decode_build = time.perf_counter()
         # Compile VAE decoder for batched latents (B, C, H, W)
         vae_input_type = TensorType(
-            DType.bfloat16, shape=(self.pipeline_config.max_batch_size, 16, 128, 128), device=device_ref
+            DType.bfloat16,
+            shape=(self.pipeline_config.max_batch_size, 16, 128, 128),
+            device=device_ref,
         )
-        compiled_vae_decoder_model = nn_model.vae.decoder.compile(vae_input_type)
+        compiled_vae_decoder_model = nn_model.vae.decoder.compile(
+            vae_input_type
+        )
         after_vae_decode_build = time.perf_counter()
         logger.info(
             f"Building and compiling VAE's decoder took {after_vae_decode_build - before_vae_decode_build:.6f} seconds"
@@ -547,11 +551,17 @@ class ZImageModel(
         # We compile with max_batch_size to support variable batch sizes
         max_batch_size = self.pipeline_config.max_batch_size
         hidden_states_type = TensorType(
-            DType.bfloat16, shape=(max_batch_size, C, F_dim, H_dim, W_dim), device=device_ref
+            DType.bfloat16,
+            shape=(max_batch_size, C, F_dim, H_dim, W_dim),
+            device=device_ref,
         )
-        t_type = TensorType(DType.float32, shape=(max_batch_size,), device=device_ref)
+        t_type = TensorType(
+            DType.float32, shape=(max_batch_size,), device=device_ref
+        )
         cap_feats_type = TensorType(
-            DType.bfloat16, shape=(max_batch_size, cap_seq_len, 2560), device=device_ref
+            DType.bfloat16,
+            shape=(max_batch_size, cap_seq_len, 2560),
+            device=device_ref,
         )
 
         logger.info("Building and compiling the backbone transformer...")
@@ -784,7 +794,9 @@ class ZImageModel(
         elif prompt_embeds is not None:
             batch_size = len(prompt_embeds)
         else:
-            raise ValueError("Either `prompt` or `prompt_embeds` must be provided.")
+            raise ValueError(
+                "Either `prompt` or `prompt_embeds` must be provided."
+            )
 
         # If prompt_embeds is provided and prompt is None, skip encoding
         if prompt_embeds is not None and prompt is None:
@@ -835,14 +847,21 @@ class ZImageModel(
             # Repeat for num_images_per_prompt if needed
             if num_images_per_prompt > 1:
                 # Shape: (batch_size, seq_len, dim) -> (batch_size * num_images_per_prompt, seq_len, dim)
-                prompt_embeds = F.repeat(prompt_embeds, num_images_per_prompt, axis=0)
+                prompt_embeds = F.repeat(
+                    prompt_embeds, num_images_per_prompt, axis=0
+                )
 
-        if self.do_classifier_free_guidance and negative_prompt_embeds is not None:
+        if (
+            self.do_classifier_free_guidance
+            and negative_prompt_embeds is not None
+        ):
             if isinstance(negative_prompt_embeds, list):
                 negative_prompt_embeds = F.stack(negative_prompt_embeds, axis=0)
 
             if num_images_per_prompt > 1:
-                negative_prompt_embeds = F.repeat(negative_prompt_embeds, num_images_per_prompt, axis=0)
+                negative_prompt_embeds = F.repeat(
+                    negative_prompt_embeds, num_images_per_prompt, axis=0
+                )
 
         actual_batch_size = batch_size * num_images_per_prompt
         # Compute image_seq_len from height/width Python ints to avoid GPU sync
@@ -931,7 +950,9 @@ class ZImageModel(
 
                 if apply_cfg:
                     # CFG Implementation
-                    noise_pred_uncond, noise_pred_text = F.chunk(model_out, 2, axis=0)
+                    noise_pred_uncond, noise_pred_text = F.chunk(
+                        model_out, 2, axis=0
+                    )
                     noise_pred = noise_pred_uncond + current_guidance_scale * (
                         noise_pred_text - noise_pred_uncond
                     )

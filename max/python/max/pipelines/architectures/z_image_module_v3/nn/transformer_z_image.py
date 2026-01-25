@@ -587,8 +587,12 @@ class ZImageTransformer2DModel(nn.Module):
 
         # Repeat for batch if B > 1
         if B > 1:
-            x_freqs_cis = F.broadcast_to(x_freqs_cis, (B, x_freqs_cis.shape[1], x_freqs_cis.shape[2], 2))
-            cap_freqs_cis = F.broadcast_to(cap_freqs_cis, (B, cap_seq_len, cap_freqs_cis.shape[2], 2))
+            x_freqs_cis = F.broadcast_to(
+                x_freqs_cis, (B, x_freqs_cis.shape[1], x_freqs_cis.shape[2], 2)
+            )
+            cap_freqs_cis = F.broadcast_to(
+                cap_freqs_cis, (B, cap_seq_len, cap_freqs_cis.shape[2], 2)
+            )
 
         # Noise refiner layers (process image patches)
         for layer in self.noise_refiner:
@@ -613,7 +617,9 @@ class ZImageTransformer2DModel(nn.Module):
 
         # Unpatchify: (B, image_seq_len, hidden_dim) -> (B, out_channels, F, H, W)
         out_channels = self.out_channels
-        x = x.reshape((B, F_tokens, H_tokens, W_tokens, pF, pH, pW, out_channels))
+        x = x.reshape(
+            (B, F_tokens, H_tokens, W_tokens, pF, pH, pW, out_channels)
+        )
         x = x.permute(
             (0, 7, 1, 4, 2, 5, 3, 6)
         )  # (B, out_channels, F_tokens, pF, H_tokens, pH, W_tokens, pW)
