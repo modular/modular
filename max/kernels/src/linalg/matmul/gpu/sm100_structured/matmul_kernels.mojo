@@ -119,7 +119,6 @@ from .output_writer import TileWriter
 
 
 @fieldwise_init
-
 struct WarpRole(ImplicitlyCopyable, Movable, TrivialRegisterType):
     """Warp role identifiers for SM100 warp-specialized kernel."""
 

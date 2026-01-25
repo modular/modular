@@ -25,8 +25,9 @@ from linalg.structuring import SMemArray
 from .tmem import TmemAllocation
 
 
-
-struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](TrivialRegisterType):
+struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
+    TrivialRegisterType
+):
     """Named barrier for warp group synchronization.
 
     Wraps `named_barrier` and `named_barrier_arrive` with compile-time
@@ -50,7 +51,6 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](TrivialRegisterTy
     fn sync():
         """Full barrier: arrive and wait for all threads."""
         named_barrier[Self.num_threads](Self.barrier_id)
-
 
 
 struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterType):

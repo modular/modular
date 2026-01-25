@@ -31,8 +31,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init
-
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+struct WorkInfo(ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -65,7 +64,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
             self.is_valid_tile,
             ")",
         )
-
 
 
 struct SeqInfo(ImplicitlyCopyable, TrivialRegisterType):
@@ -116,7 +114,6 @@ struct SeqInfo(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct MHASchedulerSynchronization(ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int32
 
@@ -136,6 +133,7 @@ struct MHASchedulerSynchronization(ImplicitlyCopyable, TrivialRegisterType):
 
 # This class is constructed within the fully inlined kernel,
 # so unneeded fields can be optimized away.
+
 
 struct MHATileState(TrivialRegisterType):
     # Linear work tile index i.e. idx-th work among all possible workload.
@@ -163,8 +161,9 @@ struct MHATileState(TrivialRegisterType):
         return self.is_valid(self.idx)
 
 
-
-struct MHATileSummary[ValidLengthType: OptionalPointer](ImplicitlyCopyable, TrivialRegisterType):
+struct MHATileSummary[ValidLengthType: OptionalPointer](
+    ImplicitlyCopyable, TrivialRegisterType
+):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -332,7 +331,6 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](ImplicitlyCopyable, Triv
         return self.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
 
 
-
 trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterType):
     comptime may_advance: Bool
     comptime mha_schedule: MHASchedule
@@ -397,7 +395,6 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct MHASchedule(ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int32
 
@@ -416,7 +413,6 @@ struct MHASchedule(ImplicitlyCopyable, TrivialRegisterType):
 # ===----------------------------------------------------------------------=== #
 # Output Tile Scheduler
 # ===----------------------------------------------------------------------=== #
-
 
 
 struct TransientScheduler[
@@ -513,7 +509,6 @@ struct TransientScheduler[
         return SeqInfo.create(
             self.get_current_work_info(), ts.valid_length, ts.max_seq_len
         )
-
 
 
 struct TileScheduler[
@@ -631,7 +626,6 @@ struct TileScheduler[
         return ts.unsafe_seq_info[
             Self.tile_shape, Self.num_heads, Self.schedule
         ](state.idx)
-
 
 
 struct QueuedTileScheduler[

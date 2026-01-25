@@ -86,7 +86,6 @@ from .grouped_matmul_tile_scheduler import TileScheduler, WorkInfo
 
 
 @fieldwise_init
-
 struct WarpRole(ImplicitlyCopyable, TrivialRegisterType):
     var _role: Int32
 

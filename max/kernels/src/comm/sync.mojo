@@ -108,7 +108,6 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 
 @fieldwise_init
-
 struct Signal(TrivialRegisterType):
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
 

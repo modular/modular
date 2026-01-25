@@ -263,7 +263,6 @@ fn _distribute_is_masked[
     return False
 
 
-
 struct LayoutTensor[
     mut: Bool,
     //,
@@ -283,8 +282,10 @@ struct LayoutTensor[
     ImplicitlyCopyable,
     Movable,
     Stringable,
+    TrivialRegisterType,
     Writable,
-    _Expable, TrivialRegisterType):
+    _Expable,
+):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -6047,7 +6048,6 @@ fn stack_allocation_like[
     ].stack_allocation()
 
 
-
 struct ThreadScope(ImplicitlyCopyable, TrivialRegisterType):
     """Represents the scope of thread operations in GPU programming.
 
@@ -8135,7 +8135,6 @@ fn copy_local_to_local(dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
 # ===-----------------------------------------------------------------------===#
 # LayoutTensorIter                                                             #
 # ===-----------------------------------------------------------------------===#
-
 
 
 struct LayoutTensorIter[

@@ -39,7 +39,6 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-
 trait TileLoader(TrivialRegisterType):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
@@ -64,7 +63,6 @@ trait TileLoader(TrivialRegisterType):
             coords: Tile coordinates (row, column) in the source matrix.
         """
         ...
-
 
 
 struct TileLoaderTMA[
@@ -185,7 +183,6 @@ struct TileLoaderTMA[
                 mem_barrier[],
                 (Int(coords[0]), Int(coords[1])),
             )
-
 
 
 struct TileLoaderCPAsync[

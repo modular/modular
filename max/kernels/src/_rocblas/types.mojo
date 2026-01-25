@@ -21,7 +21,6 @@ from os import abort
 
 
 @fieldwise_init
-
 struct Handle(Defaultable, TrivialRegisterType):
     var _value: OpaquePointer
 
@@ -33,7 +32,6 @@ struct Handle(Defaultable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct Operation(TrivialRegisterType):
     var _value: Int32
 
@@ -55,7 +53,6 @@ struct Operation(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct Fill(TrivialRegisterType):
     var _value: Int32
 
@@ -77,7 +74,6 @@ struct Fill(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct Diagonal(TrivialRegisterType):
     var _value: Int32
 
@@ -98,7 +94,6 @@ struct Diagonal(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct Side(TrivialRegisterType):
     var _value: Int32
 
@@ -120,7 +115,6 @@ struct Side(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct DataType(TrivialRegisterType):
     var _value: Int32
 
@@ -175,7 +169,6 @@ struct DataType(TrivialRegisterType):
         return Int(self._value)
 
 
-
 struct ComputeType(TrivialRegisterType):
     var _value: Int32
 
@@ -200,8 +193,7 @@ struct ComputeType(TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct Status(Equatable, Writable, TrivialRegisterType):
+struct Status(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
 
     comptime SUCCESS = Self(0)
@@ -273,7 +265,6 @@ struct Status(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct PointerMode(TrivialRegisterType):
     var _value: Int32
 
@@ -294,13 +285,11 @@ struct PointerMode(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct MallocBase(TrivialRegisterType):
     var _value: Int32
 
 
 @fieldwise_init
-
 struct Algorithm(TrivialRegisterType):
     var _value: Int32
 
@@ -321,7 +310,6 @@ struct Algorithm(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct GEAMExOp(TrivialRegisterType):
     var _value: Int32
 

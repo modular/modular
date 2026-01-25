@@ -18,6 +18,7 @@ from builtin.sort import _quicksort
 
 # DO NOT CHANGE
 
+
 trait TuningConfig(ImplicitlyCopyable, Stringable, TrivialRegisterType):
     ...
 

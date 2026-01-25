@@ -36,8 +36,9 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable, TrivialRegisterType):
+struct WorkInfo(
+    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterType, Writable
+):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -99,7 +100,6 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable, TrivialRegist
 # =============================================================================
 
 
-
 struct AdvanceAfterWorkContext[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
@@ -154,7 +154,6 @@ struct AdvanceAfterWorkContext[
         self.consumer_state_ptr[].step()
 
 
-
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
 ](TrivialRegisterType):
@@ -196,7 +195,6 @@ struct WaitAndAdvanceContext[
 # =============================================================================
 # WorkIterator - Per-warp iterator encapsulating scheduler + pipeline state
 # =============================================================================
-
 
 
 struct WorkIterator[
@@ -313,7 +311,6 @@ struct WorkIterator[
 # =============================================================================
 
 
-
 struct SchedulerWorkIterator[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32],
@@ -416,7 +413,6 @@ struct SchedulerWorkIterator[
                 self.producer_state.phase()
             )
             self.producer_state.step()
-
 
 
 struct TileScheduler[

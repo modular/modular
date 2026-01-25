@@ -64,7 +64,6 @@ fn _check_scheduler_constraints[
 
 
 @fieldwise_init
-
 struct ReductionMode(ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int32
 
@@ -86,7 +85,6 @@ struct ReductionMode(ImplicitlyCopyable, TrivialRegisterType):
 # ===----------------------------------------------------------------------=== #
 # Output Tile Scheduler
 # ===----------------------------------------------------------------------=== #
-
 
 
 struct SplitKTileScheduler[

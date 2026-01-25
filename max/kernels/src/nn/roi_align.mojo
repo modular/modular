@@ -18,7 +18,6 @@ from layout import Layout, LayoutTensor
 from utils.numerics import min_or_neg_inf
 
 
-
 struct Weighted2DPoint[dtype: DType](TrivialRegisterType):
 
     """Utility class to wrap 2-d point coordinates and floating point weight for

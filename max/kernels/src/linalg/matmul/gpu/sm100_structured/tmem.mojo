@@ -37,7 +37,6 @@ from gpu.compute.arch.tcgen05 import (
 from linalg.structuring import SMemArray
 
 
-
 struct TmemAllocation[
     cta_group: Int,
     max_cols: Int = 512,
@@ -93,7 +92,6 @@ struct TmemAllocation[
 # The value 16 << 16 encodes "row 16, column 0" as the starting offset
 # for the lower half of the accumulator.
 comptime TMEM_LOWER_ROW_OFFSET: UInt32 = 16 << 16
-
 
 
 struct TmemAddress(TrivialRegisterType):
@@ -236,7 +234,6 @@ struct TmemAddress(TrivialRegisterType):
 # =============================================================================
 # TmemTensor - Layout-parameterized typed view over TMEM
 # =============================================================================
-
 
 
 struct TmemTensor[
@@ -461,7 +458,6 @@ struct TmemTensor[
 # =============================================================================
 
 
-
 struct TmemFragments[
     dtype: DType,
     frag_size: Int,
@@ -617,7 +613,6 @@ struct TmemFragments[
 # =============================================================================
 
 
-
 struct TmemArrayType[
     dtype: DType,
     layout: Layout,
@@ -665,7 +660,6 @@ struct TmemArrayType[
 # =============================================================================
 # BlockScaledTmem - TMEM region for block-scaled MMA operations
 # =============================================================================
-
 
 
 struct BlockScaledTmem[
@@ -810,7 +804,6 @@ struct BlockScaledTmem[
 # =============================================================================
 # TmemStage - Pipeline stage wrapper for accumulator buffering
 # =============================================================================
-
 
 
 struct TmemStage[

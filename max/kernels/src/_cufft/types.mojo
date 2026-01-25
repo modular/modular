@@ -15,7 +15,6 @@ from os import abort
 
 
 @fieldwise_init
-
 struct LibraryProperty(Equatable, TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
@@ -43,8 +42,9 @@ struct LibraryProperty(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct Status(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType):
+struct Status(
+    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUFFT_INVALID_PLAN = Self(1)
     comptime CUFFT_SUCCESS = Self(0)
@@ -127,8 +127,7 @@ struct Status(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType
 
 
 @fieldwise_init
-
-struct Type(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType):
+struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUFFT_R2C = Self(0x2A)
     comptime CUFFT_C2R = Self(0x2C)
@@ -175,8 +174,9 @@ struct Type(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct Compatibility(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType):
+struct Compatibility(
+    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
@@ -208,8 +208,9 @@ struct Compatibility(Equatable, Identifiable, Stringable, Writable, TrivialRegis
 
 
 @fieldwise_init
-
-struct Property(Equatable, Identifiable, Stringable, Writable, TrivialRegisterType):
+struct Property(
+    Equatable, Identifiable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)

@@ -129,7 +129,6 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
 # =============================================================================
 
 
-
 struct TileLoaderLDS[
     dtype: DType,
     src_layout: Layout,  # Full tensor layout (stride = shape[1])

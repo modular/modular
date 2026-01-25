@@ -145,7 +145,6 @@ fn _tma_desc_tile_layout[
         )
 
 
-
 struct SharedMemBarrier(ImplicitlyCopyable, TrivialRegisterType):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
 
@@ -472,8 +471,9 @@ struct SharedMemBarrier(ImplicitlyCopyable, TrivialRegisterType):
         return mbarrier_arrive(self.unsafe_ptr())
 
 
-
-struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable, TrivialRegisterType):
+struct PipelineState[num_stages: Int](
+    Defaultable, ImplicitlyCopyable, TrivialRegisterType
+):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a
@@ -2914,7 +2914,6 @@ def create_tma_tile_template[
     """
 
     return TMATensorTile[dtype, __tile_layout, __desc_layout](TMADescriptor())
-
 
 
 struct TMATensorTileArray[

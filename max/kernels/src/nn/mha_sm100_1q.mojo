@@ -138,6 +138,7 @@ struct RegisterAccumulatorDescription:
 # sm90: 128 (warp group size)
 # sm100: num_softmax_threads
 
+
 struct RegisterAccumulatorLayout[
     MMA_M: Int,
     MMA_N: Int,
@@ -183,7 +184,6 @@ struct RegisterAccumulatorLayout[
         )
 
 
-
 struct MMAOperandOffsetFn[
     dtype: DType,
     BMN: Int,
@@ -216,7 +216,6 @@ struct MMAOperandOffsetFn[
         pass
 
 
-
 trait DescriptorPair(TrivialRegisterType):
     comptime a_t: MMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
@@ -228,7 +227,6 @@ trait DescriptorPair(TrivialRegisterType):
     @always_inline
     fn get_b(self) -> Self.b_t:
         ...
-
 
 
 trait WriteableMMAOperandDescriptor(TrivialRegisterType):
@@ -246,7 +244,6 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterType):
         ],
     ):
         ...
-
 
 
 trait DescriptorPairTS(TrivialRegisterType):
@@ -276,7 +273,6 @@ fn local_tensor_type[
     dummy_arg = {
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.LOCAL]()
     }
-
 
 
 trait AccumulatorTile(ImplicitlyCopyable, TrivialRegisterType):
@@ -331,8 +327,9 @@ trait AccumulatorTile(ImplicitlyCopyable, TrivialRegisterType):
         ...
 
 
-
-struct UMMADescriptorSS[operand_type: DType](DescriptorPair, TrivialRegisterType):
+struct UMMADescriptorSS[operand_type: DType](
+    DescriptorPair, TrivialRegisterType
+):
     comptime operand_t = Self.operand_type
     comptime a_t = MMASmemDescriptor
     comptime b_t = MMASmemDescriptor
@@ -367,7 +364,6 @@ fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
         size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
-
 
 
 struct TMemAccumulator[
@@ -592,7 +588,6 @@ struct TMemAccumulator[
         tcgen05_load_wait()
 
 
-
 struct TMemOperand[
     dtype: DType,
     num_m_mmas: Int,
@@ -601,7 +596,7 @@ struct TMemOperand[
     MMA_N: Int,
     MMA_K: Int,
     num_softmax_threads: Int,
-](WriteableMMAOperandDescriptor, TrivialRegisterType):
+](TrivialRegisterType, WriteableMMAOperandDescriptor):
     var tmem_addr: UInt32
 
     comptime reg_layout = RegisterAccumulatorLayout[
@@ -780,7 +775,6 @@ struct TMemOperand[
         tcgen05_load_wait()
 
 
-
 struct UMMADescriptorTS[
     operand_type: DType,
     num_m_mmas: Int,
@@ -818,7 +812,6 @@ struct UMMADescriptorTS[
     @always_inline
     fn get_b(self) -> Self.b_t:
         return self.b
-
 
 
 struct SM100TensorAccumulatorSS[
@@ -1061,7 +1054,6 @@ struct SM100TensorAccumulatorSS[
         """
         _ = self.mbar[Self.pipeline_stages + self.pipeline.index()].arrive()
         self.pipeline.step()
-
 
 
 struct SM100TensorAccumulatorTS[

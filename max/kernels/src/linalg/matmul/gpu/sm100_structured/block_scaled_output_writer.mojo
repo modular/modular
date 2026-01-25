@@ -53,7 +53,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-
 struct BlockScaledTileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,

@@ -224,7 +224,6 @@ fn _compute_ndbuffer_stride[
 
 # This type is "async safe" (see _async_parallelize).
 @fieldwise_init
-
 struct NDBuffer[
     mut: Bool,
     //,
@@ -243,7 +242,9 @@ struct NDBuffer[
     ImplicitlyCopyable,
     Sized,
     Stringable,
-    Writable, TrivialRegisterType):
+    TrivialRegisterType,
+    Writable,
+):
     """An N-dimensional buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does

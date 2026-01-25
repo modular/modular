@@ -34,8 +34,7 @@ comptime hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
-
-struct Status(Equatable, Writable, TrivialRegisterType):
+struct Status(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -91,7 +90,6 @@ struct Status(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipDataType_t(TrivialRegisterType):
     var _value: Int32
     comptime R_32F = Self(0)
@@ -115,7 +113,6 @@ struct hipDataType_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipblasComputeType_t(TrivialRegisterType):
     var _value: Int32
     comptime COMPUTE_16F = Self(0)
@@ -134,7 +131,6 @@ struct hipblasComputeType_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipblasOperation_t(TrivialRegisterType):
     var _value: Int32
     comptime OP_N = Self(111)
@@ -152,7 +148,6 @@ struct hipblasOperation_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipblasLtOrder_t(TrivialRegisterType):
     var _value: Int32
     comptime COL = Self(0)
@@ -173,7 +168,6 @@ struct hipblasLtOrder_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipblasLtMatmulDescAttributes_t(TrivialRegisterType):
     var _value: Int32
     comptime TRANSA = Self(0)
@@ -190,7 +184,6 @@ struct hipblasLtMatmulDescAttributes_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct hipblasLtMatmulLayoutAttribute_t(TrivialRegisterType):
     var _value: Int32
     comptime BATCH_COUNT = Self(0)
@@ -211,7 +204,6 @@ struct hipblasLtMatmulLayoutAttribute_t(TrivialRegisterType):
         return not (self == other)
 
 
-
 struct hipblasLtMatmulAlgo_t(Defaultable, TrivialRegisterType):
     var data: StaticTuple[UInt8, 16]
     var maxWorkspaceBytes: Int
@@ -219,7 +211,6 @@ struct hipblasLtMatmulAlgo_t(Defaultable, TrivialRegisterType):
     fn __init__(out self):
         self.data = StaticTuple[UInt8, 16](0)
         self.maxWorkspaceBytes = 0
-
 
 
 struct hipblasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterType):

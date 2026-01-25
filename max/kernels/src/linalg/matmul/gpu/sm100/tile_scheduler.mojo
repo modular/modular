@@ -37,8 +37,7 @@ from ..tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+struct WorkInfo(ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -68,7 +67,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
             self.is_valid_tile,
             ")",
         )
-
 
 
 struct TileScheduler[

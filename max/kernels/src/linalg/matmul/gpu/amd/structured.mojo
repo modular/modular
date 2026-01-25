@@ -30,7 +30,6 @@ from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
 
 
-
 trait Enum(TrivialRegisterType):
     @always_inline
     fn value(self) -> Int:
@@ -54,8 +53,7 @@ trait Enum(TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct ThreadRole(Enum, Stringable, Writable, TrivialRegisterType):
+struct ThreadRole(Enum, Stringable, TrivialRegisterType, Writable):
     var _value: Int
 
     @always_inline
@@ -99,6 +97,7 @@ fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
 
 
 # TODO: replace with Fabio's implementation
+
 
 struct SMemBuffer[
     dtype: DType,
@@ -151,7 +150,6 @@ struct SMemBuffer[
         return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
-
 struct AMDSharedMemoryBarrier(TrivialRegisterType):
     var __repr: Int32
 
@@ -183,7 +181,6 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
             ]()
-
 
 
 struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
@@ -219,7 +216,6 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
             ]()
 
 
-
 struct MMAConfig[
     InType: DType,
     OutType: DType,
@@ -253,7 +249,6 @@ struct MMAConfig[
     @always_inline
     fn adjusted_mma_k_shape_b() -> Int:
         return Self.mma_shape[2] * Self.k_group_size_b
-
 
 
 struct AmdTileOperator[

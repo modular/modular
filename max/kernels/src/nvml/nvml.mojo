@@ -112,8 +112,9 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
 
 
 @fieldwise_init
-
-struct Result(Equatable, ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+struct Result(
+    Equatable, ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable
+):
     var code: Int32
 
     comptime SUCCESS = Self(0)
@@ -292,7 +293,6 @@ fn _check_error(err: Result) raises:
 
 
 @fieldwise_init
-
 struct EnableState(Equatable, ImplicitlyCopyable, TrivialRegisterType):
     var code: Int32
 
@@ -313,7 +313,6 @@ struct EnableState(Equatable, ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct ClockType(Equatable, ImplicitlyCopyable, TrivialRegisterType):
     var code: Int32
 
@@ -340,7 +339,6 @@ struct ClockType(Equatable, ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct _DeviceImpl(Defaultable, ImplicitlyCopyable, TrivialRegisterType):
     var handle: OpaquePointer
 
@@ -587,7 +585,6 @@ struct Device(Writable):
 
 
 @fieldwise_init
-
 struct _EnableState(ImplicitlyCopyable, TrivialRegisterType):
     var state: Int32
 

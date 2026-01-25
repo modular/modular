@@ -65,7 +65,6 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-
 struct MicroKernelShape(ImplicitlyCopyable, TrivialRegisterType):
     """Record describing the inner kernel shape."""
 
@@ -79,7 +78,6 @@ struct MicroKernelShape(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct GemmShape(ImplicitlyCopyable, TrivialRegisterType):
     """Helper class to unpack gemm dimension and layout."""
 
@@ -730,7 +728,6 @@ fn packA_i8mm[
 
 
 @fieldwise_init
-
 struct InnerKernelID(ImplicitlyCopyable, TrivialRegisterType):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)

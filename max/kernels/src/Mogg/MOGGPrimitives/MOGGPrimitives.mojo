@@ -55,6 +55,7 @@ fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
 # the `constrained` and `static_assert` we added to ensure the type has the
 # right byte size.
 
+
 struct StateContext(TrivialRegisterType):
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
@@ -1327,7 +1328,6 @@ fn test_my_int_square(x: MyInt) -> MyInt:
 @no_inline
 fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
-
 
 
 struct MyIntReg(ImplicitlyCopyable, TrivialRegisterType):

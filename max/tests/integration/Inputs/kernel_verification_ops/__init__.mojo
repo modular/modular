@@ -110,7 +110,6 @@ struct MakeMyIntMemory:
 
 
 @fieldwise_init
-
 struct MyIntReg(Movable, TrivialRegisterType):
     var val: Int
 

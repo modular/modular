@@ -46,7 +46,6 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
 
 
 @fieldwise_init("implicit")
-
 struct Major(TrivialRegisterType):
     var val: Int
 
@@ -146,7 +145,6 @@ fn smem_descriptor[
     return _create_mma_desc_pair[
         canonical_layout=cl, swizzle_mode=swizzle_mode
     ](ptr)
-
 
 
 struct MmaOpSM100_SS[
@@ -304,7 +302,6 @@ struct MmaOpSM100_SS[
             ]()
 
         return UMMAKind(-1)
-
 
 
 struct MmaOpSM100_BlockScaled_SS[

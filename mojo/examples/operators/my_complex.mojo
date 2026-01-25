@@ -20,8 +20,8 @@ struct Complex(
     ImplicitlyCopyable,
     Representable,
     Stringable,
-    Writable,
     TrivialRegisterType,
+    Writable,
 ):
     """Represents a complex value.
 

@@ -52,7 +52,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-
 struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,

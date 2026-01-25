@@ -77,7 +77,6 @@ from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
 
-
 trait OptionalPointer(Copyable, TrivialRegisterType):
     comptime dtype: DType
     comptime is_null: Bool
@@ -85,7 +84,6 @@ trait OptionalPointer(Copyable, TrivialRegisterType):
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
         ...
-
 
 
 struct NonNullPointer[dtype_: DType](OptionalPointer, TrivialRegisterType):
@@ -114,7 +112,6 @@ struct NonNullPointer[dtype_: DType](OptionalPointer, TrivialRegisterType):
         return self.ptr
 
 
-
 struct NullPointer[dtype_: DType](OptionalPointer, TrivialRegisterType):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
@@ -126,7 +123,6 @@ struct NullPointer[dtype_: DType](OptionalPointer, TrivialRegisterType):
     @always_inline
     fn value(self) -> UnsafePointer[Scalar[Self.dtype]]:
         return {}
-
 
 
 struct Pack[
@@ -181,7 +177,6 @@ struct Pack[
         self.kv_input_row_offsets = kv_input_row_offsets
         self.max_seq_len = max_seq_len
         self.partition = partition
-
 
 
 struct MHAPosition[
@@ -466,7 +461,6 @@ fn get_seq_info[
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)
-
 
 
 struct PositionSummary(TrivialRegisterType):

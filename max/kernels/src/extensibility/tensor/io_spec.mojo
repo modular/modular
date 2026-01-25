@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-
 struct IO(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int
 
@@ -39,7 +38,6 @@ struct IO(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct IOSpec[mut: Bool, input: IO](ImplicitlyCopyable, TrivialRegisterType):
     """
     Parameter used to encode whether a particular tensor argument to a DPS kernel

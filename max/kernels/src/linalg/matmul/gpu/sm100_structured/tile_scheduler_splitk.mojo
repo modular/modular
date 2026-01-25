@@ -37,8 +37,9 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable, TrivialRegisterType):
+struct WorkInfo(
+    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterType, Writable
+):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -84,7 +85,6 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable, TrivialRegist
 # See tile_scheduler.mojo for pattern documentation. These are split-K versions
 # that work with the split-K WorkInfo type.
 # =============================================================================
-
 
 
 struct AdvanceAfterWorkContextSplitK[
@@ -141,7 +141,6 @@ struct AdvanceAfterWorkContextSplitK[
         self.consumer_state_ptr[].step()
 
 
-
 struct WaitAndAdvanceContextSplitK[
     work_origin: MutOrigin,
 ](TrivialRegisterType):
@@ -177,7 +176,6 @@ struct WaitAndAdvanceContextSplitK[
 # =============================================================================
 # WorkIteratorSplitK - Per-warp iterator encapsulating scheduler + pipeline state
 # =============================================================================
-
 
 
 struct WorkIteratorSplitK[
@@ -280,7 +278,6 @@ struct WorkIteratorSplitK[
 # =============================================================================
 
 
-
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
@@ -364,7 +361,6 @@ struct SchedulerWorkIteratorSplitK[
                 self.producer_state.index()
             ].wait(self.producer_state.phase())
             self.producer_state.step()
-
 
 
 struct TileScheduler[

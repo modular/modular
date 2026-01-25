@@ -79,7 +79,6 @@ trait CoordLike(Defaultable, ImplicitlyCopyable, Representable):
         ...
 
 
-
 struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
     """Compile-time known index value.
 
@@ -122,7 +121,6 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
     fn tuple(var self) -> Coord[*Self.VariadicType]:
         constrained[False, "ComptimeInt is not a tuple type"]()
         return rebind[Coord[*Self.VariadicType]](self)
-
 
 
 struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterType):

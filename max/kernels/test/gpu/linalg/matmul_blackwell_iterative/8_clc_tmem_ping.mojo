@@ -87,7 +87,6 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-
 struct WarpRole(ImplicitlyCopyable, TrivialRegisterType):
     var _role: Int32
 

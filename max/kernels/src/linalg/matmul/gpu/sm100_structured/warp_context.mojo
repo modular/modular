@@ -33,7 +33,6 @@ from .tmem import TmemAllocation
 # =============================================================================
 
 
-
 struct _WarpContextTypes[
     num_accum_stages: Int,
     stage_stride_cols: Int,
@@ -56,7 +55,6 @@ struct _WarpContextTypes[
 # =============================================================================
 # MmaWarpContext
 # =============================================================================
-
 
 
 struct MmaWarpContext[
@@ -158,7 +156,6 @@ struct MmaWarpContext[
 # =============================================================================
 # EpilogueWarpContext
 # =============================================================================
-
 
 
 struct EpilogueWarpContext[

@@ -86,12 +86,10 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 # ============================================================================
 
 
-
 trait TilePayload(TrivialRegisterType):
     """Trait for tile payload types. Must be ."""
 
     pass
-
 
 
 struct StandardTilePayload[
@@ -141,7 +139,6 @@ struct StandardTilePayload[
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
         return self.b_tiles[stage * k_group_size + k_idx]
-
 
 
 struct BlockScaledTilePayload[
@@ -242,7 +239,6 @@ struct BlockScaledTilePayload[
         return self.sfb_tiles[stage * k_group_size + k_idx]
 
 
-
 struct BlockwiseFP8TilePayload[
     a_type: DType,
     b_type: DType,
@@ -328,7 +324,6 @@ struct BlockwiseFP8TilePayload[
 # ============================================================================
 # InputTilePipeline - Generic pipeline parameterized by payload type
 # ============================================================================
-
 
 
 struct InputTilePipeline[
@@ -431,7 +426,6 @@ struct InputTilePipeline[
 # ============================================================================
 
 
-
 struct InputProducerStage[
     origin: MutOrigin,
     Payload: TilePayload,
@@ -486,7 +480,6 @@ struct InputProducerStage[
     fn barrier(self) -> MbarPtr:
         """Get the barrier pointer for TMA multicast loads."""
         return self._barrier
-
 
 
 struct InputConsumerStage[
@@ -546,7 +539,6 @@ struct InputConsumerStage[
 
 
 @fieldwise_init
-
 struct InputProducer[
     origin: MutOrigin,
     Payload: TilePayload,
@@ -592,7 +584,6 @@ struct InputProducer[
 
 
 @fieldwise_init
-
 struct InputConsumer[
     origin: MutOrigin,
     Payload: TilePayload,
@@ -631,7 +622,6 @@ struct InputConsumer[
 # ============================================================================
 # TilePipeline - Staged tile storage with producer-consumer synchronization
 # ============================================================================
-
 
 
 struct TilePipeline[
@@ -787,7 +777,6 @@ struct TilePipeline[
         return self.pipeline.consumer_mbar(stage)
 
 
-
 struct StandardProducerStage[
     origin: MutOrigin,
     a_type: DType,
@@ -876,7 +865,6 @@ struct StandardProducerStage[
         return self._stage
 
 
-
 struct StandardConsumerStage[
     origin: MutOrigin,
     a_type: DType,
@@ -961,7 +949,6 @@ struct StandardConsumerStage[
 
 
 @fieldwise_init
-
 struct StandardTileProducer[
     origin: MutOrigin,
     a_type: DType,
@@ -1030,7 +1017,6 @@ struct StandardTileProducer[
 
 
 @fieldwise_init
-
 struct StandardTileConsumer[
     origin: MutOrigin,
     a_type: DType,
@@ -1089,7 +1075,6 @@ struct StandardTileConsumer[
         )
 
 
-
 struct OutputStage[
     num_stages: Int,
     stage_stride: Int,
@@ -1138,7 +1123,6 @@ struct OutputStage[
         """
         var tmem = Self.Tmem.from_offset(Int(tmem_offset), Int(stage_index))
         return Self(stage_index, tmem, pipeline)
-
 
 
 struct OutputTilePipeline[
@@ -1305,7 +1289,6 @@ struct OutputTilePipeline[
         return EpilogueKContext(Pointer(to=self), Pointer(to=input_pipeline))
 
 
-
 struct OutputProducer[
     origin: MutOrigin,
     num_stages: Int,
@@ -1347,7 +1330,6 @@ struct OutputProducer[
         self.pipeline_ptr[].release_from_mma(self.stage)
 
 
-
 struct OutputConsumer[
     origin: MutOrigin,
     num_stages: Int,
@@ -1385,7 +1367,6 @@ struct OutputConsumer[
 # =============================================================================
 # These types provide per-K-iteration signaling for kernels that need to
 # signal after each K iteration rather than once per tile (e.g., blockwise FP8).
-
 
 
 struct OutputKPipeline[
@@ -1454,7 +1435,6 @@ struct OutputKPipeline[
         return PerKConsumerStage(self.pipeline_ptr)
 
 
-
 struct MmaKStage[
     origin: MutOrigin,
     num_stages: Int,
@@ -1498,7 +1478,6 @@ struct MmaKStage[
     @always_inline
     fn __exit__(mut self):
         self.pipeline_ptr[].release_from_mma(self.stage)
-
 
 
 struct PerKConsumerStage[
@@ -1570,7 +1549,6 @@ struct PerKConsumerStage[
 # =============================================================================
 
 
-
 struct EpilogueKStage[
     num_output_stages: Int,
     stage_stride_cols: Int,
@@ -1621,7 +1599,6 @@ struct EpilogueKStage[
 # =============================================================================
 # Epilogue Per-K Context Manager (for blockwise FP8)
 # =============================================================================
-
 
 
 struct EpilogueKContext[

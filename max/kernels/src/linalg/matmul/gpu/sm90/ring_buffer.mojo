@@ -54,7 +54,6 @@ from ....structuring import NVIDIASharedMemoryManager
 # loads tiles into shared memory while multiple consumer warp groups process them
 
 
-
 struct ProducerTiles[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
@@ -89,7 +88,6 @@ struct ProducerTiles[
     fn __exit__(mut self):
         # Signal that the tile has been filled and is ready for consumption
         self.ring_buffer_ptr[].enqueue_tile()
-
 
 
 struct ConsumerTiles[
@@ -128,7 +126,6 @@ struct ConsumerTiles[
         self.ring_buffer_ptr[].release_slot(self.read_idx)
 
 
-
 struct RingBufferConsumer[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
@@ -160,7 +157,6 @@ struct RingBufferConsumer[
     ) -> ConsumerTiles[Self.origin, Self.ring_buffer_type]:
         """Get a context manager for accessing the next available tile."""
         return {self.ring_buffer_ptr}
-
 
 
 struct RingBufferProducer[

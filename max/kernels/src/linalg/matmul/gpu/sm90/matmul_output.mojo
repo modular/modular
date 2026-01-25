@@ -47,7 +47,6 @@ from .tile_writer import (
 import itertools
 
 
-
 struct MatmulTileWriter[
     dtype: DType,
     layout: Layout,

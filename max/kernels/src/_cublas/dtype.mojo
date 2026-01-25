@@ -14,7 +14,6 @@
 from os import abort
 
 
-
 struct Property(TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
@@ -42,7 +41,6 @@ struct Property(TrivialRegisterType):
 
     fn __int__(self) -> Int:
         return Int(self._value)
-
 
 
 struct DataType(TrivialRegisterType):

@@ -32,7 +32,6 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile
 
 
-
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -102,7 +101,6 @@ struct TileLoaderTMA[
         self.tma_op[].async_multicast_load[Self.cta_group](
             dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
-
 
 
 struct ScalesTileLoader[

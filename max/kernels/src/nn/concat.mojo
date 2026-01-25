@@ -109,7 +109,6 @@ fn memcpy_or_fuse[
 
 
 @fieldwise_init
-
 struct _Span(ImplicitlyCopyable, TrivialRegisterType):
     var start: Int
     var end: Int
@@ -124,7 +123,6 @@ struct _Span(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct _CanonicallyReshapedBuffer(ImplicitlyCopyable, TrivialRegisterType):
     var data: UnsafePointer[Int8]
     var h: Int

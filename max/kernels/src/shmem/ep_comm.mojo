@@ -162,7 +162,6 @@ fn ep_signal_completion[
             )
 
 
-
 trait TokenFormat(DevicePassable, TrivialRegisterType):
     comptime hid_dim: Int
     comptime top_k: Int
@@ -227,7 +226,6 @@ trait TokenFormat(DevicePassable, TrivialRegisterType):
     ) -> None:
         "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
         ...
-
 
 
 struct BF16TokenFormat[
@@ -322,7 +320,6 @@ struct BF16TokenFormat[
                     )
                 ),
             )
-
 
 
 struct BlockwiseFP8TokenFormat[
@@ -521,7 +518,6 @@ struct BlockwiseFP8TokenFormat[
 # ===-----------------------------------------------------------------------===#
 # EP Atomic Counters
 # ===-----------------------------------------------------------------------===#
-
 
 
 struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):

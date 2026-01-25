@@ -83,7 +83,6 @@ comptime cudnnPersistentRNNPlan = NoneType
 
 
 @fieldwise_init
-
 struct cudnnRNNInputMode_t(TrivialRegisterType):
     var _value: Int32
 
@@ -94,7 +93,6 @@ struct cudnnRNNInputMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnDirectionMode_t(TrivialRegisterType):
     var _value: Int32
 
@@ -105,7 +103,6 @@ struct cudnnDirectionMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnRNNClipMode_t(TrivialRegisterType):
     var _value: Int32
 
@@ -116,7 +113,6 @@ struct cudnnRNNClipMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnRNNMode_t(TrivialRegisterType):
     var _value: Int32
     comptime RNN_RELU = Self(0)
@@ -130,7 +126,6 @@ struct cudnnRNNMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnMultiHeadAttnWeightKind_t(TrivialRegisterType):
     var _value: Int32
 
@@ -160,7 +155,6 @@ struct cudnnMultiHeadAttnWeightKind_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnRNNBiasMode_t(TrivialRegisterType):
     var _value: Int32
 
@@ -175,7 +169,6 @@ struct cudnnRNNBiasMode_t(TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct cudnnRNNDataLayout_t(TrivialRegisterType):
     var _value: Int32
     comptime SEQ_MAJOR_UNPACKED = Self(0)
@@ -227,8 +220,9 @@ fn cudnnGetRNNDescriptor_v6(
 
 
 @fieldwise_init
-
-struct cudnnForwardMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnForwardMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_FWD_MODE_INFERENCE = Self(0)
     comptime CUDNN_FWD_MODE_TRAINING = Self(1)
@@ -781,8 +775,9 @@ fn cudnnGetRNNDescriptor_v8(
 
 
 @fieldwise_init
-
-struct cudnnSeqDataAxis_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnSeqDataAxis_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_SEQDATA_TIME_DIM = Self(0)
     comptime CUDNN_SEQDATA_BATCH_DIM = Self(1)

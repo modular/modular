@@ -111,7 +111,6 @@ fn _load_reduce[
         return accum.cast[dtype]()
 
 
-
 struct ReduceScatterConfig[
     dtype: DType,
     ngpus: Int,

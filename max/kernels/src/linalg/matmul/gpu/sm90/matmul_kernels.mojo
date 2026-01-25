@@ -81,6 +81,7 @@ from .matmul_output import MatmulTileWriter
 
 # Shared memory structure for Hopper SM90 kernel
 
+
 struct HopperMatmulSM90Kernel_SMem[
     a_type: DType,
     a_layout: Layout,

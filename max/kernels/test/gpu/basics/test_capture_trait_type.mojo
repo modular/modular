@@ -17,14 +17,12 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from utils import IndexList
 
 
-
 trait BaseT(TrivialRegisterType):
     fn get_val(self, idx: Int) -> Float32:
         ...
 
 
 @fieldwise_init
-
 struct ImplT(BaseT, ImplicitlyCopyable, TrivialRegisterType):
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 

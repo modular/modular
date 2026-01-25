@@ -82,7 +82,6 @@ fn tma_wait_pipelined[
 # =============================================================================
 
 
-
 struct AccumTile[dtype: DType, size: Int](TrivialRegisterType):
     """Upper + lower TMEM fragments (16 rows each) for SM100 output."""
 
@@ -102,7 +101,6 @@ struct AccumTile[dtype: DType, size: Int](TrivialRegisterType):
 # =============================================================================
 # AccumBarrier - Accumulator pipeline barrier helper
 # =============================================================================
-
 
 
 struct AccumBarrier[cta_group: Int](TrivialRegisterType):
@@ -212,7 +210,6 @@ fn store_fragment_to_smem[
 # =============================================================================
 
 
-
 struct EpilogueConfig[
     MMA_M: Int,
     MMA_N: Int,
@@ -239,7 +236,6 @@ struct EpilogueConfig[
 # =============================================================================
 # TMAStoreCoords - Compute coordinates for TMA store operations
 # =============================================================================
-
 
 
 struct TMAStoreCoords[
@@ -339,7 +335,6 @@ struct TMAStoreCoords[
 # =============================================================================
 # TMAStoreExecutor - Execute TMA stores with proper SMEM tiling
 # =============================================================================
-
 
 
 struct TMAStoreExecutor[
@@ -545,7 +540,6 @@ struct TMAStoreExecutor[
 # =============================================================================
 
 
-
 struct FragmentCoords[stageN: Int, repeats: Int](TrivialRegisterType):
     """Fragment element coordinates for tcgen05 16x256b matrix layout."""
 
@@ -574,7 +568,6 @@ struct FragmentCoords[stageN: Int, repeats: Int](TrivialRegisterType):
 # =============================================================================
 # EpilogueApplier - Apply element-wise operations on fragments
 # =============================================================================
-
 
 
 struct EpilogueApplier[
@@ -724,7 +717,6 @@ struct EpilogueApplier[
 # =============================================================================
 # TMEMToSMemWriter - Write TMEM accumulators to shared memory (SM100-specific)
 # =============================================================================
-
 
 
 struct TMEMToSMemWriter[
@@ -910,7 +902,6 @@ from layout.layout import coalesce, flatten
 # =============================================================================
 # SMemEpilogueWriter - SMEM-based epilogue writer with element-wise compute
 # =============================================================================
-
 
 
 struct SMemEpilogueWriter[

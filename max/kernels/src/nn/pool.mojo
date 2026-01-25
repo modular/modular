@@ -28,7 +28,6 @@ from .shapes import get_sliding_window_out_dim
 
 # Pooling method.
 @fieldwise_init
-
 struct PoolMethod(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int
     comptime MAX = PoolMethod(0)  # Max pooling.

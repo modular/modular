@@ -144,7 +144,6 @@ fn use_apple_accelerate_lib[
 
 
 @fieldwise_init
-
 struct _CBLASOrder(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int32
     comptime ROW_MAJOR = _CBLASOrder(101)
@@ -152,7 +151,6 @@ struct _CBLASOrder(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct _CBLASTranspose(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int32
     comptime NO_TRANSPOSE = _CBLASTranspose(111)

@@ -65,6 +65,7 @@ from std.bit import log2_floor
 
 # Import ThreadInfo from matmul_output
 
+
 struct ThreadInfo(TrivialRegisterType):
     """Thread identification within the warp group."""
 
@@ -100,7 +101,6 @@ struct ThreadInfo(TrivialRegisterType):
         var lid = lane_id()
         var lane_row, lane_col = divmod(UInt32(lid), 4)
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
-
 
 
 struct TileCoordinates(TrivialRegisterType):
@@ -140,7 +140,6 @@ struct TileCoordinates(TrivialRegisterType):
         )
 
 
-
 trait SMemTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
@@ -163,7 +162,6 @@ trait SMemTileWriter(TrivialRegisterType):
             coords: Tile coordinates (row, column) in the destination matrix.
         """
         ...
-
 
 
 struct TileWriterTMA[
@@ -232,7 +230,6 @@ struct TileWriterTMA[
         # Commit and wait for completion
         self.tma_op[].commit_group()
         self.tma_op[].wait_group()
-
 
 
 struct TileWriterThreadwise[
@@ -392,7 +389,6 @@ struct TileWriterThreadwise[
             )
 
 
-
 trait RegTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
@@ -413,7 +409,6 @@ trait RegTileWriter(TrivialRegisterType):
             coords: Tile coordinates (row, column) in the destination matrix.
         """
         ...
-
 
 
 struct FragmentToSMemWriter[
@@ -624,7 +619,6 @@ struct FragmentToSMemWriter[
             self._store_fragment[elements_per_store, m_frag, n_frag](
                 smem_frag, frag_data
             )
-
 
 
 struct RegisterToGMemWriter[

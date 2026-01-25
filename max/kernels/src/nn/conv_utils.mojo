@@ -44,7 +44,6 @@ comptime elementwise_simd_epilogue_type = fn[
 
 
 @fieldwise_init
-
 struct ConvShape[rank: Int](ImplicitlyCopyable, TrivialRegisterType):
     """A shape struct describing the convolution dimensions."""
 
@@ -655,7 +654,6 @@ fn get_micro_kernel_shape[
 
 
 @fieldwise_init
-
 struct ConvPartition(ImplicitlyCopyable, TrivialRegisterType):
     """Work range for a partition."""
 
@@ -850,7 +848,6 @@ fn get_partition(
 
 
 @fieldwise_init
-
 struct ConvAlgorithm(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int
     comptime Default = ConvAlgorithm(0)  # statically unknown layout.

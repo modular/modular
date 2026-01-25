@@ -18,8 +18,7 @@ from gpu.host.info import GPUInfo
 
 
 @fieldwise_init
-
-struct TuningConfigAllreduce(TuningConfig, TrivialRegisterType):
+struct TuningConfigAllreduce(TrivialRegisterType, TuningConfig):
     """
     Parameters:
         ngpus: Number of GPUs for running allreduce.

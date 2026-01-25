@@ -66,7 +66,6 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-
 trait SyncStrategy(TrivialRegisterType):
     """Interface for synchronization strategies between producers and consumers.
 
@@ -152,7 +151,6 @@ trait SyncStrategy(TrivialRegisterType):
 # ===----------------------------------------------------------------------=== #
 
 
-
 struct SingleCounterSync[
     pipeline_stages: Int,
     block_rows: Int,
@@ -223,7 +221,6 @@ struct SingleCounterSync[
     @always_inline
     fn get_consumer_phase_increment(self) -> Int32:
         return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
-
 
 
 struct SplitCounterSync[

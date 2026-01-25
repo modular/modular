@@ -113,8 +113,9 @@ from utils.index import Index, IndexList
 from kv_cache.types import swizzle_granularity
 
 
-
-struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
+struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
+    TrivialRegisterType
+):
     comptime k_layout = tile_layout_k_major[
         Self.dtype,
         Self.config.BN,
@@ -231,7 +232,6 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](TrivialRegisterTyp
         that should be handled by the `tma_op.async_copy`.
         """
         self.kv_pipeline.state.step()
-
 
 
 struct SM100MLA[

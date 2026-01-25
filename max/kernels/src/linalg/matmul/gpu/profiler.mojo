@@ -31,7 +31,6 @@ comptime MatmulProfileWarp[
 
 
 @fieldwise_init
-
 struct BlackwellWarpProfilingWorkspaceManager[
     load_warps: UInt32,
     mma_warps: UInt32,

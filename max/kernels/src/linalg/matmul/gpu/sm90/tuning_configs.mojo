@@ -15,8 +15,7 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from internal_utils import TuningConfig
 
 
-
-struct TuningConfigSM90(TuningConfig, TrivialRegisterType):
+struct TuningConfigSM90(TrivialRegisterType, TuningConfig):
     var M: Int
     var N: Int
     var K: Int

@@ -52,7 +52,6 @@ comptime MbarPtr = UnsafePointer[
 ]
 
 
-
 struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
     """A producer-consumer pipeline using shared memory barriers to
     enforce synchronization (between producer and consumer warps).
@@ -303,7 +302,6 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
 # =============================================================================
 
 
-
 struct ProducerStage(TrivialRegisterType):
     """Stage info returned by ProduceContext.__enter__."""
 
@@ -327,7 +325,6 @@ struct ProducerStage(TrivialRegisterType):
         Caller is responsible for signaling via mma_arrive or similar.
         """
         return self._mbar
-
 
 
 struct ProduceContext[
@@ -369,7 +366,6 @@ struct ProduceContext[
     fn __exit__(self):
         """Advance producer to next stage."""
         self.pipeline[].producer_step()
-
 
 
 struct ConsumerStage(TrivialRegisterType):
@@ -419,7 +415,6 @@ struct ConsumerStage(TrivialRegisterType):
         _ = self._mbar[0].arrive()
 
 
-
 struct ConsumeContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
@@ -454,7 +449,6 @@ struct ConsumeContext[
         """Signal consumption complete and advance."""
         _ = self.pipeline[].empty[self.pipeline[].consumer_stage()].arrive()
         self.pipeline[].consumer_step()
-
 
 
 struct ExplicitConsumeContext[

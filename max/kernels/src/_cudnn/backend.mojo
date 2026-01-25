@@ -87,8 +87,7 @@ fn cudnnBackendInitialize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
 
 
 @fieldwise_init
-
-struct cudnnBackendKnobType_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnBackendKnobType_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_KNOB_TYPE_SPLIT_K = Self(0)
     comptime CUDNN_KNOB_TYPE_SWIZZLE = Self(1)
@@ -231,8 +230,7 @@ struct cudnnBackendKnobType_t(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct cudnnPointwiseMode_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnPointwiseMode_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_POINTWISE_ADD = Self(0)
     comptime CUDNN_POINTWISE_ADD_SQUARE = Self(1)
@@ -411,8 +409,7 @@ struct cudnnPointwiseMode_t(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct cudnnBackendDescriptorType_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnBackendDescriptorType_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_BACKEND_POINTWISE_DESCRIPTOR = Self(0)
     comptime CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR = Self(1)
@@ -601,8 +598,9 @@ fn cudnnBackendSetAttribute(
 
 
 @fieldwise_init
-
-struct cudnnBackendBehaviorNote_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendBehaviorNote_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION = Self(0)
     comptime CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER = Self(1)
@@ -647,8 +645,9 @@ struct cudnnBackendBehaviorNote_t(Equatable, Identifiable, Writable, TrivialRegi
 
 
 @fieldwise_init
-
-struct cudnnBackendLayoutType_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendLayoutType_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_LAYOUT_TYPE_PREFERRED_NCHW = Self(0)
     comptime CUDNN_LAYOUT_TYPE_PREFERRED_NHWC = Self(1)
@@ -692,8 +691,9 @@ struct cudnnBackendLayoutType_t(Equatable, Identifiable, Writable, TrivialRegist
 
 
 @fieldwise_init
-
-struct cudnnBackendNormFwdPhase_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendNormFwdPhase_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_NORM_FWD_INFERENCE = Self(0)
     comptime CUDNN_NORM_FWD_TRAINING = Self(1)
@@ -728,8 +728,9 @@ struct cudnnBackendNormFwdPhase_t(Equatable, Identifiable, Writable, TrivialRegi
 
 
 @fieldwise_init
-
-struct cudnnBackendHeurMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendHeurMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_HEUR_MODE_INSTANT = Self(0)
     comptime CUDNN_HEUR_MODE_B = Self(1)
@@ -772,15 +773,13 @@ struct cudnnBackendHeurMode_t(Equatable, Identifiable, Writable, TrivialRegister
         return Int(self._value)
 
 
-
 struct cudnnFractionStruct(TrivialRegisterType):
     var numerator: Int64
     var denominator: Int64
 
 
 @fieldwise_init
-
-struct cudnnBackendNumericalNote_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnBackendNumericalNote_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_NUMERICAL_NOTE_TENSOR_CORE = Self(0)
     comptime CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS = Self(1)
@@ -853,8 +852,7 @@ fn cudnnBackendCreateDescriptor(
 
 
 @fieldwise_init
-
-struct cudnnBackendAttributeType_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnBackendAttributeType_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_TYPE_HANDLE = Self(0)
     comptime CUDNN_TYPE_DATA_TYPE = Self(1)
@@ -973,8 +971,9 @@ struct cudnnBackendAttributeType_t(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct cudnnRngDistribution_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnRngDistribution_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_RNG_DISTRIBUTION_BERNOULLI = Self(0)
     comptime CUDNN_RNG_DISTRIBUTION_UNIFORM = Self(1)
@@ -1018,8 +1017,9 @@ fn cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
 
 
 @fieldwise_init
-
-struct cudnnBackendTensorReordering_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendTensorReordering_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_TENSOR_REORDERING_NONE = Self(0)
     comptime CUDNN_TENSOR_REORDERING_INT8x32 = Self(1)
@@ -1057,8 +1057,7 @@ struct cudnnBackendTensorReordering_t(Equatable, Identifiable, Writable, Trivial
 
 
 @fieldwise_init
-
-struct cudnnBackendAttributeName_t(Equatable, Writable, TrivialRegisterType):
+struct cudnnBackendAttributeName_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_ATTR_POINTWISE_MODE = Self(0)
     comptime CUDNN_ATTR_POINTWISE_MATH_PREC = Self(1)
@@ -1823,8 +1822,9 @@ struct cudnnBackendAttributeName_t(Equatable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
-struct cudnnBackendNormMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBackendNormMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_LAYER_NORM = Self(0)
     comptime CUDNN_INSTANCE_NORM = Self(1)
@@ -1868,8 +1868,9 @@ struct cudnnBackendNormMode_t(Equatable, Identifiable, Writable, TrivialRegister
 
 
 @fieldwise_init
-
-struct cudnnSignalMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnSignalMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_SIGNAL_SET = Self(0)
     comptime CUDNN_SIGNAL_WAIT = Self(1)
@@ -1907,8 +1908,9 @@ comptime cudnnBackendDescriptor_t = OpaquePointer
 
 
 @fieldwise_init
-
-struct cudnnBnFinalizeStatsMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnBnFinalizeStatsMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_BN_FINALIZE_STATISTICS_TRAINING = Self(0)
     comptime CUDNN_BN_FINALIZE_STATISTICS_INFERENCE = Self(1)
@@ -1943,8 +1945,9 @@ struct cudnnBnFinalizeStatsMode_t(Equatable, Identifiable, Writable, TrivialRegi
 
 
 @fieldwise_init
-
-struct cudnnGenStatsMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnGenStatsMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_GENSTATS_SUM_SQSUM = Self(0)
 
@@ -2000,8 +2003,9 @@ fn cudnnBackendExecute(
 
 
 @fieldwise_init
-
-struct cudnnResampleMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnResampleMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_RESAMPLE_NEAREST = Self(0)
     comptime CUDNN_RESAMPLE_BILINEAR = Self(1)
@@ -2079,8 +2083,9 @@ fn cudnnBackendGetAttribute(
 
 
 @fieldwise_init
-
-struct cudnnPaddingMode_t(Equatable, Identifiable, Writable, TrivialRegisterType):
+struct cudnnPaddingMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_ZERO_PAD = Self(0)
     comptime CUDNN_NEG_INF_PAD = Self(1)

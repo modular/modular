@@ -295,7 +295,6 @@ def reference_attention_bshd_with_sinks[
 
 
 @fieldwise_init
-
 struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable, TrivialRegisterType):
     """Test case workload configuration hyperparameters."""
 

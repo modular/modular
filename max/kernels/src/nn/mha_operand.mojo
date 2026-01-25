@@ -33,7 +33,6 @@ from utils import Index, IndexList
 from builtin.device_passable import DevicePassable
 
 
-
 trait MHAOperand(DevicePassable, TrivialRegisterType):
     """This serves as the trait to support arguments to our MHA kernel."""
 
@@ -103,7 +102,6 @@ trait MHAOperand(DevicePassable, TrivialRegisterType):
         to mask extra rows to avoid adding `NaN` to the output
         through the MMA reduction."""
         ...
-
 
 
 struct KVCacheMHAOperand[
@@ -215,8 +213,9 @@ struct KVCacheMHAOperand[
         )
 
 
-
-struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand, TrivialRegisterType):
+struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
+    MHAOperand, TrivialRegisterType
+):
     """An implementation for LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
@@ -335,10 +334,9 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand, Trivial
         )
 
 
-
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
-    MHAOperand
-, TrivialRegisterType):
+    MHAOperand, TrivialRegisterType
+):
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_

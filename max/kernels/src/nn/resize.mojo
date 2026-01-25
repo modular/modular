@@ -104,8 +104,9 @@ struct InterpolationMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-
-struct Interpolator[mode: InterpolationMode](Defaultable, ImplicitlyCopyable, TrivialRegisterType):
+struct Interpolator[mode: InterpolationMode](
+    Defaultable, ImplicitlyCopyable, TrivialRegisterType
+):
     var cubic_coeff: Float32
 
     @always_inline

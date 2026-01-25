@@ -45,7 +45,6 @@ from .ring_buffer_traits import (
 # ===----------------------------------------------------------------------=== #
 
 
-
 struct ProducerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
@@ -89,7 +88,6 @@ struct ProducerTile[
     fn __exit__(mut self):
         """Release the tile back to consumers."""
         self.producer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
-
 
 
 struct ConsumerTile[
@@ -140,7 +138,6 @@ struct ConsumerTile[
 # ===----------------------------------------------------------------------=== #
 # Producer and Consumer Views
 # ===----------------------------------------------------------------------=== #
-
 
 
 struct ProducerView[
@@ -243,7 +240,6 @@ struct ProducerView[
             producer_iteration,
             warp_tile_idx,
         )
-
 
 
 struct ConsumerView[

@@ -23,8 +23,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-
-struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+struct RasterOrder(
+    Hashable, ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -54,8 +55,7 @@ struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable, TrivialRe
 
 
 @fieldwise_init
-
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+struct WorkInfo(ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -111,7 +111,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
 
 
 @fieldwise_init
-
 struct MatmulSchedule(ImplicitlyCopyable, TrivialRegisterType):
     var _value: Int32
 
@@ -132,7 +131,6 @@ struct MatmulSchedule(ImplicitlyCopyable, TrivialRegisterType):
 # ===----------------------------------------------------------------------=== #
 # Output Tile Scheduler
 # ===----------------------------------------------------------------------=== #
-
 
 
 struct TileScheduler[

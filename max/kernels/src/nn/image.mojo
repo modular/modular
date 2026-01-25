@@ -19,7 +19,6 @@ from utils.index import IndexList
 
 # Padding handling method.
 @fieldwise_init
-
 struct PadHandling(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int
     comptime EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
@@ -36,7 +35,6 @@ struct PadHandling(ImplicitlyCopyable, TrivialRegisterType):
 
 # Data layout encoding.
 @fieldwise_init
-
 struct Image2DLayout(ImplicitlyCopyable, TrivialRegisterType):
     var value: Int
     comptime UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
@@ -54,7 +52,6 @@ struct Image2DLayout(ImplicitlyCopyable, TrivialRegisterType):
     @always_inline("nodebug")
     fn __ne__(self, rhs: Image2DLayout) -> Bool:
         return self.value != rhs.value
-
 
 
 struct ImageData[
@@ -288,7 +285,6 @@ struct ImageData[
 
     fn num_elements(self) -> Int:
         return self.data.size()
-
 
 
 struct ImageShape(ImplicitlyCopyable, TrivialRegisterType):

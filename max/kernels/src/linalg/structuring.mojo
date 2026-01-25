@@ -223,7 +223,6 @@ comptime SMemTileIter[
 ]
 
 
-
 struct SMemTileArray[
     dtype: DType,
     layout: Layout,
@@ -319,7 +318,6 @@ struct SMemTileArray[
             address_space = AddressSpace.SHARED,
         ]()
         return Self(ptr)
-
 
 
 struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):

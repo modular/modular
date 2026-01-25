@@ -204,7 +204,6 @@ fn break_into_powers_of_two[
     func[0, N]()
 
 
-
 struct STMatrixLayout[
     BM: Int,
     BN: Int,
@@ -280,7 +279,6 @@ struct STMatrixLayout[
         pass
 
 
-
 struct STMatrixOffsets[
     BM: Int,
     BN: Int,
@@ -325,7 +323,6 @@ fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
         size_of[dtype](), MMA_N=MMA_N, m_mma=m_mma, n_mma=n_mma
     )
     return linear
-
 
 
 struct TMemTile[
@@ -608,7 +605,6 @@ struct TMemTile[
         tcgen05_store_wait()
 
 
-
 struct SM100TensorAccumulatorSS[
     operand_type: DType,
     accum_type: DType,
@@ -683,7 +679,6 @@ struct SM100TensorAccumulatorSS[
         ](Self.idesc, a, b, c, c_scale, elect)
 
 
-
 struct SM100TensorAccumulatorTS[
     operand_type: DType,
     accum_type: DType,
@@ -745,7 +740,6 @@ struct SM100TensorAccumulatorTS[
             num_k_mmas = Self.num_k_mmas,
             operand_size = Self.operand_size,
         ](Self.idesc, a, b, c, c_scale, elect)
-
 
 
 struct FA4Config(TrivialRegisterType):
@@ -1945,7 +1939,6 @@ fn _mha_sm100_enqueue[
     )
 
 
-
 struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int](TrivialRegisterType):
     """
     KVPipeline has `num_kv_stages * num_mma_stages` stages.
@@ -2017,7 +2010,6 @@ struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int](TrivialRegisterType):
         return 2 * Self.num_mma_stages * Self.num_kv_stages
 
 
-
 struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
     var mbar: MBarType
     var smem: SharedMemTensor[Self.dtype, Self.layout]
@@ -2040,7 +2032,6 @@ struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
             SharedMemTensor[Self.dtype, first](self.smem.ptr),
             SharedMemTensor[Self.dtype, second](self.smem.ptr + first_size),
         }
-
 
 
 struct KVProducerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
@@ -2146,7 +2137,6 @@ struct KVProducerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
         that should be handled by the `tma_op.async_copy`.
         """
         self.kv_pipeline.state.step()
-
 
 
 struct KVConsumerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
@@ -2322,7 +2312,6 @@ struct KVConsumerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
         )
 
 
-
 struct ProducerPipeline[number_of_stages: Int](TrivialRegisterType):
     comptime num_stages: Int = Self.number_of_stages
 
@@ -2411,7 +2400,6 @@ struct ProducerPipeline[number_of_stages: Int](TrivialRegisterType):
         self.state.step()
 
 
-
 struct ConsumerPipeline[number_of_stages: Int](TrivialRegisterType):
     comptime num_stages: Int = Self.number_of_stages
 
@@ -2447,7 +2435,6 @@ struct ConsumerPipeline[number_of_stages: Int](TrivialRegisterType):
     @always_inline("nodebug")
     fn step(mut self):
         self.state.step()
-
 
 
 struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
@@ -2682,7 +2669,6 @@ fn apply_mask[
             )
 
 
-
 struct FA4MiscMBars(TrivialRegisterType):
     var mbar_base: MBarType
     comptime S0_offset = 0
@@ -2762,7 +2748,6 @@ struct FA4MiscMBars(TrivialRegisterType):
     @always_inline
     fn num_mbars() -> UInt32:
         return Self.size
-
 
 
 struct SM100MHA2Q[

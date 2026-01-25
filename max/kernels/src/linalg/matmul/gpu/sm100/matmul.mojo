@@ -59,7 +59,6 @@ from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
-
 struct WarpRole(ImplicitlyCopyable, TrivialRegisterType):
     var _role: Int32
 

@@ -52,7 +52,6 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-
 struct BackToBackMatmulConfig[
     dst_type: DType,
     src_type: DType,

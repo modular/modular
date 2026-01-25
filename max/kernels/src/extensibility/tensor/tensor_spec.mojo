@@ -24,8 +24,9 @@ from utils import IndexList, product
 
 
 @fieldwise_init
-
-struct RuntimeTensorSpec[dtype: DType, rank: Int](ImplicitlyCopyable, TrivialRegisterType):
+struct RuntimeTensorSpec[dtype: DType, rank: Int](
+    ImplicitlyCopyable, TrivialRegisterType
+):
     var shape: IndexList[Self.rank]
 
     fn __getitem__(self, idx: Int) -> Int:

@@ -94,13 +94,12 @@ fn _block_swizzle_by_scale[
 # ===------------------------------------------------------------------===#
 
 
-
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](ImplicitlyCopyable, Stringable, Writable, TrivialRegisterType):
+](ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -330,7 +329,6 @@ fn _shared_memory_usage[
 
 
 @fieldwise_init
-
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
 ](ImplicitlyCopyable, TrivialRegisterType):
