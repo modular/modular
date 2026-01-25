@@ -548,6 +548,7 @@ class CreateImageRequest(BaseModel):
         examples=['user-1234'],
     )
 
+
 class Image(BaseModel):
     b64_json: Optional[str] = Field(
         None,

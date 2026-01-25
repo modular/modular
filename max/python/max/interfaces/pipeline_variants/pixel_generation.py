@@ -56,7 +56,7 @@ class PixelGenerationRequest(Request):
     completion APIs, where each message represents a turn in the conversation.
     If provided, the model will generate responses based on these messages.
     """
-    guidance_scale: float = 7.5
+    guidance_scale: float = 3.5
     """
     Guidance scale for classifier-free guidance. Set to 1.0 to disable CFG.
     """
