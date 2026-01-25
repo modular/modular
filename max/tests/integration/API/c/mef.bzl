@@ -1,5 +1,6 @@
 """Generate MEF files from python Graphs."""
 
+load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
 load("//bazel:api.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:MOGGKernelAPI
@@ -53,7 +54,7 @@ def mef(name, src, args = [], target_compatible_with = [], **kwargs):
     native.genrule(
         name = name,
         outs = [mef_name],
-        exec_compatible_with = target_compatible_with,
+        exec_compatible_with = TARGET_CONSTRAINTS,
         target_compatible_with = target_compatible_with,
         cmd = " ".join([
             "MODULAR_HOME=.",
