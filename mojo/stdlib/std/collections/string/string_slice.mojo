@@ -2584,10 +2584,9 @@ fn get_static_string[
 
 
 fn _to_string_list[
-    O: Origin,
-    //,
-    # TODO(MOCO-1446): Make `T` parameter inferred
+    O: ImmutOrigin,
     T: Copyable,
+    //,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
@@ -2604,7 +2603,9 @@ fn _to_string_list[
 
 
 @always_inline
-fn _to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
+fn _to_string_list[
+    O: ImmutOrigin, //
+](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
@@ -2625,11 +2626,13 @@ fn _to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
     fn len_fn(v: StringSlice[O]) -> Int:
         return v.byte_length()
 
-    return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[len_fn, unsafe_ptr_fn](items)
 
 
 @always_inline
-fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
+fn _to_string_list[
+    O: ImmutOrigin, //
+](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
@@ -2648,7 +2651,7 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
     fn len_fn(v: Span[Byte, O]) -> Int:
         return len(v)
 
-    return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[len_fn, unsafe_ptr_fn](items)
 
 
 @always_inline
