@@ -711,7 +711,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                     with work_iter.wait_and_advance():  # blocks on CLC
                         if ctx.elect_one_cta:
                             with input_pipeline.consumer() as consumer:
-                                for i in range(num_iters):
+                                for _ in range(num_iters):
                                     with mma_ctx.per_k_stage() as mma_stage:
                                         var accum = Self.AccumTensor(
                                             mma_stage.tmem.offset()
