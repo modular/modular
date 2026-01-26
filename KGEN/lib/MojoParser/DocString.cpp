@@ -732,8 +732,12 @@ private:
                     ValidationKind validation) {
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (ParamDeclAttr decl : structOp.getParams())
-      seenParameters.insert({demangleParameterName(decl.getName()), nullptr});
+    for (ParamDeclAttr decl : structOp.getParams()) {
+      StringRef demangled = demangleParameterName(decl.getName());
+      // Don't need to document auto-parameters.
+      if (demangled == decl.getName())
+        seenParameters.insert({demangled, nullptr});
+    }
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
