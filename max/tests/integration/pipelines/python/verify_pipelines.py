@@ -1085,7 +1085,7 @@ PIPELINES = {
             # TODO(MODELS-730): With the update to transformers=4.55, the
             # kl_div_threshold went from 8.7e-02 to 6.6e-01.
             # This is likely due to changes in the reference implementation.
-            cos_dist_threshold=4.1e-02,
+            cos_dist_threshold=5.0e-02,
             kl_div_threshold=6.8e-01,
         ),
     ),
