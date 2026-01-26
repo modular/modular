@@ -67,7 +67,6 @@ public:
 private:
   /// Default constructor accessible only by the attribute storage class.
   DTypeValue() {}
-  friend class llvm::OwningArrayRef<DTypeValue>;
 
   /// All values are stored as `APInt`s.
   APInt data;

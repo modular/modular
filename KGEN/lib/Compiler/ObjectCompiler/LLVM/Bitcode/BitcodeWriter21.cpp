@@ -1445,8 +1445,10 @@ static uint64_t getEncodedHotnessCallEdgeInfo(const CalleeInfo &CI) {
 static uint64_t getEncodedRelBFCallEdgeInfo(const CalleeInfo &CI) {
   uint64_t RawFlags = 0;
 
-  RawFlags |= CI.RelBlockFreq; // CalleeInfo::RelBlockFreqBits bits
-  RawFlags |= (CI.HasTailCall << CalleeInfo::RelBlockFreqBits); // 1 bit
+  // TODO: GEX-3101 contains link to how this calculation was originally done.
+  static constexpr unsigned RelBlockFreqBits = 28;  // was member of CI
+  RawFlags |= 0;                                    // was CI.RelBlockFreq
+  RawFlags |= (CI.HasTailCall << RelBlockFreqBits); // 1 bit
 
   return RawFlags;
 }

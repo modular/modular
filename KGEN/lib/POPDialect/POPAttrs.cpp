@@ -221,7 +221,7 @@ namespace M::KGEN::POP::detail {
 /// an `OwningArrayRef`, because they are not POD.
 struct SIMDAttrStorage : public mlir::AttributeStorage {
   using KeyTy = std::tuple<ArrayRef<DTypeValue>, SIMDType>;
-  SIMDAttrStorage(llvm::OwningArrayRef<DTypeValue> values, SIMDType type)
+  SIMDAttrStorage(SmallVector<DTypeValue> values, SIMDType type)
       : values(std::move(values)), type(type) {}
 
   KeyTy getAsKey() const { return KeyTy(values, type); }
@@ -233,11 +233,11 @@ struct SIMDAttrStorage : public mlir::AttributeStorage {
   }
   static SIMDAttrStorage *construct(mlir::AttributeStorageAllocator &allocator,
                                     KeyTy &&key) {
-    return new (allocator.allocate<SIMDAttrStorage>())
-        SIMDAttrStorage(std::get<0>(key), std::get<1>(key));
+    return new (allocator.allocate<SIMDAttrStorage>()) SIMDAttrStorage(
+        SmallVector<DTypeValue>(std::get<0>(key)), std::get<1>(key));
   }
 
-  llvm::OwningArrayRef<DTypeValue> values;
+  SmallVector<DTypeValue> values;
   SIMDType type;
 };
 } // namespace M::KGEN::POP::detail
