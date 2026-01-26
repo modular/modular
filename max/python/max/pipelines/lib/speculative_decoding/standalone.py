@@ -62,12 +62,18 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
-            if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.claim(context.request_id)
+            # For draft model: claim if not already claimed (target model is claimed by scheduler)
+            # For target model: scheduler handles claiming, so skip here
+            if is_draft:
+                if not model.kv_manager.contains(context.request_id):
+                    model.kv_manager.claim(context.request_id)
+            # For target model, scheduler handles claiming via batch_constructor
 
         for ctx in batch:
             model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
@@ -260,7 +266,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             raise ValueError(
                 "Standalone speculative decoding does not support data parallelism"
             )
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
 
         draft_inputs, draft_num_steps = self.prepare_batch(
             self._draft_model,
@@ -314,7 +320,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
+        self._target_model.kv_manager.step([context_batch])
+        self._draft_model.kv_manager.step([context_batch])
 
         return res

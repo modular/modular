@@ -39,7 +39,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
+from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -47,15 +47,8 @@ from transformers import AutoConfig
 
 from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import (
-    GenerateMixin,
-    ModelOutputs,
-    PipelineModel,
-)
-from ..sampling import (
-    rejection_sampler_with_residuals,
-    token_sampler,
-)
+from ..interfaces import GenerateMixin, ModelOutputs, PipelineModel
+from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -535,7 +528,7 @@ class SpeculativeDecodingPipelineBase(
     @property
     def kv_managers(
         self,
-    ) -> list[PagedKVCacheManager | NullKVCacheManager]:
+    ) -> list[PagedKVCacheManager]:
         return [self._draft_model.kv_manager, self._target_model.kv_manager]
 
     @property
@@ -649,6 +642,10 @@ class SpeculativeDecodingPipelineBase(
         Args:
             request_id: Unique identifier for the finished request.
 
+        Note: Target model KV cache is released by the scheduler via batch_constructor.
+        This method only releases the draft model KV cache, which the scheduler
+        doesn't know about.
         """
+        # Release draft model KV cache (scheduler doesn't manage this)
         self._draft_model.kv_manager.release(request_id)
-        self._target_model.kv_manager.release(request_id)
+        # Target model KV cache is released by scheduler via batch_constructor

@@ -51,7 +51,9 @@ class PagedKVCacheManager:
         kv_manager.alloc(ctx2, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.get_runtime_inputs([ctx1, ctx2], num_steps=10)
+        kv_cache_inputs = kv_manager.get_runtime_inputs(
+            [[ctx1, ctx2]], num_steps=10
+        )
 
         # Run model...
         # Update requests with newly generated tokens
@@ -59,7 +61,7 @@ class PagedKVCacheManager:
         ctx2.update(42)
 
         # Commit newly written blocks to prefix cache
-        kv_manager.step([ctx1, ctx2])
+        kv_manager.step([[ctx1, ctx2]])
 
         # Release metadata and KV blocks for these requests
         kv_manager.release(ctx1.request_id)
@@ -130,38 +132,6 @@ class PagedKVCacheManager:
             self._create_ragged_increment_cache_lengths_graph()
         )
 
-    def get_replica(self, request_id: RequestID) -> int:
-        return self._request_to_replica_idx[request_id]
-
-    def get_or_recommend_replica(self, context: TextGenerationContext) -> int:
-        """Return idx of the replica that should be used for the given request."""
-        if context.request_id in self._request_to_replica_idx:
-            return self._request_to_replica_idx[context.request_id]
-
-        # Choose the replica with the fewest requests.
-        replica_idx = min(
-            range(len(self._request_count_per_replica)),
-            key=self._request_count_per_replica.__getitem__,
-        )
-        return replica_idx
-
-    def get_replica_request_count(self, replica_idx: int) -> int:
-        """Get the number of active requests for a replica.
-
-        This count includes all requests that have been claimed but not yet released.
-        Used by schedulers to implement load-based replica assignment.
-
-        Args:
-            replica_idx: The replica index to query (0 to num_replicas-1)
-
-        Returns:
-            Number of active requests on the specified replica
-
-        Raises:
-            IndexError: If replica_idx is out of range
-        """
-        return self._request_count_per_replica[replica_idx]
-
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, num_steps: int = 1
     ) -> float:
@@ -206,33 +176,22 @@ class PagedKVCacheManager:
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
     def get_runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batches: Sequence[Sequence[TextGenerationContext]],
+        num_steps: int = 1,
     ) -> list[RaggedKVCacheInputs]:
-        """Get the graph inputs for a batch of requests.
+        """Get the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
         already allocated to it to run for the given number of steps.
 
         Args:
-            batch: Batch of requests
+            batches: Per-replica batches of requests
             num_steps: Number of steps to run for
         """
-
-        batch_by_replica: list[list[TextGenerationContext]] = [
-            [] for _ in range(len(self.devices_per_replica))
-        ]
-
-        for ctx in batch:
-            replica_idx = self._request_to_replica_idx[ctx.request_id]
-            batch_by_replica[replica_idx].append(ctx)
-
         ret_list: list[RaggedKVCacheInputs] = []
-        for replica_idx, ctxs in enumerate(batch_by_replica):
-            ret_list.extend(
-                self._replica_managers[replica_idx].get_runtime_inputs(
-                    ctxs, num_steps
-                )
-            )
+        for replica, ctxs in zip(self._replica_managers, batches, strict=True):
+            ret_list.extend(replica.get_runtime_inputs(ctxs, num_steps))
         return ret_list
 
     def release(self, request_id: RequestID) -> None:
@@ -258,10 +217,10 @@ class PagedKVCacheManager:
         self._request_to_replica_idx[request_id] = replica_idx
         self._request_count_per_replica[replica_idx] += 1
 
-    def step(self, batch: Sequence[TextGenerationContext]) -> None:
-        for ctx in batch:
-            replica_idx = self._request_to_replica_idx[ctx.request_id]
-            self._replica_managers[replica_idx].step([ctx])
+    def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
+        """Commit new tokens into the prefix cache for per-replica batches."""
+        for replica, ctxs in zip(self._replica_managers, batches, strict=True):
+            replica.step(ctxs)
 
     def contains(self, request_id: RequestID) -> bool:
         return request_id in self._request_to_replica_idx

@@ -1939,8 +1939,8 @@ fn _mha_sm100_enqueue[
         num_keys_arg,
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-        block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -2744,11 +2744,11 @@ struct FA4MiscMBars:
 
     @always_inline
     fn pipeline_order_wait(self, wg_idx: UInt32) -> MBarType:
-        return {self.mbar_base + Self.order_offset + wg_idx}
+        return self.mbar_base + Self.order_offset + wg_idx
 
     @always_inline
     fn pipeline_order_arrive(self, wg_idx: UInt32) -> MBarType:
-        return {self.mbar_base + (Self.order_offset + 1) - wg_idx}
+        return self.mbar_base + (Self.order_offset + 1) - wg_idx
 
     @always_inline
     fn q1_wait_mbar(
@@ -3193,7 +3193,7 @@ struct SM100MHA2Q[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+            Index[dtype = DType.int32](Self.BM, Self.BN),
         )
 
     @always_inline
@@ -3352,7 +3352,7 @@ struct SM100MHA2Q[
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
 
         var tid = UInt32(thread_idx.x)
-        var row = UInt32(tid % 128)
+        var row = tid % 128
         var warp_idx: UInt32 = warp.broadcast(tid // 32)
         var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
 

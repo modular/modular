@@ -28,8 +28,8 @@ def test_throws_if_num_steps_gt_1() -> None:
         max_length=1000,
         tokens=TokenBuffer(np.array([42, 67, 21])),
     )
-    inputs = TextGenerationInputs(
-        batches=[{request_id: ctx}],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[ctx]],
         num_steps=2,
     )
     with pytest.raises(
@@ -50,8 +50,8 @@ def test_throws_if_enable_log_probs() -> None:
         tokens=TokenBuffer(np.array([42, 67, 21])),
         log_probabilities=1,
     )
-    inputs = TextGenerationInputs(
-        batches=[{request_id: ctx}],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[ctx]],
         num_steps=1,
     )
     with pytest.raises(

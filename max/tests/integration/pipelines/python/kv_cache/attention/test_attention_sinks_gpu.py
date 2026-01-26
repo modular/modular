@@ -98,7 +98,7 @@ def max_flash_attention_with_sinks(
         kv_manager.alloc(context)
         batch.append(context)
 
-    kv_cache_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    kv_cache_inputs = kv_manager.get_runtime_inputs([batch])[0]
 
     # Define graph input types
     input_type = TensorType(

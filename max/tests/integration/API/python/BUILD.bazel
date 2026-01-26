@@ -198,6 +198,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_engine_device_graph",
+    srcs = [
+        "test_engine_device_graph.py",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
     srcs = [

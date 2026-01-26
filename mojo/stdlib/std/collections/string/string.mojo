@@ -889,29 +889,39 @@ struct String(
     fn __getitem__[
         I: Indexer, //
     ](self, *, byte: I) -> StringSlice[origin_of(self)]:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A StringSlice view containing the character at the specified position.
+            A StringSlice containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](byte, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new string containing the string at the specified positions.
+            A StringSlice containing the bytes in the specified range.
         """
         var start: Int
         var end: Int
@@ -955,7 +965,7 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return self.as_string_slice() == other
+        return StringSlice(self) == other
 
     @always_inline("nodebug")
     fn __ne__(self, other: StringSlice) -> Bool:
@@ -967,7 +977,7 @@ struct String(
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return self.as_string_slice() != other
+        return StringSlice(self) != other
 
     @always_inline("nodebug")
     fn __lt__(self, rhs: String) -> Bool:
@@ -980,7 +990,7 @@ struct String(
             True if this String is strictly less than the RHS String and False
             otherwise.
         """
-        return self.as_string_slice() < rhs.as_string_slice()
+        return StringSlice(self) < StringSlice(rhs)
 
     @staticmethod
     fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
@@ -1222,7 +1232,7 @@ struct String(
         Args:
             writer: The value to write to.
         """
-        self.as_string_slice().write_repr_to(writer)
+        StringSlice(self).write_repr_to(writer)
 
     fn join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
@@ -1249,7 +1259,7 @@ struct String(
             joining a very large `List` of elements to write into the stack
             instead of the heap.
         """
-        return self.as_string_slice().join(elems)
+        return StringSlice(self).join(elems)
 
     fn codepoints(self) -> CodepointsIter[origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
@@ -1292,7 +1302,7 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return self.as_string_slice().codepoints()
+        return StringSlice(self).codepoints()
 
     fn codepoint_slices(self) -> CodepointSliceIter[origin_of(self)]:
         """Returns an iterator over single-character slices of this string.
@@ -1319,7 +1329,7 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return self.as_string_slice().codepoint_slices()
+        return StringSlice(self).codepoint_slices()
 
     @always_inline("nodebug")
     fn unsafe_ptr(
@@ -1429,24 +1439,14 @@ struct String(
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
+    @deprecated("Use `StringSlice(str)` instead.")
     fn as_string_slice(self) -> StringSlice[origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
         Returns:
             A string slice pointing to the data owned by this string.
         """
-        # FIXME(MSTDL-160):
-        #   Enforce UTF-8 encoding in String so this is actually
-        #   guaranteed to be valid.
-        return StringSlice(unsafe_from_utf8=self.as_bytes())
-
-    fn as_string_slice_mut(mut self) -> StringSlice[origin_of(self)]:
-        """Returns a mutable string slice of the data owned by this string.
-
-        Returns:
-            A string slice pointing to the data owned by this string.
-        """
-        return StringSlice(unsafe_from_utf8=self.as_bytes_mut())
+        return StringSlice(self)
 
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
@@ -1510,7 +1510,7 @@ struct String(
             This method needs to traverse the whole string to count, so it has
             a performance hit compared to using the byte length.
         """
-        return self.as_string_slice().count_codepoints()
+        return StringSlice(self).count_codepoints()
 
     fn set_byte_length(mut self, new_len: Int):
         """Set the byte length of the `String`.
@@ -1540,7 +1540,7 @@ struct String(
         Returns:
           The number of occurrences of `substr`.
         """
-        return self.as_string_slice().count(substr)
+        return StringSlice(self).count(substr)
 
     fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
@@ -1551,7 +1551,7 @@ struct String(
         Returns:
           True if the string contains the substring.
         """
-        return substr in self.as_string_slice()
+        return substr in StringSlice(self)
 
     fn find(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
@@ -1565,7 +1565,7 @@ struct String(
           The offset of `substr` relative to the beginning of the string.
         """
 
-        return self.as_string_slice().find(substr, start)
+        return StringSlice(self).find(substr, start)
 
     fn rfind(self, substr: StringSlice, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
@@ -1579,7 +1579,7 @@ struct String(
           The offset of `substr` relative to the beginning of the string.
         """
 
-        return self.as_string_slice().rfind(substr, start=start)
+        return StringSlice(self).rfind(substr, start=start)
 
     fn isspace(self) -> Bool:
         """Determines whether every character in the given String is a
@@ -1592,7 +1592,7 @@ struct String(
             True if the whole String is made up of whitespace characters
                 listed above, otherwise False.
         """
-        return self.as_string_slice().isspace()
+        return StringSlice(self).isspace()
 
     @always_inline
     fn split(self, sep: StringSlice) -> List[StringSlice[origin_of(self)]]:
@@ -1617,7 +1617,7 @@ struct String(
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return self.as_string_slice().split(sep)
+        return StringSlice(self).split(sep)
 
     @always_inline
     fn split(
@@ -1643,7 +1643,7 @@ struct String(
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return self.as_string_slice().split(sep, maxsplit=maxsplit)
+        return StringSlice(self).split(sep, maxsplit=maxsplit)
 
     @always_inline
     fn split(self, sep: NoneType = None) -> List[StringSlice[origin_of(self)]]:
@@ -1670,7 +1670,7 @@ struct String(
         ).split()  # ["hello", "world"]
         ```
         """
-        return self.as_string_slice().split(sep)
+        return StringSlice(self).split(sep)
 
     @always_inline
     fn split(
@@ -1691,7 +1691,7 @@ struct String(
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return self.as_string_slice().split(sep, maxsplit=maxsplit)
+        return StringSlice(self).split(sep, maxsplit=maxsplit)
 
     fn splitlines(
         self, keepends: Bool = False
@@ -1707,7 +1707,7 @@ struct String(
         Returns:
             A List of Strings containing the input split by line boundaries.
         """
-        return self.as_string_slice().splitlines(keepends)
+        return StringSlice(self).splitlines(keepends)
 
     fn replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1755,7 +1755,7 @@ struct String(
             A copy of the string with no trailing characters.
         """
 
-        return self.as_string_slice().rstrip(chars)
+        return StringSlice(self).rstrip(chars)
 
     fn rstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with trailing whitespaces removed. This
@@ -1765,7 +1765,7 @@ struct String(
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return self.as_string_slice().rstrip()
+        return StringSlice(self).rstrip()
 
     fn lstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading characters removed.
@@ -1777,7 +1777,7 @@ struct String(
             A copy of the string with no leading characters.
         """
 
-        return self.as_string_slice().lstrip(chars)
+        return StringSlice(self).lstrip(chars)
 
     fn lstrip(self) -> StringSlice[origin_of(self)]:
         """Return a copy of the string with leading whitespaces removed. This
@@ -1787,7 +1787,7 @@ struct String(
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return self.as_string_slice().lstrip()
+        return StringSlice(self).lstrip()
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
@@ -1798,7 +1798,7 @@ struct String(
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(self.as_string_slice())
+        hasher.update(StringSlice(self))
 
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1808,7 +1808,7 @@ struct String(
             A new string where cased letters have been converted to lowercase.
         """
 
-        return self.as_string_slice().lower()
+        return StringSlice(self).lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -1818,7 +1818,7 @@ struct String(
             A new string where cased letters have been converted to uppercase.
         """
 
-        return self.as_string_slice().upper()
+        return StringSlice(self).upper()
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -1834,7 +1834,7 @@ struct String(
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
         """
-        return self.as_string_slice().startswith(prefix, start, end)
+        return StringSlice(self).startswith(prefix, start, end)
 
     fn endswith(
         self, suffix: StringSlice, start: Int = 0, end: Int = -1
@@ -1850,7 +1850,7 @@ struct String(
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        return self.as_string_slice().endswith(suffix, start, end)
+        return StringSlice(self).endswith(suffix, start, end)
 
     fn removeprefix(
         self, prefix: StringSlice, /
@@ -1871,7 +1871,7 @@ struct String(
         print(String('BaseTestCase').removeprefix('Test')) # 'BaseTestCase'
         ```
         """
-        return self.as_string_slice().removeprefix(prefix)
+        return StringSlice(self).removeprefix(prefix)
 
     fn removesuffix(
         self, suffix: StringSlice, /
@@ -1892,7 +1892,7 @@ struct String(
         print(String('BaseTestCase').removesuffix('Test')) # 'BaseTestCase'
         ```
         """
-        return self.as_string_slice().removesuffix(suffix)
+        return StringSlice(self).removesuffix(suffix)
 
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
@@ -1927,7 +1927,7 @@ struct String(
         Returns:
             The string concatenated `n` times.
         """
-        return self.as_string_slice() * n
+        return StringSlice(self) * n
 
     fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
@@ -1973,7 +1973,7 @@ struct String(
         Returns:
             True if all characters are digits and it's not empty else False.
         """
-        return self.as_string_slice().is_ascii_digit()
+        return StringSlice(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string are uppercase and
@@ -1983,7 +1983,7 @@ struct String(
             True if all cased characters in the string are uppercase and there
             is at least one cased character, False otherwise.
         """
-        return self.as_string_slice().isupper()
+        return StringSlice(self).isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string are lowercase and
@@ -1993,7 +1993,7 @@ struct String(
             True if all cased characters in the string are lowercase and there
             is at least one cased character, False otherwise.
         """
-        return self.as_string_slice().islower()
+        return StringSlice(self).islower()
 
     fn is_ascii_printable(self) -> Bool:
         """Returns True if all characters in the string are ASCII printable.
@@ -2003,13 +2003,13 @@ struct String(
         Returns:
             True if all characters are printable else False.
         """
-        return self.as_string_slice().is_ascii_printable()
+        return StringSlice(self).is_ascii_printable()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 
         Pads the string on the left with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2021,7 +2021,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2033,13 +2033,13 @@ struct String(
         print(s.rjust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().rjust(width, fillchar)
+        return StringSlice(self).ascii_rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string left justified in a string of specified width.
 
         Pads the string on the right with the specified fill character so that
-        the total length of the resulting string equals `width`. If the original
+        the total (byte) length of the resulting string equals `width`. If the original
         string is already longer than or equal to `width`, returns the original
         string unchanged.
 
@@ -2051,7 +2051,7 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             if its length is already greater than or equal to `width`.
 
         Examples:
@@ -2063,7 +2063,7 @@ struct String(
         print(s.ljust(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().ljust(width, fillchar)
+        return StringSlice(self).ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
@@ -2094,10 +2094,11 @@ struct String(
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return self.as_string_slice().center(width, fillchar)
+        return StringSlice(self).center(width, fillchar)
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
-        """Resize the string to a new length.
+        """Resize the string to a new length. Panics if new_len does not
+        lie on a codepoint boundary.
 
         Args:
             length: The new length of the string.
@@ -2116,11 +2117,19 @@ struct String(
                 fill_byte,
                 length - old_len,
             )
+        else:
+            debug_assert[assert_mode="safe"](
+                StringSlice(self).is_codepoint_boundary(UInt(length)),
+                "String shrunk to length ",
+                length,
+                " which does not lie on a codepoint boundary.",
+            )
         self.set_byte_length(length)
 
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
-        uninitialized.
+        uninitialized. Panics if the new length does not lie on a codepoint
+        boundary.
 
         If the new size is smaller than the current one, elements at the end
         are discarded. If the new size is larger than the current one, the
@@ -2130,6 +2139,15 @@ struct String(
             unsafe_uninit_length: The new size.
         """
         self._clear_nul_terminator()
+        debug_assert(
+            unsafe_uninit_length >= self.byte_length()
+            or StringSlice(self).is_codepoint_boundary(
+                UInt(unsafe_uninit_length)
+            ),
+            "String shrunk to length ",
+            unsafe_uninit_length,
+            " which does not lie on a codepoint boundary.",
+        )
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
@@ -2338,6 +2356,13 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     https://docs.python.org/3/reference/lexical_analysis.html#integers).
 
     This function is in the prelude, so you don't need to import it.
+
+    Notes:
+        This function only accepts ASCII digits (0-9 and a-z/A-Z for bases
+        greater than 10). Unicode digit characters are not supported. Leading
+        and trailing whitespace is trimmed, but only ASCII/POSIX whitespace
+        characters are recognized (space, tab, newline, etc.). Unicode
+        whitespace characters will cause a parsing error.
 
     Args:
         str_slice: A string to be parsed as an integer in the given base.
