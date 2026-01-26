@@ -24,11 +24,11 @@ struct UnstableStruct:
 
 
 # Verify @stable works when combined with other decorators.
-# The choice of @register_passable("trivial") is arbitrary - any struct decorator
+# The choice of @register_passable is arbitrary - any struct decorator
 # would work. This test ensures decorator composition doesn't break @stable.
 # CHECK: lit.struct.decl @StableWithOtherDecorators
 # CHECK-SAME: hasStableDecorator
 @stable
-@register_passable("trivial")
+@register_passable
 struct StableWithOtherDecorators:
     pass
