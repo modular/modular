@@ -78,7 +78,7 @@ class GeneratorMetadataAttrInterface(Protocol):
         arg2: DiagnosticHandler,
         /,
     ) -> GeneratorMetadataAttrInterface: ...
-    def prepend_pos_params_from_ops(
+    def prepend_contextual_params_from_ops(
         self,
         arg0: Sequence[ParamDeclAttr],
         arg1: Sequence[max._core.Operation],
