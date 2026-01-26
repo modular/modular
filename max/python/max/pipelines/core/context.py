@@ -644,7 +644,6 @@ class PixelContext:
     )
     """Precomputed latent image IDs for generation."""
 
-    # Image generation parameters
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
@@ -654,29 +653,18 @@ class PixelContext:
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
 
-    # Generation status
-    _status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
-
-    @property
-    def status(self) -> GenerationStatus:
-        """Current generation status of the request."""
-        return self._status
-
-    @status.setter
-    def status(self, value: GenerationStatus) -> None:
-        """Update the generation status."""
-        self._status = value
+    status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
     def is_done(self) -> bool:
         """Whether the request has completed generation."""
-        return self._status.is_done
+        return self.status.is_done
 
     @property
     def needs_ce(self) -> bool:
         """Whether this context needs context encoding.
 
-        For image generation, we never need context encoding since
+        For image and video generation, we never need context encoding since
         we process the full prompt at once through the text encoder.
         """
         return False
@@ -699,7 +687,7 @@ class PixelContext:
     def compute_num_available_steps(self, max_seq_len: int) -> int:
         """Compute number of available steps for scheduler compatibility.
 
-        For image generation, this returns the number of inference steps.
+        For image and video generation, this returns the number of inference steps.
         """
         return self.num_inference_steps
 
