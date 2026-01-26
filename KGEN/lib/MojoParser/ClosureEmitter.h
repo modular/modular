@@ -159,8 +159,7 @@ public:
   };
 
   TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
-                                bool isCopyable, TypeConvention typeConvention,
-                                bool isStateless);
+                                bool isCopyable, TypeConvention typeConvention);
 
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for
@@ -196,8 +195,6 @@ private:
                                       StructFieldOp devicePassedField,
                                       ParamDeclAttr impl,
                                       ParamDeclAttr originSet);
-  void addConformanceToExtern(ASTDecl &moduleDecl, ASTDecl &structDecl,
-                              FuncTypeGeneratorType originalSignature);
   /// AnyType is the base metatype for all types.
   ClosureParent anyParent;
   /// Movable trait is a parent of all closures. Cache its defining op.

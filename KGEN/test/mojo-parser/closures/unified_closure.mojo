@@ -566,31 +566,3 @@ fn conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "get_device_type_name{{.*}}" : !lit.generator
     fn device_passable() unified register_passable {var} -> Int:
         return x
-
-
-# // -----
-
-# COM: Two closure traits were generated
-# CHECK: lit.trait.decl @"fn(x: Int) -> Int extern"
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"(%x: !Int) -> !Int
-
-# CHECK: lit.trait.decl @"fn(x: Int) -> Int"
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"[mut *"self`"](%0[*""]: !lit.ref<{{.*}}> read_mem, |, %x: !Int) capturing -> !Int
-
-# COM: closure wrapper has entries for both extern and non extern trait methods, both in its methods and its conformance tables
-# CHECK: lit.struct.decl @"fn(x: Int) -> Int_{{.*}}"
-# CHECK: lit.fn @"__call__{{.*}}"[mut *"0_unnamed`"](%0[*""]: !lit.ref<!lit.struct<#{{.*}} <:!{{.*}} impl, :origin.set origin_set>>, mut *"0_unnamed`"> read_mem, |, %x: !Int) capturing -> !Int
-
-# CHECK: kgen.conformance @"fn(x: Int) -> Int" {
-# CHECK-NEXT:  kgen.witness "__call__{{.*}}" : !lit.generator<[1](!lit.ref<!lit.struct
-
-# CHECK: lit.fn @"__call__(::Int)"(%x: !Int) -> !Int attributes {isStatic, sourceName = "__call__"
-# CHECK: kgen.conformance @"fn(x: Int) -> Int extern"
-# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<("x": !Int) -> !Int>
-
-
-@no_inline
-fn defineIt(w: Int) -> Int:
-    @no_inline
-    fn closure(x: Int) unified {} -> Int:
-        return x * x

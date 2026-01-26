@@ -2090,7 +2090,7 @@ ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
   // Compute the wrapper's combined TraitType based on all conformances.
   // This uniquely identifies the wrapper configuration.
   TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
-      *traitDecl, *moduleDecl, isCopyable, typeConvention, isStateless);
+      *traitDecl, *moduleDecl, isCopyable, typeConvention);
 
   auto &wrapper = impl->unifiedClosureWrappers[{wrapperTraitType, moduleDecl}];
   if (!wrapper) {
