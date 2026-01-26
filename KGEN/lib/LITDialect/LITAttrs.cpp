@@ -120,7 +120,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
     if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
-        pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
+        (pogs[idx - 1].getPassingKind() != PassingKind::Inferred &&
+         pogs[idx - 1].getPassingKind() != PassingKind::Contextual)) {
       return emitError()
              << "'inferred' parameter follows non-inferred parameter";
     }
@@ -262,8 +263,8 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
   size_t numParams = boundParams.size();
   for (auto [idx, pog] : llvm::enumerate(getPogs().take_front(numParams))) {
     if (!boundParams[idx]) {
-      auto newPog = cast<PogMetadataAttr>(evaluator.getReboundAttribute(pog));
-      newPogs.emplace_back(newPog);
+      auto newPog = evaluator.getReboundAttribute(pog);
+      newPogs.emplace_back(cast<PogMetadataAttr>(newPog));
     }
   }
 
@@ -272,47 +273,29 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 }
 
 /// Get a new metadata attribute for a generator with the given number of
-/// positional input parameters prepended to the generator. An additional
-/// array of bool corresponding to the variadic mask of the prepended
-/// parameters is also required.
+/// positional input parameters prepended to the generator.  An additional
+/// array of variadic info for each new parameter is also required.
 PogListAttr
-PogListAttr::prependPosParams(ArrayRef<ParamDeclAttr> newParams,
-                              ArrayRef<VariadicKind> variadic) const {
+PogListAttr::prependContextualParams(ArrayRef<ParamDeclAttr> newParams,
+                                     ArrayRef<VariadicKind> variadic) const {
   assert(variadic.size() == newParams.size());
   if (newParams.empty())
     return *this;
 
   SmallVector<PogMetadataAttr> newPogs;
-  for (auto [param, variadic] : llvm::zip(newParams, variadic)) {
-    newPogs.push_back(
-        PogMetadataAttr::get(param.getName(), PassingKind::PosOnly, variadic));
-  }
-
-  SmallVector<PogMetadataAttr> mergedPogs;
-  for (size_t iNew = 0, iOld = 0, eOld = size(), eNew = newPogs.size();
-       iOld < eOld || iNew < eNew;) {
-    // Put inferred parameters first.
-    if (iOld < eOld && getPassingKind(iOld) == PassingKind::Inferred) {
-      mergedPogs.push_back(getPogs()[iOld]);
-      ++iOld;
-    } else if (iNew < eNew) {
-      mergedPogs.push_back(newPogs[iNew]);
-      ++iNew;
-    } else {
-      mergedPogs.push_back(getPogs()[iOld]);
-      ++iOld;
-    }
-  }
-
-  return PogListAttr::get(getContext(), mergedPogs, getOrigPackConvention(),
+  for (auto [param, variadic] : llvm::zip(newParams, variadic))
+    newPogs.push_back(PogMetadataAttr::get(param.getName(),
+                                           PassingKind::Contextual, variadic));
+  newPogs.append(getPogs().begin(), getPogs().end());
+  return PogListAttr::get(getContext(), newPogs, getOrigPackConvention(),
                           getOrigVariadicConvention());
 }
 
 GeneratorMetadataAttrInterface
-PogListAttr::prependPosParamsFromOps(ArrayRef<ParamDeclAttr> newParams,
-                                     ArrayRef<Operation *> ops) const {
+PogListAttr::prependContextualParamsFromOps(ArrayRef<ParamDeclAttr> newParams,
+                                            ArrayRef<Operation *> ops) const {
   SmallVector<VariadicKind> variadicMask = getContextualVariadicParams(ops);
-  return prependPosParams(newParams, variadicMask);
+  return prependContextualParams(newParams, variadicMask);
 }
 
 //===----------------------------------------------------------------------===//

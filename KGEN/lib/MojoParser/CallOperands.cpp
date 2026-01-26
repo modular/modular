@@ -129,7 +129,8 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
         missingKwOnly.push_back(name);
       continue;
     }
-    if (passingKind == PassingKind::PosOnly) {
+    if (passingKind == PassingKind::PosOnly ||
+        passingKind == PassingKind::Contextual) {
       if (!name.empty() && findKwArg(name))
         posOnlyPassedByKw.push_back(name);
       continue;

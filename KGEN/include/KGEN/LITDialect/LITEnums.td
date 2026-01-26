@@ -76,7 +76,12 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
   // Things like byref results/errors and _Self in Traits.
   I32EnumAttrCase<"Implicit", 3, "implicit">,
   // User-declared inferred-only params like: fn x[a: Bool, //, b: Int](...
-  I32EnumAttrCase<"Inferred", 4, "inferred">
+  I32EnumAttrCase<"Inferred", 4, "inferred">,
+  // This is (e.g.) a struct parameter prepended onto the parameter list of a
+  // function.  This doesn't occur on decls but does occur in "full" signatures.
+  // Contextual parameters may come before inferred parameters in the full
+  // parameter list.
+  I32EnumAttrCase<"Contextual", 5, "contextual">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

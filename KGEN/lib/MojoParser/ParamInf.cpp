@@ -1009,8 +1009,10 @@ LogicalResult ParamInf::inferFromParamList() {
 
     // If we have a non-kw param value, it binds to this parameter if it accepts
     // it.
-    if (posIdx < numParams && (pog.getPassingKind() == PassingKind::PosOrKw ||
-                               pog.getPassingKind() == PassingKind::PosOnly)) {
+    if (posIdx < numParams &&
+        (pog.getPassingKind() == PassingKind::PosOrKw ||
+         pog.getPassingKind() == PassingKind::PosOnly ||
+         pog.getPassingKind() == PassingKind::Contextual)) {
       FailureOr<TypedAttr> paramVal =
           inferAndEmitOneParam(givenBindings[posIdx], expectedType, idx);
       // Exit if an error was already emitted.
@@ -1023,7 +1025,8 @@ LogicalResult ParamInf::inferFromParamList() {
     // If we're out of positional bindings, or this works with a keyword, try
     // looking for a provided keyword parameter binding.
     if ((pog.getPassingKind() != PassingKind::PosOnly &&
-         pog.getPassingKind() != PassingKind::Implicit)) {
+         pog.getPassingKind() != PassingKind::Implicit &&
+         pog.getPassingKind() != PassingKind::Contextual)) {
       if (const OperandValue *param =
               givenBindings.findKwArg(declaredParamPogs.getName(idx))) {
 

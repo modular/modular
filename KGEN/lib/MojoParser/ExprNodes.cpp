@@ -1268,11 +1268,11 @@ public:
   InProgressBindings(ArrayRef<Type> paramTypes, PogListAttr paramList,
                      unsigned numPosBindings = 0)
       : paramTypes(paramTypes), paramList(paramList), posIdx(numPosBindings),
-        seenKeyword(false), numInferred(countNumInferredKinds(paramList)) {}
+        seenKeyword(false) {}
 
-  /// Given the current set of bindings and the next operand to bind, determine
-  /// the next expected parameter type according to the current in-progress
-  /// bindings.
+  /// Given the current set of bindings and the next operand to bind,
+  /// determine the next expected parameter type according to the current
+  /// in-progress bindings.
   ASTType getNextParamType(const Operand &operand,
                            const ParamBindings &bindings, IREmitter &emitter);
 
@@ -1285,8 +1285,6 @@ private:
   unsigned posIdx;
   /// If any non-inferred keyword parameters have been processed so far.
   bool seenKeyword;
-  /// The number of inferred parameters in the list.
-  const unsigned numInferred;
 };
 } // namespace
 
@@ -1306,7 +1304,7 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   // sensitive expression to an invalid parameter, they get an ambiguity error
   // instead of an incorrect parameter error.
   ASTType nextType;
-  unsigned paramIdx;
+  size_t paramIdx;
   if (operand.isPositional()) {
     if (seenKeyword) {
       emitter.emitError(operand.getLoc(),
@@ -1314,16 +1312,19 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
       return {};
     }
 
-    // This parameter is lexically passed positionally. Skip over the inferred
-    // parameters to find its type.
-    paramIdx = numInferred + posIdx;
-    if (paramIdx >= paramTypes.size())
+    // Skip over any inferred parameters.
+    while (posIdx < paramList.size() &&
+           paramList.getPassingKind(posIdx) == PassingKind::Inferred)
+      ++posIdx;
+
+    if (posIdx >= paramTypes.size())
       return {}; // out-of-bounds
-    nextType = paramTypes[paramIdx];
+    nextType = paramTypes[posIdx];
 
     // Remember that another parameter was passed positionally, if the current
     // parameter isn't variadic.
-    posIdx += !paramList.isPosVarArg(paramIdx);
+    paramIdx = posIdx;
+    posIdx += !paramList.isPosVarArg(posIdx);
   } else {
     // This parameter is passed with a keyword. Find a matching keyword
     // parameter on the parameter list.
@@ -1354,6 +1355,13 @@ ASTType InProgressBindings::getNextParamType(const Operand &operand,
   // Use the bindings determined so far to specialize the type.
   ParserParameterEvaluator evaluator(emitter.shared, bindings);
   nextType = evaluator.getReboundType(nextType);
+
+  // If we need to perform parameter inference to find the concrete parameters
+  // of this type, give up.  TODO: This should really be integrated with param
+  // inference completely.
+  for (auto param : nextType.getParamBindings())
+    if (isa<UnboundAttr>(param))
+      return {};
 
   // Unwrap the variadic element type.
   if (paramList.isPosVarArg(paramIdx))

@@ -1711,6 +1711,12 @@ struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
     fn foo[P: XOrigin[Self.MUT]](self):
         pass
 
+struct HasInferred[a: XOrigin]:
+    fn also_has_inferred[b: XOrigin](self):
+        pass
+fn test_inferred_mixing[b: XOrigin](a: HasInferred):
+   a.also_has_inferred[b]()
+
 # This makes sure we can associate 'origin' back to the inferred result type of
 # the Pointer construction.
 struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmutOrigin]:
