@@ -28,7 +28,7 @@ from max.interfaces import (
     PipelineOutput,
     PipelineOutputType,
     PipelineTask,
-    PixelContext,
+    PixelGenerationContext,
     RequestID,
     SchedulerResult,
     TextGenerationContext,
@@ -46,7 +46,7 @@ class SchedulerZmqConfigs:
         pipeline_task: PipelineTask,
         context_type: type[TextGenerationContext]
         | type[EmbeddingsContext]
-        | type[PixelContext],
+        | type[PixelGenerationContext],
     ) -> None:
         response_type = pipeline_task.output_type
 

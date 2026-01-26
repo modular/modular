@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     GenerationStatus,
-    PixelContext,
+    PixelGenerationContext,
     PixelGenerationOutput,
     PixelGenerationRequest,
 )
@@ -33,7 +33,7 @@ logger = logging.getLogger("max.serve")
 
 
 class PixelGeneratorPipeline(
-    BasePipeline[PixelContext, PixelGenerationRequest, PixelGenerationOutput]
+    BasePipeline[PixelGenerationContext, PixelGenerationRequest, PixelGenerationOutput]
 ):
     """Base class for diffusion-based image and video generation pipelines."""
 
