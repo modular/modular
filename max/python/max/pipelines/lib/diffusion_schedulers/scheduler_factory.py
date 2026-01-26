@@ -55,4 +55,4 @@ class SchedulerFactory:
         module_path, cls_name = _SCHEDULER_REGISTRY[class_name]
         module = importlib.import_module(module_path, package=__package__)
         scheduler_cls = getattr(module, cls_name)
-        return scheduler_cls(**config_dict)
+        return scheduler_cls(**(config_dict or {}))

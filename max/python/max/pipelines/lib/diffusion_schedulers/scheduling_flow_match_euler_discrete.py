@@ -27,13 +27,15 @@ class FlowMatchEulerDiscreteScheduler:
 
     def set_timesteps(
         self,
-        sigmas: npt.NDArray[np.float32],
-        num_inference_steps: int,
+        num_inference_steps: int | None = None,
+        sigmas: npt.NDArray[np.float32] | None = None,
         device: str | None = None,
         **kwargs,
     ) -> None:
         """Stub for set_timesteps."""
-        self.timesteps = np.linspace(
-            0, 1000, num_inference_steps, dtype=np.float32
-        )
-        self.sigmas = sigmas
+        if num_inference_steps is not None:
+            self.timesteps = np.linspace(
+                0, 1000, num_inference_steps, dtype=np.float32
+            )
+        if sigmas is not None:
+            self.sigmas = sigmas
