@@ -366,7 +366,6 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable):
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
@@ -385,6 +384,7 @@ struct SIMD[dtype: DType, size: Int](
     Roundable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Truncable,
     Writable,
 ):

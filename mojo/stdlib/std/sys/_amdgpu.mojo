@@ -520,8 +520,7 @@ fn printf_append_string_n(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Header(ImplicitlyCopyable):
+struct Header(ImplicitlyCopyable, TrivialRegisterType):
     var _handle: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -609,8 +608,7 @@ struct Header(ImplicitlyCopyable):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
-@register_passable("trivial")
-struct header_t(ImplicitlyCopyable):
+struct header_t(ImplicitlyCopyable, TrivialRegisterType):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -618,8 +616,7 @@ struct header_t(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Payload(ImplicitlyCopyable):
+struct Payload(ImplicitlyCopyable, TrivialRegisterType):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
@@ -637,8 +634,7 @@ struct payload_t(Copyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Buffer(ImplicitlyCopyable):
+struct Buffer(ImplicitlyCopyable, TrivialRegisterType):
     var _handle: UnsafePointer[
         buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -730,8 +726,7 @@ struct Buffer(ImplicitlyCopyable):
 # match of runtime buffer layout but matches its prefix that
 # this code tries to access.
 @fieldwise_init
-@register_passable("trivial")
-struct buffer_t(Copyable):
+struct buffer_t(Copyable, TrivialRegisterType):
     var headers: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -743,8 +738,7 @@ struct buffer_t(Copyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ControlOffset(ImplicitlyCopyable):
+struct ControlOffset(ImplicitlyCopyable, TrivialRegisterType):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
@@ -759,8 +753,7 @@ struct ControlOffset(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ControlWidth(ImplicitlyCopyable):
+struct ControlWidth(ImplicitlyCopyable, TrivialRegisterType):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)

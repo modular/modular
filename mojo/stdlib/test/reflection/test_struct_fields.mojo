@@ -62,8 +62,7 @@ struct MixedVisibility:
 
 
 # Dedicated struct with explicit MLIR-typed field for testing is_struct_type.
-@register_passable("trivial")
-struct StructWithMLIRField:
+struct StructWithMLIRField(TrivialRegisterType):
     """A struct with an explicit MLIR-typed field for testing purposes."""
 
     var mojo_field: Int
@@ -76,8 +75,7 @@ struct WrapperWithValue[T: AnyType, //, value: T]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleParam:
+struct SimpleParam(TrivialRegisterType):
     var b: Bool
 
 

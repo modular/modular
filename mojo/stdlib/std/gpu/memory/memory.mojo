@@ -70,8 +70,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CacheOperation(Equatable):
+struct CacheOperation(Equatable, TrivialRegisterType):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -194,8 +193,7 @@ struct CacheOperation(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CacheEviction(Equatable):
+struct CacheEviction(Equatable, TrivialRegisterType):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -292,8 +290,7 @@ struct CacheEviction(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Fill(Equatable):
+struct Fill(Equatable, TrivialRegisterType):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -348,8 +345,7 @@ struct Fill(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Consistency(Equatable, ImplicitlyCopyable):
+struct Consistency(Equatable, ImplicitlyCopyable, TrivialRegisterType):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -427,8 +423,7 @@ struct Consistency(Equatable, ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ReduceOp(Equatable):
+struct ReduceOp(Equatable, TrivialRegisterType):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed

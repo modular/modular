@@ -165,7 +165,6 @@ trait IntableRaising:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Int(
     Absable,
     Boolable,
@@ -188,6 +187,7 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
+    TrivialRegisterType,
     Truncable,
     Writable,
 ):

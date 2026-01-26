@@ -18,8 +18,7 @@ from utils import IndexList, StaticTuple
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct DataType:
+struct DataType(TrivialRegisterType):
     """
     Enum representing acceptable data types for the TensorMap descriptor.
     """
@@ -67,8 +66,7 @@ struct DataType:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct InterleaveMode:
+struct InterleaveMode(TrivialRegisterType):
     """Enum representing interleave modes for tensor memory access.
 
     Interleaving controls how data is distributed across memory channels
@@ -83,12 +81,12 @@ struct InterleaveMode:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
 struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Enum representing memory swizzling patterns for tensor access optimization.
@@ -180,8 +178,7 @@ struct SwizzleMode(
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct L2Promotion:
+struct L2Promotion(TrivialRegisterType):
     """Enum representing L2 cache promotion policies for tensor data.
 
     L2 promotion controls how tensor data is cached in the L2 cache
@@ -197,8 +194,7 @@ struct L2Promotion:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct OOBFill:
+struct OOBFill(TrivialRegisterType):
     """Enum representing out-of-bounds fill behavior for tensor access.
 
     Controls what values are returned when accessing tensor elements

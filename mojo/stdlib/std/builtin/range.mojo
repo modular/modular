@@ -42,8 +42,9 @@ fn _sign(x: Int) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
+struct _ZeroStartingRange(
+    Iterable, Iterator, Movable, ReversibleRange, Sized, TrivialRegisterType
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -88,8 +89,9 @@ struct _ZeroStartingRange(Iterable, Iterator, Movable, ReversibleRange, Sized):
         return (len, {len})
 
 
-@register_passable("trivial")
-struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
+struct _SequentialRange(
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -134,8 +136,7 @@ struct _SequentialRange(Iterable, Iterator, ReversibleRange, Sized):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _StridedRangeIterator(Iterable, Iterator, Sized):
+struct _StridedRangeIterator(Iterable, Iterator, Sized, TrivialRegisterType):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -183,8 +184,9 @@ struct _StridedRangeIterator(Iterable, Iterator, Sized):
         return (len, {len})
 
 
-@register_passable("trivial")
-struct _StridedRange(Iterable, Iterator, ReversibleRange, Sized):
+struct _StridedRange(
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _StridedRangeIterator
@@ -383,8 +385,9 @@ fn _uint_range_bounds(len: UInt) -> Tuple[Int, Optional[Int]]:
         return (Int(len), {Int(len)})
 
 
-@register_passable("trivial")
-struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
+struct _UIntZeroStartingRange(
+    Iterable, Iterator, TrivialRegisterType, UIntSized
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -424,8 +427,9 @@ struct _UIntZeroStartingRange(Iterable, Iterator, UIntSized):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
+struct _UIntStridedRangeIterator(
+    Iterable, Iterator, TrivialRegisterType, UIntSized
+):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
@@ -455,8 +459,7 @@ struct _UIntStridedRangeIterator(Iterable, Iterator, UIntSized):
         return _uint_range_bounds(self.__len__())
 
 
-@register_passable("trivial")
-struct _UIntStridedRange(Iterable, Iterator, UIntSized):
+struct _UIntStridedRange(Iterable, Iterator, TrivialRegisterType, UIntSized):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _UIntStridedRangeIterator
@@ -556,9 +559,8 @@ fn _scalar_range_bounds[
     return (Int(len), {Int(len)})
 
 
-@register_passable("trivial")
 struct _ZeroStartingScalarRange[dtype: DType](
-    Iterable, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -619,9 +621,8 @@ struct _ZeroStartingScalarRange[dtype: DType](
         return _scalar_range_bounds(self.__len__())
 
 
-@register_passable("trivial")
 struct _SequentialScalarRange[dtype: DType](
-    Iterable, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -669,9 +670,8 @@ struct _SequentialScalarRange[dtype: DType](
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct _StridedScalarRange[dtype: DType](
-    Iterable, Iterator & ImplicitlyCopyable
+    Iterable, TrivialRegisterType, Iterator & ImplicitlyCopyable
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]

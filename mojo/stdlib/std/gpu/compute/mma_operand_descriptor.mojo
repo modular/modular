@@ -13,8 +13,7 @@
 # """This module includes traits abstracting WGMMA operand descriptors."""
 
 
-@register_passable("trivial")
-trait MMAOperandDescriptor(ImplicitlyCopyable):
+trait MMAOperandDescriptor(ImplicitlyCopyable, TrivialRegisterType):
     """Trait for abstracting MMA (Matrix Multiply-Accumulate) operand descriptors.
 
     This trait defines the interface for WGMMA operand descriptors used in GPU matrix operations.

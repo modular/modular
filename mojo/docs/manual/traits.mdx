@@ -442,6 +442,9 @@ automatically conform to the `Copyable` trait.
 In some cases, the compiler may not track these automatic conformances
 correctly. If you run into an issue, add the traits to your struct explicitly.
 
+`@register_passable("trivial")` decorator is deprecated. Please extend with
+`TrivialRegisterType` trait instead.
+
 :::
 
 ## Built-in traits

@@ -16,7 +16,6 @@ from math import Ceilable, Floorable, Truncable
 
 
 @nonmaterializable(Int)
-@register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Boolable,
     Ceilable,
@@ -25,6 +24,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Indexer,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Truncable,
 ):
     """This type represents a static integer literal value with

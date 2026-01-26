@@ -188,9 +188,10 @@ struct _TypeErasedWriter(Writer):
         writer.bitcast[W]()[].write_string(string)
 
 
-@register_passable("trivial")
 @fieldwise_init
-struct _VTableErrorOp(Equatable, ImplicitlyCopyable, Movable):
+struct _VTableErrorOp(
+    Equatable, ImplicitlyCopyable, Movable, TrivialRegisterType
+):
     """Operation codes for vtable dispatch.
 
     These discriminator values tell the vtable which operation to perform on

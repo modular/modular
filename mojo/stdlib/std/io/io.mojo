@@ -43,8 +43,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _fdopen[mode: StaticString = "a"]:
+struct _fdopen[mode: StaticString = "a"](TrivialRegisterType):
     var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):

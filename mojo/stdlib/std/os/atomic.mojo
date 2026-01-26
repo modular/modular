@@ -31,12 +31,12 @@ from memory import bitcast
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct Consistency(
     Equatable,
     ImplicitlyCopyable,
     Representable,
     Stringable,
+    TrivialRegisterType,
 ):
     """Represents the consistency model for atomic operations.
 

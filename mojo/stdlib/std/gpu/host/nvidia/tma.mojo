@@ -35,8 +35,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapDataType:
+struct TensorMapDataType(TrivialRegisterType):
     """Data type enumeration for TMA tensor map descriptors.
 
     Specifies the element data type for TMA operations. The TMA hardware supports
@@ -104,8 +103,7 @@ struct TensorMapDataType:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapInterleave:
+struct TensorMapInterleave(TrivialRegisterType):
     """Interleave mode for TMA tensor map descriptors.
 
     Specifies how data elements are interleaved in memory for TMA operations.
@@ -123,12 +121,12 @@ struct TensorMapInterleave:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
 struct TensorMapSwizzle(
     Equatable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Swizzle mode for TMA tensor map descriptors.
@@ -220,8 +218,7 @@ struct TensorMapSwizzle(
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapL2Promotion:
+struct TensorMapL2Promotion(TrivialRegisterType):
     """L2 cache promotion hint for TMA tensor map descriptors.
 
     Specifies how much data to promote into the L2 cache during TMA operations.
@@ -242,8 +239,7 @@ struct TensorMapL2Promotion:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapFloatOOBFill:
+struct TensorMapFloatOOBFill(TrivialRegisterType):
     """Out-of-bounds fill mode for floating-point TMA operations.
 
     Specifies how out-of-bounds memory accesses are handled for floating-point
