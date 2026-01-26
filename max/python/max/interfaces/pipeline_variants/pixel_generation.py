@@ -92,18 +92,16 @@ class PixelGenerationRequest(Request):
         if self.prompt == "":
             raise ValueError("Prompt must be provided.")
 
-        if (self.height is not None and self.height < 0) or (
-            self.width is not None and self.width < 0
+        if (self.height is not None and self.height <= 0) or (
+            self.width is not None and self.width <= 0
         ):
-            raise ValueError("Height and width must be non-negative.")
+            raise ValueError("Height and width must be positive.")
 
-        if self.num_inference_steps < 0:
-            raise ValueError("Number of inference steps must be non-negative.")
+        if self.num_inference_steps <= 0:
+            raise ValueError("Number of inference steps must be positive.")
 
-        if self.num_images_per_prompt < 0:
-            raise ValueError(
-                "Number of images per prompt must be non-negative."
-            )
+        if self.num_images_per_prompt <= 0:
+            raise ValueError("Number of images per prompt must be positive.")
 
         if self.guidance_scale < 1.0 or self.true_cfg_scale < 1.0:
             logger.warning(
