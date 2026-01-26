@@ -30,6 +30,7 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationOutput,
     RequestID,
     SamplingParams,
     TextGenerationContext,
