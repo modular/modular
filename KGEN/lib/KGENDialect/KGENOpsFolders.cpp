@@ -1484,6 +1484,16 @@ StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
 // StructGEPOp
 //===----------------------------------------------------------------------===//
 
+OpFoldResult StructGEPOp::fold(FoldAdaptor adaptor) {
+  // Fold identity case: when container and result types are the same.
+  // This can happen for single-element structs that get flattened during
+  // type lowering - the struct type is replaced with its element type,
+  // making the GEP a no-op.
+  if (getContainer().getType() == getType())
+    return getContainer();
+  return {};
+}
+
 ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
   auto ptr = dyn_cast_if_present<PointerAttr>(operands.front());
