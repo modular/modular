@@ -131,6 +131,7 @@ class PixelGenerationContext(BaseContext, Protocol):
     @property
     def num_images_per_prompt(self) -> int:
         """Number of images to generate."""
+        ...
 
 
 PixelGenerationContextType = TypeVar(
@@ -139,7 +140,7 @@ PixelGenerationContextType = TypeVar(
 """Type variable for pixel generation context types, constrained to PixelGenerationContext.
 
 This allows generic typing of pixel generation pipeline components to accept any
-context type that inherits from PixelGenerationContext.
+context type that implements the PixelGenerationContext protocol.
 """
 
 
