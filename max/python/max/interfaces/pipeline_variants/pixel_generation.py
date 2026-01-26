@@ -27,7 +27,7 @@ import numpy.typing as npt
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
-from max.pipelines import PixelContext
+from max.pipelines.core import PixelContext
 from typing_extensions import TypeVar
 
 
