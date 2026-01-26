@@ -12,11 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from math import align_up
+from math import ceildiv, align_up
 from sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
+    env_get_string,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -35,7 +36,11 @@ from internal_utils._utils import (
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig, BlockScaledMatmulConfig
+from linalg.grouped_matmul_sm100_1d1d import (
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+)
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -47,6 +52,15 @@ from linalg.utils import elementwise_epilogue_type
 
 from utils import Index, IndexList
 from collections import OptionalReg
+
+from linalg.fp4_utils import (
+    SF_MN_GROUP_SIZE,
+    SF_ATOM_M,
+    SF_ATOM_K,
+    NVFP4_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
+    set_scale_factor,
+)
 
 
 fn _get_run_name[
@@ -107,7 +121,7 @@ fn add_two[
 
 
 fn bench_grouped_matmul[
-    in_type: DType,
+    _in_type: DType,
     out_type: DType,
     num_experts: Int,
     expert_shape: IndexList[2],
@@ -115,6 +129,7 @@ fn bench_grouped_matmul[
     *,
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
+    scaling_kind_str: String = "1d2d",
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -126,6 +141,8 @@ fn bench_grouped_matmul[
     comptime N = expert_shape[0]
     comptime K = expert_shape[1]
 
+    comptime is_fp4e2m1 = _in_type == DType.float4_e2m1fn
+    comptime in_type = DType.uint8 if is_fp4e2m1 else _in_type  # TODO: (KERN-2238): Replace with float4-e2m1fn
     comptime a_type = in_type
     comptime b_type = in_type
     comptime c_type = out_type
@@ -136,30 +153,41 @@ fn bench_grouped_matmul[
     for num_tokens in num_tokens_by_expert:
         total_num_tokens += num_tokens
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
+    var M = total_num_tokens
+    var total_flops = 2 * M * N * K
 
     # Define shapes and sizes
-    comptime static_a_shape = DimList(Dim(), K)
-    var a_size = total_num_tokens * K
+    # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension is halved
+    comptime packed_K = K // 2 if is_fp4e2m1 else K
+    comptime static_a_shape = DimList(Dim(), packed_K)
+    var a_size = total_num_tokens * packed_K
     comptime static_c_shape = DimList(Dim(), N)
     var c_size = total_num_tokens * N
-    comptime static_b_shape = DimList(num_experts, N, K)
-    var b_size = num_experts * N * K
+    comptime static_b_shape = DimList(num_experts, N, packed_K)
+    var b_size = num_experts * N * packed_K
 
     # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
     var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         num_active_experts + 1
+    )
+    var a_scale_offsets_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
+        num_active_experts
     )
     var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
         num_active_experts
     )
 
     # Setup offsets and expert ids
+    a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
+        a_scale_offsets_ptr[i] = a_scale_dim0 - Int(
+            a_offsets_host_ptr[i] // SF_MN_GROUP_SIZE
+        )
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + num_tokens
+        a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
+        expert_ids_host_ptr[i] = expert_ids_input[i]
 
         @parameter
         if in_type == DType.float8_e4m3fn:
@@ -173,8 +201,6 @@ fn bench_grouped_matmul[
                     + " must be divisible by a_scale_alignment="
                     + String(a_scale_alignment)
                 )
-        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + num_tokens
-        expert_ids_host_ptr[i] = expert_ids_input[i]
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -189,7 +215,7 @@ fn bench_grouped_matmul[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        DimList(total_num_tokens, packed_K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
@@ -216,48 +242,6 @@ fn bench_grouped_matmul[
     ctx.enqueue_copy(a_offsets_dev_buffer, a_offsets_host_ptr)
     ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
 
-    comptime BLOCK_SCALE_K = 128
-    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
-    var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
-    comptime static_b_scales_shape = DimList(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
-    var b_scales_size = (
-        num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
-    )
-
-    # Scales device allocations
-    var a_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
-        a_scales_size
-    )
-    var b_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
-        b_scales_size
-    )
-
-    var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
-        a_scales_dev_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_num_tokens),
-    )
-    var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
-        b_scales_dev_buffer.unsafe_ptr(),
-        static_b_scales_shape,
-    )
-
-    @parameter
-    if in_type == DType.float8_e4m3fn:
-        init_vector_launch[DType.float32](
-            a_scales_dev_buffer,
-            a_scales_size,
-            init_type,
-            ctx,
-        )
-        init_vector_launch[DType.float32](
-            b_scales_dev_buffer,
-            b_scales_size,
-            init_type,
-            ctx,
-        )
-
     @always_inline
     @__copy_capture(c_dev)
     @parameter
@@ -277,40 +261,266 @@ fn bench_grouped_matmul[
     var a = from_ndbuffer_row_major(a_dev)
     var b = from_ndbuffer_row_major(b_dev)
     var c = from_ndbuffer_row_major(c_dev)
-    var a_scales = from_ndbuffer_row_major(a_scales_dev)
-    var b_scales = from_ndbuffer_row_major(b_scales_dev)
     var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
     @parameter
-    @__copy_capture(
-        a_dev,
-        b_dev,
-        c_dev,
-        a_offsets_dev,
-        expert_ids_dev,
-        a,
-        b,
-        c,
-        a_scales,
-        b_scales,
-        a_offsets,
-        expert_ids,
-    )
-    @always_inline
-    fn bench_func(mut bench: Bencher):
+    if is_fp4e2m1:
+        constrained[
+            scaling_kind_str == "nvfp4",
+            "Only support nvfp4 scaling kind for float4-e2m1fn",
+        ]()
+
+        # Allocate a_scale_offsets on device
+        var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
+            DType.uint32
+        ](num_active_experts)
+        var a_scale_offsets_dev = NDBuffer[DType.uint32, 1](
+            a_scale_offsets_dev_buffer.unsafe_ptr(), num_active_experts
+        )
+        ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
+        var a_scale_offsets = from_ndbuffer_row_major(a_scale_offsets_dev)
+
+        # Calculate scales dimensions
+        comptime static_a_scales_shape = DimList(
+            Dim(),
+            ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
+            Dim(SF_ATOM_M[0]),
+            Dim(SF_ATOM_M[1]),
+            Dim(SF_ATOM_K),
+        )
+        comptime static_b_scales_shape = DimList(
+            num_experts,
+            ceildiv(N, SF_MN_GROUP_SIZE),
+            ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
+            Dim(SF_ATOM_M[0]),
+            Dim(SF_ATOM_M[1]),
+            Dim(SF_ATOM_K),
+        )
+        var a_scales_size = (
+            a_scale_dim0
+            * ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+            * SF_ATOM_M[0]
+            * SF_ATOM_M[1]
+            * SF_ATOM_K
+        )
+        var b_scales_size = (
+            num_experts
+            * ceildiv(N, SF_MN_GROUP_SIZE)
+            * ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+            * SF_ATOM_M[0]
+            * SF_ATOM_M[1]
+            * SF_ATOM_K
+        )
+
+        # Scales device allocations
+        var a_scales_dev_buffer = ctx.enqueue_create_buffer[NVFP4_SF_DTYPE](
+            a_scales_size
+        )
+        var b_scales_dev_buffer = ctx.enqueue_create_buffer[NVFP4_SF_DTYPE](
+            b_scales_size
+        )
+
+        var a_scales_dev = NDBuffer[
+            NVFP4_SF_DTYPE, 5, _, static_a_scales_shape
+        ](
+            a_scales_dev_buffer.unsafe_ptr(),
+            DimList(
+                a_scale_dim0,
+                ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
+                SF_ATOM_M[0],
+                SF_ATOM_M[1],
+                SF_ATOM_K,
+            ),
+        )
+        var b_scales_dev = NDBuffer[
+            NVFP4_SF_DTYPE, 6, _, static_b_scales_shape
+        ](
+            b_scales_dev_buffer.unsafe_ptr(),
+            static_b_scales_shape,
+        )
+
+        init_vector_launch[NVFP4_SF_DTYPE](
+            a_scales_dev_buffer,
+            a_scales_size,
+            init_type,
+            ctx,
+        )
+        init_vector_launch[NVFP4_SF_DTYPE](
+            b_scales_dev_buffer,
+            b_scales_size,
+            init_type,
+            ctx,
+        )
+
+        var a_scales = from_ndbuffer_row_major(a_scales_dev)
+        var b_scales = from_ndbuffer_row_major(b_scales_dev)
+
         @parameter
+        @__copy_capture(
+            a_dev,
+            b_dev,
+            c_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            a_scale_offsets_dev,
+            a,
+            b,
+            c,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
+            a_scale_offsets,
+        )
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        fn bench_func_nvfp4(mut bench: Bencher):
             @parameter
-            if use_vendor_blas:
-                # TODO: Implement vendor grouped matmul
-                pass
-
-            else:
-
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 @parameter
-                if in_type == DType.float8_e4m3fn:
+                if use_vendor_blas:
+                    # TODO: Implement vendor grouped matmul
+                    pass
+
+                else:
+                    comptime umma_shape = Index(128, 128, 32)
+                    comptime transpose_b = True
+                    comptime config = BlockScaledMatmulConfig[
+                        a_type,
+                        b_type,
+                        c_type,
+                        NVFP4_SF_DTYPE,
+                        NVFP4_SF_DTYPE,
+                        transpose_b,
+                    ](
+                        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+                        cluster_shape=Index(1, 1, 1),
+                        mma_shape=umma_shape,
+                        block_swizzle_size=8,
+                        cta_group=1,
+                        AB_swapped=False,
+                        k_group_size=1,
+                        num_accum_pipeline_stages=2,
+                    )
+                    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                        transpose_b=transpose_b,
+                        config=config,
+                    ](
+                        c,
+                        a,
+                        a_offsets,
+                        a_scale_offsets,
+                        b,
+                        expert_ids,
+                        a_scales,
+                        b_scales,
+                        num_active_experts,
+                        ctx,
+                    )
+
+            bench.iter_custom[kernel_launch](ctx)
+
+        bench.bench_function[bench_func_nvfp4](
+            BenchId(
+                _get_run_name[
+                    _in_type,
+                    out_type,
+                    use_vendor_blas=use_vendor_blas,
+                    has_epilogue=has_epilogue,
+                ](
+                    num_active_experts,
+                    total_num_tokens,
+                    N,
+                    K,
+                )
+            ),
+            [
+                ThroughputMeasure(
+                    BenchMetric.flops,
+                    total_flops,
+                )
+            ],
+        )
+
+        _ = a_scales_dev_buffer^
+        _ = b_scales_dev_buffer^
+        _ = a_scale_offsets_dev_buffer^
+
+    elif in_type == DType.float8_e4m3fn:
+        constrained[
+            scaling_kind_str == "1d2d",
+            "Only support 1d2d scaling kind for float8_e4m3fn",
+        ]()
+        comptime BLOCK_SCALE_K = 128
+        comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
+        var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
+        comptime static_b_scales_shape = DimList(
+            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+        )
+        var b_scales_size = (
+            num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
+        )
+
+        # Scales device allocations
+        var a_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+            a_scales_size
+        )
+        var b_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+            b_scales_size
+        )
+
+        var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
+            a_scales_dev_buffer.unsafe_ptr(),
+            DimList(K // BLOCK_SCALE_K, total_num_tokens),
+        )
+        var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
+            b_scales_dev_buffer.unsafe_ptr(),
+            static_b_scales_shape,
+        )
+
+        init_vector_launch[DType.float32](
+            a_scales_dev_buffer,
+            a_scales_size,
+            init_type,
+            ctx,
+        )
+        init_vector_launch[DType.float32](
+            b_scales_dev_buffer,
+            b_scales_size,
+            init_type,
+            ctx,
+        )
+
+        var a_scales = from_ndbuffer_row_major(a_scales_dev)
+        var b_scales = from_ndbuffer_row_major(b_scales_dev)
+
+        @parameter
+        @__copy_capture(
+            a_dev,
+            b_dev,
+            c_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            a,
+            b,
+            c,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
+        )
+        @always_inline
+        fn bench_func_fp8_1d2d(mut bench: Bencher):
+            @parameter
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+                @parameter
+                if use_vendor_blas:
+                    # TODO: Implement vendor grouped matmul
+                    pass
+
+                else:
                     comptime umma_shape = Index(64, 64, 32)
                     comptime transpose_b = True
                     comptime config = MatmulConfig[
@@ -339,6 +549,59 @@ fn bench_grouped_matmul[
                         num_active_experts,
                         ctx,
                     )
+
+            bench.iter_custom[kernel_launch](ctx)
+
+        bench.bench_function[bench_func_fp8_1d2d](
+            BenchId(
+                _get_run_name[
+                    in_type,
+                    out_type,
+                    use_vendor_blas=use_vendor_blas,
+                    has_epilogue=has_epilogue,
+                ](
+                    num_active_experts,
+                    total_num_tokens,
+                    N,
+                    K,
+                )
+            ),
+            # TODO: Pick relevant benchmetric
+            [
+                ThroughputMeasure(
+                    BenchMetric.flops,
+                    total_flops,
+                )
+            ],
+        )
+
+        _ = a_scales_dev_buffer^
+        _ = b_scales_dev_buffer^
+    else:
+
+        @parameter
+        @__copy_capture(
+            a_dev,
+            b_dev,
+            c_dev,
+            a_offsets_dev,
+            expert_ids_dev,
+            a,
+            b,
+            c,
+            a_offsets,
+            expert_ids,
+        )
+        @always_inline
+        fn bench_func(mut bench: Bencher):
+            @parameter
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+                @parameter
+                if use_vendor_blas:
+                    # TODO: Implement vendor grouped matmul
+                    pass
+
                 else:
                     grouped_matmul[
                         elementwise_lambda_fn = OptionalReg[
@@ -355,36 +618,34 @@ fn bench_grouped_matmul[
                         ctx,
                     )
 
-        bench.iter_custom[kernel_launch](ctx)
+            bench.iter_custom[kernel_launch](ctx)
 
-    bench.bench_function[bench_func](
-        BenchId(
-            _get_run_name[
-                in_type,
-                out_type,
-                use_vendor_blas=use_vendor_blas,
-                has_epilogue=has_epilogue,
-            ](
-                num_active_experts,
-                total_num_tokens,
-                N,
-                K,
-            )
-        ),
-        # TODO: Pick relevant benchmetric
-        [
-            ThroughputMeasure(
-                BenchMetric.flops,
-                2 * total_num_tokens * N * K,
-            )
-        ],
-    )
+        bench.bench_function[bench_func](
+            BenchId(
+                _get_run_name[
+                    in_type,
+                    out_type,
+                    use_vendor_blas=use_vendor_blas,
+                    has_epilogue=has_epilogue,
+                ](
+                    num_active_experts,
+                    total_num_tokens,
+                    N,
+                    K,
+                )
+            ),
+            # TODO: Pick relevant benchmetric
+            [
+                ThroughputMeasure(
+                    BenchMetric.flops,
+                    total_flops,
+                )
+            ],
+        )
 
     # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
     a_offsets_host_ptr.free()
+    a_scale_offsets_ptr.free()
     expert_ids_host_ptr.free()
 
     # Consume device buffers
@@ -393,8 +654,6 @@ fn bench_grouped_matmul[
     _ = c_dev_buffer^
     _ = a_offsets_dev_buffer^
     _ = expert_ids_dev_buffer^
-    _ = a_scales_dev_buffer^
-    _ = b_scales_dev_buffer^
 
 
 fn create_grouped_matmul_bench[
@@ -406,6 +665,7 @@ fn create_grouped_matmul_bench[
     *,
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
+    scaling_kind_str: String = "1d2d",
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -421,6 +681,7 @@ fn create_grouped_matmul_bench[
         expert_shape,
         use_vendor_blas=use_vendor_blas,
         has_epilogue=has_epilogue,
+        scaling_kind_str=scaling_kind_str,
     ](
         ctx,
         bench,
@@ -444,6 +705,7 @@ fn string_to_list(string: String) raises -> List[Int]:
 def main():
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
+    comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()
 
     var num_active_experts = Int(arg_parse("num_active_experts", 1))
     var num_tokens_by_expert_string = String(
@@ -475,6 +737,7 @@ def main():
             expert_shape,
             use_vendor_blas=use_vendor_blas,
             has_epilogue=has_epilogue,
+            scaling_kind_str=scaling_kind_str,
         ](
             ctx,
             b,
