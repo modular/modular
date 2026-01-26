@@ -951,7 +951,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __truediv__(self, rhs: Self) -> Self:
         """Computes `self / rhs`.
 
