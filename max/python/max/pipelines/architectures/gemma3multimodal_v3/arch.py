@@ -17,9 +17,13 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import (RopeType, SupportedArchitecture,
-                               SupportedEncoding, TextAndVisionTokenizer,
-                               TextTokenizer)
+from max.pipelines.lib import (
+    RopeType,
+    SupportedArchitecture,
+    SupportedEncoding,
+    TextAndVisionTokenizer,
+    TextTokenizer,
+)
 
 ENABLE_NEW_IMPL = os.environ.get(
     "MODULAR_MAX_ENABLE_GEMMA3_VISION", "0"

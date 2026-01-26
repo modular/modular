@@ -23,8 +23,13 @@ from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
-from max.pipelines.lib import (KVCacheConfig, MAXModelConfigBase,
-                               PipelineConfig, RopeType, parse_float8_config)
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
+    RopeType,
+    parse_float8_config,
+)
 from transformers import AutoConfig
 
 

@@ -21,24 +21,28 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.embedding import Embedding
-from max.nn.legacy.layer import LayerList
 from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.layer import LayerList
 from max.nn.legacy.linear import MLP, Linear
-from max.nn.module import Module
 from max.nn.legacy.norm import LayerNorm
-from max.nn.legacy.rotary_embedding import (Llama3RopeScalingParams,
-                                     Llama3RotaryEmbedding)
+from max.nn.legacy.rotary_embedding import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+)
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.module import Module
+
 # TODO reimplement?
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
+
 # TODO reimplement?
-from max.pipelines.architectures.gemma3.layers.transformer_block import \
-    Gemma3TransformerBlock
-# TODO reimplement?
-from ..embedding_utils import \
-    merge_multimodal_embeddings
+from max.pipelines.architectures.gemma3.layers.transformer_block import (
+    Gemma3TransformerBlock,
+)
 from max.tensor import Tensor
 
+# TODO reimplement?
+from ..embedding_utils import merge_multimodal_embeddings
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
 from .encoding import Gemma3VisionEncoder
