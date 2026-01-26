@@ -1123,13 +1123,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[Self.origin, forward=False](self)
+        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
         """Gets a single byte at the specified byte index.
@@ -1541,6 +1542,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator of references to the string elements.
         """
         return CodepointSliceIter[Self.origin](self)
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[Self.origin, False]:
+        """Iterates backwards over the string slice, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string slice, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string slice elements.
+        """
+        return CodepointSliceIter[Self.origin, forward=False](self)
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, Self.origin]:

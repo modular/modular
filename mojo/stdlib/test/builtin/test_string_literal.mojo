@@ -364,5 +364,31 @@ fn _test_format_does_not_raise():
     var _hello = "Hello, {}! I am {} years old.".format("world", 42)
 
 
+def test_string_literal_codepoint_slices_reversed():
+    # Test ASCII
+    var iter = "abc".codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "c")
+    assert_equal(iter.__next__(), "b")
+    assert_equal(iter.__next__(), "a")
+
+    # Test concatenation
+    var concat = String()
+    for v in "abc".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    concat = String()
+    for v in "test✅".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "✅tset")
+
+    # Test empty string
+    concat = String()
+    for v in "".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

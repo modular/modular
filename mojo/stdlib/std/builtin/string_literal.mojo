@@ -271,15 +271,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator over the string.
         """
-        return CodepointSliceIter[StaticConstantOrigin, False](
-            StringSlice(self)
-        )
+        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
@@ -763,6 +762,22 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             An iterator of codepoint slices.
         """
         return StringSlice(self).codepoint_slices()
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[StaticConstantOrigin, False]:
+        """Iterates backwards over the string literal, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string literal, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string literal elements.
+        """
+        return CodepointSliceIter[StaticConstantOrigin, False](
+            StringSlice(self)
+        )
 
     fn codepoints(self) -> CodepointsIter[StaticConstantOrigin]:
         """Iterate over the `Codepoint`s in this string constant.

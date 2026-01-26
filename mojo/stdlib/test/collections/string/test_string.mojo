@@ -1140,7 +1140,7 @@ def test_string_char_slices_iter():
     assert_equal(123, atol(conc(vs)))
 
     concat = String()
-    for v in vs.__reversed__():
+    for v in vs.codepoint_slices_reversed():
         concat += v
     assert_equal(321, atol(concat))
 
@@ -1210,7 +1210,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for v in item.__reversed__():
+        for v in item.codepoint_slices_reversed():
             concat += v
         assert_equal(rev[item_idx], concat)
 

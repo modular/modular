@@ -1099,13 +1099,14 @@ struct String(
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin_of(self), forward=False](self)
+        return self.codepoint_slices_reversed()
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1335,6 +1336,20 @@ struct String(
         ```
         """
         return StringSlice(self).codepoint_slices()
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[origin_of(self), False]:
+        """Iterates backwards over the string, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string elements.
+        """
+        return CodepointSliceIter[origin_of(self), forward=False](self)
 
     @always_inline("nodebug")
     fn unsafe_ptr(

@@ -25,6 +25,13 @@ what we publish.
 
 ### Library changes
 
+- The `__reversed__()` method on `String`, `StringSlice`, and `StringLiteral`
+  has been deprecated in favor of the new `codepoints_reversed()` method. The
+  new method name makes it explicit that iteration is over Unicode codepoints
+  in reverse order, maintaining consistency with the existing `codepoints()`
+  and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
+  will continue to work but will emit deprecation warnings.
+  
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
   `StringSlice`. The `String.as_string_slice()` method is now deprecated in
