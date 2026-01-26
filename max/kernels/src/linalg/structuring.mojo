@@ -223,13 +223,12 @@ comptime SMemTileIter[
 ]
 
 
-@register_passable("trivial")
 struct SMemTileArray[
     dtype: DType,
     layout: Layout,
     num_tiles: Int,
     alignment: Int,
-]:
+](TrivialRegisterType):
     """Array of tiles in shared memory.
 
     Parameters:
@@ -321,8 +320,7 @@ struct SMemTileArray[
         return Self(ptr)
 
 
-@register_passable("trivial")
-struct SMemArray[type: __TypeOfAllTypes, size: Int]:
+struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
     """Shared memory array of fixed size.
 
     Parameters:

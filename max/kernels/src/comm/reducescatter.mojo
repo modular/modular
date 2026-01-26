@@ -111,14 +111,13 @@ fn _load_reduce[
         return accum.cast[dtype]()
 
 
-@register_passable("trivial")
 struct ReduceScatterConfig[
     dtype: DType,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
-](ImplicitlyCopyable, Movable):
+](TrivialRegisterType):
     var stride: Int
     var largest_part: Int
     var part: Int

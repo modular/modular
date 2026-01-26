@@ -53,7 +53,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-@register_passable("trivial")
 struct BlockScaledTileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
@@ -75,7 +74,7 @@ struct BlockScaledTileWriter[
     num_output_stages: Int,
     stage_stride_cols: Int,
     num_output_warps: Int,
-]:
+](TrivialRegisterType):
     """Output tile writer for SM100 block-scaled matmul epilogue.
 
     Uses TMAStoreExecutor with batched=True for 3D (M, N, Batch) TMA stores.

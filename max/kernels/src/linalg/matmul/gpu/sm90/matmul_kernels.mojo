@@ -80,7 +80,6 @@ from .matmul_output import MatmulTileWriter
 
 
 # Shared memory structure for Hopper SM90 kernel
-@register_passable("trivial")
 struct HopperMatmulSM90Kernel_SMem[
     a_type: DType,
     a_layout: Layout,
@@ -90,7 +89,7 @@ struct HopperMatmulSM90Kernel_SMem[
     c_layout: Layout,
     num_pipeline_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Shared memory layout for Hopper SM90 matrix multiplication kernel.
 
     This struct manages the shared memory allocation for:

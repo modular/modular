@@ -129,7 +129,6 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TileLoaderLDS[
     dtype: DType,
     src_layout: Layout,  # Full tensor layout (stride = shape[1])
@@ -138,7 +137,7 @@ struct TileLoaderLDS[
     swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
     load_width: Int = simd_width_of[dtype](),
     use_full_tile_width: Bool = False,  # FP8 row-major mode
-]:
+](TrivialRegisterType):
     """Cooperative global→LDS tile loader with swizzle support.
 
     Loads tiles from global memory to LDS using AMDBufferResource which provides

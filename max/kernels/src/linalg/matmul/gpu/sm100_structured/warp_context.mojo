@@ -33,14 +33,13 @@ from .tmem import TmemAllocation
 # =============================================================================
 
 
-@register_passable("trivial")
 struct _WarpContextTypes[
     num_accum_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
     mma_threads: Int,
     epilogue_threads: Int,
-]:
+](TrivialRegisterType):
     """Shared type definitions for MMA and Epilogue warp contexts."""
 
     comptime Tmem = TmemAllocation[Self.cta_group]
@@ -58,14 +57,13 @@ struct _WarpContextTypes[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct MmaWarpContext[
     num_accum_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
     mma_threads: Int,
     epilogue_threads: Int,
-]:
+](TrivialRegisterType):
     """MMA warp context - owns TMEM lifecycle and output pipeline.
 
     __enter__: Signals epilogue that TMEM is allocated
@@ -160,14 +158,13 @@ struct MmaWarpContext[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct EpilogueWarpContext[
     num_accum_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
     mma_threads: Int,
     epilogue_threads: Int,
-]:
+](TrivialRegisterType):
     """Epilogue warp context - consumes TMEM data, signals completion.
 
     IMPORTANT: Call Sync.wait() BEFORE constructing to ensure TMEM address

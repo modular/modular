@@ -39,8 +39,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-@register_passable("trivial")
-trait TileLoader:
+trait TileLoader(TrivialRegisterType):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -66,7 +65,6 @@ trait TileLoader:
         ...
 
 
-@register_passable("trivial")
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -187,7 +185,6 @@ struct TileLoaderTMA[
             )
 
 
-@register_passable("trivial")
 struct TileLoaderCPAsync[
     dtype: DType,
     src_layout: Layout,

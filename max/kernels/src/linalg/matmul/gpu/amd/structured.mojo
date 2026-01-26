@@ -30,8 +30,7 @@ from utils import IndexList, StaticTuple
 from gpu.intrinsics import load_acquire, store_release
 
 
-@register_passable("trivial")
-trait Enum:
+trait Enum(TrivialRegisterType):
     @always_inline
     fn value(self) -> Int:
         ...
@@ -54,7 +53,6 @@ trait Enum:
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct ThreadRole(Enum, Stringable, Writable):
     var _value: Int
 
@@ -99,7 +97,6 @@ fn pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
 
 
 # TODO: replace with Fabio's implementation
-@register_passable("trivial")
 struct SMemBuffer[
     dtype: DType,
     layout: Layout,
@@ -108,7 +105,7 @@ struct SMemBuffer[
     BN: Int,
     WM: Int,
     WN: Int,
-]:
+](TrivialRegisterType):
 
     """Manages shared memory and returns 2D tile slices of the buffer."""
 
@@ -151,8 +148,7 @@ struct SMemBuffer[
         return self.buffer.tile[Self.BM, Self.BN](0, stage)
 
 
-@register_passable("trivial")
-struct AMDSharedMemoryBarrier:
+struct AMDSharedMemoryBarrier(TrivialRegisterType):
     var __repr: Int32
 
     @always_inline
@@ -185,8 +181,7 @@ struct AMDSharedMemoryBarrier:
             ]()
 
 
-@register_passable("trivial")
-struct AMDWarpSharedMemoryBarrier[size: Int]:
+struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
@@ -219,13 +214,12 @@ struct AMDWarpSharedMemoryBarrier[size: Int]:
             ]()
 
 
-@register_passable("trivial")
 struct MMAConfig[
     InType: DType,
     OutType: DType,
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
-]:
+](TrivialRegisterType):
     comptime mma = TensorCore[
         Self.OutType,
         Self.InType,
@@ -255,7 +249,6 @@ struct MMAConfig[
         return Self.mma_shape[2] * Self.k_group_size_b
 
 
-@register_passable("trivial")
 struct AmdTileOperator[
     InType: DType,
     OutType: DType,
@@ -264,7 +257,7 @@ struct AmdTileOperator[
     mma_shape: IndexList[3],
     swizzle: OptionalReg[Swizzle] = None,
     transpose_b: Bool = True,
-]:
+](TrivialRegisterType):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.
 
     This operator handles loading matrix fragments from shared memory to registers

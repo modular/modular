@@ -36,8 +36,7 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -99,7 +98,6 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 # =============================================================================
 
 
-@register_passable("trivial")
 struct AdvanceAfterWorkContext[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
@@ -107,7 +105,7 @@ struct AdvanceAfterWorkContext[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
 
     - __enter__: Returns current work_info for use in the block
@@ -154,10 +152,9 @@ struct AdvanceAfterWorkContext[
         self.consumer_state_ptr[].step()
 
 
-@register_passable("trivial")
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
-]:
+](TrivialRegisterType):
     """Context for waiting on CLC barrier and advancing work iterator.
 
     Encapsulates the CLC response barrier synchronization:
@@ -198,13 +195,12 @@ struct WaitAndAdvanceContext[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct WorkIterator[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
@@ -313,13 +309,12 @@ struct WorkIterator[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct SchedulerWorkIterator[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
@@ -418,7 +413,6 @@ struct SchedulerWorkIterator[
             self.producer_state.step()
 
 
-@register_passable("trivial")
 struct TileScheduler[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
@@ -426,7 +420,7 @@ struct TileScheduler[
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-]:
+](TrivialRegisterType):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]

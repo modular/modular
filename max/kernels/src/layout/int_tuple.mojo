@@ -269,8 +269,9 @@ that are not known at compile time or have not been specified.
 """
 
 
-@register_passable("trivial")
-struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](
+    Iterable, Iterator, TrivialRegisterType
+):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[

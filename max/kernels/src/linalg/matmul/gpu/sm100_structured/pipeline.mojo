@@ -52,8 +52,7 @@ comptime MbarPtr = UnsafePointer[
 ]
 
 
-@register_passable("trivial")
-struct ProducerConsumerPipeline[num_stages: Int]:
+struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
     """A producer-consumer pipeline using shared memory barriers to
     enforce synchronization (between producer and consumer warps).
 
@@ -303,8 +302,7 @@ struct ProducerConsumerPipeline[num_stages: Int]:
 # =============================================================================
 
 
-@register_passable("trivial")
-struct ProducerStage:
+struct ProducerStage(TrivialRegisterType):
     """Stage info returned by ProduceContext.__enter__."""
 
     var _index: UInt32
@@ -329,11 +327,10 @@ struct ProducerStage:
         return self._mbar
 
 
-@register_passable("trivial")
 struct ProduceContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-]:
+](TrivialRegisterType):
     """Context for producing one pipeline stage.
 
     - __enter__: Waits for consumer to be ready, returns stage info
@@ -371,8 +368,7 @@ struct ProduceContext[
         self.pipeline[].producer_step()
 
 
-@register_passable("trivial")
-struct ConsumerStage:
+struct ConsumerStage(TrivialRegisterType):
     """Stage info returned by ConsumeContext.__enter__."""
 
     var _index: UInt32
@@ -419,11 +415,10 @@ struct ConsumerStage:
         _ = self._mbar[0].arrive()
 
 
-@register_passable("trivial")
 struct ConsumeContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-]:
+](TrivialRegisterType):
     """Context for consuming one pipeline stage.
 
     - __enter__: Waits for producer to be ready, returns stage info
@@ -456,11 +451,10 @@ struct ConsumeContext[
         self.pipeline[].consumer_step()
 
 
-@register_passable("trivial")
 struct ExplicitConsumeContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-]:
+](TrivialRegisterType):
     """Context for consuming one pipeline stage with EXPLICIT arrive.
 
     Use this when you need lane-guarded or specialized barrier signaling.

@@ -40,13 +40,12 @@ from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -469,7 +468,6 @@ fn build_configs[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct BlockScaledMatmulConfig[
     a_type: DType,
     b_type: DType,
@@ -477,7 +475,7 @@ struct BlockScaledMatmulConfig[
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters

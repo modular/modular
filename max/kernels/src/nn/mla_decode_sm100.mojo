@@ -384,12 +384,11 @@ fn tma_tile_qo[
 # ------------------------------------------------------------------------------
 
 
-@register_passable("trivial")
 struct MLA_Decode_Pack[
     ValidLengthType: OptionalPointer,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
-](Copyable, DevicePassable):
+](Copyable, DevicePassable, TrivialRegisterType):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var valid_length: Self.ValidLengthType
@@ -751,14 +750,13 @@ comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
 # ------------------------------------------------------------------------------
 # Offset position struct
 # ------------------------------------------------------------------------------
-@register_passable("trivial")
 struct OffsetPosition[
     config: MLA_SM100_Decode_Config,
     KVLUTType: MHAOperand,
     ragged: Bool,
     is_cache_length_accurate: Bool,
     ValidLengthType: OptionalPointer,
-]:
+](TrivialRegisterType):
     var seq_len: Int
     var num_keys: Int
     var q_out_row_offset: Int
@@ -820,8 +818,9 @@ struct OffsetPosition[
 # ------------------------------------------------------------------------------
 
 
-@register_passable("trivial")
-struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
+struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
+    TrivialRegisterType
+):
     comptime KVPipeType = KVPipelineGeneric[Self.config.num_kv_stages, 1, 1, 2]
 
     # One KV "stage" = whole 64 x 576 logical K tile (loaded as 9 x 64x64)
@@ -882,8 +881,9 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
 # ------------------------------------------------------------------------------
 
 
-@register_passable("trivial")
-struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config]:
+struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
+    TrivialRegisterType
+):
     comptime KVPipeType = KVPipelineGeneric[Self.config.num_kv_stages, 1, 1, 2]
     comptime kv_stage_elems = Self.config.BN * Self.config.q_depth
 
@@ -929,13 +929,12 @@ struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config]:
 # ------------------------------------------------------------------------------
 
 
-@register_passable("trivial")
 struct KVPipelineGeneric[
     num_kv_stages: Int,
     num_mma_stages: Int,
     num_producer: Int,
     num_consumer: Int,
-]:
+](TrivialRegisterType):
     """
     KVPipeline has `num_kv_stages * num_mma_stages` stages.
     `num_kv_stages` refers to how many `K` and `V` tiles we pipeline
@@ -1010,8 +1009,7 @@ struct KVPipelineGeneric[
         return 2 * Self.num_mma_stages * Self.num_kv_stages
 
 
-@register_passable("trivial")
-struct TMADestination[dtype: DType, layout: Layout]:
+struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
     var mbar: MBarType
     var smem: SharedMemTensor[Self.dtype, Self.layout]
 
@@ -1026,10 +1024,9 @@ struct TMADestination[dtype: DType, layout: Layout]:
 # ------------------------------------------------------------------------------
 # MLA decoding MiscMBars for producer and consumer
 # ------------------------------------------------------------------------------
-@register_passable("trivial")
 struct DecodeSM100MiscMBars[
     num_stages: Int, num_producer: Int, num_consumer: Int
-]:
+](TrivialRegisterType):
     var mbar_base: MBarType
 
     # 2 S slots (S0, S1)
@@ -1067,8 +1064,7 @@ struct DecodeSM100MiscMBars[
 # MLA decoding S pipeline betweeen MMA and Softmax
 # ------------------------------------------------------------------------------
 ########## Producer of the S slot ##########
-@register_passable("trivial")
-struct DecodeSProducer:
+struct DecodeSProducer(TrivialRegisterType):
     comptime SNumStages = 2
     var pipe: ProducerPipeline[Self.SNumStages]
 
@@ -1095,8 +1091,7 @@ struct DecodeSProducer:
 
 
 ########## Consumer of the S slot ##########
-@register_passable("trivial")
-struct DecodeSConsumer:
+struct DecodeSConsumer(TrivialRegisterType):
     comptime SNumStages = 2
     var pipe: ConsumerPipeline[Self.SNumStages]
 
@@ -1120,8 +1115,7 @@ struct DecodeSConsumer:
 # MLA decoding P Pipeline betweeen Softmax and MMA
 # ------------------------------------------------------------------------------
 ########## Producer of the P slot ##########
-@register_passable("trivial")
-struct DecodePProducer:
+struct DecodePProducer(TrivialRegisterType):
     comptime PNumStages = 2
     var pipe: ProducerPipeline[Self.PNumStages]
 
@@ -1149,8 +1143,7 @@ struct DecodePProducer:
 
 
 ########## Consumer of the P slot ##########
-@register_passable("trivial")
-struct DecodePConsumer:
+struct DecodePConsumer(TrivialRegisterType):
     comptime PNumStages = 2
     var pipe: ConsumerPipeline[Self.PNumStages]
 
@@ -1180,8 +1173,7 @@ struct DecodePConsumer:
 # MLA decoding Opipeline betweeen MMA and Correction
 # ------------------------------------------------------------------------------
 ########## Producer of the O slot ##########
-@register_passable("trivial")
-struct DecodeOProducer:
+struct DecodeOProducer(TrivialRegisterType):
     comptime ONumStages = 1
     var pipe: ProducerPipeline[Self.ONumStages]
 
@@ -1208,8 +1200,7 @@ struct DecodeOProducer:
 
 
 ########## Consumer of the O slot ##########
-@register_passable("trivial")
-struct DecodeOConsumer:
+struct DecodeOConsumer(TrivialRegisterType):
     comptime ONumStages = 1
     var pipe: ConsumerPipeline[Self.ONumStages]
 
@@ -1232,8 +1223,7 @@ struct DecodeOConsumer:
 # ------------------------------------------------------------------------------
 # MLA decoding C Pipeline between Softmax and Correction
 # ------------------------------------------------------------------------------
-@register_passable("trivial")
-struct DecodeCProducer:
+struct DecodeCProducer(TrivialRegisterType):
     comptime CNumStages = 1
     var pipe: ProducerPipeline[Self.CNumStages]
 
@@ -1254,8 +1244,7 @@ struct DecodeCProducer:
         # producer_mbar.arrive() from 128 threads + state.step()
 
 
-@register_passable("trivial")
-struct DecodeCConsumer:
+struct DecodeCConsumer(TrivialRegisterType):
     comptime CNumStages = 1
     var pipe: ConsumerPipeline[Self.CNumStages]
 
@@ -1280,8 +1269,9 @@ struct DecodeCConsumer:
 # ------------------------------------------------------------------------------
 
 
-@register_passable("trivial")
-struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int]:
+struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int](
+    TrivialRegisterType
+):
     """
     OutPipeline has `num_out_stages` stages.
     `num_out_stages` refers to how many output stages we pipeline
@@ -1352,8 +1342,9 @@ struct OutPipeline[num_out_stages: Int, num_producer: Int, num_consumer: Int]:
         return 2 * Self.num_stages
 
 
-@register_passable("trivial")
-struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
+struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config](
+    TrivialRegisterType
+):
     # mma.ws split BN elements across even/odd warps
     comptime col_per_warp = Self.config.MMA_PV_N // 2
     comptime num_out_blocks: Int = Self.config.depth // Self.config.BN
@@ -1414,8 +1405,9 @@ struct DecodeOutProducer[dtype: DType, config: MLA_SM100_Decode_Config]:
         self.pipe.producer_commit()
 
 
-@register_passable("trivial")
-struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config]:
+struct DecodeOutConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
+    TrivialRegisterType
+):
     # mma.ws split BN elements across even/odd warps
     comptime col_per_warp = Self.config.MMA_PV_N // 2
     comptime num_out_blocks: Int = Self.config.depth // Self.config.BN
@@ -1554,13 +1546,12 @@ fn bulk_mma_ws[
 # ------------------------------------------------------------------------------
 # MLA decoding Tensor AccumulatorSS for QKT
 # ------------------------------------------------------------------------------
-@register_passable("trivial")
 struct DecodeSM100QKTSS[
     operand_type: DType,
     accum_type: DType,
     *,
     config: MLA_SM100_Decode_Config,
-]:
+](TrivialRegisterType):
     comptime MMA_M = Self.config.MMA_M  # 64 rows
     comptime MMA_N = Self.config.MMA_QK_N  # 64 cols
     comptime MMA_K = Self.config.MMA_K  # 16
@@ -1644,13 +1635,12 @@ struct DecodeSM100QKTSS[
         ](Self.UMMAInstDesc, a, b, c, c_scale, elect)
 
 
-@register_passable("trivial")
 struct DecodeSM100PVSS[
     operand_type: DType,
     accum_type: DType,
     *,
     config: MLA_SM100_Decode_Config,
-]:
+](TrivialRegisterType):
     comptime MMA_M = Self.config.MMA_M  # 64 rows
     comptime MMA_N = Self.config.MMA_PV_N
     comptime MMA_K = Self.config.MMA_K  # 16
@@ -1797,7 +1787,6 @@ fn write_bf16x2_row_to_smem_fast[
 # ------------------------------------------------------------------------------
 # MLA decoding kernel struct for SM100
 # ------------------------------------------------------------------------------
-@register_passable("trivial")
 struct MLA_SM100_Decode[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1808,7 +1797,7 @@ struct MLA_SM100_Decode[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-]:
+](TrivialRegisterType):
     comptime qkv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.qkv_type]()
     # 576 / 64 = 9

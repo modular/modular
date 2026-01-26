@@ -162,8 +162,7 @@ fn ep_signal_completion[
             )
 
 
-@register_passable("trivial")
-trait TokenFormat(DevicePassable):
+trait TokenFormat(DevicePassable, TrivialRegisterType):
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int
@@ -229,10 +228,9 @@ trait TokenFormat(DevicePassable):
         ...
 
 
-@register_passable("trivial")
 struct BF16TokenFormat[
     output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
-](TokenFormat):
+](TokenFormat, TrivialRegisterType):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment
@@ -324,7 +322,6 @@ struct BF16TokenFormat[
             )
 
 
-@register_passable("trivial")
 struct BlockwiseFP8TokenFormat[
     fp8_dtype: DType,
     scales_dtype: DType,
@@ -334,7 +331,7 @@ struct BlockwiseFP8TokenFormat[
     _hid_dim: Int,
     _top_k: Int,
     _alignment: Int,
-](TokenFormat):
+](TokenFormat, TrivialRegisterType):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment
@@ -523,8 +520,7 @@ struct BlockwiseFP8TokenFormat[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct EPLocalSyncCounters[n_experts: Int](DevicePassable):
+struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):
     """Manages atomic counters for EP kernel synchronization within a device.
 
     This struct provides dedicated atomic counter space for each of the four

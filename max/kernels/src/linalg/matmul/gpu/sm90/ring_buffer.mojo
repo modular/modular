@@ -54,11 +54,10 @@ from ....structuring import NVIDIASharedMemoryManager
 # loads tiles into shared memory while multiple consumer warp groups process them
 
 
-@register_passable("trivial")
 struct ProducerTiles[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Context manager for producer access to ring buffer tiles.
 
     This struct provides safe access to a single tile slot in the ring buffer
@@ -91,11 +90,10 @@ struct ProducerTiles[
         self.ring_buffer_ptr[].enqueue_tile()
 
 
-@register_passable("trivial")
 struct ConsumerTiles[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Context manager for consumer access to ring buffer tiles.
 
     This struct provides safe access to a single tile slot in the ring buffer
@@ -128,11 +126,10 @@ struct ConsumerTiles[
         self.ring_buffer_ptr[].release_slot(self.read_idx)
 
 
-@register_passable("trivial")
 struct RingBufferConsumer[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Consumer view of the ring buffer.
 
     This struct provides the consumer interface to the ring buffer, allowing
@@ -162,11 +159,10 @@ struct RingBufferConsumer[
         return {self.ring_buffer_ptr}
 
 
-@register_passable("trivial")
 struct RingBufferProducer[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Producer view of the ring buffer.
 
     This struct provides the producer interface to the ring buffer, allowing

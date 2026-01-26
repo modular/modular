@@ -204,14 +204,13 @@ fn break_into_powers_of_two[
     func[0, N]()
 
 
-@register_passable("trivial")
 struct STMatrixLayout[
     BM: Int,
     BN: Int,
     *,
     num_threads: Int,
     accum_type_size: Int,
-]:
+](TrivialRegisterType):
     """
     Layout for using `st_matrix` for writing the final accumulator to smem.
     """
@@ -280,7 +279,6 @@ struct STMatrixLayout[
         pass
 
 
-@register_passable("trivial")
 struct STMatrixOffsets[
     BM: Int,
     BN: Int,
@@ -290,7 +288,7 @@ struct STMatrixOffsets[
     curr_repeat: Int,
     cumulative_repeat: Int,
     m_mma: Int,
-]:
+](TrivialRegisterType):
     comptime STLayout = STMatrixLayout[
         Self.BM,
         Self.BN,
@@ -327,12 +325,11 @@ fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     return linear
 
 
-@register_passable("trivial")
 struct TMemTile[
     dtype_: DType,
     BM: Int,
     BN: Int,
-]:
+](TrivialRegisterType):
     comptime dtype: DType = Self.dtype_
     comptime dtype_size = size_of[Self.dtype]()
     # alias layout_t = STMatrixLayout[
@@ -608,7 +605,6 @@ struct TMemTile[
         tcgen05_store_wait()
 
 
-@register_passable("trivial")
 struct SM100TensorAccumulatorSS[
     operand_type: DType,
     accum_type: DType,
@@ -621,7 +617,7 @@ struct SM100TensorAccumulatorSS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
-]:
+](TrivialRegisterType):
     # This performs C = A @ B
     # where A is BM x BK and B is BN x BK if k major, else BK x BN.
     # `BK` is broken into `num_stages` and pipelined.
@@ -683,7 +679,6 @@ struct SM100TensorAccumulatorSS[
         ](Self.idesc, a, b, c, c_scale, elect)
 
 
-@register_passable("trivial")
 struct SM100TensorAccumulatorTS[
     operand_type: DType,
     accum_type: DType,
@@ -696,7 +691,7 @@ struct SM100TensorAccumulatorTS[
     cta_group: Int = 1,
     num_stages: Int = 1,
     padded_BK: Int = BK,
-]:
+](TrivialRegisterType):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -747,8 +742,7 @@ struct SM100TensorAccumulatorTS[
         ](Self.idesc, a, b, c, c_scale, elect)
 
 
-@register_passable("trivial")
-struct FA4Config:
+struct FA4Config(TrivialRegisterType):
     var MMA_M: Int
     var BM: Int
     var BN: Int
@@ -1945,8 +1939,7 @@ fn _mha_sm100_enqueue[
     )
 
 
-@register_passable("trivial")
-struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int]:
+struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int](TrivialRegisterType):
     """
     KVPipeline has `num_kv_stages * num_mma_stages` stages.
     `num_kv_stages` refers to how many `K` and `V` tiles we pipeline
@@ -2017,8 +2010,7 @@ struct KVPipeline[num_kv_stages: Int, num_mma_stages: Int]:
         return 2 * Self.num_mma_stages * Self.num_kv_stages
 
 
-@register_passable("trivial")
-struct TMADestination[dtype: DType, layout: Layout]:
+struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
     var mbar: MBarType
     var smem: SharedMemTensor[Self.dtype, Self.layout]
 
@@ -2042,8 +2034,7 @@ struct TMADestination[dtype: DType, layout: Layout]:
         }
 
 
-@register_passable("trivial")
-struct KVProducerPipeline[dtype: DType, config: FA4Config]:
+struct KVProducerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
     comptime KType = SharedMemTensor[
         Self.dtype,
         tile_layout_k_major[
@@ -2148,8 +2139,7 @@ struct KVProducerPipeline[dtype: DType, config: FA4Config]:
         self.kv_pipeline.state.step()
 
 
-@register_passable("trivial")
-struct KVConsumerPipeline[dtype: DType, config: FA4Config]:
+struct KVConsumerPipeline[dtype: DType, config: FA4Config](TrivialRegisterType):
     """
     Pipeline for managing the consumption of K and V.
     This follows the order of Tri Dao and Cutlass implementations
@@ -2322,8 +2312,7 @@ struct KVConsumerPipeline[dtype: DType, config: FA4Config]:
         )
 
 
-@register_passable("trivial")
-struct ProducerPipeline[number_of_stages: Int]:
+struct ProducerPipeline[number_of_stages: Int](TrivialRegisterType):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
@@ -2411,8 +2400,7 @@ struct ProducerPipeline[number_of_stages: Int]:
         self.state.step()
 
 
-@register_passable("trivial")
-struct ConsumerPipeline[number_of_stages: Int]:
+struct ConsumerPipeline[number_of_stages: Int](TrivialRegisterType):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
@@ -2449,8 +2437,7 @@ struct ConsumerPipeline[number_of_stages: Int]:
         self.state.step()
 
 
-@register_passable("trivial")
-struct MBarPipeline[number_of_stages: Int]:
+struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
     comptime num_stages: Int = Self.number_of_stages
 
     # mbars are ordered in {producer, consumer} pairs
@@ -2682,8 +2669,7 @@ fn apply_mask[
             )
 
 
-@register_passable("trivial")
-struct FA4MiscMBars:
+struct FA4MiscMBars(TrivialRegisterType):
     var mbar_base: MBarType
     comptime S0_offset = 0
     comptime S1_offset = 2
@@ -2764,7 +2750,6 @@ struct FA4MiscMBars:
         return Self.size
 
 
-@register_passable("trivial")
 struct SM100MHA2Q[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -2779,7 +2764,7 @@ struct SM100MHA2Q[
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-]:
+](TrivialRegisterType):
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()

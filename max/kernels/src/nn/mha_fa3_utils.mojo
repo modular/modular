@@ -77,8 +77,7 @@ from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
 
-@register_passable("trivial")
-trait OptionalPointer(Copyable):
+trait OptionalPointer(Copyable, TrivialRegisterType):
     comptime dtype: DType
     comptime is_null: Bool
 
@@ -87,7 +86,6 @@ trait OptionalPointer(Copyable):
         ...
 
 
-@register_passable("trivial")
 struct NonNullPointer[dtype_: DType](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
@@ -114,7 +112,6 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
         return self.ptr
 
 
-@register_passable("trivial")
 struct NullPointer[dtype_: DType](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
@@ -128,7 +125,6 @@ struct NullPointer[dtype_: DType](OptionalPointer):
         return {}
 
 
-@register_passable("trivial")
 struct Pack[
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
@@ -138,7 +134,7 @@ struct Pack[
     KVRowOffsetsType: OptionalPointer,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-](Copyable, DevicePassable):
+](Copyable, DevicePassable, TrivialRegisterType):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var scheduler: Self.SchedulerType
@@ -183,7 +179,6 @@ struct Pack[
         self.partition = partition
 
 
-@register_passable("trivial")
 struct MHAPosition[
     BM: Int,
     BN: Int,
@@ -192,7 +187,7 @@ struct MHAPosition[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.
@@ -468,8 +463,7 @@ fn get_seq_info[
     return scheduler.unsafe_seq_info(tile_summary, state)
 
 
-@register_passable("trivial")
-struct PositionSummary:
+struct PositionSummary(TrivialRegisterType):
     var num_keys: UInt32
     var score_row: UInt32
 

@@ -21,13 +21,12 @@ from ....utils_gpu import MatmulConfig as BaseMatmulConfig
 from collections import OptionalReg
 
 
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters

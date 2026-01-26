@@ -52,13 +52,12 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-@register_passable("trivial")
 struct BackToBackMatmulConfig[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-]:
+](TrivialRegisterType):
     # A is MxK
     # B is KxL
     # C is LxN

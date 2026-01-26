@@ -79,8 +79,7 @@ trait CoordLike(Defaultable, ImplicitlyCopyable, Representable):
         ...
 
 
-@register_passable("trivial")
-struct ComptimeInt[val: Int](CoordLike):
+struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
     """Compile-time known index value.
 
     Parameters:
@@ -124,8 +123,7 @@ struct ComptimeInt[val: Int](CoordLike):
         return rebind[Coord[*Self.VariadicType]](self)
 
 
-@register_passable("trivial")
-struct RuntimeInt[dtype: DType = DType.int](CoordLike):
+struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterType):
     """Runtime index value with configurable precision.
 
     Parameters:

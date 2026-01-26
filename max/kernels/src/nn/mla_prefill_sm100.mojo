@@ -113,8 +113,9 @@ from utils.index import Index, IndexList
 from kv_cache.types import swizzle_granularity
 
 
-@register_passable("trivial")
-struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
+struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
+    TrivialRegisterType
+):
     comptime k_layout = tile_layout_k_major[
         Self.dtype,
         Self.config.BN,
@@ -233,7 +234,6 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
         self.kv_pipeline.state.step()
 
 
-@register_passable("trivial")
 struct SM100MLA[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -248,7 +248,7 @@ struct SM100MLA[
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-]:
+](TrivialRegisterType):
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = get_accum_type[Self.qkv_type]()
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()
