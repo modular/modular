@@ -28,14 +28,13 @@ from max.driver import CPU, Device
 from max.interfaces import (
     ImageMetadata,
     PipelineTokenizer,
-    PixelContext,
     PixelGenerationRequest,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (

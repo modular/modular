@@ -20,7 +20,6 @@ import pytest
 from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
-    PixelContext,
     RequestID,
     SamplingParams,
     SamplingParamsGenerationConfigDefaults,
@@ -32,6 +31,7 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import (
+    PixelContext,
     TextAndVisionContext,
     TextContext,
     TTSContext,
