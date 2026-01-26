@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from max import Tensor
 from max import functional as F
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    Weight,
-)
+from max.graph import DeviceRef, Weight
 from max.graph.ops import avg_pool2d
-from max.nn.module_v3 import Linear, Module
+from max.nn.linear import Linear
+from max.nn.module import Module
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .rms_norm import Gemma3RMSNorm
