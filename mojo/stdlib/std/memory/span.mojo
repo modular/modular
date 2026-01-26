@@ -589,8 +589,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         )
         var ptr = self.unsafe_ptr()
 
-        # `a` and `b` may be equal, so we cannot use `swap` directly.
-        (ptr + a).swap_pointees(ptr + b)
+        # `a` and `b` may be equal, so we cannot use `swap` directly.  The
+        # unsafe_origin_cast silence the (correct) exclusivity error.
+        (ptr + a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(ptr + b)
 
     fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """
@@ -675,8 +676,12 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
 
         if is_odd:
             var value = ptr[middle + 1]
-            (ptr + middle + 1).init_pointee_move_from(ptr + middle - 1)
-            (ptr + middle - 1).init_pointee_move(value)
+            # Use an unsafe origin cast to silence the (correct) exclusivity error.
+            var middle_prev = (ptr + middle - 1).unsafe_origin_cast[
+                MutAnyOrigin
+            ]()
+            (ptr + middle + 1).init_pointee_move_from(middle_prev)
+            middle_prev.init_pointee_move(value)
 
     fn apply[
         dtype: DType,

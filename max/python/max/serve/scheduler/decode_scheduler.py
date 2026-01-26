@@ -85,13 +85,20 @@ class DecodeScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
-        self.prefill_reqs: dict[RequestID, TextContext] = {}
+        self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
+        self.prefill_reqs_per_replica: list[int] = [
+            0 for _ in range(self.paged_manager.num_replicas)
+        ]
 
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
-            total_num_pages=self.paged_manager.total_num_pages,
+            tensors=[
+                self.paged_manager.get_device_tensors(replica_idx)
+                for replica_idx in range(self.paged_manager.num_replicas)
+            ],
+            # Assume all replicas have the same number of pages.
+            total_num_pages=self.paged_manager.get_num_pages(replica_idx=0),
         )
 
         self.batch_constructor = TextBatchConstructor(
@@ -115,7 +122,7 @@ class DecodeScheduler(Scheduler):
         """Handles a prefill response from the dispatcher."""
         # Update the context with the generated token
         request_id = message.id
-        context = self.prefill_reqs[request_id]
+        context, _ = self.prefill_reqs[request_id]
         context.update(message.generated_token_id)
 
         # Send singular token to the API process
@@ -198,7 +205,12 @@ class DecodeScheduler(Scheduler):
             < self.scheduler_config.max_batch_size
             and (
                 self.paged_manager is None
-                or self.paged_manager.free_blocks_pct > 0.1
+                or any(
+                    self.paged_manager.get_num_used_pages(replica_idx)
+                    / self.paged_manager.get_num_pages(replica_idx)
+                    < 0.9
+                    for replica_idx in range(self.paged_manager.num_replicas)
+                )
             )
         ):
             # Pop off request queue
@@ -207,31 +219,32 @@ class DecodeScheduler(Scheduler):
             del self.pending_reqs[req_id]
 
             # Claim the slot with the paged manager
-            if not self.paged_manager.contains(req_id):
-                replica_idx = self.batch_constructor.get_next_replica_idx(
-                    use_paged_cache_counts=True
-                )
-                self.paged_manager.claim(req_id, replica_idx=replica_idx)
+            replica_idx = self.batch_constructor.get_next_replica_idx(
+                external_requests_per_replica=self.prefill_reqs_per_replica
+            )
+            self.paged_manager.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
             # from prefill -> decode.
             try:
-                self.paged_manager.alloc(context, 1)
+                self.paged_manager.alloc(
+                    context, replica_idx=replica_idx, num_steps=1
+                )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.paged_manager.release(req_id)
+                self.paged_manager.release(req_id, replica_idx=replica_idx)
                 break
 
             # Send to the Prefill Node
-            dst_replica_idx = self.paged_manager.get_replica(req_id)
-            dst_idxs = self.paged_manager.get_req_blocks(req_id)
-            self.prefill_reqs[req_id] = context
-            self.send_prefill_request(
-                req_id, context, dst_idxs, dst_replica_idx
+            dst_idxs = self.paged_manager.get_req_blocks(
+                req_id, replica_idx=replica_idx
             )
+            self.prefill_reqs[req_id] = (context, replica_idx)
+            self.prefill_reqs_per_replica[replica_idx] += 1
+            self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -245,10 +258,11 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
-                data = self.prefill_reqs[req_id]
+                data, dst_replica_idx = self.prefill_reqs[req_id]
 
                 # Remove from pending requests.
                 del self.prefill_reqs[req_id]
+                self.prefill_reqs_per_replica[dst_replica_idx] -= 1
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -299,8 +313,7 @@ class DecodeScheduler(Scheduler):
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
-            context = self.prefill_reqs.pop(request_id)
-            dst_replica_idx = self.paged_manager.get_replica(request_id)
+            context, dst_replica_idx = self.prefill_reqs.pop(request_id)
             self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
 
         # Manage for cancelled requests
@@ -375,7 +388,7 @@ class DecodeScheduler(Scheduler):
         batch_creation_time_s = t1 - t0
 
         # If the batch is empty, skip
-        if len(inputs.batch) == 0:
+        if len(inputs.flat_batch) == 0:
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch

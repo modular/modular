@@ -377,7 +377,7 @@ struct _TotalWritableBytes(Writer):
     fn __init__[
         T: Copyable & Writable,
         //,
-        origin: ImmutOrigin = StaticConstantOrigin,
+        origin: ImmutOrigin,
     ](
         out self,
         values: Span[T, ...],

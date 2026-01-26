@@ -716,45 +716,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
 
     @implicit
-    fn __init__[
-        _origin: ImmutOrigin, //
-    ](out self: StringSlice[_origin], ref [_origin]value: String):
-        """Construct an immutable StringSlice.
+    fn __init__(out self, ref [Self.origin]value: String):
+        """Construct a StringSlice from a String.
 
-        Parameters:
-            _origin: The immutable origin.
-
-        Args:
-            value: The string value.
-        """
-        self = value.as_string_slice()
-
-    fn __init__[
-        _origin: MutOrigin, //
-    ](out self: StringSlice[_origin], ref [_origin]value: String):
-        """Construct a mutable StringSlice.
-
-        Parameters:
-            _origin: The mutable origin.
+        This constructor propagates the mutability of the reference. If you
+        have a mutable reference to a String, you get a mutable StringSlice.
+        If you have an immutable reference, you get an immutable StringSlice.
 
         Args:
             value: The string value.
         """
-        self = value.as_string_slice_mut()
-
-    @doc_private
-    @implicit
-    fn __init__(
-        out self: StaticString,
-        ref [__mlir_attr.`#lit.comptime.origin : !lit.origin<0>`]value: String,
-    ):
-        """Construct an immutable StringSlice at comptime.
-        FIXME: This is a hack.
-
-        Args:
-            value: The string value.
-        """
-        self = rebind[StaticString](value.as_string_slice())
+        self._slice = Span[Byte, Self.origin](
+            ptr=value.unsafe_ptr()
+            .unsafe_mut_cast[Self.origin.mut]()
+            .unsafe_origin_cast[Self.origin](),
+            length=value.byte_length(),
+        )
 
     # ===------------------------------------------------------------------===#
     # Trait implementations
@@ -901,13 +878,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:
-        """Gets the sequence of characters at the specified positions.
+        """Gets a substring at the specified byte positions.
+
+        This performs byte-level slicing, not character (codepoint) slicing.
+        The start and end positions are byte indices. For strings containing
+        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
+        produce invalid UTF-8 sequences.
 
         Args:
-            span: A slice that specifies positions of the new substring.
+            span: A slice that specifies byte positions of the new substring.
 
         Returns:
-            A new StringSlice containing the substring at the specified positions.
+            A new StringSlice containing the bytes in the specified range.
         """
         return Self(unsafe_from_utf8=self._slice[span])
 
@@ -974,7 +956,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             If the `StringSlice` is equal to the input in length and contents.
         """
-        return self == rhs.as_string_slice()
+        return self == StringSlice(rhs)
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -1001,6 +983,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
+    @__unsafe_disable_nested_origin_exclusivity
     fn __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
@@ -1083,7 +1066,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             If the `StringSlice` bytes are strictly less than the input in
             overlapping content.
         """
-        return self < rhs.as_string_slice()
+        return self < StringSlice(rhs)
 
     @always_inline
     fn __le__(self, rhs: String) -> Bool:
@@ -1095,7 +1078,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is less than or equal to the RHS String.
         """
-        return self <= rhs.as_string_slice()
+        return self <= StringSlice(rhs)
 
     @always_inline
     fn __gt__(self, rhs: String) -> Bool:
@@ -1107,7 +1090,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is strictly greater than the RHS String.
         """
-        return self > rhs.as_string_slice()
+        return self > StringSlice(rhs)
 
     @always_inline
     fn __ge__(self, rhs: String) -> Bool:
@@ -1119,7 +1102,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             True if this String slice is greater than or equal to the RHS String.
         """
-        return rhs.as_string_slice() <= self
+        return StringSlice(rhs) <= self
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[Self.origin]:
@@ -1139,16 +1122,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return CodepointSliceIter[Self.origin, forward=False](self)
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
-        """Gets the character at the specified position.
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters, this may return a
+        partial or invalid character sequence. For proper character access, use
+        `codepoint_slices()` or iterate over the string directly.
 
         Parameters:
             I: A type that can be used as an index.
 
         Args:
-            byte: The index value.
+            byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A new string containing the character at the specified position.
+            A new String containing a single byte at the specified position.
         """
         # TODO(#933): implement this for unicode when we support llvm intrinsic
         # evaluation at compile time
@@ -2357,11 +2345,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return False
         return True
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice right justified in a string of specified width.
 
         Pads the string slice on the left with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total (byte) length of the resulting string equals `width`. If the
         original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
@@ -2373,7 +2361,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of (byte) length `width`, or the original string
             slice (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -2381,18 +2369,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
         return self._justify(width - len(self), width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice left justified in a string of specified width.
 
         Pads the string slice on the right with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
@@ -2404,7 +2392,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             slice (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -2412,9 +2400,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
         return self._justify(0, width, fillchar)
@@ -2596,10 +2584,9 @@ fn get_static_string[
 
 
 fn _to_string_list[
-    O: Origin,
-    //,
-    # TODO(MOCO-1446): Make `T` parameter inferred
+    O: ImmutOrigin,
     T: Copyable,
+    //,
     len_fn: fn (T) -> Int,
     unsafe_ptr_fn: fn (T) -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
@@ -2616,7 +2603,9 @@ fn _to_string_list[
 
 
 @always_inline
-fn _to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
+fn _to_string_list[
+    O: ImmutOrigin, //
+](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
@@ -2637,11 +2626,13 @@ fn _to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
     fn len_fn(v: StringSlice[O]) -> Int:
         return v.byte_length()
 
-    return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[len_fn, unsafe_ptr_fn](items)
 
 
 @always_inline
-fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
+fn _to_string_list[
+    O: ImmutOrigin, //
+](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
@@ -2660,7 +2651,7 @@ fn _to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
     fn len_fn(v: Span[Byte, O]) -> Int:
         return len(v)
 
-    return _to_string_list[items.T, len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[len_fn, unsafe_ptr_fn](items)
 
 
 @always_inline

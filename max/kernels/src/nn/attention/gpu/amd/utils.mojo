@@ -490,7 +490,7 @@ fn _load_tr16_b64_warp[
     )
 
     var coords = idx2crd[row_layout](Int(lane_id() // 16))
-    var shared_b_tile = tile.tile[4, 16](Int(coords[0]), Int(coords[1]))
+    var shared_b_tile = tile.tile[4, 16](coords[0], coords[1])
     return _load_tr16_b64_row(shared_b_tile)
 
 

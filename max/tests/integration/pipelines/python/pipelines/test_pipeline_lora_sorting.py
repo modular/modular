@@ -378,8 +378,8 @@ def execute_pipeline(
 
     if pipeline_type == PipelineType.TEXT_GENERATION:
         patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
-        inputs = TextGenerationInputs(
-            batches=[cast(dict[RequestID, TextContext], batch)],
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[list(cast(dict[RequestID, TextContext], batch).values())],
             num_steps=1,
         )
         with (

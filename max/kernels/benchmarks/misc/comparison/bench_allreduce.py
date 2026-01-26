@@ -25,16 +25,8 @@ For MAX allreduce benchmarks, use kbench:
     kbench bench_allreduce.yaml --param num_bytes:[16384,262144,1048576]
 
 Usage:
-    # Set up virtual environment
-    python3 -m venv .venv
-    source .venv/bin/activate
-
-    # Install dependencies
-    pip install torch  # or your preferred PyTorch version with CUDA support
-    pip install "sglang[all]"  # SGLang with all dependencies
-
-    # Run with torchrun for multi-GPU
-    torchrun --nproc_per_node=4 bench_allreduce.py --num-bytes 16384 65536 262144
+    bazel run install_sglang
+    bazel run bench_allreduce --run_under="mpirun -np 8" -- --num_gpus=8 --num_bytes=16384
 """
 
 from __future__ import annotations
@@ -45,7 +37,7 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-from max.support.human_readable_formatter import to_human_readable_bytes
+from bencher_utils import Bench, ThroughputMeasure, check_mpirun
 
 # Try importing SGLang's custom allreduce
 _sgl_kernel_available = False
@@ -223,8 +215,7 @@ def bench_sglang_allreduce(
         # Calculate bandwidth
         # AllReduce: each GPU sends and receives (N-1)/N of the data
         # Bus bandwidth = 2 * data_size * (N-1) / N / time
-        algbw = num_bytes / time_s / 1e9  # GB/s
-        busbw = 2 * algbw * (num_gpus - 1) / num_gpus
+        busbw = 2 * num_bytes * (num_gpus - 1) / num_gpus
 
         return time_s, busbw
 
@@ -264,7 +255,7 @@ def bench_nccl_allreduce(
     try:
         time_s = _bench_cuda_events(run_kernel, num_warmups=10, num_iters=100)
 
-        algbw = num_bytes / time_s / 1e9
+        algbw = num_bytes  # / time_s / 1e9
         busbw = 2 * algbw * (num_gpus - 1) / num_gpus
 
         return time_s, busbw
@@ -276,13 +267,12 @@ def bench_nccl_allreduce(
         return None
 
 
-def run_comparison(
+def run_benchmark(
     num_gpus: int,
-    num_bytes_list: list[int],
+    num_bytes: int,
     dtype: torch.dtype = torch.bfloat16,
-    skip_sglang: bool = False,
-    skip_nccl: bool = False,
-) -> None:
+    backend: str = "nccl",
+) -> tuple[float, float] | None:
     """Run allreduce comparison benchmark.
 
     All ranks must call this function for distributed benchmarks to work.
@@ -290,172 +280,16 @@ def run_comparison(
 
     Args:
         num_gpus: Number of GPUs
-        num_bytes_list: List of buffer sizes to test
+        num_bytes: List of buffer sizes to test
         dtype: Data type
-        skip_sglang: Skip SGLang benchmark
-        skip_nccl: Skip NCCL benchmark
+        backend: Backend to benchmark: nccl, sglang
     """
-    rank = dist.get_rank() if dist.is_initialized() else 0
-    is_main = rank == 0
-
-    # Collect results for CSV output
-    results: list[dict[str, Any]] = []
-
-    if is_main:
-        print("=" * 80)
-        print(
-            f"AllReduce Benchmark: NCCL vs SGLang (num_gpus={num_gpus}, dtype={dtype})"
-        )
-        print("=" * 80)
-        print()
-
-        # Check availability
-        sglang_available = (
-            _CustomAllreduceClass is not None or _sgl_kernel_available
-        )
-        dist_available = dist.is_initialized()
-
-        print("Implementation availability:")
-        print(
-            f"  SGLang custom allreduce:  {'Yes' if sglang_available else 'No'}"
-        )
-        print(
-            f"  torch.distributed (NCCL): {'Yes' if dist_available else 'No'}"
-        )
-        print()
-
-        if not sglang_available:
-            print("To install SGLang kernel:")
-            print("  pip install sglang[all]")
-            print()
-
-        if not dist_available:
-            print("To run NCCL/SGLang benchmarks:")
-            print(
-                f"  torchrun --nproc_per_node={num_gpus} bench_allreduce.py [args]"
-            )
-            print()
-
-        # Print header
-        print(
-            f"{'Size':<10} {'NCCL (ms)':<12} {'NCCL BW':<14} "
-            f"{'SGLang (ms)':<12} {'SGLang BW':<14} {'SGLang/NCCL':<12}"
-        )
-        print("-" * 80)
-
-    for num_bytes in num_bytes_list:
-        # All ranks must participate in distributed benchmarks
-        nccl_result = (
-            None
-            if skip_nccl
-            else bench_nccl_allreduce(num_gpus, num_bytes, dtype)
-        )
-        sglang_result = (
-            None
-            if skip_sglang
-            else bench_sglang_allreduce(num_gpus, num_bytes, dtype)
-        )
-
-        # Only rank 0 prints results
-        if is_main:
-            size_str = to_human_readable_bytes(num_bytes)
-
-            nccl_time_str = "N/A"
-            nccl_bw_str = "N/A"
-            sglang_time_str = "N/A"
-            sglang_bw_str = "N/A"
-            speedup_str = "N/A"
-
-            # Store raw values for CSV
-            row: dict[str, Any] = {
-                "num_bytes": num_bytes,
-                "size": size_str,
-                "nccl_time_ms": None,
-                "nccl_bw_gbps": None,
-                "sglang_time_ms": None,
-                "sglang_bw_gbps": None,
-                "speedup": None,
-            }
-
-            if nccl_result:
-                nccl_time, nccl_bw = nccl_result
-                nccl_time_str = f"{nccl_time * 1000:.4f}"
-                nccl_bw_str = f"{nccl_bw:.2f} GB/s"
-                row["nccl_time_ms"] = nccl_time * 1000
-                row["nccl_bw_gbps"] = nccl_bw
-
-            if sglang_result:
-                sglang_time, sglang_bw = sglang_result
-                sglang_time_str = f"{sglang_time * 1000:.4f}"
-                sglang_bw_str = f"{sglang_bw:.2f} GB/s"
-                row["sglang_time_ms"] = sglang_time * 1000
-                row["sglang_bw_gbps"] = sglang_bw
-
-            if nccl_result and sglang_result:
-                speedup = nccl_result[0] / sglang_result[0]
-                speedup_str = f"{speedup:.2f}x"
-                row["speedup"] = speedup
-
-            results.append(row)
-
-            print(
-                f"{size_str:<10} {nccl_time_str:<12} {nccl_bw_str:<14} "
-                f"{sglang_time_str:<12} {sglang_bw_str:<14} {speedup_str:<12}"
-            )
-
-    if is_main:
-        print("=" * 80)
-        print()
-        print("Notes:")
-        print(
-            "  - NCCL: NVIDIA Collective Communication Library (via torch.distributed)"
-        )
-        print(
-            "  - SGLang: Custom allreduce using NVLink P2P (optimized for <256KB)"
-        )
-        print("  - Bus bandwidth = 2 * algbw * (N-1) / N")
-        print(
-            "  - Times are max across all GPUs (collective is complete when slowest finishes)"
-        )
-        print()
-        print("  For MAX allreduce benchmarks, use kbench:")
-        print(
-            "    kbench bench_allreduce.yaml --param num_bytes:[16384,262144]"
-        )
-
-        # Print CSV output
-        print()
-        print("=" * 80)
-        print("CSV OUTPUT")
-        print("=" * 80)
-        print(
-            "num_bytes,size,nccl_time_ms,nccl_bw_gbps,sglang_time_ms,sglang_bw_gbps,speedup"
-        )
-        for row in results:
-            nccl_t = (
-                f"{row['nccl_time_ms']:.4f}"
-                if row["nccl_time_ms"] is not None
-                else ""
-            )
-            nccl_b = (
-                f"{row['nccl_bw_gbps']:.2f}"
-                if row["nccl_bw_gbps"] is not None
-                else ""
-            )
-            sgl_t = (
-                f"{row['sglang_time_ms']:.4f}"
-                if row["sglang_time_ms"] is not None
-                else ""
-            )
-            sgl_b = (
-                f"{row['sglang_bw_gbps']:.2f}"
-                if row["sglang_bw_gbps"] is not None
-                else ""
-            )
-            spd = f"{row['speedup']:.2f}" if row["speedup"] is not None else ""
-            print(
-                f"{row['num_bytes']},{row['size']},{nccl_t},{nccl_b},{sgl_t},{sgl_b},{spd}"
-            )
+    # All ranks must participate in distributed benchmarks
+    if backend == "nccl":
+        result = bench_nccl_allreduce(num_gpus, num_bytes, dtype)
+    elif backend == "sglang":
+        result = bench_sglang_allreduce(num_gpus, num_bytes, dtype)
+    return result
 
 
 def main() -> None:
@@ -464,22 +298,16 @@ def main() -> None:
     )
     parser.add_argument(
         "--num-gpus",
+        "--num_gpus",
         type=int,
-        default=None,
         help="Number of GPUs (default: auto-detect from WORLD_SIZE)",
     )
     parser.add_argument(
         "--num-bytes",
+        "--num_bytes",
         type=int,
-        nargs="+",
-        default=[
-            16 * 1024,
-            64 * 1024,
-            256 * 1024,
-            1024 * 1024,
-            16 * 1024 * 1024,
-        ],
-        help="Buffer sizes in bytes to test",
+        default=16 * 1024,
+        help="Buffer size in bytes to test",
     )
     parser.add_argument(
         "--dtype",
@@ -489,15 +317,20 @@ def main() -> None:
         help="Data type",
     )
     parser.add_argument(
-        "--skip-sglang",
-        action="store_true",
-        help="Skip SGLang benchmark",
+        "--backend",
+        type=str,
+        default="nccl",
+        choices=["nccl", "sglang"],
+        help="Select backend engine",
     )
     parser.add_argument(
-        "--skip-nccl",
-        action="store_true",
-        help="Skip NCCL benchmark",
+        "--output",
+        "-o",
+        type=str,
+        default="output.csv",
+        help="Output path",
     )
+
     args = parser.parse_args()
 
     dtype_map = {
@@ -506,43 +339,48 @@ def main() -> None:
         "float32": torch.float32,
     }
 
-    # Initialize distributed if running under torchrun
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        torch.cuda.set_device(local_rank)
+    # Initialize distributed env if running under mpirun
+    pe_rank = check_mpirun()
+    if pe_rank != -1:
+        torch.cuda.set_device(pe_rank)
         dist.init_process_group(
-            backend="nccl", device_id=torch.device(f"cuda:{local_rank}")
+            backend="nccl", device_id=torch.device(f"cuda:{pe_rank}")
         )
-
-    # Determine number of GPUs
-    if args.num_gpus:
-        num_gpus = args.num_gpus
-    elif dist.is_initialized():
-        num_gpus = dist.get_world_size()
-    else:
-        num_gpus = torch.cuda.device_count()
 
     if not dist.is_initialized():
-        print(
-            "Error: This benchmark requires torchrun for multi-GPU execution."
-        )
-        print(
-            f"  torchrun --nproc_per_node={num_gpus} bench_allreduce.py [args]"
-        )
+        print("Error: This benchmark requires mpirun for multi-GPU execution.")
         return
 
-    # All ranks must call run_comparison for distributed benchmarks
-    # (only rank 0 prints results)
-    run_comparison(
-        num_gpus=num_gpus,
-        num_bytes_list=args.num_bytes,
+    # Check the number of GPUs
+    assert args.num_gpus <= int(os.environ["OMPI_COMM_WORLD_SIZE"])
+
+    # All ranks must call run_benchmark for distributed benchmarks
+    result = run_benchmark(
+        num_gpus=args.num_gpus,
+        num_bytes=args.num_bytes,
         dtype=dtype_map[args.dtype],
-        skip_sglang=args.skip_sglang,
-        skip_nccl=args.skip_nccl,
+        backend=args.backend,
     )
 
     if dist.is_initialized():
         dist.destroy_process_group()
+
+    name = "allreduce"
+    met_sec, bytes = result if result else [0, 0]
+    bytes = args.num_bytes
+    bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
+
+    b = Bench(
+        name,
+        iters=1,
+        met=met_sec,
+        metric_list=[bytes_per_sec],
+    )
+
+    # TODO: move this to bencher_utils.py
+    out = args.output.replace(".csv", f"{pe_rank}.csv")
+    if pe_rank == 0:
+        b.dump_report(output_path=out)
 
 
 if __name__ == "__main__":

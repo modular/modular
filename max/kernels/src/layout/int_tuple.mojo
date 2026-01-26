@@ -79,8 +79,8 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in uint32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.uint32]()):
+    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
+    if layout.cosize() <= Int(max_finite[DType.int32]()):
         return DType.int32
 
     return DType.int64

@@ -133,8 +133,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     input_row_offsets = Buffer(
@@ -149,7 +149,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets = input_row_offsets.to(cuda)
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(batch)[0]
+        kv_manager.get_runtime_inputs([batch])[0]
     )
     model = session.load(g)
 

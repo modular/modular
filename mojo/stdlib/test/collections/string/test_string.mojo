@@ -256,10 +256,10 @@ def test_ord():
     assert_equal(multi_byte3, 128293)
 
     # Test StringSlice overload
-    assert_equal(ord("A".as_string_slice()), 65)
-    assert_equal(ord("α".as_string_slice()), 945)
-    assert_equal(ord("➿".as_string_slice()), 10175)
-    assert_equal(ord("🔥".as_string_slice()), 128293)
+    assert_equal(ord(StringSlice("A")), 65)
+    assert_equal(ord(StringSlice("α")), 945)
+    assert_equal(ord(StringSlice("➿")), 10175)
+    assert_equal(ord(StringSlice("🔥")), 128293)
 
 
 def test_chr():
@@ -1416,8 +1416,8 @@ def test_float_conversion():
 
 
 def test_slice_contains():
-    assert_true("hello world".as_string_slice().__contains__("world"))
-    assert_false("hello world".as_string_slice().__contains__("not-found"))
+    assert_true(StringSlice("hello world").__contains__("world"))
+    assert_false(StringSlice("hello world").__contains__("not-found"))
 
 
 def test_reserve():
@@ -1425,6 +1425,16 @@ def test_reserve():
     assert_equal(s.capacity(), 23)
     s.reserve(61)
     assert_equal(s.capacity(), 64)
+
+
+def test_resize():
+    var s = String()
+    s.resize(100, 0)
+    for c in s.codepoints():
+        assert_equal(c, Codepoint(0))
+    var s2 = String("😀😃")
+    s2.resize(4)
+    assert_equal(s2, "😀")
 
 
 def test_uninit_ctor():
@@ -1547,9 +1557,7 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt(
-        (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
-    )
+    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 

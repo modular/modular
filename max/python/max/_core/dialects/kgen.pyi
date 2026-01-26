@@ -78,7 +78,7 @@ class GeneratorMetadataAttrInterface(Protocol):
         arg2: DiagnosticHandler,
         /,
     ) -> GeneratorMetadataAttrInterface: ...
-    def prepend_pos_params_from_ops(
+    def prepend_contextual_params_from_ops(
         self,
         arg0: Sequence[ParamDeclAttr],
         arg1: Sequence[max._core.Operation],
@@ -1188,13 +1188,20 @@ class StructExtractAttr(max._core.Attribute):
     def __init__(
         self,
         struct_value: max._core.dialects.builtin.TypedAttr,
-        field_no: int,
+        field_no: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.Type,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        struct_value: max._core.dialects.builtin.TypedAttr,
+        field_no: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.Type,
     ) -> None: ...
     @property
     def struct_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def field_no(self) -> int: ...
+    def field_no(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
 
@@ -3844,6 +3851,12 @@ class StructExtractOp(max._core.Operation):
     // Extract the !pop.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
+
+    // Extract an element at a parametric index.
+    kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
+      %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
+      kgen.return
+    }
     ```
     """
 
@@ -3854,7 +3867,7 @@ class StructExtractOp(max._core.Operation):
         location: Location,
         result: max._core.Type,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -3862,14 +3875,22 @@ class StructExtractOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         container: max._core.Value[StructType],
-        index: max._core.dialects.builtin.IntegerAttr,
+        index: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        container: max._core.Value,
+        index: int,
     ) -> None: ...
     @property
     def container(self) -> max._core.Value[StructType]: ...
     @property
-    def index(self) -> int: ...
+    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
     @index.setter
-    def index(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
 
 class StructGepOp(max._core.Operation):
     """
@@ -4019,6 +4040,31 @@ class StructInstanceOp(max._core.Operation):
     def meta_type(
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
+
+class StructLoadIndirectOp(max._core.Operation):
+    """
+    The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
+    values and loads each one into a struct without the pointer type.  This
+    requires elements with trivially loadable types supported by pop.load.
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: StructType,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        struct_value: max._core.Value[StructType],
+    ) -> None: ...
+    @property
+    def struct_value(self) -> max._core.Value[StructType]: ...
 
 class StructReplaceOp(max._core.Operation):
     """
