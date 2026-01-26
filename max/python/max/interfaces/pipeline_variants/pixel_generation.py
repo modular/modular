@@ -18,6 +18,7 @@ responses, including status tracking and pixel data encapsulation.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Generic, Protocol, runtime_checkable
 
@@ -30,6 +31,8 @@ from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,26 @@ class PixelGenerationRequest(Request):
     def __post_init__(self) -> None:
         if self.prompt == "":
             raise ValueError("Prompt must be provided.")
+
+        if (self.height is not None and self.height < 0) or (
+            self.width is not None and self.width < 0
+        ):
+            raise ValueError("Height and width must be non-negative.")
+
+        if self.num_inference_steps < 0:
+            raise ValueError("Number of inference steps must be non-negative.")
+
+        if self.num_images_per_prompt < 0:
+            raise ValueError(
+                "Number of images per prompt must be non-negative."
+            )
+
+        if self.guidance_scale < 1.0 or self.true_cfg_scale < 1.0:
+            logger.warning(
+                f"Guidance scales < 1.0 detected (guidance_scale={self.guidance_scale}, "
+                f"true_cfg_scale={self.true_cfg_scale}). This is mathematically possible"
+                " but may produce lower quality or unexpected results."
+            )
 
 
 @runtime_checkable
