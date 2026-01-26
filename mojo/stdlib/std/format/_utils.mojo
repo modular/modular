@@ -407,10 +407,9 @@ comptime _hex_table = SIMD[DType.uint8, 16](
 
 @always_inline
 fn _hex_digits_to_hex_chars(
-    ptr: UnsafePointer[mut=True, Byte], decimal: Scalar
-):
-    """Write a fixed width hexadecimal value into an uninitialized pointer
-    location, assumed to be large enough for the value to be written.
+    decimal: Scalar,
+) -> SIMD[DType.uint8, size_of[decimal.dtype]() * 2]:
+    """Return a fixed width hexadecimal value according to the scalar dtype.
 
     Examples:
 
@@ -422,28 +421,25 @@ fn _hex_digits_to_hex_chars(
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
-    _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
+    ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
     assert_equal("0001f525", S(ptr=ptr, length=8))
-    memset_zero(ptr, len(items))
-    _hex_digits_to_hex_chars(ptr, UInt16(ord("你")))
+    ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
     assert_equal("4f60", S(ptr=ptr, length=4))
-    memset_zero(ptr, len(items))
-    _hex_digits_to_hex_chars(ptr, UInt8(ord("Ö")))
+    ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
     assert_equal("d6", S(ptr=ptr, length=2))
     ```
     """
     comptime size = size_of[decimal.dtype]()
     var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    ptr.store(_hex_table._dynamic_shuffle(nibbles))
+    return _hex_table._dynamic_shuffle(nibbles)
 
 
 @always_inline
 fn _write_hex[
-    amnt_hex_bytes: Int
-](p: UnsafePointer[mut=True, Byte], decimal: Int):
-    """Write a python compliant hexadecimal value into an uninitialized pointer
-    location, assumed to be large enough for the value to be written.
+    *, amnt_hex_bytes: Int
+](mut writer: Some[Writer], decimal: Scalar):
+    """Write a python compliant hexadecimal value into a writer.
 
     Examples:
 
@@ -452,17 +448,15 @@ fn _write_hex[
     %# from testing import assert_equal
     %# from utils import StringSlice
     %# from io.write import _write_hex
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
-    _write_hex[8](ptr, ord("🔥"))
-    assert_equal(r"\\U0001f525", S(ptr=ptr, length=10))
-    memset_zero(ptr, len(items))
-    _write_hex[4](ptr, ord("你"))
-    assert_equal(r"\\u4f60", S(ptr=ptr, length=6))
-    memset_zero(ptr, len(items))
-    _write_hex[2](ptr, ord("Ö"))
-    assert_equal(r"\\xd6", S(ptr=ptr, length=4))
+    var s = String()
+    _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
+    assert_equal("\\U0001f525", s)
+    s = ""
+    _write_hex[amnt_hex_bytes=4](s, ord("你"))
+    assert_equal("\\u4f60", s)
+    s = ""
+    _write_hex[amnt_hex_bytes=2](s, ord("Ö"))
+    assert_equal("\\xd6", s)
     ```
     """
 
@@ -473,15 +467,25 @@ fn _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    p.init_pointee_move(`\\`)
-
     @parameter
     if amnt_hex_bytes == 2:
-        (p + 1).init_pointee_move(`x`)
-        _hex_digits_to_hex_chars(p + 2, UInt8(decimal))
+        var chars = _hex_digits_to_hex_chars(UInt8(decimal))
+        var buf = InlineArray[Byte, 4](uninitialized=True)
+        buf[0] = `\\`
+        buf[1] = `x`
+        (buf.unsafe_ptr() + 2).store(chars)
+        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     elif amnt_hex_bytes == 4:
-        (p + 1).init_pointee_move(`u`)
-        _hex_digits_to_hex_chars(p + 2, UInt16(decimal))
+        var chars = _hex_digits_to_hex_chars(UInt16(decimal))
+        var buf = InlineArray[Byte, 6](uninitialized=True)
+        buf[0] = `\\`
+        buf[1] = `u`
+        (buf.unsafe_ptr() + 2).store(chars)
+        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     else:
-        (p + 1).init_pointee_move(`U`)
-        _hex_digits_to_hex_chars(p + 2, UInt32(decimal))
+        var chars = _hex_digits_to_hex_chars(UInt32(decimal))
+        var buf = InlineArray[Byte, 10](uninitialized=True)
+        buf[0] = `\\`
+        buf[1] = `U`
+        (buf.unsafe_ptr() + 2).store(chars)
+        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))

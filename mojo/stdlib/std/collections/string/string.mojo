@@ -1227,10 +1227,15 @@ struct String(
         writer.write_string(self)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the string".
+        """Formats this string slice to the provided `Writer`.
 
         Args:
-            writer: The value to write to.
+            writer: The object to write to.
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
         StringSlice(self).write_repr_to(writer)
 

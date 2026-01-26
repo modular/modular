@@ -378,15 +378,32 @@ struct Codepoint(
         comptime ord_z = UInt32(ord("z"))
         return ord_a <= self.to_u32() <= ord_z
 
+    @staticmethod
+    @always_inline
+    fn _is_ascii_printable(codepoint: Scalar) -> Bool:
+        """Determines whether the given character is a printable character.
+
+        Args:
+            codepoint: The codepoint to check.
+
+        Returns:
+            True if the character is a printable character, otherwise False.
+        """
+        __comptime_assert (
+            codepoint.dtype.is_integral()
+        ), "only integral codepoints exist"
+        comptime ` ` = type_of(codepoint)(ord(" "))
+        comptime `~` = type_of(codepoint)(ord("~"))
+        return ` ` <= codepoint <= `~`
+
+    @always_inline
     fn is_ascii_printable(self) -> Bool:
         """Determines whether the given character is a printable character.
 
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        comptime ord_space = UInt32(ord(" "))
-        comptime ord_tilde = UInt32(ord("~"))
-        return ord_space <= self.to_u32() <= ord_tilde
+        return Self._is_ascii_printable(self.to_u32())
 
     @always_inline
     fn is_python_space(self) -> Bool:

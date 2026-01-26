@@ -363,6 +363,34 @@ fn bench_string_write[short: Bool](mut b: Bencher) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string repr
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct NullWriter(ImplicitlyCopyable, Writer):
+    fn write_string(mut self, string: StringSlice):
+        keep(string)
+
+
+@parameter
+fn bench_string_repr[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher):
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var writer = NullWriter()
+            black_box(items).write_repr_to(writer)
+            keep(writer)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
@@ -458,6 +486,9 @@ def main():
             m.bench_function[bench_write_utf8[length, fname]](
                 BenchId(String("bench_write_utf8", suffix))
             )
+            m.bench_function[bench_string_repr[length, fname]](
+                BenchId(String("bench_string_repr", suffix))
+            )
 
     m.bench_function[bench_string_join[True]](
         BenchId(String("bench_string_join_short"))
@@ -466,4 +497,15 @@ def main():
         BenchId(String("bench_string_join_long"))
     )
 
-    print(m)
+    # NOTE: do not delete this. This is supposed to measure the average for
+    # different languages. You can use print(m) if you wish to see the
+    # per-language breakdown
+    var results = Dict[String, Tuple[Float64, Int]]()
+    for info in m.info_vec:
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
+        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+    print("")
+    for k_v in results.items():
+        print(k_v.key, k_v.value[0], sep=", ")

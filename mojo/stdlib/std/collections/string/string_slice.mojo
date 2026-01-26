@@ -46,6 +46,7 @@ from memory import (
     pack_bits,
 )
 from python import ConvertibleToPython, Python, PythonObject
+from format._utils import _write_hex
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
@@ -821,31 +822,40 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         Args:
             writer: The object to write to.
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
+        comptime `\\` = Byte(ord("\\"))
+        comptime `'` = Byte(ord("'"))
+        comptime `\t` = Byte(ord("\t"))
+        comptime `\n` = Byte(ord("\n"))
+        comptime `\r` = Byte(ord("\r"))
+
+        # Always start and end with a single quote
         writer.write_string("'")
 
         for s in self.codepoint_slices():
-            if s == "\\":
+            var b0 = s.unsafe_ptr()[0]  # safe
+            # Python escapes backslashes but they are ASCII printable
+            if b0 == `\\`:
                 writer.write_string(r"\\")
-            elif s == "\t":
-                writer.write_string(r"\t")
-            elif s == "\n":
-                writer.write_string(r"\n")
-            elif s == "\r":
-                writer.write_string(r"\r")
-            elif s == "'":
+            elif b0 == `'`:  # escape single quotes
                 writer.write_string(r"\'")
-            else:
-                var codepoint = Codepoint.ord(s)
-                var u32 = codepoint.to_u32()
-                if codepoint.is_ascii_printable():
-                    writer.write_string(s)
-                elif u32 < 0x10:
-                    _write_int[radix=16](writer, u32, prefix=r"\x0")
-                elif u32 < 0x20 or u32 == 0x7F:
-                    _write_int[radix=16](writer, u32, prefix=r"\x")
-                else:  # multi-byte character
-                    writer.write_string(s)
+            elif Codepoint._is_ascii_printable(b0):
+                writer.write_string(s)
+            elif b0 == `\t`:
+                writer.write_string(r"\t")
+            elif b0 == `\n`:
+                writer.write_string(r"\n")
+            elif b0 == `\r`:
+                writer.write_string(r"\r")
+            elif b0 < 0b1000_0000:  # non-printable ASCII
+                _write_hex[amnt_hex_bytes=2](writer, b0)
+            else:  # multi-byte character
+                writer.write_string(s)
 
         writer.write_string("'")
 
