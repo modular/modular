@@ -593,7 +593,6 @@ if TYPE_CHECKING:
     def _verify_pixel_context_protocol() -> PixelContext:
         return PixelContext(
             request_id=RequestID(),
-            max_sequence_length=512,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
         )
 
