@@ -1290,6 +1290,11 @@ fn block_scaled_matmul_with_epilogue[
         sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
     ), ""
 
+    var m = c.dim(0)
+    var n = c.dim(1)
+    if m == 0 or n == 0:
+        return
+
     @parameter
     if not elementwise_lambda_fn:
         if not c.ptr:
