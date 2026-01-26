@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.constrained import _constrained_field_conforms_to
+from builtin.range import _ZeroStartingRange
 from reflection import struct_field_names, struct_field_types
 
 
@@ -65,7 +66,7 @@ trait Equatable:
         comptime types = struct_field_types[Self]()
 
         @parameter
-        for i in range(names.size):
+        for i in _ZeroStartingRange(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),
