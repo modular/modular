@@ -35,6 +35,7 @@ PINS = {
     "accelerate": "accelerate@1.0.1",
     "aiofiles": "aiofiles@24.1.0",
     "aiohttp": "aiohttp@3.13.2",
+    "anyio": "anyio@4.4.0",
     "apache-tvm-ffi": "apache-tvm-ffi@0.1.3",
     "asgiref": "asgiref@3.8.1",
     "async-asgi-testclient": "async-asgi-testclient@1.4.11",
