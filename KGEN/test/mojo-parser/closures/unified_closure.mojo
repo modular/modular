@@ -540,14 +540,17 @@ fn giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # // -----
 
 
-# COM: Ensure result type index ref has been replaced
+# COM: The captured parameter becomes an alias on the trait
+# CHECK: lit.trait.decl @"fn() -> T"
+# CHECK-NEXT: lit.alias.decl T: type
 
+# COM: The captured parameter becomes a parameter of the struct generator
+# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<{{.*}}, T: type>
+# CHECK: kgen.witness "T" : type = T
 
-# CHECK: lit.struct.decl @"fn[T: {{.*}}, /]() -> T_{{.*}}"
-# CHECK: lit.struct.field field0
-# CHECK-NEXT:      lit.fn @"__call__
-# CHECK-NEXT:        %1 = lit.ref.struct.ger
-# CHECK-NEXT:        %2 = lit.call[!lit.generator<[1]({{.*}}) capturing -> !kgen.param<{{.*}}T)
+# COM: The alias is set to the alias of the impl in the struct wrapper
+# CHECK: lit.struct.decl @"fn() -> T_Mova_Impl_Copy_Impl"
+# CHECK: kgen.witness "T" : type = #kgen.get_witness<:!{{.*}} impl, "fn() -> T", "T">
 fn makeIt[T: __TypeOfAllTypes](a: T):
     fn parametric() unified {var a} -> T:
         return a
@@ -566,3 +569,22 @@ fn conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "get_device_type_name{{.*}}" : !lit.generator
     fn device_passable() unified register_passable {var} -> Int:
         return x
+
+# // -----
+
+# COM: Ensure external parameter references are pulled into alias decls
+
+trait DoIt:
+   fn thing(self):
+       ...
+
+# CHECK: lit.trait.decl @"fn(x: T) -> None"
+# CHECK-NEXT: lit.alias.decl T: !DoIt
+struct House[T:DoIt]:
+    fn aMethod[C: fn(x: Self.T) unified](self, impl:C):
+        pass
+
+# CHECK: lit.trait.decl @"fn(x: TT) -> None"
+# CHECK-NEXT: lit.alias.decl TT: !DoIt
+fn useIt[TT: DoIt, C:fn(x:TT) unified](impl: C):
+  pass
