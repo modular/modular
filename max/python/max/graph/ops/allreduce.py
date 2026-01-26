@@ -20,21 +20,8 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import (
-    BufferValue,
-    BufferValueLike,
-    TensorType,
-    TensorValue,
-    TensorValueLike,
-)
-
-
-def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
-    return [BufferValue(v) for v in values]
-
-
-def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
-    return [TensorValue(v) for v in values]
+from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
+from .utils import _buffer_values, _tensor_values
 
 
 def sum(

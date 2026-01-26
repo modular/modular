@@ -12,7 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Utility functions for graph operations."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+
+from ..value import (
+    BufferValue,
+    BufferValueLike,
+    TensorValue,
+    TensorValueLike,
+)
+
+
+def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
+    return [BufferValue(v) for v in values]
+
+
+def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
+    return [TensorValue(v) for v in values]
 
 
 def _axis_out_of_range_error(

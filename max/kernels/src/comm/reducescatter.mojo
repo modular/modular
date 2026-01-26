@@ -276,8 +276,8 @@ fn _reducescatter_kernel[
     _reduce_scatter_impl[
         ngpus, output_lambda=output_lambda, use_multimem=use_multimem
     ](ptrs, out_buf, my_rank, reduce_scatter_config)
-    # Compared w/ usage in allreduce, a second `_multi_gpu_barrier` has been removed
-    # here, as it shouldn't be necessary
+
+    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
