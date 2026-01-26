@@ -31,11 +31,15 @@ You can generate random tensors using different distributions::
 
 from __future__ import annotations
 
+from max._realization_context import seed, set_seed
 from max.driver import Device
 from max.dtype import DType
 from max.functional import functional
 from max.graph import DeviceRef, ShapeLike, ops
 from max.tensor import TensorType, defaults
+
+__all__ = ["gaussian", "normal", "seed", "set_seed", "uniform"]
+
 
 #: Generates random values from a uniform distribution for tensors of a given type.
 #: See :func:`max.graph.ops.random.uniform` for details.
