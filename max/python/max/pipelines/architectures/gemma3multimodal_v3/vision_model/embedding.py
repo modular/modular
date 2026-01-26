@@ -15,8 +15,8 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.conv import Conv2d
 from max.nn.embedding import Embedding
+from max.nn.legacy.conv import Conv2d
 from max.nn.module import Module
 from max.tensor import Tensor
 

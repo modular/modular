@@ -25,27 +25,42 @@ from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferValue, DeviceRef, TensorType, Type
+from max.graph import BufferValue, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache.paged_cache.cache_manager import PagedKVCacheManager
 from max.kv_cache.null_cache_manager import NullKVCacheManager
+from max.kv_cache.paged_cache.cache_manager import PagedKVCacheManager
 from max.kv_cache.registry import load_kv_manager
-from max.nn.legacy.kv_cache import (KVCacheInputs, KVCacheInputsSequence,
-                                    KVCacheParams, PagedCacheValues)
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsSequence,
+    KVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (CompilationTimer, KVCacheConfig, KVCacheMixin,
-                               ModelInputs, ModelOutputs, PipelineConfig,
-                               PipelineModel, SupportedEncoding)
+from max.pipelines.lib import (
+    CompilationTimer,
+    KVCacheConfig,
+    KVCacheMixin,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+    PipelineModel,
+    SupportedEncoding,
+)
 from max.tensor import Tensor
 from transformers import AutoConfig
 
 from .model_config import Gemma3ForConditionalGenerationConfig
-from .vision_model.gemma3multimodal import (Gemma3LanguageModel,
-                                            Gemma3VisionModel)
-from .weight_adapters import (convert_safetensor_language_state_dict,
-                              convert_safetensor_vision_state_dict)
+from .vision_model.gemma3multimodal import (
+    Gemma3LanguageModel,
+    Gemma3VisionModel,
+)
+from .weight_adapters import (
+    convert_safetensor_language_state_dict,
+    convert_safetensor_vision_state_dict,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -545,7 +560,7 @@ class Gemma3_MultiModalModelV3(
             ),
             kv_cache_inputs=kv_cache_inputs,
             pixel_values=pixel_values,  # FIXME temp fix for single GPU
-            image_token_indices=image_token_indices, # FIXME temp fix for single GPU
+            image_token_indices=image_token_indices,  # FIXME temp fix for single GPU
         )
 
     def prepare_next_token_inputs(
@@ -560,7 +575,7 @@ class Gemma3_MultiModalModelV3(
 
         return Gemma3MultiModalModelInputs(
             tokens=next_tokens,
-            input_row_offsets=next_row_offsets, # FIXME temp fix for single GPU
+            input_row_offsets=next_row_offsets,  # FIXME temp fix for single GPU
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             pixel_values=None,
