@@ -170,7 +170,6 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
     ParameterEvaluator evaluator(params);
 
     // Find out about default parameter values.
-    DefaultValueHandler defaultValueHandler(paramInfo);
     bool skippedPositional = false;
     for (auto [idx, pog, paramValue] :
          llvm::enumerate(paramInfo.getPogs(), params)) {
@@ -180,7 +179,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
       // See if this parameter has a default value.  If so, and if the
       // provided value matches it, then don't print the parameter in the
       // list.
-      if (auto def = defaultValueHandler.getDefault(idx)) {
+      if (auto def = paramInfo.getDefault(idx)) {
         // Make sure to substitute other parameter values in, e.g. so we can
         // handle things like:
         //   struct UnsafePointer[type: AnyType,
@@ -247,7 +246,6 @@ static BodyT printGeneratorInterface(raw_ostream &os,
   if (paramInfo && diagShared) {
     ParameterEvaluator evaluator;
     PassingKindPrinter passingKindPrinter(os, paramInfo);
-    DefaultValueHandler defaultValueHandler(paramInfo);
     auto printFn = [&](auto p) {
       auto [i, type] = p;
       passingKindPrinter.printOptionalStarSlash(i);
@@ -265,7 +263,7 @@ static BodyT printGeneratorInterface(raw_ostream &os,
 
       ASTType(reboundType).print(os, diagShared);
 
-      if (TypedAttr defaultOr = defaultValueHandler.getDefault(i)) {
+      if (TypedAttr defaultOr = paramInfo.getDefault(i)) {
         os << " = ";
         ASTType::printParam(os, defaultOr, diagShared);
       }

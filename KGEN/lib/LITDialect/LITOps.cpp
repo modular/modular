@@ -520,8 +520,7 @@ static ParseResult parseLITFunctionSignature(
     return failure();
 
   SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaultPosArgs;
-  SmallVector<TypedAttr> defaultKwOnlyArgs;
+  SmallVector<TypedAttr> defaults;
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
@@ -565,13 +564,7 @@ static ParseResult parseLITFunctionSignature(
     if (failed(parseOptionalDefaultValue(p, defaultVal, arg.type,
                                          hasAddress(argConventions.back()))))
       return failure();
-    if (defaultVal) {
-      if (passingKindParser.isCurrentKwOnly())
-        defaultKwOnlyArgs.emplace_back(defaultVal);
-      else
-        defaultPosArgs.emplace_back(defaultVal);
-    }
-
+    defaults.push_back(defaultVal);
     argTypes.push_back(arg.type);
     return success();
   };
@@ -589,9 +582,8 @@ static ParseResult parseLITFunctionSignature(
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(p.getContext(), argNames, argPassingKinds,
-                       defaultPosArgs, defaultKwOnlyArgs, argVariadics,
-                       origArgPackConvention, origVariadicConvention,
+      PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
+                       defaults, origArgPackConvention, origVariadicConvention,
                        /*constraints=*/{}),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled, constraints);
@@ -643,7 +635,6 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   }
 
   PogListAttr argListAttr = signature.getArgListAttrs();
-  DefaultValueHandler defaultHandler(argListAttr);
   PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
@@ -684,7 +675,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 
-    if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
+    if (TypedAttr defaultOr = argListAttr.getDefault(i)) {
       p << " = ";
       printParamValue(p, evaluator.getReboundAttribute(defaultOr));
     }

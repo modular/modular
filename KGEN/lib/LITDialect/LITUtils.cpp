@@ -198,22 +198,17 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   MLIRContext *ctx = p.getContext();
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
+  SmallVector<TypedAttr> defaultParams;
   SmallVector<VariadicKind> argsVariadic;
   std::optional<ArgConvention> origPackConvention;
   std::optional<ArgConvention> origVariadicConvention;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
-
-  bool foundPosDefault = false;
-  bool foundKwOnlyDefault = false;
 
   llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
-    llvm::SMLoc loc = p.getCurrentLocation();
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
@@ -252,25 +247,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
       return failure();
-    if (defaultVal) {
-      if (passingKindParser.isCurrentKwOnly()) {
-        defaultKwOnlyParams.emplace_back(defaultVal);
-        foundKwOnlyDefault = true;
-      } else {
-        defaultPosParams.emplace_back(defaultVal);
-        foundPosDefault = true;
-      }
-    } else if (!isImplicit) {
-      if (passingKindParser.isCurrentKwOnly() && foundKwOnlyDefault) {
-        return p.emitError(
-            loc, "expected keyword-only parameter with default value");
-      }
-      if (!passingKindParser.isCurrentKwOnly() && foundPosDefault) {
-        return p.emitError(loc,
-                           "expected positional parameter with default value");
-      }
-    }
-
+    defaultParams.push_back(defaultVal);
     SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
     if (failed(parseOptionalConstraintsList(p, argConstraints)))
       return failure();
@@ -287,10 +264,10 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogListAttr::get(
-      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
-      argsVariadic, std::move(origPackConvention),
-      std::move(origVariadicConvention), constraints);
+  paramListAttr =
+      PogListAttr::get(ctx, paramNames, paramPassingKinds, argsVariadic,
+                       defaultParams, std::move(origPackConvention),
+                       std::move(origVariadicConvention), constraints);
   return success();
 }
 
@@ -414,7 +391,6 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   for (ParamDeclAttr param : paramDecls)
     evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
 
-  DefaultValueHandler defaultHandler(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
@@ -430,7 +406,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     printParamDecl(p, decl);
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
 
-    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
+    if (TypedAttr defaultOr = paramListAttr.getDefault(idx)) {
       p << " = ";
       printParamValue(p, evaluator.getReboundAttribute(defaultOr));
     }
@@ -449,8 +425,7 @@ ParseResult LIT::parseOptionalParamSignature(
     PogListAttr &paramListAttr, function_ref<ParseResult()> parseBody) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
-  SmallVector<TypedAttr> defaultPosParams;
-  SmallVector<TypedAttr> defaultKwOnlyParams;
+  SmallVector<TypedAttr> defaultParams;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origVariadicConvention;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
@@ -484,12 +459,7 @@ ParseResult LIT::parseOptionalParamSignature(
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))
       return failure();
-    if (defaultVal) {
-      if (passingKindParser.isCurrentKwOnly())
-        defaultKwOnlyParams.emplace_back(defaultVal);
-      else
-        defaultPosParams.emplace_back(defaultVal);
-    }
+    defaultParams.push_back(defaultVal);
 
     SmallVector<ConstraintAttr> &argConstraints = constraints.emplace_back();
     if (failed(parseOptionalConstraintsList(p, argConstraints)))
@@ -507,17 +477,16 @@ ParseResult LIT::parseOptionalParamSignature(
   if (parseBody && failed(parseBody()))
     return failure();
 
-  paramListAttr = PogListAttr::get(
-      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, argVariadics, std::nullopt,
-      std::move(origVariadicConvention), constraints);
+  paramListAttr =
+      PogListAttr::get(p.getContext(), paramNames, paramPassingKinds,
+                       argVariadics, defaultParams, std::nullopt,
+                       std::move(origVariadicConvention), constraints);
   return success();
 }
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
                                       PogListAttr paramListAttr) {
-  DefaultValueHandler defaultHandler(paramListAttr);
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](Type type) {
@@ -530,7 +499,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     printKGENType(p, type);
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
 
-    if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
+    if (TypedAttr defaultOr = paramListAttr.getDefault(idx)) {
       p << " = ";
       printParamValue(p, defaultOr);
     }
@@ -622,7 +591,6 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
     p << "no_nested_origin_exclusivity";
 
   PogListAttr argListAttr = signature.getArgListAttrs();
-  DefaultValueHandler defaultHandler(argListAttr);
   PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
@@ -649,7 +617,7 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
                                    : argConv;
     printConventionAndVariadicness(p, convention, variadicness);
 
-    if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
+    if (TypedAttr defaultOr = argListAttr.getDefault(i)) {
       p << " = ";
       printParamValue(p, defaultOr);
     }
@@ -1083,26 +1051,15 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 }
 
 //===----------------------------------------------------------------------===//
-// DefaultValueHandler
-//===----------------------------------------------------------------------===//
-
-DefaultValueHandler::DefaultValueHandler(PogListAttr pogListAttr)
-    : DefaultValueHandler(pogListAttr.getPogs(), pogListAttr.getDefaultPos(),
-                          pogListAttr.getDefaultKwOnly()) {}
-
-//===----------------------------------------------------------------------===//
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
 LogicalResult
 LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
-                        ArrayRef<TypedAttr> defaultsPos,
-                        ArrayRef<TypedAttr> defaultsKwOnly,
                         PogListAttr pogListAttr, ArrayRef<Type> types,
                         StringRef argOrParam, ArrayRef<ArgConvention> convs) {
-  DefaultValueHandler defaultHandler(pogListAttr);
   for (size_t idx = 0; idx < pogListAttr.size(); ++idx) {
-    TypedAttr defaultOr = defaultHandler.getDefault(idx);
+    TypedAttr defaultOr = pogListAttr.getDefault(idx);
     if (!defaultOr || pogListAttr.isAnyVarArg(idx))
       continue;
 
@@ -1126,8 +1083,7 @@ LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
-                        ArrayRef<PogMetadataAttr> pogs, size_t numPosDefaults,
-                        size_t numKwOnlyDefaults, StringRef argOrParam) {
+                        ArrayRef<PogMetadataAttr> pogs, StringRef argOrParam) {
   // First, verify the order of passing kinds.
   auto latestKind = PassingKind::PosOnly;
   auto emitDiag = [&](PassingKind kind) {
@@ -1158,25 +1114,6 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
       return emitDiag(kind);
     assert(latestKind == PassingKind::PosOnly);
   }
-
-  auto emitTooManyDefaults = [&](size_t numDefaults, size_t numPassingKinds,
-                                 StringRef kindStr) {
-    return emitError() << "there are more default " << kindStr << " "
-                       << argOrParam << "s than " << kindStr << " "
-                       << argOrParam << "s: " << numDefaults << " vs. "
-                       << numPassingKinds;
-  };
-
-  size_t numPos = countNumPositional(pogs);
-  if (numPosDefaults > numPos)
-    return emitTooManyDefaults(numPosDefaults, numPos, "positional");
-
-  size_t numEl = pogs.size();
-  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(pogs) -
-                     countNumInferredKinds(pogs);
-  if (numKwOnlyDefaults > numKwOnly)
-    return emitTooManyDefaults(numKwOnlyDefaults, numKwOnly, "keyword-only");
-
   return success();
 }
 

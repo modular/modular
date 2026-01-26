@@ -579,10 +579,9 @@ static ParameterEvaluator populatePublicParameterDecls(
   // Update param / arg types with decl refs instead of index refs.
   ParameterEvaluator evaluator;
   // Grab the types of the parameters to the struct.
-  DefaultValueHandler defaultParamHandler(paramListAttr);
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
     TypedAttr defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(idx)) {
+    if (auto defaultAttr = paramListAttr.getDefault(idx)) {
       defaultValue =
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
     }
@@ -1312,7 +1311,6 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
 
   // Grab the types of the parameters to the function.
   PogListAttr paramListAttr = signature.getParamListAttrs();
-  DefaultValueHandler defaultParamHandler(paramListAttr);
   for (size_t parIdx : llvm::seq<size_t>(0, paramTypes.size())) {
     // Add input value here in case of early continue. It's ok to insert before
     // getting rebound attribute for the default value since the signature is
@@ -1334,7 +1332,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     if (shouldExcludeParameterFromDocs(passingKind, paramName.getValue()))
       continue;
     TypedAttr defaultValue;
-    if (TypedAttr defaultAttr = defaultParamHandler.getDefault(parIdx)) {
+    if (TypedAttr defaultAttr = paramListAttr.getDefault(parIdx)) {
       defaultValue = evaluator.getReboundAttribute(defaultAttr);
     }
     VariadicKind variadicKind =
@@ -1347,7 +1345,6 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   }
 
   // Grab the types of the arguments to the function.
-  DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
        llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
     ArgConvention convention = conventionX;
@@ -1355,9 +1352,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       convention = signature.getPosVarArgConvention(argIdx);
 
     TypedAttr defaultValue;
-    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx)) {
+    if (auto defaultAttr = signature.getArgListAttrs().getDefault(argIdx))
       defaultValue = evaluator.getReboundAttribute(defaultAttr);
-    }
 
     std::string prefix;
     auto passingKind = pogAttr.getPassingKind();

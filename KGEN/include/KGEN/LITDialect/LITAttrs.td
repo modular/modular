@@ -70,13 +70,13 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   let summary = "Metadata for a single Argument or parameter.";
   let description = [{
     The `#lit.pog_metadata` attribute contains metadata about an argument or
-    parameter of a function, including the name, passing kind, variadicness, and
-    any constraints on it.
+    parameter of a function, including the name, passing kind, variadicness, the
+    default value (if present) and any constraints on it.
 
     Example:
 
     ```mlir
-    #lit.pog_metadata<"some_keyword_param", pos_or_kw, false, {
+    #lit.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
       <1, loc("file.mojo":10:5), "Constraint must hold">
     }>
     #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
@@ -87,19 +87,26 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
     "StringAttr":$name,
     "PassingKind":$passingKind,
     "VariadicKind":$variadic,
+    OptionalParameter<"TypedAttr">:$defaultValue,
     OptionalArrayRefParameter<"ConstraintAttr">:$constraints
   );
 
-  let assemblyFormat =
-    "`<` $name `,` $passingKind `,` $variadic (`,` `{` $constraints^ `}`)? `>`";
+  let assemblyFormat = [{
+    `<` $name `,` $passingKind `,` $variadic
+    (`,` `default` custom<ColonTypeParamValue>($defaultValue)^)?
+    (`,` `{` $constraints^ `}`)?
+    `>`
+  }];
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
       "PassingKind":$passingKind,
       CArg<"VariadicKind", "VariadicKind::None">:$variadic,
+      CArg<"TypedAttr", "{}">:$defaultValue,
       CArg<"ArrayRef<ConstraintAttr>", "{}">:$constraints
     ), [{
-      return $_get(name.getContext(), name, passingKind, variadic, constraints);
+      return $_get(name.getContext(), name, passingKind, variadic, defaultValue,
+                   constraints);
     }]>,
     AttrBuilder<(ins), [{
       return get(StringAttr::get($_ctxt), PassingKind::PosOrKw);
@@ -149,26 +156,18 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     #lit.pog_list<
       ["a", "b", "c", "d"],
       [pos, pos_or_kw, kw, kw],
-      [4.2 : f32],
-      [1: i64],
-      [1],
-      [3]
     >
     ```
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
-    OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
     LIT_OptionalConventionParameter:$origPackConvention,
     LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($pogs^            `]`)? `,`
-        `[` (`]`) : ($defaultPos^      `]`)? `,`
-        `[` (`]`) : ($defaultKwOnly^   `]`)?
+    `<` `[` (`]`) : ($pogs^ `]`)?
         (`,` custom<ArgConvention>($origPackConvention)^)?
         (`,` custom<ArgConvention>($origVariadicConvention)^)?
     `>`
@@ -178,16 +177,12 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "size_t":$numPogs)>,
     AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs)>,
-    AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs,
-                     "ArrayRef<TypedAttr>":$defaultPos,
-                     "ArrayRef<TypedAttr>":$defaultKwOnly)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds,
-                     "ArrayRef<TypedAttr>":$defaultPos,
-                     "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<VariadicKind>":$variadics,
+                     "ArrayRef<TypedAttr>":$defaults,
                      "std::optional<ArgConvention>":$elementConventions,
                      "std::optional<ArgConvention>":$origVariadicConvention,
                      "ArrayRef<SmallVector<ConstraintAttr>>":$constraints)>
@@ -225,6 +220,11 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     StringAttr getName(size_t idx) const;
     /// Return the passing kind for the argument/parameter at the given index.
     PassingKind getPassingKind(size_t idx) const;
+    /// Return the default value for the argument/parameter at the given index
+    /// or null if none.
+    TypedAttr getDefault(size_t idx) const {
+      return getPogs()[idx].getDefaultValue();
+    }
 
     /// Return the number of leading "implicit" parameters by PassingKinds.
     size_t getNumImplicit() const;
@@ -233,7 +233,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     /// and variadic indices.
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
-      ArrayRef<VariadicKind> variadics,
+      ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
       ArrayRef<SmallVector<ConstraintAttr>> constraints);
 
     /// Get a new metadata attribute for a generator with the given number of
@@ -304,13 +304,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let extraClassDeclaration = [{
     size_t getNumArgs() const;
-    ArrayRef<TypedAttr> getDefaultPosArgs() const {
-      return getArgListAttrs().getDefaultPos();
-    }
-    ArrayRef<TypedAttr> getDefaultKwOnlyArgs() const {
-      return getArgListAttrs().getDefaultKwOnly();
-    }
-
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
     FnMetadataAttr addCaptureOrigins(TypedAttr origins);
@@ -329,6 +322,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     bool isKwVarArg(size_t idx) const;
     /// Return true if the argument at `idx` is a variadic pack argument.
     bool isPack(size_t idx) const;
+
+    TypedAttr getDefault(size_t idx) const {
+      return getArgListAttrs().getDefault(idx);
+    }
   }];
 }
 

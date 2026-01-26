@@ -161,8 +161,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
   let extraClassDeclaration = [{
     ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
     StringAttr getParamName(size_t idx) const;
-    ArrayRef<TypedAttr> getDefaultPosParams() const;
-    ArrayRef<TypedAttr> getDefaultKwOnlyParams() const;
 
     /// Get the number of input parameters.
     size_t getNumParams() { return getParamTypes().size(); }

@@ -9,13 +9,15 @@
 // CHECK-LABEL: "pog.metadata"
 // CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
 // CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
+// CHECK-SAME: pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default ?, {
+// CHECK-SAME: pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default ?, {
 "pog.metadata"() {
   pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
   pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
-  pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, {
+  pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default :index ?, {
     <1, loc("file.mojo":10:5)>
   }>,
-  pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, {
+  pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default :index ?, {
     <1, loc("file.mojo":10:5)>,
     <pog1, loc("file.mojo":11:5)>
   }>
@@ -23,78 +25,78 @@
 
 // CHECK-LABEL: "pogs.with_defaults"
 // CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, not_vararg>],
-// CHECK-SAME: [4.200000e+00 : f32], [1 : i64]>}
+// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg, default :f32 4.200000e+00>,
+// CHECK-SAME: <"c", kw, not_vararg>, <"d", kw, not_vararg, default :i64 1>]>}
 "pogs.with_defaults"() {pogs = #lit.pog_list<
-  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, not_vararg>],
-  [4.2 : f32], [1: i64]
+  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg, default :f32 4.2>,
+   <"c", kw, not_vararg>, <"d", kw, not_vararg, default :i64 1>]
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_variadics"
 // CHECK-SAME: {pogs = #lit.pog_list<
 // CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
-// CHECK-SAME: [], [], owned_in_mem>}
+// CHECK-SAME: owned_in_mem>}
 "pogs.with_variadics"() {pogs = #lit.pog_list<
   [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
-  [], [], owned_in_mem
+  owned_in_mem
 >} : () -> ()
 
 // CHECK-LABEL: "empty.pogs"
-// CHECK-SAME: {pogs = #lit.pog_list<[], [], []>}
-"empty.pogs"() {pogs = #lit.pog_list<[], [], []>} : () -> ()
+// CHECK-SAME: {pogs = #lit.pog_list<[]>}
+"empty.pogs"() {pogs = #lit.pog_list<[]>} : () -> ()
 
 // CHECK-LABEL: "empty.metadata"
-// CHECK-SAME: #lit.fn_metadata<<[], [], []>, 0>
-"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], []>, 0>} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<<[]>, 0>
+"empty.metadata"() {metadata = #lit.fn_metadata<<[]>, 0>} : () -> ()
 
 // CHECK-LABEL: "some.metadata1"
 // CHECK-SAME: #lit.fn_metadata
-// CHECK-SAME: <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+// CHECK-SAME: <[<"someRef", pos, not_vararg, default 13>, <"v", kw, not_vararg, default :i64 17>]>,
 // CHECK-SAME: 2, {mut lt}>
 "some.metadata1"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, {mut lt}
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata2"
 // CHECK-SAME: 2, {mut lt}, true>
 "some.metadata2"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, {mut lt}, true
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata3"
 // CHECK-SAME: 2, true>
 "some.metadata3"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, true
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata4"
 // CHECK-SAME: 2, false>
 "some.metadata4"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, false
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata5"
 // CHECK-SAME: 2 where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata5"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2 where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata6"
 // CHECK-SAME: 2, false where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata6"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, false where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "some.metadata7"
 // CHECK-SAME: 2, {mut lt} where {<1, #[[LOC1]]>, <0, #[[LOC2]]>}
 "some.metadata7"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg>, <"v", kw, not_vararg>], [13 : index], [17 : i64]>,
+  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, {mut lt} where {<1, #loc1>, <0, #loc2>}
 >} : () -> ()
 

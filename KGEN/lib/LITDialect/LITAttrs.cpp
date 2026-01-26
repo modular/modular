@@ -53,15 +53,8 @@ PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
 
 PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs) {
-  return PogListAttr::get(context, pogs, {}, {});
-}
-
-PogListAttr PogListAttr::get(MLIRContext *context,
-                             ArrayRef<PogMetadataAttr> pogs,
-                             ArrayRef<TypedAttr> defaultPos,
-                             ArrayRef<TypedAttr> defaultKwOnly) {
-  return PogListAttr::get(context, pogs, defaultPos, defaultKwOnly,
-                          ArgConvention::ByRefError, ArgConvention::ReadMem);
+  return PogListAttr::get(context, pogs, ArgConvention::ByRefError,
+                          ArgConvention::ReadMem);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -73,24 +66,22 @@ PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
   return PogListAttr::get(context, pogs);
 }
 
-PogListAttr PogListAttr::get(
-    MLIRContext *context, ArrayRef<StringAttr> names,
-    ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
-    ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<VariadicKind> argVariadics,
-    std::optional<ArgConvention> origPackConvention,
-    std::optional<ArgConvention> origVariadicConvention,
-    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
+PogListAttr
+PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
+                 ArrayRef<PassingKind> passingKinds,
+                 ArrayRef<VariadicKind> argVariadics,
+                 ArrayRef<TypedAttr> defaults,
+                 std::optional<ArgConvention> origPackConvention,
+                 std::optional<ArgConvention> origVariadicConvention,
+                 ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   return PogListAttr::get(
-      context, toPogs(names, passingKinds, argVariadics, constraints),
-      defaultPos, defaultKwOnly,
+      context, toPogs(names, passingKinds, argVariadics, defaults, constraints),
       origPackConvention.value_or(ArgConvention::ByRefError),
       origVariadicConvention.value_or(ArgConvention::ReadMem));
 }
 
 LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<PogMetadataAttr> pogs,
-                                  ArrayRef<TypedAttr> defaultPos,
-                                  ArrayRef<TypedAttr> defaultKwOnly,
                                   ArgConvention origPackConvention,
                                   ArgConvention origVariadicConvention) {
   size_t numEl = pogs.size();
@@ -100,12 +91,10 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
       pogs, [](PogMetadataAttr pogAttr) { return pogAttr.getPassingKind(); });
-  if (failed(verifyPassingKinds(emitError, pogs, defaultPos.size(),
-                                defaultKwOnly.size(), "arguments/parameter")))
+  if (failed(verifyPassingKinds(emitError, pogs, "arguments/parameter")))
     return failure();
 
   // We verified the passing kinds' order and number, so we can use a handler.
-  DefaultValueHandler defaultHandler(pogs, defaultPos, defaultKwOnly);
   bool sawPack = false;
   auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
     bool isPack = kind == VariadicKind::PackVarArg;
@@ -120,7 +109,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          << "index must be less than the number of elements: "
                          << idx << " vs. " << numEl;
     }
-    if (TypedAttr varDefault = defaultHandler.getDefault(idx)) {
+    if (TypedAttr varDefault = pogs[idx].getDefaultValue()) {
       if (::isa<UnknownAttr>(varDefault))
         return success();
       return emitError() << "default value of variadic "
@@ -147,8 +136,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
-  return PogListAttr::get(getContext(), pogs, getDefaultPos(),
-                          getDefaultKwOnly(), getOrigPackConvention(),
+  return PogListAttr::get(getContext(), pogs, getOrigPackConvention(),
                           getOrigVariadicConvention());
 }
 
@@ -214,29 +202,20 @@ size_t PogListAttr::getNumImplicit() const {
   return numImplicit;
 }
 
-SmallVector<PogMetadataAttr>
-PogListAttr::toPogs(ArrayRef<StringAttr> names,
-                    ArrayRef<PassingKind> passingKinds,
-                    ArrayRef<VariadicKind> variadics,
-                    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
-  SmallVector<VariadicKind> variadicTmp;
-  SmallVector<SmallVector<ConstraintAttr>> constraintTmp;
-  // If no variadicness is specified, assume all args are non-variadic.
-  if (variadics.empty()) {
-    variadicTmp.resize(names.size(), VariadicKind::None);
-    variadics = variadicTmp;
-  }
-  // If no constraints are specified, expand to empty constraints.
-  if (constraints.empty()) {
-    constraintTmp.resize(names.size(), {});
-    constraints = constraintTmp;
-  }
-
+SmallVector<PogMetadataAttr> PogListAttr::toPogs(
+    ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
+    ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
+    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   SmallVector<PogMetadataAttr> pogs;
-  for (auto [name, passingKind, variadic, argConstraints] :
-       llvm::zip(names, passingKinds, variadics, constraints))
-    pogs.push_back(
-        PogMetadataAttr::get(name, passingKind, variadic, argConstraints));
+  for (auto [idx, name, passingKind] : llvm::enumerate(names, passingKinds)) {
+    VariadicKind variadic =
+        variadics.empty() ? VariadicKind::None : variadics[idx];
+    ArrayRef<ConstraintAttr> pogConstraints =
+        constraints.empty() ? ArrayRef<ConstraintAttr>() : constraints[idx];
+    TypedAttr defaultVal = defaults.empty() ? TypedAttr() : defaults[idx];
+    pogs.push_back(PogMetadataAttr::get(name, passingKind, variadic, defaultVal,
+                                        pogConstraints));
+  }
   return pogs;
 }
 
@@ -248,8 +227,7 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
            << "number of pog names doesn't match number of pog types";
   }
 
-  if (failed(verifyDefaultTypes(emitError, getDefaultPos(), getDefaultKwOnly(),
-                                *this, inputParamTypes, "pog")))
+  if (failed(verifyDefaultTypes(emitError, *this, inputParamTypes, "pog")))
     return failure();
   return success();
 }
@@ -279,27 +257,17 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
     function_ref<InFlightDiagnostic()> emitError) const {
 
   // Now update POG metadata.
-  SmallVector<TypedAttr> newDefaultPosParams;
-  SmallVector<TypedAttr> newDefaultKwOnlyParams;
   SmallVector<PogMetadataAttr> newPogs;
 
-  DefaultValueHandler defaultHandler(*this);
   size_t numParams = boundParams.size();
   for (auto [idx, pog] : llvm::enumerate(getPogs().take_front(numParams))) {
     if (!boundParams[idx]) {
       auto newPog = cast<PogMetadataAttr>(evaluator.getReboundAttribute(pog));
       newPogs.emplace_back(newPog);
-      if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
-        newDefaultPosParams.emplace_back(
-            evaluator.getReboundAttribute(defaultOr));
-      else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
-        newDefaultKwOnlyParams.emplace_back(
-            evaluator.getReboundAttribute(defaultOr));
     }
   }
 
-  return PogListAttr::get(getContext(), newPogs, newDefaultPosParams,
-                          newDefaultKwOnlyParams, getOrigPackConvention(),
+  return PogListAttr::get(getContext(), newPogs, getOrigPackConvention(),
                           getOrigVariadicConvention());
 }
 
@@ -336,8 +304,7 @@ PogListAttr::prependPosParams(ArrayRef<ParamDeclAttr> newParams,
     }
   }
 
-  return PogListAttr::get(getContext(), mergedPogs, getDefaultPos(),
-                          getDefaultKwOnly(), getOrigPackConvention(),
+  return PogListAttr::get(getContext(), mergedPogs, getOrigPackConvention(),
                           getOrigVariadicConvention());
 }
 
@@ -416,14 +383,8 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   ArrayRef<PogMetadataAttr> newPogs =
       argListAttrs.getPogs().drop_front(numBound);
 
-  ArrayRef<TypedAttr> newDefaultPosArgs = getDefaultPosArgs();
-  size_t numArgs = numPositional - numBound;
-  if (numArgs < newDefaultPosArgs.size())
-    newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
-
   auto newArgListAttrs = PogListAttr::get(
-      getContext(), newPogs, newDefaultPosArgs, getDefaultKwOnlyArgs(),
-      argListAttrs.getOrigPackConvention(),
+      getContext(), newPogs, argListAttrs.getOrigPackConvention(),
       argListAttrs.getOrigVariadicConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
@@ -497,9 +458,9 @@ LogicalResult FnMetadataAttr::verifyFuncType(
     }
   }
 
-  if (failed(verifyDefaultTypes(
-          emitError, getDefaultPosArgs(), getDefaultKwOnlyArgs(),
-          getArgListAttrs(), values.getInputs(), "argument", argConventions)))
+  if (failed(verifyDefaultTypes(emitError, getArgListAttrs(),
+                                values.getInputs(), "argument",
+                                argConventions)))
     return failure();
   return success();
 }

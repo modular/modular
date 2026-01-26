@@ -127,22 +127,6 @@ lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
 
 // -----
 
-// expected-error @below {{'lit.fn' expected positional parameter with default value}}
-lit.fn @default_pos_params<a: dtype, b: dtype = f32, w: scalar<si32>>() attributes {isParametric} {
-  %0 = kgen.param.constant: none = <#kgen.none>
-  lit.end_fn
-}
-
-// -----
-
-// expected-error @below {{'lit.fn' expected keyword-only parameter with default value}}
-lit.fn @default_kw_only_params<a: dtype, b: dtype = f32, *, b: dtype = f16, w: scalar<si32>>() attributes {isParametric} {
-  %0 = kgen.param.constant: none = <#kgen.none>
-  lit.end_fn
-}
-
-// -----
-
 kgen.generator @not_lit_func() {
   // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` or `lit.closure.init` operation}}
   lit.return

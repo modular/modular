@@ -112,13 +112,12 @@ def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
   EnumAttr<"PassingKind">:$passingKind,
   EnumAttr<"VariadicKind">:$variadic,
+  OptionalAttribute<"TypedAttr">:$defaultValue,
   ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 
 def PogListAttr : DialectAttribute<(attr
   ConcreteAttrArray<"PogMetadataAttr">:$pogs,
-  TypedAttrArray:$defaultPos,
-  TypedAttrArray:$defaultKwOnly,
   EnumAttr<"ArgConvention">:$origPackConvention,
   EnumAttr<"ArgConvention">:$origVariadicConvention
 )>;

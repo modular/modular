@@ -317,10 +317,12 @@ static FnType getReducedFnType(FnType sig) {
   SmallVector<StringAttr> names(sig.getNumArguments(), StringAttr::get(ctx));
   SmallVector<SmallVector<ConstraintAttr>> constraints;
   SmallVector<VariadicKind> variadics;
+  SmallVector<TypedAttr> defaults;
   for (size_t i = 0, e = sig.getNumArguments(); i != e; ++i) {
     variadics.push_back(origPogListAttr.getVariadicKind(i));
     constraints.emplace_back(pogs[i].getConstraints());
   }
+  defaults.resize(variadics.size(), {});
 
   // The passing kinds for results slots must be implicit.
   if (sig.hasMemoryOnlyResult())
@@ -329,7 +331,7 @@ static FnType getReducedFnType(FnType sig) {
     passingKinds.end()[-2] = PassingKind::Implicit;
 
   auto newPogListAttr = PogListAttr::get(
-      ctx, names, passingKinds, {}, {}, variadics,
+      ctx, names, passingKinds, variadics, defaults,
       origPogListAttr.getOrigPackConvention(),
       origPogListAttr.getOrigVariadicConvention(), constraints);
 
