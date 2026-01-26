@@ -68,18 +68,27 @@ modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    ignore_extra_deps = [
+        requirement("einops"),  # Req'd by replit
+        requirement("timm"),  # Required by InternVL.
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+    ],
+    imports = ["."],
     deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         "//max/tests/integration/pipelines/python/idefics3:torch_utils",
         "//max/tests/integration/pipelines/python/internvl:torch_utils",
         "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
         "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:torch_utils",
         requirement("einops"),  # Req'd by replit
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
+        requirement("huggingface-hub"),
         requirement("transformers"),
         requirement("peft"),  # Required for LoRA support
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
@@ -94,14 +103,17 @@ modular_py_library(
         "@nvshmem_prebuilt//:host",
     ],
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/pipelines/python/test_common:evaluate",
         "//max/tests/integration/pipelines/python/test_common:vllm_utils",
+        requirement("huggingface-hub"),
         requirement("requests"),
         requirement("torch"),
+        requirement("typing-extensions"),
     ],
 )
 
@@ -193,7 +205,6 @@ modular_py_binary(
     srcs = ["compare_tensors.py"],
     imports = ["."],
     main = "compare_tensors.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/driver",
         requirement("click"),
