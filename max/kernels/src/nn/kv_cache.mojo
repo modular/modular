@@ -989,9 +989,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     @parameter
     if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
-        shape[2] = Int(rms_norm_cols)
+        shape[2] = rms_norm_cols
     else:
-        shape[1] = Int(rms_norm_cols)
+        shape[1] = rms_norm_cols
 
     @always_inline
     @parameter
@@ -1154,9 +1154,9 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     if per_head_norm:
         shape[1] = Int(kv_params.num_heads)
-        shape[2] = Int(rms_norm_cols)
+        shape[2] = rms_norm_cols
     else:
-        shape[1] = Int(rms_norm_cols)
+        shape[1] = rms_norm_cols
 
     @always_inline
     @parameter
@@ -1286,10 +1286,10 @@ def _print_cache[
                 ):
                     print(
                         cache.load[width=1](
-                            Int(b_idx),
+                            b_idx,
                             Int(h),
-                            Int(t_idx),
-                            Int(hd),
+                            t_idx,
+                            hd,
                         ),
                         end=", ",
                     )

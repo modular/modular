@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
+from max.interfaces import GenerationStatus
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -28,9 +29,13 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
+from max.serve.pipelines.llm import TokenGeneratorOutput
+from max.serve.router.openai_routes import _process_chat_log_probabilities
 from max.serve.schemas.openai import (
+    ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
+    Logprobs2,
 )
 
 logger = logging.getLogger(__name__)
@@ -191,3 +196,245 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     )
     assert parsed_request_default.target_endpoint is None
     assert parsed_request_default.model == "gpt-3.5-turbo"
+
+
+# ============================================================================
+# Tests for log probabilities functionality
+# ============================================================================
+
+
+def test_process_chat_log_probabilities_empty_outputs() -> None:
+    """Test that _process_chat_log_probabilities handles empty outputs."""
+    outputs: list[TokenGeneratorOutput] = []
+    result = _process_chat_log_probabilities(outputs)
+
+    assert isinstance(result, Logprobs2)
+    assert result.content == []
+    assert result.refusal == []
+
+
+def test_process_chat_log_probabilities_no_logprobs() -> None:
+    """Test that _process_chat_log_probabilities handles outputs without log probs."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="hello",
+            token_count=1,
+            token_log_probabilities=None,
+            top_log_probabilities=None,
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    assert isinstance(result, Logprobs2)
+    assert result.content == []
+    assert result.refusal == []
+
+
+def test_process_chat_log_probabilities_with_logprobs() -> None:
+    """Test that _process_chat_log_probabilities correctly converts log probs."""
+    # Simulate a token with log probabilities
+    token_log_probs = [-0.5, -1.2]  # Log probs for 2 tokens
+    top_log_probs = [
+        {"hello": -0.5, "world": -1.0, "foo": -2.0},  # Top 3 for token 1
+        {"bar": -1.2, "baz": -1.5, "qux": -2.5},  # Top 3 for token 2
+    ]
+
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens="hello bar",
+            token_count=2,
+            token_log_probabilities=token_log_probs,
+            top_log_probabilities=top_log_probs,
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    assert isinstance(result, Logprobs2)
+    assert len(result.content) == 2
+    assert result.refusal == []
+
+    # Check first token
+    first_token = result.content[0]
+    assert isinstance(first_token, ChatCompletionTokenLogprob)
+    assert first_token.logprob == -0.5
+    assert first_token.token == "hello"  # Should match the sampled token
+    assert len(first_token.top_logprobs) == 3
+
+    # Check second token
+    second_token = result.content[1]
+    assert isinstance(second_token, ChatCompletionTokenLogprob)
+    assert second_token.logprob == -1.2
+    assert second_token.token == "bar"  # Should match the sampled token
+    assert len(second_token.top_logprobs) == 3
+
+
+def test_process_chat_log_probabilities_multiple_outputs() -> None:
+    """Test that _process_chat_log_probabilities handles multiple output chunks."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="a",
+            token_count=1,
+            token_log_probabilities=[-0.1],
+            top_log_probabilities=[{"a": -0.1, "b": -0.5}],
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens="b",
+            token_count=1,
+            token_log_probabilities=[-0.2],
+            top_log_probabilities=[{"b": -0.2, "c": -0.8}],
+        ),
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    assert isinstance(result, Logprobs2)
+    assert len(result.content) == 2
+
+    # First chunk's token
+    assert result.content[0].logprob == -0.1
+    assert result.content[0].token == "a"
+
+    # Second chunk's token
+    assert result.content[1].logprob == -0.2
+    assert result.content[1].token == "b"
+
+
+def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
+    """Test that top_logprobs are sorted by logprob descending."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="x",
+            token_count=1,
+            token_log_probabilities=[-1.0],
+            top_log_probabilities=[{"x": -1.0, "y": -0.5, "z": -2.0}],
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    assert len(result.content) == 1
+    top_logprobs = result.content[0].top_logprobs
+
+    # Should be sorted by logprob descending: y (-0.5), x (-1.0), z (-2.0)
+    assert len(top_logprobs) == 3
+    assert top_logprobs[0].token == "y"
+    assert top_logprobs[0].logprob == -0.5
+    assert top_logprobs[1].token == "x"
+    assert top_logprobs[1].logprob == -1.0
+    assert top_logprobs[2].token == "z"
+    assert top_logprobs[2].logprob == -2.0
+
+
+def test_process_chat_log_probabilities_bytes_encoding() -> None:
+    """Test that token bytes are correctly encoded as UTF-8."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="é",
+            token_count=1,
+            token_log_probabilities=[-0.3],
+            top_log_probabilities=[{"é": -0.3}],
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    assert len(result.content) == 1
+    token_info = result.content[0]
+    assert token_info.token == "é"
+    # "é" in UTF-8 is [195, 169]
+    assert token_info.bytes == [195, 169]
+
+
+def test_create_chat_completion_request_with_logprobs() -> None:
+    """Test that CreateChatCompletionRequest correctly parses logprobs fields."""
+    # Test with logprobs enabled
+    request_with_logprobs = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "logprobs": True,
+        "top_logprobs": 5,
+    }
+
+    parsed = CreateChatCompletionRequest.model_validate(request_with_logprobs)
+    assert parsed.logprobs is True
+    assert parsed.top_logprobs == 5
+
+    # Test with logprobs disabled (default)
+    request_without_logprobs = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+
+    parsed_default = CreateChatCompletionRequest.model_validate(
+        request_without_logprobs
+    )
+    assert parsed_default.logprobs is False
+    assert parsed_default.top_logprobs is None
+
+    # Test with logprobs=True but no top_logprobs specified
+    request_logprobs_no_top = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "logprobs": True,
+    }
+
+    parsed_no_top = CreateChatCompletionRequest.model_validate(
+        request_logprobs_no_top
+    )
+    assert parsed_no_top.logprobs is True
+    assert parsed_no_top.top_logprobs is None
+
+
+def test_max_server_response_with_logprobs() -> None:
+    """Test deserialization of a response with populated logprobs."""
+    response_with_logprobs = """{
+        "id": "test-id",
+        "choices": [{
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "Hello",
+                "refusal": "",
+                "tool_calls": null,
+                "role": "assistant",
+                "function_call": null
+            },
+            "logprobs": {
+                "content": [{
+                    "token": "Hello",
+                    "logprob": -0.5,
+                    "bytes": [72, 101, 108, 108, 111],
+                    "top_logprobs": [{
+                        "token": "Hello",
+                        "logprob": -0.5,
+                        "bytes": [72, 101, 108, 108, 111]
+                    }, {
+                        "token": "Hi",
+                        "logprob": -1.2,
+                        "bytes": [72, 105]
+                    }]
+                }],
+                "refusal": []
+            }
+        }],
+        "created": 1730310250,
+        "model": "test-model",
+        "service_tier": null,
+        "system_fingerprint": null,
+        "object": "chat.completion",
+        "usage": null
+    }"""
+
+    response = CreateChatCompletionResponse.model_validate_json(
+        response_with_logprobs
+    )
+    assert len(response.choices) == 1
+    choice = response.choices[0]
+    assert choice.logprobs is not None
+    assert len(choice.logprobs.content) == 1
+    assert choice.logprobs.content[0].token == "Hello"
+    assert choice.logprobs.content[0].logprob == -0.5
+    assert len(choice.logprobs.content[0].top_logprobs) == 2

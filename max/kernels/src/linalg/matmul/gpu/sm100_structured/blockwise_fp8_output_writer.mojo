@@ -185,7 +185,7 @@ struct BlockwiseFP8TileWriter[
                 fence_async_view_proxy()
                 c_tma_op.async_store(
                     c_smem_split,
-                    (UInt(coord_n), UInt(coord_m)),
+                    (coord_n, coord_m),
                 )
                 c_tma_op.commit_group()
 

@@ -142,7 +142,7 @@ fn blockwise_fp8_matmul[
 
     comptime c_smem_bytes_early = config.output_tile_shape[
         0
-    ] * config.output_tile_shape[1] * Int(config.num_output_stages) * size_of[
+    ] * config.output_tile_shape[1] * config.num_output_stages * size_of[
         c_type
     ]()
 
@@ -276,8 +276,8 @@ fn blockwise_fp8_matmul[
     ]
 
     var grid_dim = (
-        align_up(ceildiv(M, BM), Int(config.cluster_shape[0])),
-        align_up(ceildiv(N, MMA_N), Int(config.cluster_shape[1])),
+        align_up(ceildiv(M, BM), config.cluster_shape[0]),
+        align_up(ceildiv(N, MMA_N), config.cluster_shape[1]),
         1,
     )
 

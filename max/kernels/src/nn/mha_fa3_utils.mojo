@@ -334,7 +334,7 @@ struct MHAPosition[
                         Int(self.num_keys - 1),
                         Int(kv_tile_start_row),
                     ),
-                    Index[dtype = DType.int32](Int(1), Int(Self.BN)),
+                    Index[dtype = DType.int32](Int(1), Self.BN),
                 )
             else:
                 return TileMaskStatus.PARTIAL_MASK
@@ -344,7 +344,7 @@ struct MHAPosition[
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype = DType.int32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -655,14 +655,12 @@ fn _get_position[
     if _is_decoding[MaxSeqLenType]():
         # q matrix view is rows x depth
         q_col = 0
-        q_offset = Int(depth) * Int(
-            q_row * q_num_heads + seq_info.head_idx * group
-        )
+        q_offset = depth * Int(q_row * q_num_heads + seq_info.head_idx * group)
     else:  # head_idx is for q_heads
         # q matrix view is rows x (depth*q_num_heads)
         q_row += seq_info.prompt_offset
         q_col = seq_info.head_idx * depth
-        q_offset = Int(depth * q_num_heads) * Int(q_row) + Int(q_col)
+        q_offset = depth * q_num_heads * Int(q_row) + Int(q_col)
     ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
 
 
@@ -1117,7 +1115,7 @@ fn produce[
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = (2 * q_size if persistent else q_size)
 
-    comptime q_copy_rows = max(group, 8) if decoding else Int(BM)
+    comptime q_copy_rows = max(group, 8) if decoding else BM
     comptime qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
 
     tile_state = tile_state_arg

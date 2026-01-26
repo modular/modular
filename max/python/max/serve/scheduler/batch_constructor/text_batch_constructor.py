@@ -392,7 +392,9 @@ class TextBatchConstructor:
             token_budgets=token_budgets,
         )
 
-    def get_next_replica_idx(self, use_paged_cache_counts: bool = False) -> int:
+    def get_next_replica_idx(
+        self, external_requests_per_replica: list[int] | None = None
+    ) -> int:
         """Returns the next replica index to assign the request to.
 
         Uses load-based assignment by selecting the replica with the fewest
@@ -401,35 +403,21 @@ class TextBatchConstructor:
         different rates.
 
         Args:
-            use_paged_cache_counts: If True, count requests claimed in paged cache
-                (used by decode scheduler before enqueue). If False, count requests
-                in CE/TG queues (used during enqueue_new_request). These sources
-                overlap once requests are enqueued, so only one should be used.
+            external_requests_per_replica: The number of requests per replica
+                that are not managed by the batch constructor.
 
         Returns:
             The replica index that should receive the next request.
         """
-        if use_paged_cache_counts and self.paged_cache is None:
-            raise ValueError(
-                "use_paged_cache_counts=True requires a paged_cache, but paged_cache is None"
-            )
+        if external_requests_per_replica is None:
+            external_requests_per_replica = [0] * self.num_replicas
 
-        if use_paged_cache_counts:
-            # This is already verified to be true above. Assign to local variable for mypy.
-            paged_cache = self.paged_cache
-            assert paged_cache is not None
-            replica_idx = min(
-                range(self.num_replicas),
-                key=lambda idx: paged_cache.get_replica_request_count(idx),
-            )
-        else:
-            replica_idx = min(
-                range(self.num_replicas),
-                key=lambda idx: (
-                    len(self.replicas[idx].ce_reqs)
-                    + len(self.replicas[idx].tg_reqs)
-                ),
-            )
+        replica_idx = min(
+            range(self.num_replicas),
+            key=lambda idx: len(self.replicas[idx].ce_reqs)
+            + len(self.replicas[idx].tg_reqs)
+            + external_requests_per_replica[idx],
+        )
         return replica_idx
 
     def enqueue_new_request(
@@ -461,7 +449,7 @@ class TextBatchConstructor:
             replica.tg_reqs[ctx.request_id] = ctx
 
     def advance_requests_and_collect_invalid_ids(
-        self, executed_batches: list[dict[RequestID, TextContext]]
+        self, executed_batches: list[list[TextContext]]
     ) -> list[RequestID]:
         """Advances request state based on executed CE batches and returns invalid IDs.
 
@@ -472,9 +460,8 @@ class TextBatchConstructor:
         remove any partial responses for that request.
 
         Args:
-            executed_batches: A list of per-replica batches, where each batch maps
-                request IDs to their corresponding `TextContext` objects that have
-                just been executed by CE.
+            executed_batches: A list of per-replica context batches that have just
+                been executed by CE.
 
         Returns:
             A list of request IDs that should be treated as invalid by upstream
@@ -490,10 +477,11 @@ class TextBatchConstructor:
                 continue
 
             # Move the requests from CE to TG
-            replica.tg_reqs.update(per_replica_batch)
+            for context in per_replica_batch:
+                replica.tg_reqs[context.request_id] = context
 
             # Move Chunked requests back to the CE request queue
-            last_request = next(reversed(per_replica_batch.values()))
+            last_request = per_replica_batch[-1]
             if last_request.tokens.generated_length == 0:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
@@ -550,7 +538,14 @@ class TextBatchConstructor:
             if not lora_still_needed:
                 replica.active_loras.discard(lora_name)
 
+        # Release from paged cache (scheduler manages primary KV cache lifecycle)
+        if self.paged_cache is not None:
+            self.paged_cache.release(request_id)
+
+        # Pipeline release handles special cases (spec decoding draft model KV cache)
+        # For regular pipelines, release() is a no-op
         self.pipeline.release(request_id)
+
         # _request_id_to_replica_idx is the source of truth for whether a request
         # is managed by the scheduler (checked by contains()).
         # Remove from here, marking the request as fully released.
@@ -588,8 +583,16 @@ class TextBatchConstructor:
     ) -> None:
         """Resets a request and returns it to the request queue"""
 
-        # Release from Pipeline and reset the context, as new prompt
+        # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
+        if self.paged_cache is not None and self.paged_cache.contains(
+            context.request_id
+        ):
+            self.paged_cache.release(context.request_id)
+
+        # Pipeline release handles special cases (spec decoding draft model KV cache)
+        # For regular pipelines, release() is a no-op
         self.pipeline.release(context.request_id)
+
         context.reset()
 
         # Move to CE Queue
@@ -885,7 +888,9 @@ class TextBatchConstructor:
         ]
 
         return TextGenerationInputs[TextContext](
-            batches=[batch.batch for batch in batches_per_replica],
+            batches=[
+                list(batch.batch.values()) for batch in batches_per_replica
+            ],
             # Take the min num_steps across all replicas that have a non-empty batch.
             # This ensures that when there is a single request and DP>1, we run with
             # the full num_steps and not num_steps=1.

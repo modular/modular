@@ -27,7 +27,6 @@ Modules
 =======
 
 * :code_link:`/max/api/python/kv_cache/registry|registry`: KV cache manager factory functions and utilities.
-* :code_link:`/max/api/python/kv_cache/null_cache_manager|null_cache_manager`: Null KV cache manager implementation.
 
 Packages
 ========
@@ -38,7 +37,6 @@ Classes
 =======
 
 * :code_link:`/max/api/python/kv_cache/paged_cache/cache_manager|PagedKVCacheManager`: Manager for paged KV cache with data and tensor parallelism support.
-* :code_link:`/max/api/python/kv_cache/null_cache_manager|NullKVCacheManager`: Null KV cache manager for compile-only mode.
 * :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|KVTransferEngine`: Manages KV cache transfers between devices in distributed settings.
 * :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|KVTransferEngineMetadata`: Metadata for KV cache transfer engine configuration.
 * :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|TransferReqData`: Data structure for KV cache transfer requests.
@@ -48,4 +46,3 @@ Classes
 
    paged_cache/index
    registry
-   null_cache_manager

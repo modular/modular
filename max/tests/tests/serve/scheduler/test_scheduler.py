@@ -43,7 +43,8 @@ def create_mock_pipeline() -> Mock:
     ) -> dict[RequestID, TextGenerationOutput]:
         responses: dict[RequestID, TextGenerationOutput] = {}
 
-        for request_id, request in inputs.batch.items():
+        for request in inputs.flat_batch:
+            request_id = request.request_id
             request.update(0)
 
             # Return a valid response.
@@ -133,11 +134,11 @@ def test_try_create_ce_batch() -> None:
     request_push_socket.put_nowait(mock_request)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
-    assert mock_request.request_id in batch
+    assert batch[0].request_id == mock_request.request_id
     # Cache management is now handled by the paged_manager/pipeline
-    assert batch[mock_request.request_id] is not None
+    assert batch[0] is not None
 
 
 def test_try_create_chunked_ce_batch() -> None:
@@ -150,13 +151,13 @@ def test_try_create_chunked_ce_batch() -> None:
     request_push_socket.put_nowait(mock_data)
     scheduler._retrieve_pending_requests()
 
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
-    assert mock_data.request_id in batch
+    assert batch[0].request_id == mock_data.request_id
     # Cache management is now handled by the paged_manager/pipeline
-    assert batch[mock_data.request_id] is not None
-    assert batch[mock_data.request_id].tokens.current_position == 20
-    assert batch[mock_data.request_id].tokens.active_length == 20
+    assert batch[0] is not None
+    assert batch[0].tokens.current_position == 20
+    assert batch[0].tokens.active_length == 20
 
 
 def test_scheduler_handle_terminated_responses() -> None:
@@ -169,7 +170,7 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_constructor.enqueue_new_request(mock_2)
     mock_1.update(ARBITRARY_TOKEN_ID)
     mock_2.update(ARBITRARY_TOKEN_ID)
-    batch_executed = [{mock_1.request_id: mock_1, mock_2.request_id: mock_2}]
+    batch_executed = [[mock_1, mock_2]]
 
     resp_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     resp_2: TextGenerationOutput = Mock(is_done=True, tokens=[])
@@ -204,10 +205,7 @@ def test_scheduler_handle_chunked_requests() -> None:
     # this is a partially encoded request
     req_2 = create_mock_request(seq_len=30, start_idx=20)
 
-    batch_executed = {
-        req_1.request_id: req_1,
-        req_2.request_id: req_2,
-    }
+    batch_executed = [req_1, req_2]
     mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
@@ -243,11 +241,8 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[RequestID, TextContext] = {
-        mock_request.request_id: mock_request
-    }
-    inputs = TextGenerationInputs(
-        batches=[batch_to_execute],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[mock_request]],
         num_steps=1,
     )
 
@@ -272,10 +267,10 @@ def test_schedule_ce_with_chunked_prefill() -> None:
     scheduler._retrieve_pending_requests()
     assert len(batch_constructor.all_ce_reqs) == 1
 
-    batch_to_execute = batch_constructor.construct_batch().batch
+    batch_to_execute = batch_constructor.construct_batch().batches[0]
     assert len(batch_to_execute) > 0
 
-    inputs = TextGenerationInputs(
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[batch_to_execute],
         num_steps=1,
     )
@@ -300,7 +295,7 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
 def test_should_schedule_ce_empty_queue() -> None:
     scheduler, _, _, _ = create_scheduler()
-    assert not scheduler.batch_constructor.construct_batch().batch
+    assert not scheduler.batch_constructor.construct_batch().flat_batch
 
 
 def test_should_schedule_ce_full_batch() -> None:
@@ -310,20 +305,19 @@ def test_should_schedule_ce_full_batch() -> None:
         scheduler.batch_constructor.enqueue_new_request(mock_request)
     mock_request_ce = create_mock_request()
     request_push_socket.put_nowait(mock_request_ce)
-    batch = scheduler.batch_constructor.construct_batch().batch
+    batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert batch
-    assert mock_request_ce.request_id not in batch
+    assert all(
+        context.request_id != mock_request_ce.request_id for context in batch
+    )
 
 
 def test_schedule_tg() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
-    batch_to_execute: dict[RequestID, TextContext] = {
-        mock_request.request_id: mock_request
-    }
-    inputs = TextGenerationInputs(
-        batches=[batch_to_execute],
+    inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[mock_request]],
         num_steps=scheduler.scheduler_config.max_forward_steps_tg,
     )
 
@@ -368,12 +362,12 @@ def test_scheduler_dp(dp: int) -> None:
 
     # Generate new tokens for the requests.
     for batch in inputs.batches:
-        for req in batch.values():
+        for req in batch:
             req.update(ARBITRARY_TOKEN_ID)
     response: TextGenerationOutput = Mock(
         is_done=False, tokens=[ARBITRARY_TOKEN_ID]
     )
-    responses = {req.request_id: response for req in inputs.batch.values()}
+    responses = {req.request_id: response for req in inputs.flat_batch}
 
     chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
         inputs.batches
@@ -433,7 +427,7 @@ def test_scheduler_empty_batch() -> None:
     scheduler, _, _, _ = create_scheduler(dp=100)
     inputs = scheduler.batch_constructor.construct_batch()
     assert len(inputs.batches) == 100
-    assert len(inputs.batch) == 0
+    assert len(inputs.flat_batch) == 0
     assert inputs.num_steps == 0
 
 

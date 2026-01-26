@@ -496,5 +496,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             The corresponding __mlir_type.index value, interpreting as signed.
         """
         return __mlir_attr[
-            `#pop<int_literal_convert<`, self.value, `, 0>> : index`
+            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            self.value,
+            `> : !pop.scalar<index>> : index`,
         ]

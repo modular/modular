@@ -114,6 +114,12 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
+    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager.claim(req_id1)
+    target_kv_manager.claim(req_id2)
+    target_kv_manager.alloc(context1, num_steps=num_steps)
+    target_kv_manager.alloc(context2, num_steps=num_steps)
+
     return SpeculativeDecodingSetup(
         model_name=model_name,
         tokenizer=tokenizer,
@@ -410,17 +416,18 @@ def test_kv_cache_claiming_protocol() -> None:
     mock_kv_manager.get_runtime_inputs.return_value = []
 
     # Track call order
-    call_order = []
+    call_order: list[
+        tuple[str, RequestID] | tuple[str, list[RequestID], int]
+    ] = []
 
     def track_claim(request_id: RequestID) -> None:
         call_order.append(("claim", request_id))
 
     def track_get_runtime_inputs(
-        batch: dict[RequestID, TextContext], num_steps: int
+        batches: list[list[TextContext]], num_steps: int
     ) -> Sequence[RaggedKVCacheInputs]:
-        call_order.append(
-            ("get_runtime_inputs", [ctx.request_id for ctx in batch], num_steps)  # type: ignore
-        )
+        request_ids = [ctx.request_id for batch in batches for ctx in batch]
+        call_order.append(("get_runtime_inputs", request_ids, num_steps))
         return []
 
     mock_kv_manager.claim.side_effect = track_claim

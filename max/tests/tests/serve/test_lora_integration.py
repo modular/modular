@@ -19,6 +19,7 @@ import json
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
@@ -29,7 +30,6 @@ from max.interfaces import (
     LoRARequest,
     LoRAResponse,
     LoRAStatus,
-    RequestID,
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib.lora import LoRAManager
@@ -292,13 +292,9 @@ def test_lru_cache_manual_activation(
         ctx.model_name = name
         mock_contexts.append(ctx)
 
-    batch = {
-        RequestID(): mock_contexts[0],
-        RequestID(): mock_contexts[1],
-        RequestID(): mock_contexts[2],
-    }
-
-    _sorted_batch = lora_manager.sort_lora_batch(batch)
+    _sorted_batch: list[TextContext] = lora_manager.sort_lora_batch(
+        cast(list[TextContext], mock_contexts)
+    )
 
     assert len(lora_manager._active_loras) == 2
     assert lora_manager._active_loras.get_slot("adapter_0") is not None

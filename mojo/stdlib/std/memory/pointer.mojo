@@ -158,6 +158,40 @@ compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#
+# Pointer aliases
+# ===-----------------------------------------------------------------------===#
+
+
+comptime MutPointer[
+    type: AnyType,
+    origin: MutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[type, origin, address_space=address_space]
+"""A mutable pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+comptime ImmutPointer[
+    type: AnyType,
+    origin: ImmutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[type, origin, address_space=address_space]
+"""An immutable pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+
+# ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#
 
