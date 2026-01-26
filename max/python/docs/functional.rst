@@ -4,7 +4,6 @@
 :type: module
 :lang: python
 
-
 .. py:currentmodule:: max
 
 .. automodule:: max.functional

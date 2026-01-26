@@ -62,9 +62,6 @@ def uniform(  # noqa: ANN201
 ):
     """Creates a tensor filled with random values from a uniform distribution.
 
-    .. caution::
-        This is an experimental API that may change in future versions.
-
     Generates a tensor with values uniformly distributed between the specified
     minimum and maximum bounds. This is useful for initializing weights,
     generating random inputs, or creating noise.
@@ -114,9 +111,6 @@ def gaussian(  # noqa: ANN201
     device: Device | None = None,
 ):
     """Creates a tensor filled with random values from a Gaussian (normal) distribution.
-
-    .. caution::
-        This is an experimental API that may change in future versions.
 
     Generates a tensor with values sampled from a normal (Gaussian) distribution
     with the specified mean and standard deviation. This is commonly used for
