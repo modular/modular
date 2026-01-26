@@ -22,3 +22,4 @@ def install_pip_package(package: str) -> None:
 
 if __name__ == "__main__":
     install_pip_package("sgl-kernel")
+    install_pip_package("sglang[all]")

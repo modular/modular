@@ -331,7 +331,7 @@ def main() -> None:
         help="Output path",
     )
 
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     dtype_map = {
         "float16": torch.float16,
@@ -365,7 +365,7 @@ def main() -> None:
     if dist.is_initialized():
         dist.destroy_process_group()
 
-    name = "allreduce"
+    name = "bench_allreduce_subgraph"
     met_sec, bytes = result if result else [0, 0]
     bytes = args.num_bytes
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
