@@ -2103,17 +2103,21 @@ struct String(
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not
-        lie on a codepoint boundary.
+        lie on a codepoint boundary or if fill_byte is non-ascii (>=128).
 
         Args:
             length: The new length of the string.
-            fill_byte: The byte to fill any new space with.
+            fill_byte: The byte to fill any new space with. Must be a valid single-byte
+                       utf-8 character.
 
         Notes:
             If the new length is greater than the current length, the string is
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
+        debug_assert[assert_mode="safe"](
+            fill_byte < 128, "Fill byte is the start of a multi-byte character."
+        )
         self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:

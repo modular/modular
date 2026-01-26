@@ -38,6 +38,9 @@ what we publish.
 - `String.resize` will now panic if the new length would truncate a codepoint.
   Previously it would result in a string with invalid UTF-8.
 
+- `String.resize` will now panic if `fill_byte` is >=128. Previously it would
+  create invalid UTF-8.
+
 ### Tooling changes
 
 ### ❌ Removed
