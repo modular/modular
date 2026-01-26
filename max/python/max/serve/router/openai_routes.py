@@ -1487,7 +1487,7 @@ async def create_streaming_audio_speech(
             sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
         )
         audio_request = AudioGenerationRequest(
-            request_id=request_id,
+            request_id=RequestID(request_id),
             input=audio_generation_request.input,
             model=audio_generation_request.model,
             sampling_params=sampling_params,
