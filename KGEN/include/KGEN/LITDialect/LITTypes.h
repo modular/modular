@@ -76,12 +76,6 @@ public:
   /// Get whether nested lifetimes are excluded from exclusivity checking.
   bool getIsNestedOriginExclusivityCheckingDisabled();
 
-  /// Get the function's default positional arguments.
-  ArrayRef<TypedAttr> getDefaultPosArgs();
-
-  /// Get the function's default keyword-only arguments.
-  ArrayRef<TypedAttr> getDefaultKwOnlyArgs();
-
   /// Get the number of implicit origin decls this function type carries.
   size_t getNumImplicitOriginDecls();
 
@@ -224,12 +218,6 @@ public:
 
   /// Get whether nested lifetimes are excluded from exclusivity checking.
   bool getIsNestedOriginExclusivityCheckingDisabled();
-
-  /// Get the function's default positional arguments.
-  ArrayRef<TypedAttr> getDefaultPosArgs();
-
-  /// Get the function's default keyword-only arguments.
-  ArrayRef<TypedAttr> getDefaultKwOnlyArgs();
 
   /// Get the number of implicit origin decls this function type carries.
   size_t getNumImplicitOriginDecls();

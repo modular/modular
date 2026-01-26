@@ -696,8 +696,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
     size_t paramIdx = savedFailureReason->getIfDependentOnUnresolved().value();
-    DefaultValueHandler defaultHandler(declaredParamPogs);
-    if (auto value = defaultHandler.getDefault(paramIdx)) {
+    if (auto value = declaredParamPogs.getDefault(paramIdx)) {
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
       value = evaluator.getReboundAttribute(value);
@@ -919,7 +918,6 @@ LogicalResult ParamInf::inferFromParamList() {
   };
 
   size_t posIdx = 0, numParams = givenBindings.size();
-  DefaultValueHandler defaultHandler(declaredParamPogs);
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     if (idx < getNumPreCheckedParam()) {
       ++posIdx; // Prechecked, already installed (or not, if _).
@@ -1087,7 +1085,6 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
   size_t posOperandIdx = 0;
   size_t numOperands = operands.size();
   PogListAttr argPogs = signature.getArgListAttrs();
-  DefaultValueHandler defaultHandler(argPogs);
   for (auto [expectedArgIdx, expectedConvention] :
        llvm::enumerate(signature.getArgConventions())) {
 
@@ -1287,7 +1284,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
     // can't infer from default values since its type already matches the
     // argument type. If its type is dependent, we already know the value is
     // well-formed regardless of the parameter's value.
-    if (defaultHandler.getDefault(expectedArgIdx))
+    if (argPogs.getDefault(expectedArgIdx))
       continue;
 
     // Otherwise we have an argument count mismatch, just fail.
@@ -1416,14 +1413,12 @@ LogicalResult ParamInf::inferFromDefaults() {
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
-
-  DefaultValueHandler defaultHandler(declaredParamPogs);
   for (size_t idx = 0, e = declaredParamTypes.size(); idx != e; ++idx) {
     if (evaluator.getIndexBindings()[idx])
       continue;
 
     // If available, we use a default parameter value.
-    if (TypedAttr defaultParam = defaultHandler.getDefault(idx);
+    if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx);
         defaultParam && !sugarIsa<UnknownAttr>(defaultParam)) {
 
       // Skip anything that is prechecked
@@ -1449,26 +1444,14 @@ LogicalResult ParamInf::inferFromDefaults() {
     // FIXME: this need a more systematical fix.
     // Determine if we can use a default parameter for CTAD
     if (paramBindings.ctadPogs.size() > idx) {
-      PassingKind passingKind = paramBindings.ctadPogs[idx].getPassingKind();
-      ArrayRef<TypedAttr> defaults;
-      unsigned numCtadParams;
-      unsigned normalizedIdx;
-      if (passingKind == PassingKind::KwOnly) {
-        defaults = paramBindings.defaultKwTypeParams;
-        numCtadParams = paramBindings.numKwOnlyCtadParams;
-        normalizedIdx = idx - paramBindings.numPosCtadParams;
-      } else {
-        defaults = paramBindings.defaultPosTypeParams;
-        numCtadParams = paramBindings.numPosCtadParams;
-        normalizedIdx = idx;
-      }
-
-      size_t defaultStartIdx = numCtadParams - defaults.size();
-      if (normalizedIdx < numCtadParams && normalizedIdx >= defaultStartIdx) {
-        TypedAttr defaultCTAD = defaults[normalizedIdx - defaultStartIdx];
-        if (failed(setInferredValue(idx, defaultCTAD)))
-          return failure();
-        continue;
+      if (TypedAttr defaultCTAD =
+              paramBindings.ctadPogs[idx].getDefaultValue()) {
+        defaultCTAD = evaluator.getReboundAttribute(defaultCTAD);
+        if (!paramFinder.hasReferences(defaultCTAD)) {
+          if (failed(setInferredValue(idx, defaultCTAD)))
+            return failure();
+          continue;
+        }
       }
     }
 

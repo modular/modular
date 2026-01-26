@@ -107,7 +107,6 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
 
-  DefaultValueHandler defaultHandler(pogListAttr);
   for (auto [argIdx, pogAttr] : llvm::enumerate(pogListAttr.getPogs())) {
     StringAttr name = pogAttr.getName();
     if (name.empty())
@@ -124,8 +123,8 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
       continue;
     if (pogListAttr.isAnyVarArg(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
-    if (passingKind == PassingKind::KwOnly &&
-        !defaultHandler.getKwOnlyDefault(argIdx) && !findKwArg(name)) {
+    if (passingKind == PassingKind::KwOnly && !pogListAttr.getDefault(argIdx) &&
+        !findKwArg(name)) {
       if (!allowMissingKwOnly)
         missingKwOnly.push_back(name);
       continue;
@@ -190,8 +189,6 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
 
   size_t nextPosOperand = 0;
 
-  DefaultValueHandler defaultHandler(pogListAttr);
-
   // This loop is walking 'idx' in order of posListAttr, checking just the
   // positional arguments, not walking the operands list.
   for (size_t idx = numPosMinimum; idx != numPosMaximum; ++idx) {
@@ -218,7 +215,7 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
 
     // If we have a positional default, we're okay. We also don't need to check
     // for missing if the caller doesn't care about them.
-    if (allowCountMismatch || defaultHandler.getPosDefault(idx))
+    if (allowCountMismatch || pogListAttr.getDefault(idx))
       continue;
 
     // If the arg/param was passed by keyword, we are okay.

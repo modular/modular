@@ -149,12 +149,6 @@ private:
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
 
-  /// A list of all default parameter values declared for a type, if these are
-  /// bindings for an overload set on a method.
-  /// FIXME: When parameterization is rebuilt remove these two fields.
-  ArrayRef<TypedAttr> defaultPosTypeParams;
-  ArrayRef<TypedAttr> defaultKwTypeParams;
-
   /// FIXME: When parameterization is rebuilt remove this field.
   /// Store the passing kind of the original parameter so we can search the
   /// corresponding defaults array.

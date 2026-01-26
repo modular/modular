@@ -190,10 +190,8 @@ public:
   SmallVector<VariadicKind> variadicKinds;
   SmallVector<SMLoc> locations;
 
-  /// Default values for positional and positionalOrKeyword params.
-  SmallVector<TypedAttr> defaultPosParams;
-  /// Default values for keyword-only params.
-  SmallVector<TypedAttr> defaultKwOnlyParams;
+  /// Default values for params.
+  SmallVector<TypedAttr> defaults;
 
   /// Constraints specified with 'where' clauses at each parameter position.
   SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;
@@ -269,10 +267,8 @@ public:
 
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
-  /// Default values for positional and positionalOrKeyword args.
-  SmallVector<TypedAttr> defaultPosArgs;
-  /// Default values for keyword-only arguments.
-  SmallVector<TypedAttr> defaultKwOnlyArgs;
+  /// Default values for args.
+  SmallVector<TypedAttr> defaults;
   ASTType resultType;
 
   /// This is the type checked argument types with argument conventions and

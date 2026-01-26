@@ -88,8 +88,6 @@ ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
   parameters = std::move(other.parameters);
-  defaultPosTypeParams = other.defaultPosTypeParams;
-  defaultKwTypeParams = other.defaultKwTypeParams;
   ctadPogs = other.ctadPogs;
   numKwOnlyCtadParams = other.numKwOnlyCtadParams;
   numPosCtadParams = other.numPosCtadParams;
@@ -114,10 +112,6 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   if (decl) {
     if (auto structDecl =
             dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
-      paramBindings.defaultPosTypeParams =
-          structDecl.getSignature().getDefaultPosParams();
-      paramBindings.defaultKwTypeParams =
-          structDecl.getSignature().getDefaultKwOnlyParams();
       llvm::append_range(
           paramBindings.ctadPogs,
           structDecl.getSignature().getParamListAttrs().getPogs());

@@ -82,9 +82,7 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           "parameter types";
   }
 
-  return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
-                            paramListAttrs.getDefaultKwOnly(), paramListAttrs,
-                            paramTypes, "parameter");
+  return verifyDefaultTypes(emitError, paramListAttrs, paramTypes, "parameter");
 }
 
 TypeSignatureType TypeSignatureType::remapToSignature(
@@ -99,8 +97,6 @@ TypeSignatureType TypeSignatureType::remapToSignature(
   MLIRContext *ctx = paramDecls.getContext();
   paramListAttrs =
       PogListAttr::get(ctx, remapper.replace(paramListAttrs.getPogs()),
-                       remapper.replace(paramListAttrs.getDefaultPos()),
-                       remapper.replace(paramListAttrs.getDefaultKwOnly()),
                        paramListAttrs.getOrigPackConvention(),
                        paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
@@ -115,13 +111,6 @@ StringAttr TypeSignatureType::getParamName(size_t idx) const {
   return getParamListAttrs().getName(idx);
 }
 
-ArrayRef<TypedAttr> TypeSignatureType::getDefaultPosParams() const {
-  return getParamListAttrs().getDefaultPos();
-}
-ArrayRef<TypedAttr> TypeSignatureType::getDefaultKwOnlyParams() const {
-  return getParamListAttrs().getDefaultKwOnly();
-}
-
 /// Bind parameter values to the signature, returning a new one.
 TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
   assert(values.size() == getParamTypes().size() &&
@@ -131,10 +120,7 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
 
   SmallVector<Type> newParamTypes;
   SmallVector<PogMetadataAttr> newPogs;
-  SmallVector<TypedAttr> newPosDefaults;
-  SmallVector<TypedAttr> newKwOnlyDefaults;
 
-  DefaultValueHandler defaultHandler(paramListAttr);
   ParameterEvaluator evaluator;
   for (auto [i, val, type, pogAttr] :
        llvm::enumerate(values, getParamTypes(), paramListAttr.getPogs())) {
@@ -146,18 +132,13 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
 
     // Otherwise it is still unbound, maintain it as such.
     newParamTypes.push_back(evaluator.getReboundType(type));
-    newPogs.push_back(pogAttr);
-
-    if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
-      newPosDefaults.push_back(evaluator.replace(defaultOr));
-    else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
-      newKwOnlyDefaults.push_back(evaluator.replace(defaultOr));
+    newPogs.push_back(
+        cast<PogMetadataAttr>(evaluator.getReboundAttribute(pogAttr)));
 
     evaluator.appendIndexBinding(
         ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
   }
-  auto paramListAttrs = PogListAttr::get(getContext(), newPogs, newPosDefaults,
-                                         newKwOnlyDefaults);
+  auto paramListAttrs = PogListAttr::get(getContext(), newPogs);
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
@@ -1243,8 +1224,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
       succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
 
   SmallVector<StringAttr> argNames;
-  SmallVector<TypedAttr> defaultPosArgs;
-  SmallVector<TypedAttr> defaultKwOnlyArgs;
+  SmallVector<TypedAttr> defaultValues;
   SmallVector<ArgConvention> argConventions;
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origArgPackConvention;
@@ -1275,13 +1255,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
     if (failed(parseOptionalDefaultValue(p, defaultVal, type,
                                          hasAddress(argConventions.back()))))
       return failure();
-    if (defaultVal) {
-      if (passingKindParser.isCurrentKwOnly())
-        defaultKwOnlyArgs.emplace_back(defaultVal);
-      else
-        defaultPosArgs.emplace_back(defaultVal);
-    }
-
+    defaultValues.push_back(defaultVal);
     return success();
   };
 
@@ -1304,8 +1278,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
 
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                       defaultKwOnlyArgs, argVariadics, origArgPackConvention,
+      PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
+                       defaultValues, origArgPackConvention,
                        origVariadicConvention,
                        /*constraints=*/{}),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
@@ -1425,14 +1399,6 @@ TypedAttr FnType::getCaptureOrigins() {
 
 bool FnType::getIsNestedOriginExclusivityCheckingDisabled() {
   return getMetadata().getIsNestedOriginExclusivityCheckingDisabled();
-}
-
-ArrayRef<TypedAttr> FnType::getDefaultPosArgs() {
-  return getMetadata().getDefaultPosArgs();
-}
-
-ArrayRef<TypedAttr> FnType::getDefaultKwOnlyArgs() {
-  return getMetadata().getDefaultKwOnlyArgs();
 }
 
 /// Get the number of implicit origin decls this function type carries.
@@ -1631,14 +1597,6 @@ TypedAttr FnTypeGeneratorType::getCaptureOrigins() {
 
 bool FnTypeGeneratorType::getIsNestedOriginExclusivityCheckingDisabled() {
   return getBody().getIsNestedOriginExclusivityCheckingDisabled();
-}
-
-ArrayRef<TypedAttr> FnTypeGeneratorType::getDefaultPosArgs() {
-  return getBody().getDefaultPosArgs();
-}
-
-ArrayRef<TypedAttr> FnTypeGeneratorType::getDefaultKwOnlyArgs() {
-  return getBody().getDefaultKwOnlyArgs();
 }
 
 /// Get the number of implicit origin decls this function type carries.

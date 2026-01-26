@@ -206,6 +206,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.paramDeclAttrs.push_back(paramDecl);
       paramList.locations.push_back(origExpr ? origExpr->getLoc() : SMLoc());
       paramList.variadicKinds.push_back(VariadicKind::None);
+      paramList.defaults.push_back(TypedAttr());
       paramList.allParamConstraints.emplace_back();
       return ParamDeclRefAttr::get(paramDecl);
     };
@@ -694,55 +695,41 @@ static MojoInflightDiag emitOptionalAfterRequired(IREmitter &emitter,
 /// defaults in the given array of default (i.e. only if a variadic comes after
 /// an optional argument/parameter).
 /// The default value is returned if available, otherwise a null PValue is
-/// returned. Returns failure if there is an invalid missing default argument.
-static FailureOr<PValue>
-emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
-                      SmallVectorImpl<TypedAttr> &defaultPos,
-                      SmallVectorImpl<TypedAttr> &defaultKwOnly,
-                      IREmitter &emitter, ExprContext exprContext) {
-  SmallVectorImpl<TypedAttr> &defaults =
-      arg.kwArgHandling == KWArgHandling::kKeywordOnly ? defaultKwOnly
-                                                       : defaultPos;
-  auto emitDefaultIfPossible = [&]() -> PValue {
-    if (const ExprNode *initExpr = arg.initExpr) {
-      if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type))
-        return value;
-      arg.isErroneous = true;
-      return UnknownAttr::get(type);
-    }
+/// returned.
+static PValue emitDefault(const ParsedArgument &arg, ASTType type,
+                          SmallVectorImpl<TypedAttr> &defaults,
+                          IREmitter &emitter, ExprContext exprContext) {
+  if (const ExprNode *initExpr = arg.initExpr) {
+    if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type))
+      return value;
+    arg.isErroneous = true;
+    return UnknownAttr::get(type);
+  }
 
-    // If we have a variadic argument, we add a placeholder default value so
-    // that invariants about default values always correspond to the trailing
-    // arguments. This allows us the have default values before a variadic.
-    if (arg.variadicKind != VariadicKind::None && !defaults.empty())
-      return UnknownAttr::get(mlir::NoneType::get(type.mlirType.getContext()));
-    return {};
+  auto hasAnyDefaults = [&]() -> bool {
+    return llvm::any_of(defaults,
+                        [](TypedAttr val) { return val != TypedAttr(); });
   };
 
-  if (PValue value = emitDefaultIfPossible()) {
-    defaults.push_back(value);
-    return value;
-  }
+  // If we have a variadic argument, we add a placeholder default value so
+  // that invariants about default values always correspond to the trailing
+  // arguments. This allows us the have default values before a variadic.
+  if (arg.variadicKind != VariadicKind::None && hasAnyDefaults())
+    return UnknownAttr::get(mlir::NoneType::get(type.mlirType.getContext()));
 
   // Diagnose an invalid missing default argument: if we have any positional
   // defaults, then we require all the rest to have defaults until the
   // keyword-only section.
-  //
-  // If we've had any in the keyword-only section, we continue to require
-  // them.  FIXME: Why? There is no ambiguity with some keyword-only
-  // arguments having defaults.
-  if ((!defaultPos.empty() &&
-       arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
-      !defaultKwOnly.empty()) {
-    if (arg.kgenConvention != ArgConvention::ByRefResult &&
-        arg.kgenConvention != ArgConvention::ByRefError) {
-      MojoInflightDiag diag = emitOptionalAfterRequired(
-          emitter, arg,
-          exprContext == EC_DefaultParam ? "parameter" : "argument");
-      if (arg.typeExpr)
-        diag << arg.typeExpr->getRange();
-      return failure();
-    }
+  if (arg.kwArgHandling != KWArgHandling::kKeywordOnly &&
+      arg.kgenConvention != ArgConvention::ByRefResult &&
+      arg.kgenConvention != ArgConvention::ByRefError && hasAnyDefaults()) {
+    MojoInflightDiag diag = emitOptionalAfterRequired(
+        emitter, arg,
+        exprContext == EC_DefaultParam ? "parameter" : "argument");
+    if (arg.typeExpr)
+      diag << arg.typeExpr->getRange();
+    arg.isErroneous = true;
+    return UnknownAttr::get(type);
   }
 
   // No default value for this argument.
@@ -772,6 +759,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
   SmallVector<SMLoc> locations;
+  SmallVector<TypedAttr> defaults;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
 
   // Functor to insert the pending vectors into paramList, either at the front
@@ -802,6 +790,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
     insertFn(insertPt, paramList.names, names);
     insertFn(insertPt, paramList.passingKinds, passingKinds);
     insertFn(insertPt, paramList.variadicKinds, variadicKinds);
+    insertFn(insertPt, paramList.defaults, defaults);
     insertFn(insertPt, paramList.locations, locations);
     insertFn(insertPt, paramList.allParamConstraints, constraints);
   });
@@ -882,6 +871,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
 
     // FIXME: Autoparam of variadics looks broken?
     variadicKinds.push_back(VariadicKind::None);
+    defaults.push_back(TypedAttr());
     constraints.emplace_back(paramConstraints);
     evaluator.appendIndexBinding(paramValues.back());
   };
@@ -985,10 +975,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // Emit default parameter values if present. An error would have been
     // emitted if failed.
-    FailureOr<PValue> defaultValOrError = emitDefaultIfPossible(
-        arg, type, result.defaultPosParams, result.defaultKwOnlyParams, emitter,
-        EC_DefaultParam);
-    hasErrors |= failed(defaultValOrError);
+    PValue defaultVal =
+        emitDefault(arg, type, result.defaults, emitter, EC_DefaultParam);
+    result.defaults.push_back(defaultVal);
 
     // TODO: Parameter decls should support conventions at some point.
     if (arg.convention != ParsedArgument::kConventionUnspec) {
@@ -1053,9 +1042,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
 
     // Test that any default given doesn't immediately violate the constraints
     // on this parameter. Otherwise that default value can never be used.
-    if (succeeded(defaultValOrError) && *defaultValOrError &&
-        !paramConstraints.empty()) {
-      PValue defaultVal = *defaultValOrError;
+    if (defaultVal && !paramConstraints.empty()) {
       ParserParameterEvaluator evaluator(result.shared);
       evaluator.setDeclBinding(newDecl, defaultVal);
       // Only report direct violations. Unprovable constraints are allowed
@@ -1089,9 +1076,8 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
 
   return PogListAttr::get(shared.getContext(),
                           PogListAttr::toPogs(names, passingKinds,
-                                              variadicKinds,
+                                              variadicKinds, defaults,
                                               allParamConstraints),
-                          defaultPosParams, defaultKwOnlyParams,
                           ArgConvention::ByRefError, ArgConvention::ReadMem);
 }
 
@@ -1645,9 +1631,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // Emit default argument values if present. An error would have been emitted
   // if failed.
-  (void)emitDefaultIfPossible(arg, type, tcSignature.defaultPosArgs,
-                              tcSignature.defaultKwOnlyArgs, typeEmitter,
-                              EC_DefaultArgument);
+  auto defaultVal = emitDefault(arg, type, tcSignature.defaults, typeEmitter,
+                                EC_DefaultArgument);
+  tcSignature.defaults.push_back(defaultVal);
 
   // Now that we have the declared type and default value sorted, apply the
   // argument convention to compute the full type for the argument.
@@ -1992,6 +1978,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     errArg.typeExpr = tcSignature.argList.thrownTypeExpr;
     tcSignature.argList.parsedArgs.push_back(errArg);
     tcSignature.argTypes.push_back(errorType);
+    tcSignature.defaults.push_back(TypedAttr());
 
     RefType refType = makeImplicitRefTypeForArg(
         errArg, 0, errorType, /*isMutable*/ true, tcSignature);
@@ -2025,6 +2012,7 @@ static void typeCheckResult(ParsedArgument resultArg,
     resultArg.kwArgHandling = KWArgHandling::kKeywordOnly;
     tcSignature.argList.parsedArgs.push_back(resultArg);
     tcSignature.argTypes.push_back(resultType);
+    tcSignature.defaults.push_back(TypedAttr());
 
     // Compute the RefType for this new argument with an implicit origin.
     RefType refType = makeImplicitRefTypeForArg(
@@ -2516,25 +2504,26 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
 
   ArgConvention argPackOrigConvention = ArgConvention::ByRefError;
   ArgConvention argVariadicOrigConvention = ArgConvention::ReadMem;
-  [[maybe_unused]] int i = 0;
+  [[maybe_unused]] int numVariadics = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     if (arg.variadicKind == VariadicKind::PosVarArg) {
       argVariadicOrigConvention = arg.variadicElementArgConvention;
-      ++i;
+      ++numVariadics;
     }
 
-    argPogs.emplace_back(PogMetadataAttr::get(
-        arg.name, arg.getKWArgHandlingAsPassingKind(), arg.variadicKind));
+    argPogs.emplace_back(
+        PogMetadataAttr::get(arg.name, arg.getKWArgHandlingAsPassingKind(),
+                             arg.variadicKind, defaults[idx]));
     argConventions.push_back(arg.kgenConvention);
     if (arg.variadicKind == VariadicKind::PackVarArg)
       argPackOrigConvention = arg.kgenVariadicConvention;
   }
-  assert(i <= 1 && "There can be at most one variadic argument");
+  assert(numVariadics <= 1 && "There can be at most one variadic argument");
 
   PogListAttr paramListAttr = paramList.getParamListAttr();
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
-                       argPackOrigConvention, argVariadicOrigConvention),
+      PogListAttr::get(ctx, argPogs, argPackOrigConvention,
+                       argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),

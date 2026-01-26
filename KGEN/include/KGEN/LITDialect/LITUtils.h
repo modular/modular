@@ -287,59 +287,6 @@ struct MangledSymbol {
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
 
 //===----------------------------------------------------------------------===//
-// DefaultValueHandler
-//===----------------------------------------------------------------------===//
-
-/// Helper class to allow easy checking and retrieval of positional and
-/// keyword-only default values.
-class DefaultValueHandler {
-public:
-  DefaultValueHandler(ArrayRef<PogMetadataAttr> pogs,
-                      ArrayRef<TypedAttr> defaultsPos,
-                      ArrayRef<TypedAttr> defaultsKwOnly)
-      : pogs(pogs), defaultsPos(defaultsPos), defaultsKwOnly(defaultsKwOnly),
-        numPositional(countNumInferredKinds(pogs) + countNumPositional(pogs)),
-        defaultPosStart(numPositional - defaultsPos.size()),
-        kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
-        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {}
-
-  DefaultValueHandler(PogListAttr pogListAttr);
-
-  /// If the given index refers to an optional positional (pos-only or
-  /// pos-or-kw) argument/parameter, return its default value or null otherwise.
-  inline TypedAttr getPosDefault(size_t idx) {
-    if (defaultPosStart <= idx && idx < numPositional)
-      return defaultsPos[idx - defaultPosStart];
-    return {};
-  }
-
-  /// If the given index refers to an optional keyword-only argument/parameter,
-  /// return its default value or null otherwise.
-  inline TypedAttr getKwOnlyDefault(size_t idx) {
-    if (defaultKwOnlyStart <= idx && idx < kwOnlyEnd)
-      return defaultsKwOnly[idx - defaultKwOnlyStart];
-    return {};
-  }
-
-  /// If the given index refers to an optional argument/parameter (of any
-  /// passing kind), return its default value or null otherwise.
-  inline TypedAttr getDefault(size_t idx) {
-    if (TypedAttr defaultOr = getPosDefault(idx))
-      return defaultOr;
-    return getKwOnlyDefault(idx);
-  }
-
-private:
-  ArrayRef<PogMetadataAttr> pogs;
-  ArrayRef<TypedAttr> defaultsPos;
-  ArrayRef<TypedAttr> defaultsKwOnly;
-  size_t numPositional;
-  size_t defaultPosStart;
-  size_t kwOnlyEnd;
-  size_t defaultKwOnlyStart;
-};
-
-//===----------------------------------------------------------------------===//
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
@@ -347,8 +294,6 @@ private:
 /// their input conventions if applicable. This assumes that the passing kinds
 /// and the number of defaults are valid.
 LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<TypedAttr> defaultsPos,
-                                 ArrayRef<TypedAttr> defaultsKwOnly,
                                  PogListAttr pogListAttr, ArrayRef<Type> types,
                                  StringRef argOrParam,
                                  ArrayRef<ArgConvention> convs = {});
@@ -357,8 +302,6 @@ LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
 /// doesn't exceed the number of corresponding passing kinds.
 LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<PogMetadataAttr> pogs,
-                                 size_t numPosDefaults,
-                                 size_t numKwOnlyDefaults,
                                  StringRef argOrParam);
 
 //===----------------------------------------------------------------------===//

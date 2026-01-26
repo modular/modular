@@ -339,16 +339,19 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
           return decl.getName();
         });
 
-    LIT::DefaultValueHandler defaultHandler(
-        func.getFullSignature().getParamListAttrs());
+    auto pogs = func.getFuncTypeGenerator().getParamListAttrs();
 
     ParameterEvaluator evaluator;
     for (ParamDeclAttr param : func.getInputParams())
       evaluator.appendIndexBinding(ParamDeclRefAttr::get(param));
 
+    size_t numImplicitOrigins =
+        func.getFuncTypeGenerator().getNumImplicitOriginDecls();
+
     NamedAttrList defaultValues;
-    for (auto [index, decl] : llvm::enumerate(func.getInputParams())) {
-      if (auto defaultValue = defaultHandler.getDefault(index))
+    for (auto [index, decl] :
+         llvm::enumerate(func.getInputParams().drop_back(numImplicitOrigins))) {
+      if (auto defaultValue = pogs.getDefault(index))
         defaultValues.append(LIT::demangleParameterName(decl.getName()),
                              evaluator.getReboundAttribute(defaultValue));
     }

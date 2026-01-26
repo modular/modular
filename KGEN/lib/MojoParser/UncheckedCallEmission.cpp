@@ -466,7 +466,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   argumentValues.reserve(calleeSig.getNumArguments());
 
   PogListAttr argListAttr = calleeSig.getArgListAttrs();
-  DefaultValueHandler defaultHandler(argListAttr);
   for (auto [argIdx, expectedType, convention, pogAttr] :
        llvm::enumerate(calleeSig.getArguments(), calleeSig.getArgConventions(),
                        argListAttr.getPogs())) {
@@ -574,7 +573,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Otherwise, apply the default argument. We've ensured before that we
     // have a default argument for each missing operand.
-    TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
+    TypedAttr defaultOr = argListAttr.getDefault(argIdx);
     assert(defaultOr);
     assert(convention != ArgConvention::Mut &&
            "by_ref argument cannot have defaults");
@@ -1876,7 +1875,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   SmallVector<TypedAttr> implicitOrigins;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
 
-  DefaultValueHandler defaultHandler(calleeSig.getArgListAttrs());
   for (auto [argIdx, argValAndExpr, conventionX, declaredArgTypeX] :
        llvm::enumerate(argumentValues, conventions, calleeSig.getArguments())) {
     ArgConvention convention = conventionX;

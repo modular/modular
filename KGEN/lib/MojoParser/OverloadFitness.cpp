@@ -763,7 +763,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   size_t posOperandIdx = 0;
 
   argListAttr = signature.getArgListAttrs();
-  DefaultValueHandler defaultHandler(argListAttr);
   // FiXME: This should be substituting implicit parameters as the arguments are
   // bound to be able to handle things like
   // https://github.com/modular/modular/issues/3855 correctly.
@@ -838,7 +837,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       }
 
       // We ensured earlier that that can be no missing positional arguments.
-      assert(defaultHandler.getDefault(expectedArgIdx) &&
+      assert(argListAttr.getDefault(expectedArgIdx) &&
              "missing positional argument not caught by diagnostics");
 
       continue;
