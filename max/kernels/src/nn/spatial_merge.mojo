@@ -98,9 +98,9 @@ fn spatial_merge_kernel[
         RuntimeTuple[1](patch_local_idx)
     )
     var t, ho, wo = (
-        Int(patch_coords.value[0]),
-        Int(patch_coords.value[1]),
-        Int(patch_coords.value[2]),
+        patch_coords.value[0],
+        patch_coords.value[1],
+        patch_coords.value[2],
     )
 
     # Create a tiled layout for input representing

@@ -311,6 +311,9 @@ class AudioGenerationScheduler(Scheduler):
             if is_lora(req_data, self._lora_manager) and not is_active_lora(
                 req_data, self._lora_manager
             ):
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 req_data.reset()
                 self.pending_reqs.appendleft(req_data)
@@ -405,6 +408,9 @@ class AudioGenerationScheduler(Scheduler):
             if not response.is_done:
                 continue
             del self.decode_reqs[req_id]
+            # Release from paged cache (scheduler manages primary KV cache lifecycle)
+            self.paged_manager.release(req_id)
+            # Pipeline release handles audio_decoder_cache (special case)
             self.pipeline.release(req_id)
             num_terminated_reqs += 1
         return num_terminated_reqs
@@ -415,6 +421,9 @@ class AudioGenerationScheduler(Scheduler):
             # TODO: Support cancelling requests that are in the pending queue.
             if req_id in self.decode_reqs:
                 del self.decode_reqs[req_id]
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -450,6 +459,9 @@ class AudioGenerationScheduler(Scheduler):
             # Release all requests from scheduler state
             for req_id in batch_request_ids:
                 self.decode_reqs.pop(req_id, None)
+                # Release from paged cache (scheduler manages primary KV cache lifecycle)
+                self.paged_manager.release(req_id)
+                # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
 
             # Set a default num_steps for logging

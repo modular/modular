@@ -228,7 +228,7 @@ struct Path(
         Returns:
           True if the String and Path are equal, and False otherwise.
         """
-        return self.path.as_string_slice() == other
+        return StringSlice(self.path) == other
 
     fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the path string value.

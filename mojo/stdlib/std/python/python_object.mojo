@@ -282,7 +282,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(value.as_string_slice())
+        self = Self(StringSlice(value))
 
     @implicit
     fn __init__(out self, value: String) raises:
@@ -294,7 +294,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(value.as_string_slice())
+        self = Self(StringSlice(value))
 
     @implicit
     fn __init__(out self, slice: Slice):

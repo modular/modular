@@ -83,7 +83,7 @@ class BatchMetrics:
         total_preemption_count: int,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
-        batch_size = len(inputs.batch)
+        batch_size = len(inputs.flat_batch)
         prompt_throughput = num_input_tokens / batch_execution_time_s
         generation_throughput = (
             batch_size * inputs.num_steps / batch_execution_time_s

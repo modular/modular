@@ -27,11 +27,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
@@ -730,7 +726,7 @@ class Gemma3_MultiModalModel(
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=kv_params,
             max_batch_size=max_batch_size,

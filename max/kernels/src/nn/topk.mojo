@@ -530,7 +530,7 @@ fn _top_k_sampling[
     var out_idxs_tmp = LayoutTensor[
         DType.int64, Layout.row_major[internal_rank]()
     ](
-        UnsafePointer[Int64].alloc(Int(out_vals.size())),
+        UnsafePointer[Int64].alloc(out_vals.size()),
         RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
             internal_out_shape
         ),  # topk returns K as last dim
@@ -786,9 +786,7 @@ fn _block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = thread_idx.x < UInt(
-        block_dim.x // UInt(WARP_SIZE)
-    )
+    var thread_in_final_warp = thread_idx.x < block_dim.x // UInt(WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[
             lane_id() * UInt(p_width)
@@ -1035,7 +1033,7 @@ fn _topk_stage1[
 @always_inline("nodebug")
 fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     # Get dynamic shared memory size for stage 1
-    return Int(block_size * size_of[TopK_2[dtype]]())
+    return block_size * size_of[TopK_2[dtype]]()
 
 
 fn _topk_stage2[
@@ -1428,9 +1426,8 @@ fn _topk_gpu[
         num_elem_reduced * (size_of[Scalar[dtype]]() + size_of[DType.int]())
         + num_bytes_sample_cache
     )
-    shared_mem_bytes_2 = Int(
-        ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
-    )  # align to warp size
+    # align to warp size
+    shared_mem_bytes_2 = ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
 
     # Define grid and block dimensions for stage 2
     var grid_dim_stage2 = Dim(
@@ -1695,7 +1692,7 @@ fn topk_gpu[
 
     # Create temporary buffer for local top-K values
     var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
-        Int(product(internal_cache_shape))
+        product(internal_cache_shape)
     )
     var device_local_topk_vals = LayoutTensor[dtype, internal_layout](
         internal_vals_buf.unsafe_ptr(),
@@ -1704,7 +1701,7 @@ fn topk_gpu[
 
     # Create temporary buffer for local top-K indices
     var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
-        Int(product(internal_cache_shape))
+        product(internal_cache_shape)
     )
     var device_local_topk_idxs = LayoutTensor[out_idx_type, internal_layout](
         internal_idxs_buf.unsafe_ptr(),
