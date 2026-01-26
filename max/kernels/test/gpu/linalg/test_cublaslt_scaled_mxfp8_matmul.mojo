@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-
+from math import ceildiv, align_up
+from random import random_ui64
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from memory import LegacyUnsafePointer
@@ -20,7 +20,6 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from random import rand
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
@@ -35,8 +34,11 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
-    convert_ref_scales_to_mxfp8_format,
+    # convert_ref_scales_to_mxfp8_format,
+    set_scale_factor,
 )
+from linalg.fp4_quantization import naive_block_scaled_matmul
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn test_scaled_mxfp8_cublaslt[
@@ -62,68 +64,25 @@ fn test_scaled_mxfp8_cublaslt[
         )
 
     comptime scales_type = MXFP8_SF_DTYPE
-    comptime ref_scales_type = DType.float32
 
-    # Initialize reference scales
-    comptime REF_BLOCK_SIZE = 128
-    comptime static_ref_a_scales_shape = DimList(
-        ceildiv(Int(k.dim), REF_BLOCK_SIZE), m.dim
+    print(
+        String(
+            "in/out dtypes=(",
+            input_type,
+            ", ",
+            output_type,
+            ", ",
+            scales_type,
+            ") ",
+            " problem shape=(",
+            M,
+            ", ",
+            N,
+            ", ",
+            K,
+            ") ",
+        )
     )
-    comptime static_ref_b_scales_shape = DimList(
-        ceildiv(Int(n.dim), REF_BLOCK_SIZE),
-        ceildiv(Int(k.dim), REF_BLOCK_SIZE),
-    )
-
-    var dynamic_ref_a_scales_shape = DimList(
-        ceildiv(k.value, REF_BLOCK_SIZE), m.value
-    )
-    var dynamic_ref_b_scales_shape = DimList(
-        ceildiv(n.value, REF_BLOCK_SIZE), ceildiv(k.value, REF_BLOCK_SIZE)
-    )
-
-    var a_scales_ref_size = ceildiv(k.value, REF_BLOCK_SIZE) * m.value
-    var b_scales_ref_size = ceildiv(n.value, REF_BLOCK_SIZE) * ceildiv(
-        k.value, REF_BLOCK_SIZE
-    )
-
-    var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
-        a_scales_ref_size
-    )
-    var a_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
-    ](a_scales_host_ref_ptr, dynamic_ref_a_scales_shape)
-    var b_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
-        b_scales_ref_size
-    )
-    var b_scales_host_ref = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
-    ](b_scales_host_ref_ptr, dynamic_ref_b_scales_shape)
-
-    var a_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
-        a_scales_ref_size
-    )
-    var a_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_a_scales_shape
-    ](a_scales_device_ref.unsafe_ptr(), dynamic_ref_a_scales_shape)
-    var b_scales_device_ref = ctx.enqueue_create_buffer[ref_scales_type](
-        b_scales_ref_size
-    )
-    var b_scales_device_ref_nd = NDBuffer[
-        ref_scales_type, 2, _, static_ref_b_scales_shape
-    ](b_scales_device_ref.unsafe_ptr(), dynamic_ref_b_scales_shape)
-
-    a_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
-    b_scales_host_ref.fill(Scalar[ref_scales_type](1.0))
-
-    # NOTE: We can't initialize this scales randomly as our naive kernel cannot handle mxfp8 style scaling.
-    for i in range(a_scales_host_ref.dim(0)):
-        for j in range(a_scales_host_ref.dim(1) // 32):
-            for k in range(32):
-                a_scales_host_ref[i, j * 32 + k] = 1 << (j % 4)
-
-    for i in range(b_scales_host_ref.dim(0)):
-        for j in range(b_scales_host_ref.dim(1)):
-            b_scales_host_ref[i, j] = 1 << j
 
     comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim)
@@ -237,17 +196,51 @@ fn test_scaled_mxfp8_cublaslt[
         c_device_ref.unsafe_ptr(), dynamic_c_shape
     )
 
-    convert_ref_scales_to_mxfp8_format[
-        REF_BLOCK_SIZE=REF_BLOCK_SIZE, SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE
-    ](
-        m,
-        n,
-        k,
-        from_ndbuffer_row_major(a_scales_host_ref),
-        from_ndbuffer_row_major(b_scales_host_ref),
-        from_ndbuffer_row_major(a_scales_host),
-        from_ndbuffer_row_major(b_scales_host),
-    )
+    var a_scales_tensor_host = from_ndbuffer_row_major(
+        a_scales_host
+    ).as_any_origin()
+    # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
+    for idx0 in range(align_up(m.value, SF_MN_GROUP_SIZE)):
+        for idx1 in range(
+            0,
+            align_up(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+            MXFP8_SF_VECTOR_SIZE,
+        ):
+            if idx0 < m.value and idx1 < k.value:
+                var scale_value = (
+                    (1 << random_ui64(0, 3))
+                    .cast[DType.float32]()
+                    .cast[scales_type]()
+                )
+                set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                    a_scales_tensor_host, idx0, idx1, scale_value
+                )
+            else:
+                set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                    a_scales_tensor_host, idx0, idx1, Scalar[scales_type](0.0)
+                )
+    var b_scales_tensor_host = from_ndbuffer_row_major(
+        b_scales_host
+    ).as_any_origin()
+    for idx0 in range(align_up(n.value, SF_MN_GROUP_SIZE)):
+        for idx1 in range(
+            0,
+            align_up(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
+            MXFP8_SF_VECTOR_SIZE,
+        ):
+            if idx0 < n.value and idx1 < k.value:
+                var scale_value = (
+                    (1 << random_ui64(0, 3))
+                    .cast[DType.float32]()
+                    .cast[scales_type]()
+                )
+                set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                    b_scales_tensor_host, idx0, idx1, scale_value
+                )
+            else:
+                set_scale_factor[SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE](
+                    b_scales_tensor_host, idx0, idx1, Scalar[scales_type](0.0)
+                )
 
     rand(a_host.data, a_host.num_elements())
     rand(b_host.data, b_host.num_elements())
@@ -255,8 +248,6 @@ fn test_scaled_mxfp8_cublaslt[
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
-    ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
@@ -266,7 +257,7 @@ fn test_scaled_mxfp8_cublaslt[
     var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
     var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
-    matmul[scales_type=scales_type](
+    matmul(
         ctx,
         c,
         a,
@@ -279,20 +270,20 @@ fn test_scaled_mxfp8_cublaslt[
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    naive_blockwise_scaled_fp8_matmul[
-        BLOCK_DIM=16,
+    var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
+    naive_block_scaled_matmul[
+        scaling_kind = UMMAKind.KIND_MXF8F6F4,
+        SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, REF_BLOCK_SIZE, REF_BLOCK_SIZE),
     ](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_ref_nd,
-        b_scales_device_ref_nd,
+        c_ref,
+        a,
+        b,
+        a_scales,
+        b_scales,
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
@@ -312,16 +303,12 @@ fn test_scaled_mxfp8_cublaslt[
     c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    a_scales_host_ref_ptr.free()
-    b_scales_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
     _ = a_scales_device^
     _ = b_scales_device^
-    _ = a_scales_device_ref^
-    _ = b_scales_device_ref^
 
     _ = a_scales
     _ = b_scales

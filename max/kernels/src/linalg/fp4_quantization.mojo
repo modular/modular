@@ -64,6 +64,7 @@ from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
 from algorithm import elementwise
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -413,7 +414,7 @@ fn block_scales_interleave_fp4_kernel[
             )
 
 
-fn naive_block_scaled_nvfp4_matmul[
+fn naive_block_scaled_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -421,6 +422,7 @@ fn naive_block_scaled_nvfp4_matmul[
     b_scales_type: DType,
     //,
     *,
+    scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
     accum_type: DType = DType.float32,
     transpose_b: Bool = True,
@@ -437,6 +439,7 @@ fn naive_block_scaled_nvfp4_matmul[
         b_scales_type, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    alpha: Float32 = 1.0,
 ) raises:
     __comptime_assert (
         transpose_b
@@ -444,19 +447,30 @@ fn naive_block_scaled_nvfp4_matmul[
     __comptime_assert accum_type in (
         DType.float32,
     ), "Only float32 is supported for accumulation for scaled matmul"
-    __comptime_assert a_type == b_type == DType.uint8, (
-        "Only Float4-E2M1x2(i.e, uint8) is supported for input dtype for"
-        " block scaled NVFP4 matmul"
-    )
     __comptime_assert (
-        a_scales_type == b_scales_type and a_scales_type == NVFP4_SF_DTYPE
+        a_type == b_type
+    ), "Only same input dtype is supported for block scaled matmul"
+    __comptime_assert (
+        a_scales_type == b_scales_type
+    ), "input A and B scales dtype should be same for block scaled matmul"
+    __comptime_assert (
+        scaling_kind == UMMAKind.KIND_MXF4NVF4
+        and a_type == DType.uint8
+        and a_scales_type == NVFP4_SF_DTYPE
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ) or (
+        scaling_kind == UMMAKind.KIND_MXF8F6F4
+        and a_type == DType.float8_e4m3fn
+        and a_scales_type == MXFP8_SF_DTYPE
+        and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     ), (
-        "input A and B scales dtype should be same and should be"
-        " NVFP4_SF_DTYPE (float8_e4m3fn)"
+        "Only MXF4NVF4 scaling kind is supported for NVFP4 input dtype with"
+        " NVFP4 scales and MXF8F6F4 scaling kind is supported for MXFP8 input"
+        " dtype with MXFP8 scales for block scaled matmul"
     )
-    __comptime_assert c_type in (DType.bfloat16,), (
-        "Only float32 is supported for output dtype for block scaled NVFP4"
-        " matmul"
+    __comptime_assert c_type in (DType.bfloat16, DType.float32), (
+        "Only bfloat16 or float32 is supported for output dtype for block"
+        " scaled matmul matmul"
     )
 
     var M = c.dim(0)
@@ -464,7 +478,7 @@ fn naive_block_scaled_nvfp4_matmul[
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    var K = a.dim(1) * 2
+    var K = a.dim(1) * 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else a.dim(1)
 
     if M == 0 or N == 0 or K == 0:
         return
@@ -511,7 +525,7 @@ fn naive_block_scaled_nvfp4_matmul[
         sep="",
     )
 
-    comptime kernel = naive_block_scaled_nvfp4_matmul_kernel[
+    comptime kernel = naive_block_scaled_matmul_kernel[
         c_type,
         a_type,
         b_type,
@@ -523,6 +537,7 @@ fn naive_block_scaled_nvfp4_matmul[
         type_of(c).layout,
         type_of(a_scales).layout,
         type_of(b_scales).layout,
+        scaling_kind=scaling_kind,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=transpose_b,
         elementwise_lambda_fn=elementwise_lambda_fn,
@@ -534,12 +549,13 @@ fn naive_block_scaled_nvfp4_matmul[
         b,
         a_scales,
         b_scales,
+        alpha,
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
 
-fn naive_block_scaled_nvfp4_matmul_kernel[
+fn naive_block_scaled_matmul_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -551,6 +567,7 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
     c_layout: Layout,
     a_scale_layout: Layout,
     b_scale_layout: Layout,
+    scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -560,18 +577,20 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
     b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    alpha: Float32,
 ):
-    # Note: This is a naive kernel that emulates a block scaled NVFP4 matmul.
+    # Note: This is a naive kernel that emulates a block scaled matmul with TCGEN scale factors.
     # Assumptions:
     # 1. both A and B should be in K-major format
-    # 2. both a_scales and b_scales should be in NVFP4 scale factors layout (5D tensors)
+    # 2. both a_scales and b_scales should be in TCGEN scale factors layout (5D tensors)
 
     var M = c.dim(0)
     var N = c.dim(1)
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # We need to double the K dimension as we are allocating for uint8 input data type.
     # Remove this when GENAI-337 is fixed.
-    var K = a.dim(1) * 2
+    comptime K_STEPS = 2 if scaling_kind == UMMAKind.KIND_MXF4NVF4 else 1
+    var K = a.dim(1) * K_STEPS
 
     var row_idx = global_idx.x
     var col_idx = global_idx.y
@@ -580,7 +599,7 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
         return
 
     var accum = Scalar[accum_type](0.0)
-    for k in range(0, K, 2):
+    for k in range(0, K, K_STEPS):
         var a_scale = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
             a_scales, Int(row_idx), k
         )
@@ -588,18 +607,34 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
             b_scales, Int(col_idx), k
         )
 
-        # each uint8 element has two Float4-E2M1 values,
-        var a_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
-            rebind[UInt8](a[row_idx, k // 2])
-        ).cast[accum_type]()
-        var b_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
-            rebind[UInt8](b[col_idx, k // 2])
-        ).cast[accum_type]()
-
         @parameter
-        for k_idx in range(2):
-            var a_val = rebind[Scalar[accum_type]](a_val_fp16x2[k_idx])
-            var b_val = rebind[Scalar[accum_type]](b_val_fp16x2[k_idx])
+        if scaling_kind == UMMAKind.KIND_MXF4NVF4:
+            # each uint8 element has two Float4-E2M1 values,
+            var a_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
+                rebind[UInt8](a[row_idx, k // K_STEPS])
+            ).cast[accum_type]()
+            var b_val_fp16x2 = cast_f4e2m1x2_to_fp16x2(
+                rebind[UInt8](b[col_idx, k // K_STEPS])
+            ).cast[accum_type]()
+
+            @parameter
+            for k_idx in range(K_STEPS):
+                var a_val = rebind[Scalar[accum_type]](a_val_fp16x2[k_idx])
+                var b_val = rebind[Scalar[accum_type]](b_val_fp16x2[k_idx])
+                var a_scale_val = abs(
+                    rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
+                )
+                var b_scale_val = abs(
+                    rebind[Scalar[accum_type]](b_scale.cast[accum_type]())
+                )
+                accum += a_val * b_val * a_scale_val * b_scale_val
+        else:
+            var a_val = rebind[Scalar[a_type]](a[row_idx, k // K_STEPS]).cast[
+                accum_type
+            ]()
+            var b_val = rebind[Scalar[b_type]](b[col_idx, k // K_STEPS]).cast[
+                accum_type
+            ]()
             var a_scale_val = abs(
                 rebind[Scalar[accum_type]](a_scale.cast[accum_type]())
             )
@@ -607,6 +642,8 @@ fn naive_block_scaled_nvfp4_matmul_kernel[
                 rebind[Scalar[accum_type]](b_scale.cast[accum_type]())
             )
             accum += a_val * b_val * a_scale_val * b_scale_val
+
+    accum *= alpha.cast[accum_type]()
 
     @parameter
     if elementwise_lambda_fn:
