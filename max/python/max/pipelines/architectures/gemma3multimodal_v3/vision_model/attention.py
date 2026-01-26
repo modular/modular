@@ -14,16 +14,17 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.graph import DeviceRef
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn import Module
+from max.nn import Linear
 from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-class Gemma3VisionAttention(Module):
+class Gemma3VisionAttention(Module[[Tensor], Tensor]):
     """Standard self-attention for SigLIP vision encoder."""
 
     def __init__(
@@ -51,22 +52,22 @@ class Gemma3VisionAttention(Module):
         self.q_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=vision_config.attention_bias,
+            bias=vision_config.attention_bias,
         )
         self.k_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=vision_config.attention_bias,
+            bias=vision_config.attention_bias,
         )
         self.v_proj = Linear(
             vision_config.hidden_size,
             self.num_heads * self.head_dim,
-            has_bias=vision_config.attention_bias,
+            bias=vision_config.attention_bias,
         )
         self.out_proj = Linear(
             self.num_heads * self.head_dim,
             vision_config.hidden_size,
-            has_bias=vision_config.attention_bias,
+            bias=vision_config.attention_bias,
         )
 
     def __call__(self, x: Tensor) -> Tensor:

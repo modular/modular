@@ -25,11 +25,12 @@ from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType, Type, Value
+from max.graph import BufferValue, DeviceRef, TensorType, Type
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (NullKVCacheManager, PagedKVCacheManager,
-                          load_kv_manager)
+from max.kv_cache.paged_cache.cache_manager import PagedKVCacheManager
+from max.kv_cache.null_cache_manager import NullKVCacheManager
+from max.kv_cache.registry import load_kv_manager
 from max.nn.legacy.kv_cache import (KVCacheInputs, KVCacheInputsSequence,
                                     KVCacheParams, PagedCacheValues)
 from max.nn.legacy.transformer import ReturnLogits
@@ -37,6 +38,7 @@ from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (CompilationTimer, KVCacheConfig, KVCacheMixin,
                                ModelInputs, ModelOutputs, PipelineConfig,
                                PipelineModel, SupportedEncoding)
+from max.tensor import Tensor
 from transformers import AutoConfig
 
 from .model_config import Gemma3ForConditionalGenerationConfig
@@ -128,10 +130,10 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence"""
 
-    pixel_values: list[Buffer] | None = None
+    pixel_values: Buffer | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
-    image_token_indices: list[Buffer] | None = None
+    image_token_indices: Buffer | None = None
     """Pre-computed indices of image tokens in the input sequence."""
 
     return_n_logits: Buffer
@@ -143,8 +145,8 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
         kv_cache_inputs: KVCacheInputs | None = None,
-        pixel_values: list[Buffer] | None = None,
-        image_token_indices: list[Buffer] | None = None,
+        pixel_values: Buffer | None = None,
+        image_token_indices: Buffer | None = None,
     ) -> None:
         """
         Args:
@@ -406,7 +408,7 @@ class Gemma3_MultiModalModelV3(
 
     def _vision_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
-    ) -> list[Type[Any]]:
+    ) -> list[TensorType]:
         """Build the vision model graph for processing images."""
         device0 = self.devices[0]
         pixel_values_types = TensorType(
@@ -428,9 +430,10 @@ class Gemma3_MultiModalModelV3(
     ) -> Callable[..., Any]:
         """Build the vision model with our input types and graph"""
         device0 = self.devices[0]
+        device0_ref = DeviceRef.from_device(device0)
         timer = CompilationTimer("vision model")
         with F.lazy():
-            vision_model = Gemma3VisionModel(config, device0)
+            vision_model = Gemma3VisionModel(config, device0_ref)
             vision_model.to(self.devices[0])
 
         timer.mark_build_complete()
@@ -442,7 +445,7 @@ class Gemma3_MultiModalModelV3(
         image_embeddings = vision_model(pixel_values)
 
         compiled_vision_model = vision_model.compile(
-            pixel_values,
+            # pixel_values, #FIXME not sure if required or not
             image_embeddings,
             weights=state_dict,
         )
@@ -465,13 +468,7 @@ class Gemma3_MultiModalModelV3(
 
             # Execute vision model: patched pixel_values -> image_embeddings.
             vision_outputs = self.vision_model(model_inputs.pixel_values)
-            assert len(vision_outputs) == len(self.devices)
-
-            image_embeddings = [
-                output
-                for output in vision_outputs
-                if isinstance(output, Buffer)
-            ]
+            image_embeddings = vision_outputs
             assert model_inputs.image_token_indices is not None
             image_token_indices = model_inputs.image_token_indices
         else:
@@ -493,15 +490,15 @@ class Gemma3_MultiModalModelV3(
 
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
+                logits=model_outputs[1],
+                next_token_logits=model_outputs[0],
+                logit_offsets=cast(Buffer, model_outputs[2]),
             )
         else:
             assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logits=model_outputs[0],
+                next_token_logits=model_outputs[0],
             )
 
     def prepare_initial_token_inputs(
@@ -532,9 +529,13 @@ class Gemma3_MultiModalModelV3(
 
         # stack our images in a list of tensors
         pixel_values = self._prepare_vision_inputs(context_batch)
+        if pixel_values is not None:
+            pixel_values = [pixel_values]
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
+        if image_token_indices is not None:
+            image_token_indices = [image_token_indices]
 
         return Gemma3MultiModalModelInputs(
             tokens=Buffer.from_numpy(tokens).to(dev),
@@ -543,10 +544,8 @@ class Gemma3_MultiModalModelV3(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            pixel_values=[pixel_values],  # FIXME temp fix for single GPU
-            image_token_indices=[
-                image_token_indices
-            ],  # FIXME temp fix for single GPU
+            pixel_values=pixel_values,  # FIXME temp fix for single GPU
+            image_token_indices=image_token_indices, # FIXME temp fix for single GPU
         )
 
     def prepare_next_token_inputs(
@@ -561,9 +560,7 @@ class Gemma3_MultiModalModelV3(
 
         return Gemma3MultiModalModelInputs(
             tokens=next_tokens,
-            input_row_offsets=[
-                next_row_offsets
-            ],  # FIXME temp fix for single GPU
+            input_row_offsets=next_row_offsets, # FIXME temp fix for single GPU
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             pixel_values=None,
@@ -645,7 +642,7 @@ class Gemma3_MultiModalModelV3(
         )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
+        self, kv_inputs_flat: Sequence[Tensor]
     ) -> list[PagedCacheValues]:
         """Receives KVCache inputs from the language graph, unflattens them, and
         returns in a list"""
@@ -664,10 +661,10 @@ class Gemma3_MultiModalModelV3(
             start_idx = i * len_of_kv_tuple_per_dev
             kv_caches_per_dev.append(
                 PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx],
-                    cache_lengths=kv_inputs_flat[start_idx + 1],
-                    lookup_table=kv_inputs_flat[start_idx + 2],
-                    max_lengths=kv_inputs_flat[start_idx + 3],
+                    kv_blocks=BufferValue(kv_inputs_flat[start_idx]),
+                    cache_lengths=BufferValue(kv_inputs_flat[start_idx + 1]),
+                    lookup_table=BufferValue(kv_inputs_flat[start_idx + 2]),
+                    max_lengths=BufferValue(kv_inputs_flat[start_idx + 3]),
                 )
             )
         return kv_caches_per_dev
