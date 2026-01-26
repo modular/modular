@@ -23,6 +23,7 @@ from threading import Event, Thread
 
 from max.interfaces import (
     PixelContext,
+    PixelGenerationInputs,
     PixelGenerationOutput,
     PixelGenerationPipeline,
     PixelGenerationRequest,
@@ -225,7 +226,7 @@ async def _async_worker(
                 "Number of negative prompts must match number of prompts"
             )
 
-        outputs: list[PixelGenerationOutput] = []
+        batch:{RequestID: PixelContext} = {}
         for (
             prompt,
             height,
@@ -244,9 +245,10 @@ async def _async_worker(
             request.negative_prompts,
             strict=False,
         ):
+            request_id = RequestID()
             context: PixelContext = await tokenizer.new_context(
                 PixelGenerationRequest(
-                    request_id=RequestID(),
+                    request_id=request_id,
                     prompt=prompt,
                     negative_prompt=negative_prompt,
                     height=height,
@@ -256,8 +258,9 @@ async def _async_worker(
                     num_images_per_prompt=num_images_per_prompt,
                 )
             )
-            output = await pipeline.aexecute(context)
-            outputs.append(output)
+            batch[request_id] = context
+        inputs = PixelGenerationInputs(batch=batch)
+        outputs = await asyncio.to_thread(pipeline.execute, inputs)
 
         if response_queue := pending_requests.get(request.id):
             response_queue.put(_Response(outputs=outputs))
