@@ -26,10 +26,10 @@ import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
-    BaseContext,
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
     PixelGenerationOutput,
     RequestID,
     SamplingParams,
@@ -571,77 +571,6 @@ class TTSContext(TextContext):
         return chunk, buffer or 0
 
 
-if TYPE_CHECKING:
-    # Verify that concrete classes implement their respective protocols
-    def _verify_text_context_protocol() -> TextGenerationContext:
-        return TextContext(
-            request_id=RequestID(),
-            max_length=5,
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
-        )
-
-    def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
-        return TextAndVisionContext(
-            request_id=RequestID(),
-            max_length=5,
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
-            vision_token_ids=[],
-            images=[],
-        )
-
-    def _verify_pixel_context_protocol() -> BaseContext:
-        return PixelContext(
-            request_id=RequestID(),
-            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        )
-
-
-@contextmanager
-def reserve_token_space_for_batch(
-    batch: list[TextContext],
-    num_tokens: int,
-) -> Iterator[None]:
-    """
-    Temporarily reserves token space for each context in a batch by incrementing
-    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
-    of the context. These indices are restored to their original values upon exit.
-    Args:
-        batch: List of TextContext objects to reserve space for.
-        num_tokens: Number of tokens to reserve for each context.
-    Yields:
-        None
-    """
-    if num_tokens == 0:
-        yield
-
-    saved_state: dict[RequestID, tuple[int, int]] = {
-        ctx.request_id: (
-            ctx.tokens._processing_range.end,
-            ctx.tokens._current_length,
-        )
-        for ctx in batch
-    }
-
-    try:
-        for ctx in batch:
-            ctx.tokens._processing_range.bump_end(num_tokens)
-
-            new_length = ctx.tokens._current_length + num_tokens
-            if new_length < 0:
-                raise ValueError(
-                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
-                )
-            ctx.tokens._current_length = new_length
-        yield
-    finally:
-        for ctx in batch:
-            proc_end, cur_len = saved_state[ctx.request_id]
-            ctx.tokens._processing_range.end = proc_end
-            ctx.tokens._current_length = cur_len
-
-
 @dataclass(kw_only=True)
 class PixelContext:
     """A model-ready context for image/video generation requests.
@@ -789,3 +718,74 @@ class PixelContext:
             final_status=self.status,
             pixel_data=self.latents,
         )
+
+
+if TYPE_CHECKING:
+    # Verify that concrete classes implement their respective protocols
+    def _verify_text_context_protocol() -> TextGenerationContext:
+        return TextContext(
+            request_id=RequestID(),
+            max_length=5,
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+            eos_token_ids=set(),
+        )
+
+    def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
+        return TextAndVisionContext(
+            request_id=RequestID(),
+            max_length=5,
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+            eos_token_ids=set(),
+            vision_token_ids=[],
+            images=[],
+        )
+
+    def _verify_pixel_context_protocol() -> PixelGenerationContext:
+        return PixelContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
+        )
+
+
+@contextmanager
+def reserve_token_space_for_batch(
+    batch: list[TextContext],
+    num_tokens: int,
+) -> Iterator[None]:
+    """
+    Temporarily reserves token space for each context in a batch by incrementing
+    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
+    of the context. These indices are restored to their original values upon exit.
+    Args:
+        batch: List of TextContext objects to reserve space for.
+        num_tokens: Number of tokens to reserve for each context.
+    Yields:
+        None
+    """
+    if num_tokens == 0:
+        yield
+
+    saved_state: dict[RequestID, tuple[int, int]] = {
+        ctx.request_id: (
+            ctx.tokens._processing_range.end,
+            ctx.tokens._current_length,
+        )
+        for ctx in batch
+    }
+
+    try:
+        for ctx in batch:
+            ctx.tokens._processing_range.bump_end(num_tokens)
+
+            new_length = ctx.tokens._current_length + num_tokens
+            if new_length < 0:
+                raise ValueError(
+                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
+                )
+            ctx.tokens._current_length = new_length
+        yield
+    finally:
+        for ctx in batch:
+            proc_end, cur_len = saved_state[ctx.request_id]
+            ctx.tokens._processing_range.end = proc_end
+            ctx.tokens._current_length = cur_len

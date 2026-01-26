@@ -19,7 +19,7 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic
+from typing import Any, Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
@@ -27,7 +27,6 @@ import numpy.typing as npt
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
-from max.pipelines.core import PixelContext
 from typing_extensions import TypeVar
 
 
@@ -89,8 +88,35 @@ class PixelGenerationRequest(Request):
             raise ValueError("Prompt must be provided.")
 
 
+@runtime_checkable
+class PixelGenerationContext(BaseContext, Protocol):
+    """Protocol defining the interface for pixel generation contexts.
+
+    A ``PixelContext`` represents model inputs for pixel generation pipelines,
+    managing the state and parameters needed for generating images or videos.
+    """
+
+    @property
+    def tokens(self) -> TokenBuffer:
+        """The token buffer for the context."""
+        ...
+
+    @property
+    def model_name(self) -> str:
+        """The name of the model being used."""
+        ...
+
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        ...
+
+    def to_generation_output(self) -> PixelGenerationOutput:
+        """Convert this context to a PixelGenerationOutput object."""
+        ...
+
+
 PixelGenerationContextType = TypeVar(
-    "PixelGenerationContextType", bound=PixelContext
+    "PixelGenerationContextType", bound=PixelGenerationContext
 )
 """Type variable for pixel generation context types, constrained to PixelContext.
 
