@@ -17,8 +17,8 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Module
-from max.nn.norm import LayerNorm
-from max.nn.sequential import Sequential
+from max.nn.legacy.layer import LayerList
+from max.nn.legacy.norm import LayerNorm
 from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
@@ -101,15 +101,15 @@ class Gemma3VisionEncoder(
             for layer_idx in range(config.vision_config.num_hidden_layers)
         ]
 
-        # self.layers = LayerList(encoder_layers)
-        self.layers = Sequential(*encoder_layers)
+        self.layers = LayerList(encoder_layers)
+        # self.layers = Sequential(*encoder_layers) #TODO could this be used
 
     def __call__(
         self,
         hidden_states: Tensor | Sequence[Tensor],
     ) -> Tensor | Sequence[Tensor]:
         """Process hidden states through the stack of encoder layers"""
-        # for layer in self.layers:
-        #     hidden_states = layer(hidden_states)
-        hidden_states = self.layers(hidden_states)
+        for layer in self.layers:
+            hidden_states = layer(hidden_states)
+        # hidden_states = self.layers(hidden_states) #TODO could this be used
         return hidden_states

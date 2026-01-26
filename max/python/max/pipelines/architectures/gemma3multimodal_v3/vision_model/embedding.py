@@ -15,7 +15,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.conv import Conv2d
+from max.nn.legacy.conv import Conv2d
 from max.nn.embedding import Embedding
 from max.nn.module import Module
 from max.tensor import Tensor
@@ -23,7 +23,7 @@ from max.tensor import Tensor
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
-class Gemma3VisionEmbeddings(Module):
+class Gemma3VisionEmbeddings(Module[[Tensor], Tensor]):
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,

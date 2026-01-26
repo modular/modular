@@ -21,13 +21,13 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.embedding import Embedding
-from max.nn.layer_list import LayerList
+from max.nn.legacy.layer import LayerList
 from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer import ReturnLogits
-from max.nn.linear import MLP, Linear
+from max.nn.legacy.linear import MLP, Linear
 from max.nn.module import Module
-from max.nn.norm import LayerNorm
-from max.nn.rotary_embedding import (Llama3RopeScalingParams,
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.rotary_embedding import (Llama3RopeScalingParams,
                                      Llama3RotaryEmbedding)
 # TODO reimplement?
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
@@ -35,7 +35,7 @@ from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from max.pipelines.architectures.gemma3.layers.transformer_block import \
     Gemma3TransformerBlock
 # TODO reimplement?
-from max.pipelines.architectures.internvl.embedding_utils import \
+from ..embedding_utils import \
     merge_multimodal_embeddings
 from max.tensor import Tensor
 
@@ -48,7 +48,7 @@ from .rms_norm import Gemma3RMSNorm
 logger = logging.getLogger("max.pipelines")
 
 
-class Gemma3LanguageModel(Module):
+class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
     """The Gemma3 Multi-Modal model's text component, shared with Gemma3"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
@@ -102,9 +102,6 @@ class Gemma3LanguageModel(Module):
         self.lm_head = Linear(
             text_config.hidden_size,
             text_config.vocab_size,
-            tied_weight=(
-                self.embed_tokens.weight if config.tie_word_embeddings else None
-            ),
         )
 
         create_norm = functools.partial(
@@ -171,8 +168,8 @@ class Gemma3LanguageModel(Module):
         # Replace image placeholder tokens with vision embeddings
         h = merge_multimodal_embeddings(
             inputs_embeds=h,
-            multimodal_embeddings=image_embeddings.driver_tensor,
-            image_token_indices=image_token_indices.driver_tensor,
+            multimodal_embeddings=image_embeddings,
+            image_token_indices=image_token_indices,
         )
 
         # Run through transformer layers
@@ -237,7 +234,7 @@ class Gemma3LanguageModel(Module):
         return (last_logits,)
 
 
-class Gemma3VisionModel(Module):
+class Gemma3VisionModel(Module[[Tensor], Tensor]):
     """The Gemma3 Multi-Modal model's vision component"""
 
     def __init__(
@@ -278,7 +275,7 @@ class Gemma3VisionModel(Module):
     ) -> Tensor:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
-        hidden_states: Tensor | Sequence[Tensor] = self.embeddings(pixel_values)
+        hidden_states: Tensor = self.embeddings(pixel_values)
 
         # Pass through encoder layers
         hidden_states = self.encoder(hidden_states)

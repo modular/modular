@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 from max import functional as F
-from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
 from max.tensor import Tensor
 
 
@@ -55,8 +54,10 @@ def merge_multimodal_embeddings(
     # Scatter the multimodal embeddings into inputs_embeds at the specified
     # indices. Any negative values in the indices means that the corresponding
     # update will be skipped.
-    return scatter_nd_skip_oob_indices(
+    scattered_embeddings = F.scatter_nd(
         input=inputs_embeds,
         updates=multimodal_embeddings,
         indices=indices_2d,
     )
+
+    return scattered_embeddings

@@ -24,7 +24,7 @@ from ..model_config import Gemma3ForConditionalGenerationConfig
 from .rms_norm import Gemma3RMSNorm
 
 
-class Gemma3MultiModalProjector(Module):
+class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):
     """Projects vision encoder outputs to text embedding space."""
 
     def __init__(
@@ -107,7 +107,7 @@ class Gemma3MultiModalProjector(Module):
         return image_hidden_states
 
 
-class Gemma3VisionMLP(Module):
+class Gemma3VisionMLP(Module[[Tensor], Tensor]):
     """Two-layer MLP with GELU activation for vision encoder."""
 
     def __init__(
@@ -124,16 +124,16 @@ class Gemma3VisionMLP(Module):
         self.fc1 = Linear(
             self.hidden_size,
             self.intermediate_size,
-            has_bias=True,
+            bias=True,
         )
 
         self.fc2 = Linear(
             self.intermediate_size,
             self.hidden_size,
-            has_bias=True,
+            bias=True,
         )
 
-    def __call__(self, x: Tensor):
+    def __call__(self, x: Tensor) -> Tensor:
         """Expands hidden states to intermediate size, applies GELU activation,
         then projects back to hidden size."""
         x = self.fc1(x)
