@@ -1274,7 +1274,7 @@ class PixelGenerationTokenizer(
         default_sample_size = 128
         height = request.height or default_sample_size * vae_scale_factor
         width = request.width or default_sample_size * vae_scale_factor
-        num_channels_latents = transformer_config.in_channels // 4
+        num_channels_latents = transformer_config["in_channels"] // 4
 
         latent_height = 2 * (int(height) // (vae_scale_factor * 2))
         latent_width = 2 * (int(width) // (vae_scale_factor * 2))
@@ -1330,7 +1330,7 @@ class PixelGenerationTokenizer(
         )
 
         guidance: npt.NDArray[np.float32] | None = None
-        if transformer_config.guidance_embeds:
+        if transformer_config.get("guidance_embeds"):
             guidance = np.array([request.guidance_scale], dtype=np.float32)
         else:
             guidance = None

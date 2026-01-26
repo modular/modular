@@ -12,5 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import numpy as np
+
+
 class FlowMatchEulerDiscreteScheduler:
-    pass
+    """Minimal stub for FlowMatchEulerDiscreteScheduler."""
+
+    def __init__(self, **kwargs) -> None:
+        self.config = type("Config", (), {"use_flow_sigmas": False})()
+        self.timesteps = np.array([], dtype=np.float32)
+        self.sigmas = np.array([], dtype=np.float32)
+        self.order = 1
+
+    def set_timesteps(
+        self, num_inference_steps: int, device: str | None = None, **kwargs
+    ) -> None:
+        """Stub for set_timesteps."""
+        self.timesteps = np.linspace(
+            1000, 0, num_inference_steps, dtype=np.float32
+        )
+        self.sigmas = np.linspace(1.0, 0, num_inference_steps, dtype=np.float32)
