@@ -1,12 +1,20 @@
 load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "requirement")
 load(":mef.bzl", "mef")
 
-package(default_visibility = [
-    "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
-    "//max/tests:__subpackages__",
-    "//oss/modular/max/tests:__subpackages__",
-])
+# gazelle:default_features layering_check,parse_headers
+
+package(
+    default_visibility = [
+        "//:__pkg__",
+        "//SDK/integration-test:__subpackages__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
 
 mef(
     name = "vector_add",
@@ -134,6 +142,7 @@ modular_cc_test(
     },
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -142,6 +151,7 @@ modular_cc_test(
     srcs = ["TensorTest.cpp"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -150,6 +160,7 @@ modular_cc_test(
     srcs = ["DeviceTest.cpp"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -164,6 +175,7 @@ modular_cc_test(
     tags = ["gpu"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -180,6 +192,7 @@ modular_cc_test(
     },
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -200,6 +213,7 @@ modular_cc_test(
     },
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -210,6 +224,8 @@ modular_cc_test(
     env = {"DEBUG_PRINT_MEF_PATH": "$(rootpath :debug_print.mef)"},
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
+        "@llvm-project//llvm:Support",
     ],
 )
 

@@ -708,7 +708,7 @@ fn _concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value
+        idx, output.runtime_layout.shape.value
     )
 
     @parameter
@@ -959,7 +959,7 @@ fn _fused_concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value
+        idx, output.runtime_layout.shape.value
     )
 
     @parameter

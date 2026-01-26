@@ -145,8 +145,8 @@ struct KVCacheIterator[
     cache_t: MHAOperand, tile_size: Int, kv_num_heads: Int, depth: Int
 ]:
     comptime kv_gmem_layout = Layout(
-        IntTuple(Int(Self.tile_size), Int(Self.depth)),
-        IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
+        IntTuple(Self.tile_size, Self.depth),
+        IntTuple(Self.kv_num_heads * Self.depth, 1),
     )
     var cache: Self.cache_t
     var end: Int
@@ -179,15 +179,14 @@ struct KVCacheIterator[
         ],
     ):
         var kv_tile_num_rows = min(
-            Int(Self.tile_size), Int(self.end - self.tile_start_row)
+            Self.tile_size,
+            self.end - self.tile_start_row,
         )
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = type_of(result.runtime_layout)(
-            type_of(result.runtime_layout.shape)(
-                Int(kv_tile_num_rows), Int(Self.depth)
-            ),
+            type_of(result.runtime_layout.shape)(kv_tile_num_rows, Self.depth),
             type_of(result.runtime_layout.stride)(
-                Int(Self.kv_num_heads * Self.depth), 1
+                Self.kv_num_heads * Self.depth, 1
             ),
         )
         var out = type_of(result)(
@@ -223,7 +222,7 @@ struct KVBuffer[
     comptime num_mmas = ceildiv(
         Self.WN if Self.transpose else Self.depth, Self.MMA_N
     )
-    comptime num_k_mmas2 = ceildiv(Self.BK, Int(Self.MMA_K * Self.k_group_size))
+    comptime num_k_mmas2 = ceildiv(Self.BK, Self.MMA_K * Self.k_group_size)
     comptime simd_width = simd_width_of[Self.kv_t.dtype]()
     comptime num_k_tiles = ceildiv(
         Self.depth if Self.transpose else Self.WN, Self.BK
@@ -335,10 +334,10 @@ struct KVBuffer[
                 var warp_row = self.warp_id // UInt32(4)
                 var warp_col = self.warp_id % UInt32(4)
                 var smem_warp_tile = smem_tile.tile[32, Self.BK](
-                    Int(warp_row), Int(warp_col) + Int(num_warps * depth_tile)
+                    Int(warp_row), Int(warp_col) + num_warps * depth_tile
                 )
                 var gmem_warp_tile = global_tile.tile[32, Self.BK](
-                    Int(warp_row), Int(warp_col) + Int(num_warps * depth_tile)
+                    Int(warp_row), Int(warp_col) + num_warps * depth_tile
                 )
                 # load from dram to sram directly
                 copy_dram_to_sram_lds[swizzle = Self.swizzle,](
@@ -368,7 +367,7 @@ struct KVBuffer[
     fn load_from_shared(self, buffer: UInt):
         @parameter
         for bk_tile in range(Self.num_k_tiles):
-            self.load_from_shared[Int(bk_tile)](buffer)
+            self.load_from_shared[bk_tile](buffer)
 
     @always_inline
     fn load_from_shared[bk_tile: Int](self, buffer: UInt):
@@ -378,7 +377,7 @@ struct KVBuffer[
             var warp_col = get_warp_id() % UInt(num_warps_n)
             var smem_tile = self.smem_iter.next_unsafe(
                 self.smem_iter.layout_uint_type(buffer)
-            )[].tile[Self.BN, Self.BK](0, Int(bk_tile))
+            )[].tile[Self.BN, Self.BK](0, bk_tile)
 
             var wtile_coord0 = Int(warp_col)
             var wtile_coord1 = 0
@@ -403,7 +402,7 @@ struct KVBuffer[
                     self.smem_iter.next_unsafe(
                         self.smem_iter.layout_uint_type(buffer)
                     )[]
-                    .tile[Self.BK, Self.depth](Int(bk_tile), 0)
+                    .tile[Self.BK, Self.depth](bk_tile, 0)
                     .tile[MMA_K, Self.depth](k, 0)
                 )
                 var frags = (
@@ -438,7 +437,7 @@ struct KVBuffer[
                     frags[i, 0] = rebind[frags.element_type](
                         load_b_tr[Self.mma_shape](tile)
                     )
-                var mma_tile = self.get_mma_tile[Int(k), Int(bk_tile)]()
+                var mma_tile = self.get_mma_tile[k, bk_tile]()
                 mma_tile.vectorize[1, Self.simd_width]().copy_from(frags)
 
 
@@ -526,7 +525,7 @@ __extension Attention:
             BK = Int(Self.BK),
             num_threads = Int(Self.num_threads),
             depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Int(Self.group),
+            kv_num_heads = Int(Self.num_heads) // Self.group,
             transpose=True,
         ](
             self.k,
@@ -546,7 +545,7 @@ __extension Attention:
             BK = Int(Self.BK),
             num_threads = Int(Self.num_threads),
             depth = Int(Self.depth),
-            kv_num_heads = Int(Self.num_heads) // Int(Self.group),
+            kv_num_heads = Int(Self.num_heads) // Self.group,
             transpose=False,
         ](
             self.v,
@@ -605,10 +604,8 @@ __extension Attention:
                 @parameter
                 for k_mma in range(v_buffer.num_k_mmas2):
                     tensor_core_mma.mma[swap_a_b = Self.swap_a_b](
-                        self.p_reg_buffer.get_mma_tile[
-                            Int(i), Int(k_mma), stage
-                        ](),
-                        v_buffer.get_mma_tile[Int(k_mma), Int(i)](),
+                        self.p_reg_buffer.get_mma_tile[Int(i), k_mma, stage](),
+                        v_buffer.get_mma_tile[k_mma, Int(i)](),
                         self.out_reg_buffer.reg_tile,
                     )
 
@@ -728,8 +725,8 @@ __extension Attention:
                 Int(Self.BN),
             )
             var num_tiles = ceildiv(self.num_keys, Int(Self.BN))
-            num_tiles_causal = min(Int(num_tiles_causal), Int(num_tiles))
-            iter_end = max(Int(num_tiles_causal - 1) * Int(Self.BN), 0)
+            num_tiles_causal = min(num_tiles_causal, num_tiles)
+            iter_end = max((num_tiles_causal - 1) * Int(Self.BN), 0)
         else:
             iter_end = max(self.num_keys - Int(Self.BN), 0)
 

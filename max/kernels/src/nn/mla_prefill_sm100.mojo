@@ -788,7 +788,7 @@ struct SM100MLA[
 
         var q_head_idx: UInt32 = seq_info.head_idx
         var tid = UInt32(thread_idx.x)
-        var row = UInt32(tid % 128)
+        var row = tid % 128
         var scale_log2e: Scalar[Self.accum_type] = scale
         var correction_smem = correction_smem_arg + tid
 
@@ -1341,7 +1341,7 @@ struct SM100MLA[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+            Index[dtype = DType.int32](Self.BM, Self.BN),
         )
 
     @staticmethod
@@ -1724,7 +1724,7 @@ fn mla_sm100_prefill[
     comptime fa4_config = FA4Config(
         num_q_heads=Int(config.num_heads),
         group=group,
-        depth=Int(q_depth),
+        depth=q_depth,
         dtype_size=size_of[q_type](),
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
@@ -1848,7 +1848,7 @@ fn mla_sm100_prefill[
         UInt32(cache_depth),
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, num_key_blocks),
-        block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )

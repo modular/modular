@@ -211,11 +211,12 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         for context in ctxs:
             self.paged_manager.alloc(context, num_steps=num_tokens)
-        self.paged_manager.get_runtime_inputs(ctxs, num_steps=num_tokens)
+        self.paged_manager.get_runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
-        for req_id, context in inputs.batch.items():
+        for context in inputs.batch.values():
+            req_id = context.request_id
             resp = AudioGenerationOutput(
                 GenerationStatus.ACTIVE, steps_executed=num_tokens
             )
@@ -240,12 +241,12 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
             responses[req_id] = resp
 
         # Step the kv cache manager
-        self.paged_manager.step(ctxs)
+        self.paged_manager.step([ctxs])
 
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.paged_manager.release(request_id)
+        pass
 
 
 @dataclass(eq=True)

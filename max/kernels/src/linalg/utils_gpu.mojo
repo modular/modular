@@ -20,7 +20,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
+from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
@@ -500,6 +500,21 @@ fn select_config[
     )
 
 
+fn _vendor_blas_fallback_disabled() -> Bool:
+    """Determine if fallback to vendor blas is disabled
+
+    Returns True if:
+        - vendor fallback has been globally disabled, or
+        - benchmark has specifically requested mojo kernel
+    else returns False.
+    """
+    comptime globally_disabled = env_get_bool[
+        "MODULAR_DISABLE_VENDOR_FALLBACK", False
+    ]()
+    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    return globally_disabled or bench_disabled
+
+
 fn create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
@@ -564,7 +579,7 @@ fn get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
-    ](key_str.as_string_slice().unsafe_ptr(), key_str.byte_length())
+    ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:
         var device_ptr = cached_ptr.bitcast[UInt32]()
