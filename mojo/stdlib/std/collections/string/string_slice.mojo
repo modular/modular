@@ -983,6 +983,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             return True
         return memcmp(s_ptr, rhs_ptr, s_len) == 0
 
+    @__unsafe_disable_nested_origin_exclusivity
     fn __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is not equal to another `StringSlice` with
         the same origin.
