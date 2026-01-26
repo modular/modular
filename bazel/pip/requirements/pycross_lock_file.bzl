@@ -491,27 +491,7 @@ def targets():
 
     _anthropic_0_71_0_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":anyio@4.4.0",
-            ":distro@1.9.0",
-            ":docstring-parser@0.17.0",
-            ":httpx@0.27.2",
-            ":jiter@0.12.0",
-            ":pydantic@2.12.5",
-            ":sniffio@1.3.1",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":anyio@4.4.0",
-            ":distro@1.9.0",
-            ":docstring-parser@0.17.0",
-            ":httpx@0.27.2",
-            ":jiter@0.12.0",
-            ":pydantic@2.12.5",
-            ":sniffio@1.3.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":anyio@4.4.0",
             ":distro@1.9.0",
             ":docstring-parser@0.17.0",
@@ -531,37 +511,7 @@ def targets():
             ":sniffio@1.3.1",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":anyio@4.4.0",
-            ":distro@1.9.0",
-            ":docstring-parser@0.17.0",
-            ":httpx@0.27.2",
-            ":jiter@0.12.0",
-            ":pydantic@2.12.5",
-            ":sniffio@1.3.1",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":anyio@4.4.0",
-            ":distro@1.9.0",
-            ":docstring-parser@0.17.0",
-            ":httpx@0.27.2",
-            ":jiter@0.12.0",
-            ":pydantic@2.12.5",
-            ":sniffio@1.3.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":anyio@4.4.0",
-            ":distro@1.9.0",
-            ":docstring-parser@0.17.0",
-            ":httpx@0.27.2",
-            ":jiter@0.12.0",
-            ":pydantic@2.12.5",
-            ":sniffio@1.3.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":anyio@4.4.0",
             ":distro@1.9.0",
             ":docstring-parser@0.17.0",
@@ -988,9 +938,6 @@ def targets():
 
     _blake3_1_0_8_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":typing-extensions@4.15.0",
         ],
@@ -1353,17 +1300,7 @@ def targets():
     _compressed_tensors_0_12_2_deps = [
         ":torch@multiple",
     ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -1373,32 +1310,12 @@ def targets():
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
         ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":loguru@0.7.3",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":loguru@0.7.3",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -1506,34 +1423,16 @@ def targets():
 
     _cuda_bindings_13_0_3_deps = [
     ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-pathfinder@1.3.2",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-pathfinder@1.3.2",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -1583,15 +1482,7 @@ def targets():
 
     _cuda_python_13_0_3_deps = [
     ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
@@ -1599,27 +1490,11 @@ def targets():
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-bindings@13.0.3",
             ":cuda-pathfinder@1.3.2",
         ],
@@ -1649,28 +1524,13 @@ def targets():
     _cupy_cuda12x_13_6_0_deps = [
         ":numpy@multiple",
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":fastrlock@0.8.3",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":fastrlock@0.8.3",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":fastrlock@0.8.3",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":fastrlock@0.8.3",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":fastrlock@0.8.3",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":fastrlock@0.8.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":fastrlock@0.8.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":fastrlock@0.8.3",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -1847,15 +1707,7 @@ def targets():
 
     _depyf_0_20_0_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":astor@0.8.1",
-            ":dill@0.3.8",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":astor@0.8.1",
-            ":dill@0.3.8",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
@@ -1863,19 +1715,7 @@ def targets():
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":astor@0.8.1",
-            ":dill@0.3.8",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":astor@0.8.1",
-            ":dill@0.3.8",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":astor@0.8.1",
-            ":dill@0.3.8",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":astor@0.8.1",
             ":dill@0.3.8",
         ],
@@ -2354,33 +2194,7 @@ def targets():
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":apache-tvm-ffi@0.1.3",
             ":click@8.1.7",
             ":einops@0.8.0",
@@ -2406,46 +2220,7 @@ def targets():
             ":tabulate@0.9.0",
             ":tqdm@4.66.5",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":apache-tvm-ffi@0.1.3",
             ":click@8.1.7",
             ":einops@0.8.0",
@@ -4332,19 +4107,7 @@ def targets():
 
     _lm_format_enforcer_0_11_3_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":interegular@0.3.3",
-            ":packaging@25.0",
-            ":pydantic@2.12.5",
-            ":pyyaml@6.0.3",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":interegular@0.3.3",
-            ":packaging@25.0",
-            ":pydantic@2.12.5",
-            ":pyyaml@6.0.3",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":interegular@0.3.3",
             ":packaging@25.0",
             ":pydantic@2.12.5",
@@ -4356,25 +4119,7 @@ def targets():
             ":pydantic@2.12.5",
             ":pyyaml@6.0.3",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":interegular@0.3.3",
-            ":packaging@25.0",
-            ":pydantic@2.12.5",
-            ":pyyaml@6.0.3",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":interegular@0.3.3",
-            ":packaging@25.0",
-            ":pydantic@2.12.5",
-            ":pyyaml@6.0.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":interegular@0.3.3",
-            ":packaging@25.0",
-            ":pydantic@2.12.5",
-            ":pyyaml@6.0.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":interegular@0.3.3",
             ":packaging@25.0",
             ":pydantic@2.12.5",
@@ -4656,25 +4401,7 @@ def targets():
     _mistral_common_1_8_6_deps = [
         ":numpy@multiple",
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":jsonschema@4.23.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":pillow@12.0.0",
-            ":pydantic@2.12.5",
-            ":requests@2.32.3",
-            ":tiktoken@0.12.0",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":jsonschema@4.23.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":pillow@12.0.0",
-            ":pydantic@2.12.5",
-            ":requests@2.32.3",
-            ":tiktoken@0.12.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":jsonschema@4.23.0",
             ":opencv-python-headless@4.11.0.86",
             ":pillow@12.0.0",
@@ -4692,34 +4419,7 @@ def targets():
             ":tiktoken@0.12.0",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":jsonschema@4.23.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":pillow@12.0.0",
-            ":pydantic@2.12.5",
-            ":requests@2.32.3",
-            ":tiktoken@0.12.0",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":jsonschema@4.23.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":pillow@12.0.0",
-            ":pydantic@2.12.5",
-            ":requests@2.32.3",
-            ":tiktoken@0.12.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":jsonschema@4.23.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":pillow@12.0.0",
-            ":pydantic@2.12.5",
-            ":requests@2.32.3",
-            ":tiktoken@0.12.0",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":jsonschema@4.23.0",
             ":opencv-python-headless@4.11.0.86",
             ":pillow@12.0.0",
@@ -4825,25 +4525,7 @@ def targets():
 
     _model_hosting_container_standards_0_1_12_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":fastapi@0.124.4",
-            ":httpx@0.27.2",
-            ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
-            ":setuptools@80.9.0",
-            ":starlette@0.50.0",
-            ":supervisor@4.3.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":fastapi@0.124.4",
-            ":httpx@0.27.2",
-            ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
-            ":setuptools@80.9.0",
-            ":starlette@0.50.0",
-            ":supervisor@4.3.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":fastapi@0.124.4",
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
@@ -4861,34 +4543,7 @@ def targets():
             ":starlette@0.50.0",
             ":supervisor@4.3.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":fastapi@0.124.4",
-            ":httpx@0.27.2",
-            ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
-            ":setuptools@80.9.0",
-            ":starlette@0.50.0",
-            ":supervisor@4.3.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":fastapi@0.124.4",
-            ":httpx@0.27.2",
-            ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
-            ":setuptools@80.9.0",
-            ":starlette@0.50.0",
-            ":supervisor@4.3.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":fastapi@0.124.4",
-            ":httpx@0.27.2",
-            ":jmespath@1.0.1",
-            ":pydantic@2.12.5",
-            ":setuptools@80.9.0",
-            ":starlette@0.50.0",
-            ":supervisor@4.3.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":fastapi@0.124.4",
             ":httpx@0.27.2",
             ":jmespath@1.0.1",
@@ -5941,15 +5596,7 @@ def targets():
     _nvidia_cutlass_dsl_4_3_0_deps = [
         ":numpy@multiple",
     ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
@@ -5957,27 +5604,11 @@ def targets():
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":cuda-python@13.0.3",
             ":typing-extensions@4.15.0",
         ],
@@ -6198,28 +5829,13 @@ def targets():
 
     _openai_harmony_0_0_8_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pydantic@2.12.5",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
@@ -6833,15 +6449,7 @@ def targets():
 
     _prometheus_fastapi_instrumentator_7_1_0_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":prometheus-client@0.20.0",
-            ":starlette@0.50.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":prometheus-client@0.20.0",
-            ":starlette@0.50.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
@@ -6849,19 +6457,7 @@ def targets():
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":prometheus-client@0.20.0",
-            ":starlette@0.50.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":prometheus-client@0.20.0",
-            ":starlette@0.50.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":prometheus-client@0.20.0",
-            ":starlette@0.50.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":prometheus-client@0.20.0",
             ":starlette@0.50.0",
         ],
@@ -7220,17 +6816,7 @@ def targets():
 
     _pydantic_extra_types_2_10_6_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pycountry@24.6.1",
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
@@ -7240,22 +6826,7 @@ def targets():
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pycountry@24.6.1",
-            ":pydantic@2.12.5",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":pycountry@24.6.1",
             ":pydantic@2.12.5",
             ":typing-extensions@4.15.0",
@@ -7808,29 +7379,7 @@ def targets():
 
     _ray_2_52_1_deps = [
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":click@8.1.7",
-            ":cupy-cuda12x@13.6.0",
-            ":filelock@3.16.1",
-            ":jsonschema@4.23.0",
-            ":msgpack@1.1.2",
-            ":packaging@25.0",
-            ":protobuf@6.31.1",
-            ":pyyaml@6.0.3",
-            ":requests@2.32.3",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":click@8.1.7",
-            ":cupy-cuda12x@13.6.0",
-            ":filelock@3.16.1",
-            ":jsonschema@4.23.0",
-            ":msgpack@1.1.2",
-            ":packaging@25.0",
-            ":protobuf@6.31.1",
-            ":pyyaml@6.0.3",
-            ":requests@2.32.3",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":click@8.1.7",
             ":cupy-cuda12x@13.6.0",
             ":filelock@3.16.1",
@@ -7852,40 +7401,7 @@ def targets():
             ":pyyaml@6.0.3",
             ":requests@2.32.3",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":click@8.1.7",
-            ":cupy-cuda12x@13.6.0",
-            ":filelock@3.16.1",
-            ":jsonschema@4.23.0",
-            ":msgpack@1.1.2",
-            ":packaging@25.0",
-            ":protobuf@6.31.1",
-            ":pyyaml@6.0.3",
-            ":requests@2.32.3",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":click@8.1.7",
-            ":cupy-cuda12x@13.6.0",
-            ":filelock@3.16.1",
-            ":jsonschema@4.23.0",
-            ":msgpack@1.1.2",
-            ":packaging@25.0",
-            ":protobuf@6.31.1",
-            ":pyyaml@6.0.3",
-            ":requests@2.32.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":click@8.1.7",
-            ":cupy-cuda12x@13.6.0",
-            ":filelock@3.16.1",
-            ":jsonschema@4.23.0",
-            ":msgpack@1.1.2",
-            ":packaging@25.0",
-            ":protobuf@6.31.1",
-            ":pyyaml@6.0.3",
-            ":requests@2.32.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":click@8.1.7",
             ":cupy-cuda12x@13.6.0",
             ":filelock@3.16.1",
@@ -9853,7 +9369,50 @@ def targets():
     _torch_2_9_1_dev20251204_rocm7_0_2_lw_git351ff442_deps = [
         ":triton@multiple",
     ] + select({
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":filelock@3.16.1",
+            ":fsspec@2024.6.1",
+            ":jinja2@3.1.6",
+            ":networkx@3.2.1",
+            ":sympy@1.13.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":filelock@3.16.1",
+            ":fsspec@2024.6.1",
+            ":jinja2@3.1.6",
+            ":networkx@3.2.1",
+            ":sympy@1.13.3",
+            ":typing-extensions@4.15.0",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":filelock@3.16.1",
+            ":fsspec@2024.6.1",
+            ":jinja2@3.1.6",
+            ":networkx@3.2.1",
+            ":setuptools@80.9.0",
+            ":sympy@1.13.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":filelock@3.16.1",
+            ":fsspec@2024.6.1",
+            ":jinja2@3.1.6",
+            ":networkx@3.2.1",
+            ":setuptools@80.9.0",
+            ":sympy@1.13.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
+            ":filelock@3.16.1",
+            ":fsspec@2024.6.1",
+            ":jinja2@3.1.6",
+            ":networkx@3.2.1",
+            ":setuptools@80.9.0",
+            ":sympy@1.13.3",
+            ":typing-extensions@4.15.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
             ":filelock@3.16.1",
             ":fsspec@2024.6.1",
             ":jinja2@3.1.6",
@@ -10148,7 +9707,22 @@ def targets():
         ":numpy@multiple",
         ":torch@multiple",
     ] + select({
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":pillow@12.0.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":pillow@12.0.0",
+        ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":pillow@12.0.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
+            ":pillow@12.0.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
+            ":pillow@12.0.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
             ":pillow@12.0.0",
         ],
     })
@@ -10518,55 +10092,6 @@ def targets():
         ":torchaudio@multiple",
         ":torchvision@multiple",
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":aiohttp@3.13.2",
-            ":anthropic@0.71.0",
-            ":blake3@1.0.8",
-            ":cachetools@5.4.0",
-            ":cbor2@5.7.1",
-            ":cloudpickle@3.1.2",
-            ":compressed-tensors@0.12.2",
-            ":depyf@0.20.0",
-            ":diskcache@5.6.3",
-            ":einops@0.8.0",
-            ":filelock@3.16.1",
-            ":flashinfer-python@0.5.3",
-            ":gguf@0.17.1",
-            ":lark@1.2.2",
-            ":llguidance@1.3.0",
-            ":lm-format-enforcer@0.11.3",
-            ":model-hosting-container-standards@0.1.12",
-            ":msgspec@0.20.0",
-            ":ninja@1.13.0",
-            ":numba@0.63.1",
-            ":openai-harmony@0.0.8",
-            ":openai@2.11.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":outlines-core@0.2.11",
-            ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
-            ":prometheus-client@0.20.0",
-            ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
-            ":psutil@7.0.0",
-            ":py-cpuinfo@9.0.0",
-            ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
-            ":python-json-logger@2.0.7",
-            ":pyyaml@6.0.3",
-            ":pyzmq@27.1.0",
-            ":regex@2025.11.3",
-            ":requests@2.32.3",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":tiktoken@0.12.0",
-            ":tokenizers@0.22.1",
-            ":tqdm@4.66.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-            ":watchfiles@1.1.1",
-            ":xgrammar@0.1.27",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.2",
             ":anthropic@0.71.0",
@@ -10608,57 +10133,6 @@ def targets():
             ":requests@2.32.3",
             ":sentencepiece@0.2.1",
             ":setproctitle@1.3.7",
-            ":tiktoken@0.12.0",
-            ":tokenizers@0.22.1",
-            ":tqdm@4.66.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-            ":watchfiles@1.1.1",
-            ":xgrammar@0.1.27",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":aiohttp@3.13.2",
-            ":anthropic@0.71.0",
-            ":blake3@1.0.8",
-            ":cachetools@5.4.0",
-            ":cbor2@5.7.1",
-            ":cloudpickle@3.1.2",
-            ":compressed-tensors@0.12.2",
-            ":depyf@0.20.0",
-            ":diskcache@5.6.3",
-            ":einops@0.8.0",
-            ":filelock@3.16.1",
-            ":flashinfer-python@0.5.3",
-            ":gguf@0.17.1",
-            ":lark@1.2.2",
-            ":llguidance@1.3.0",
-            ":lm-format-enforcer@0.11.3",
-            ":model-hosting-container-standards@0.1.12",
-            ":msgspec@0.20.0",
-            ":ninja@1.13.0",
-            ":numba@0.63.1",
-            ":openai-harmony@0.0.8",
-            ":openai@2.11.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":outlines-core@0.2.11",
-            ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
-            ":prometheus-client@0.20.0",
-            ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
-            ":psutil@7.0.0",
-            ":py-cpuinfo@9.0.0",
-            ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
-            ":python-json-logger@2.0.7",
-            ":pyyaml@6.0.3",
-            ":pyzmq@27.1.0",
-            ":regex@2025.11.3",
-            ":requests@2.32.3",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":setuptools@80.9.0",
-            ":six@1.16.0",
             ":tiktoken@0.12.0",
             ":tokenizers@0.22.1",
             ":tqdm@4.66.5",
@@ -10718,160 +10192,7 @@ def targets():
             ":watchfiles@1.1.1",
             ":xgrammar@0.1.27",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":aiohttp@3.13.2",
-            ":anthropic@0.71.0",
-            ":blake3@1.0.8",
-            ":cachetools@5.4.0",
-            ":cbor2@5.7.1",
-            ":cloudpickle@3.1.2",
-            ":compressed-tensors@0.12.2",
-            ":depyf@0.20.0",
-            ":diskcache@5.6.3",
-            ":einops@0.8.0",
-            ":filelock@3.16.1",
-            ":flashinfer-python@0.5.3",
-            ":gguf@0.17.1",
-            ":lark@1.2.2",
-            ":llguidance@1.3.0",
-            ":lm-format-enforcer@0.11.3",
-            ":model-hosting-container-standards@0.1.12",
-            ":msgspec@0.20.0",
-            ":ninja@1.13.0",
-            ":numba@0.63.1",
-            ":openai-harmony@0.0.8",
-            ":openai@2.11.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":outlines-core@0.2.11",
-            ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
-            ":prometheus-client@0.20.0",
-            ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
-            ":psutil@7.0.0",
-            ":py-cpuinfo@9.0.0",
-            ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
-            ":python-json-logger@2.0.7",
-            ":pyyaml@6.0.3",
-            ":pyzmq@27.1.0",
-            ":regex@2025.11.3",
-            ":requests@2.32.3",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":setuptools@80.9.0",
-            ":six@1.16.0",
-            ":tiktoken@0.12.0",
-            ":tokenizers@0.22.1",
-            ":tqdm@4.66.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-            ":watchfiles@1.1.1",
-            ":xgrammar@0.1.27",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":aiohttp@3.13.2",
-            ":anthropic@0.71.0",
-            ":blake3@1.0.8",
-            ":cachetools@5.4.0",
-            ":cbor2@5.7.1",
-            ":cloudpickle@3.1.2",
-            ":compressed-tensors@0.12.2",
-            ":depyf@0.20.0",
-            ":diskcache@5.6.3",
-            ":einops@0.8.0",
-            ":filelock@3.16.1",
-            ":flashinfer-python@0.5.3",
-            ":gguf@0.17.1",
-            ":lark@1.2.2",
-            ":llguidance@1.3.0",
-            ":lm-format-enforcer@0.11.3",
-            ":model-hosting-container-standards@0.1.12",
-            ":msgspec@0.20.0",
-            ":ninja@1.13.0",
-            ":numba@0.63.1",
-            ":openai-harmony@0.0.8",
-            ":openai@2.11.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":outlines-core@0.2.11",
-            ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
-            ":prometheus-client@0.20.0",
-            ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
-            ":psutil@7.0.0",
-            ":py-cpuinfo@9.0.0",
-            ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
-            ":python-json-logger@2.0.7",
-            ":pyyaml@6.0.3",
-            ":pyzmq@27.1.0",
-            ":regex@2025.11.3",
-            ":requests@2.32.3",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":setuptools@80.9.0",
-            ":six@1.16.0",
-            ":tiktoken@0.12.0",
-            ":tokenizers@0.22.1",
-            ":tqdm@4.66.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-            ":watchfiles@1.1.1",
-            ":xgrammar@0.1.27",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":aiohttp@3.13.2",
-            ":anthropic@0.71.0",
-            ":blake3@1.0.8",
-            ":cachetools@5.4.0",
-            ":cbor2@5.7.1",
-            ":cloudpickle@3.1.2",
-            ":compressed-tensors@0.12.2",
-            ":depyf@0.20.0",
-            ":diskcache@5.6.3",
-            ":einops@0.8.0",
-            ":filelock@3.16.1",
-            ":flashinfer-python@0.5.3",
-            ":gguf@0.17.1",
-            ":lark@1.2.2",
-            ":llguidance@1.3.0",
-            ":lm-format-enforcer@0.11.3",
-            ":model-hosting-container-standards@0.1.12",
-            ":msgspec@0.20.0",
-            ":ninja@1.13.0",
-            ":numba@0.63.1",
-            ":openai-harmony@0.0.8",
-            ":openai@2.11.0",
-            ":opencv-python-headless@4.11.0.86",
-            ":outlines-core@0.2.11",
-            ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
-            ":prometheus-client@0.20.0",
-            ":prometheus-fastapi-instrumentator@7.1.0",
-            ":protobuf@6.31.1",
-            ":psutil@7.0.0",
-            ":py-cpuinfo@9.0.0",
-            ":pybase64@1.4.3",
-            ":pydantic@2.12.5",
-            ":python-json-logger@2.0.7",
-            ":pyyaml@6.0.3",
-            ":pyzmq@27.1.0",
-            ":regex@2025.11.3",
-            ":requests@2.32.3",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":setuptools@80.9.0",
-            ":six@1.16.0",
-            ":tiktoken@0.12.0",
-            ":tokenizers@0.22.1",
-            ":tqdm@4.66.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-            ":watchfiles@1.1.1",
-            ":xgrammar@0.1.27",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.2",
             ":anthropic@0.71.0",
             ":blake3@1.0.8",
@@ -11274,19 +10595,7 @@ def targets():
         ":torch@multiple",
         ":triton@multiple",
     ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":ninja@1.13.0",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":ninja@1.13.0",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":ninja@1.13.0",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
@@ -11298,25 +10607,7 @@ def targets():
             ":transformers@4.57.1",
             ":typing-extensions@4.15.0",
         ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":ninja@1.13.0",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-        ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":ninja@1.13.0",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":ninja@1.13.0",
-            ":pydantic@2.12.5",
-            ":transformers@4.57.1",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":ninja@1.13.0",
             ":pydantic@2.12.5",
             ":transformers@4.57.1",
