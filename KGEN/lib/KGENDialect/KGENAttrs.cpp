@@ -1250,7 +1250,7 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 
     GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
     if (genMetadata) {
-      genMetadata = remapper.replace(genMetadata.prependPosParamsFromOps(
+      genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
           paramDecls, llvm::drop_end(symbolOps)));
     }
 

@@ -236,11 +236,11 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
       ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
       ArrayRef<SmallVector<ConstraintAttr>> constraints);
 
-    /// Get a new metadata attribute for a generator with the given number of
-    /// positional input parameters prepended to the generator. An additional
+    /// Get a new metadata attribute for a generator with the given number input
+    /// parameters prepended with 'Contextual' passing kind.  An additional
     /// array of variadic info for each new parameter is also required.
-    PogListAttr prependPosParams(ArrayRef<ParamDeclAttr> newParams,
-                                 ArrayRef<VariadicKind> variadics) const;
+    PogListAttr prependContextualParams(ArrayRef<ParamDeclAttr> newParams,
+                                        ArrayRef<VariadicKind> variadics) const;
   }];
 
   let genVerifyDecl = 1;

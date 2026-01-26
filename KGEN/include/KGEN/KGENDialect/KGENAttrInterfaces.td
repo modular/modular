@@ -261,7 +261,7 @@ def GeneratorMetadataAttrInterface
       Get a new metadata attribute for a generator with a number of positional
       input parameters prepended, determined from the number of declared by the
       given ops. The given operations must implement `DeclInterface`.
-    }], "GeneratorMetadataAttrInterface", "prependPosParamsFromOps", (ins
+    }], "GeneratorMetadataAttrInterface", "prependContextualParamsFromOps", (ins
       "ArrayRef<ParamDeclAttr>":$newParams,
       "ArrayRef<Operation *>":$ops)>,
   ];
