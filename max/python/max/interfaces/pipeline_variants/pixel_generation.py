@@ -19,11 +19,13 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol, runtime_checkable
+from typing import Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max.interfaces import TokenBuffer
+from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
@@ -92,7 +94,7 @@ class PixelGenerationRequest(Request):
 class PixelGenerationContext(BaseContext, Protocol):
     """Protocol defining the interface for pixel generation contexts.
 
-    A ``PixelContext`` represents model inputs for pixel generation pipelines,
+    A ``PixelGenerationContext`` represents model inputs for pixel generation pipelines,
     managing the state and parameters needed for generating images or videos.
     """
 
@@ -102,26 +104,42 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def model_name(self) -> str:
-        """The name of the model being used."""
+    def latents(self) -> npt.NDArray[np.float32]:
+        """The latents for the context."""
         ...
 
-    def update(self, latents: npt.NDArray[Any]) -> None:
-        """Update the context with newly generated latents/image data."""
+    @property
+    def height(self) -> int:
+        """Height of generated output in pixels."""
         ...
 
-    def to_generation_output(self) -> PixelGenerationOutput:
-        """Convert this context to a PixelGenerationOutput object."""
+    @property
+    def width(self) -> int:
+        """Width of generated output in pixels."""
         ...
+
+    @property
+    def num_inference_steps(self) -> int:
+        """Number of denoising steps."""
+        ...
+
+    @property
+    def guidance_scale(self) -> float:
+        """Classifier-free guidance scale (1.0 to disable CFG)."""
+        ...
+
+    @property
+    def num_images_per_prompt(self) -> int:
+        """Number of images to generate."""
 
 
 PixelGenerationContextType = TypeVar(
     "PixelGenerationContextType", bound=PixelGenerationContext
 )
-"""Type variable for pixel generation context types, constrained to PixelContext.
+"""Type variable for pixel generation context types, constrained to PixelGenerationContext.
 
 This allows generic typing of pixel generation pipeline components to accept any
-context type that inherits from PixelContext.
+context type that inherits from PixelGenerationContext.
 """
 
 
