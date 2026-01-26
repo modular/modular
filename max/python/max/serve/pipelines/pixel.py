@@ -33,7 +33,9 @@ logger = logging.getLogger("max.serve")
 
 
 class PixelGeneratorPipeline(
-    BasePipeline[PixelGenerationContext, PixelGenerationRequest, PixelGenerationOutput]
+    BasePipeline[
+        PixelGenerationContext, PixelGenerationRequest, PixelGenerationOutput
+    ]
 ):
     """Base class for diffusion-based image and video generation pipelines."""
 
