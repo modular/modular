@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv
+from math import ceildiv, align_up
 from math.constants import log2e
 from memory import (
     bitcast,
@@ -666,15 +666,25 @@ fn q_smem_shape[
     group: Int,
     depth: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
     __comptime_assert L in (3, 4)
+    comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
     @parameter
     if L == 3:  # prefill
-        return {BM, 1, depth}
+
+        @parameter
+        if num_qk_stages == 1:
+            return {BM, 1, depth}
+        else:
+            return {
+                BM,
+                1,
+                align_up(depth, swizzle_granularity) // num_qk_stages,
+            }
     else:
-        comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
         return {1, 1, max(group, 8), swizzle_granularity}
 
 
@@ -705,10 +715,17 @@ comptime QTMATile[
     depth: Int,
     group: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
     q_smem_shape[
-        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+        dtype,
+        swizzle_mode,
+        BM=BM,
+        group=group,
+        depth=depth,
+        decoding=decoding,
+        num_qk_stages=num_qk_stages,
     ](),
     swizzle_mode,
 ]
@@ -737,6 +754,7 @@ fn q_tma[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype]],
@@ -748,9 +766,16 @@ fn q_tma[
     depth=depth,
     group=group,
     decoding=decoding,
+    num_qk_stages=num_qk_stages,
 ]:
     comptime smem_dim = q_smem_shape[
-        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+        dtype,
+        swizzle_mode,
+        BM=BM,
+        group=group,
+        depth=depth,
+        decoding=decoding,
+        num_qk_stages=num_qk_stages,
     ]()
     comptime gmem_dim = q_gmem_shape[
         dtype,
@@ -996,7 +1021,7 @@ fn q_coord[
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
     """
     comptime rank: Int = res.size
-    __comptime_assert rank in (3, 4, 5)
+    __comptime_assert rank in (3, 4)
 
     res = {}
 

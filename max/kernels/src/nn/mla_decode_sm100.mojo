@@ -159,7 +159,7 @@ from nn.mha_sm100_2q import (
     ConsumerPipeline,
     MBarPipeline,
 )
-from nn.mha_fa3_utils import q_smem_shape, q_gmem_shape, KVTMATile
+from nn.mha_fa3_utils import q_gmem_shape, KVTMATile
 from nn.mha import q_num_matrix_view_rows
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly
@@ -849,7 +849,7 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
 
     @always_inline
     fn stage_base_ptr[
-        *, mma_stage: Int = 0
+        *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         # Which KV stage (0..num_kv_stages-1)?
         var stage_idx: UInt32 = self.pipe.state.index()
@@ -857,17 +857,17 @@ struct DecodeKVProducer[dtype: DType, config: MLA_SM100_Decode_Config](
         return self.smem + stage_offset
 
     @always_inline
-    fn stage_index[*, mma_stage: Int = 0](self) -> UInt32:
+    fn stage_index[*, qk_stage: Int = 0](self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline
-    fn producer_mbar[*, mma_stage: Int = 0](self) -> MBarType:
-        return self.pipe.producer_mbar[mma_stage]()
+    fn producer_mbar[*, qk_stage: Int = 0](self) -> MBarType:
+        return self.pipe.producer_mbar[qk_stage]()
 
     @always_inline("nodebug")
-    fn acquire[*, mma_stage: Int = 0](self):
+    fn acquire[*, qk_stage: Int = 0](self):
         # Block until consumer has released this stage
-        self.pipe.producer_acquire[mma_stage]()
+        self.pipe.producer_acquire[qk_stage]()
 
     @always_inline("nodebug")
     fn commit_step(mut self):
@@ -903,25 +903,25 @@ struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 
     @always_inline
     fn stage_base_ptr[
-        *, mma_stage: Int = 0
+        *, qk_stage: Int = 0
     ](self) -> SharedMemPointer[Scalar[Self.dtype]]:
         var stage_idx: UInt32 = self.pipe.state.index()
         var stage_offset: UInt32 = stage_idx * Self.kv_stage_elems
         return self.smem + stage_offset
 
     @always_inline
-    fn stage_index[*, mma_stage: Int = 0](self) -> UInt32:
+    fn stage_index[*, qk_stage: Int = 0](self) -> UInt32:
         return self.pipe.state.index()
 
     @always_inline("nodebug")
-    fn wait[*, mma_stage: Int = 0](self):
+    fn wait[*, qk_stage: Int = 0](self):
         # Wait on producer mbar for (current index, current phase)
-        self.pipe.consumer_wait[mma_stage]()
+        self.pipe.consumer_wait[qk_stage]()
 
     @always_inline("nodebug")
-    fn release[*, mma_stage: Int = 0](mut self, e: Int32):
+    fn release[*, qk_stage: Int = 0](mut self, e: Int32):
         # Signal "stage consumed" to the producer via consumer mbar
-        self.pipe.consumer_release[mma_stage](e)
+        self.pipe.consumer_release[qk_stage](e)
 
 
 # ------------------------------------------------------------------------------
@@ -931,22 +931,22 @@ struct DecodeKVConsumer[dtype: DType, config: MLA_SM100_Decode_Config](
 
 struct KVPipelineGeneric[
     num_kv_stages: Int,
-    num_mma_stages: Int,
+    num_qk_stages: Int,
     num_producer: Int,
     num_consumer: Int,
 ](TrivialRegisterType):
     """
-    KVPipeline has `num_kv_stages * num_mma_stages` stages.
+    KVPipeline has `num_kv_stages * num_qk_stages` stages.
     `num_kv_stages` refers to how many `K` and `V` tiles we pipeline
     for performing the `S = Q@K'` and `O += P@V` MMAs.
-    Each of these MMAs is broken up into `num_mma_stages` pipelined
+    Each of these MMAs is broken up into `num_qk_stages` pipelined
     MMAs. We set `step=False` for all but the last MMA that completes
     the operation.
     An alternative implementation would separate the two, and potentially
     allow for more overall stages at the cost of slightly more bookkeeping.
     """
 
-    comptime num_stages: Int = Self.num_kv_stages * Self.num_mma_stages
+    comptime num_stages: Int = Self.num_kv_stages * Self.num_qk_stages
 
     # mbars are ordered in {producer, consumer} pairs
     var mbar: MBarType
@@ -969,44 +969,44 @@ struct KVPipelineGeneric[
             self.mbar[i].init(Self.num_consumer)
 
     @always_inline
-    fn producer_mbar[mma_stage: Int](self) -> MBarType:
+    fn producer_mbar[qk_stage: Int](self) -> MBarType:
         var idx: UInt32 = self.state.index()
-        return self.mbar + Self.num_mma_stages * idx + mma_stage
+        return self.mbar + Self.num_qk_stages * idx + qk_stage
 
     @always_inline
-    fn consumer_mbar[mma_stage: Int](self, idx: UInt32) -> MBarType:
-        comptime const_offset = mma_stage + Self.num_stages
-        return self.mbar + Self.num_mma_stages * idx + const_offset
+    fn consumer_mbar[qk_stage: Int](self, idx: UInt32) -> MBarType:
+        comptime const_offset = qk_stage + Self.num_stages
+        return self.mbar + Self.num_qk_stages * idx + const_offset
 
     @always_inline
-    fn consumer_mbar[mma_stage: Int](self) -> MBarType:
-        return self.consumer_mbar[mma_stage](self.state.index())
+    fn consumer_mbar[qk_stage: Int](self) -> MBarType:
+        return self.consumer_mbar[qk_stage](self.state.index())
 
     @always_inline("nodebug")
-    fn producer_acquire[mma_stage: Int = Self.num_mma_stages - 1](self):
+    fn producer_acquire[qk_stage: Int = Self.num_qk_stages - 1](self):
         """
         Returns the dynamic pipe idx.
         """
-        self.consumer_mbar[mma_stage]()[].wait(self.state.phase())
+        self.consumer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn consumer_wait[mma_stage: Int = Self.num_mma_stages - 1](self):
-        self.producer_mbar[mma_stage]()[].wait(self.state.phase())
+    fn consumer_wait[qk_stage: Int = Self.num_qk_stages - 1](self):
+        self.producer_mbar[qk_stage]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
     fn consumer_release[
-        mma_stage: Int = Self.num_mma_stages - 1
+        qk_stage: Int = Self.num_qk_stages - 1
     ](mut self, e: Int32):
-        elect_mma_arrive(self.consumer_mbar[mma_stage](), e)
+        elect_mma_arrive(self.consumer_mbar[qk_stage](), e)
 
         @parameter
-        if mma_stage == Self.num_mma_stages - 1:
+        if qk_stage == Self.num_qk_stages - 1:
             self.state.step()
 
     @staticmethod
     @always_inline
     fn num_mbars() -> UInt32:
-        return 2 * Self.num_mma_stages * Self.num_kv_stages
+        return 2 * Self.num_qk_stages * Self.num_kv_stages
 
 
 struct TMADestination[dtype: DType, layout: Layout](TrivialRegisterType):
@@ -1980,7 +1980,7 @@ struct MLA_SM100_Decode[
 
         var kv_pipeline = KVPipelineGeneric[
             num_kv_stages = Self.config.num_kv_stages,  # 2
-            num_mma_stages=1,
+            num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
         ](mbar_kv_base)
@@ -2228,13 +2228,13 @@ struct MLA_SM100_Decode[
             )
             Self.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
 
-        var k0_bar: MBarType = kv_prod.producer_mbar[mma_stage=0]()
+        var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
 
         if is_leader:
             k0_bar[].expect_bytes(
                 Self.config.BN * Self.config.q_depth * size_of[Self.qkv_type]()
             )
-            var stage_ptr = kv_prod.stage_base_ptr[mma_stage=0]()
+            var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             Self.load_kv(k_tma, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row))
 
         kv_prod.commit_step()
@@ -2246,11 +2246,11 @@ struct MLA_SM100_Decode[
         var tile_idx: Int = 1
         num_k_tiles = ceildiv(offset_position.num_keys, Self.config.BN)
         while tile_idx < num_k_tiles:
-            kv_prod.acquire[mma_stage=0]()
+            kv_prod.acquire[qk_stage=0]()
             # Current pipeline stage index (0 or 1 for 2-stage KV)
-            var stage_ptr = kv_prod.stage_base_ptr[mma_stage=0]()
+            var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
 
-            var k_mbar = kv_prod.producer_mbar[mma_stage=0]()
+            var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
 
             # Base pointer for this KV stage in shared memory
             # Producer-side barrier for this stage (already init'ed in kv_pipeline.init())
@@ -2386,12 +2386,12 @@ struct MLA_SM100_Decode[
             var slot_idx: UInt32 = s_prod.slot_index()
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
-            kv_cons.wait[mma_stage=0]()
+            kv_cons.wait[qk_stage=0]()
             # wait for stage 0
             # the stage_ptr is the pointer to the ready block of the first stage
             # and already has the correct stage pointer
             # this will let QK0 goes to SO_tmem and QK1 goes to S1_tmem and so on.
-            k_slot_index = kv_cons.stage_index[mma_stage=0]()
+            k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -2404,7 +2404,7 @@ struct MLA_SM100_Decode[
             s_prod.commit_mma(elect_mask)
             # Here we release the kV for ther QK but Load should not load it
             # as the V has not released yet
-            kv_cons.release[mma_stage=0](elect_mask)
+            kv_cons.release[qk_stage=0](elect_mask)
             tile_idx += 1
 
     @staticmethod
@@ -2460,9 +2460,9 @@ struct MLA_SM100_Decode[
         var tile_idx: Int = 0
         var c_scale: UInt32 = 0
         while tile_idx < num_k_tiles:
-            kv_cons.wait[mma_stage=0]()
+            kv_cons.wait[qk_stage=0]()
             var p_slot_index = p_cons.wait()
-            var v_slot_index = kv_cons.stage_index[mma_stage=0]()
+            var v_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             o_prod.acquire()
 
@@ -2481,7 +2481,7 @@ struct MLA_SM100_Decode[
             # Signal P-consumer mbar and advance P pipeline state
             p_cons.release_mma(elect_mask)
 
-            kv_cons.release[mma_stage=0](elect_mask)
+            kv_cons.release[qk_stage=0](elect_mask)
             tcgen05_fence_before()
             o_prod.commit_mma(elect_mask)
             if tile_idx == 0:

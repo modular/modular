@@ -191,7 +191,7 @@ struct SharedMemBarrier(TrivialRegisterType):
         """
         mbarrier_init(self.unsafe_ptr(), num_threads)
 
-    @always_inline
+    @always_inline("nodebug")
     fn expect_bytes[
         o: MutOrigin
     ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
@@ -811,7 +811,7 @@ struct TMATensorTile[
                     ),
                 )
 
-    @always_inline
+    @always_inline("nodebug")
     fn async_copy_3d(
         self,
         dst: LayoutTensor[
@@ -1100,7 +1100,7 @@ struct TMATensorTile[
                                 ),
                             )
 
-    @always_inline
+    @always_inline("nodebug")
     fn async_copy[
         rank: Int, //, cta_group: Int = 1
     ](
