@@ -303,12 +303,14 @@ fn create_tensormap[
 
     @parameter
     for i in range(rank):
-        global_dim_arg[i] = global_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
-        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
+        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_strides_arg[i] = Int64(
+            global_strides[rank - i - 1] * size_of[dtype]()
+        )
+        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
 
     debug_assert(
-        global_strides_arg[0] == size_of[dtype](),
+        global_strides_arg[0] == Int64(size_of[dtype]()),
         "TMA GMEM should be row-major, global stride",
         " at dim 0 should be size_of[dtype](): ",
         size_of[dtype](),
@@ -343,7 +345,7 @@ fn create_tensormap[
         ](
             tensormap_ptr,
             DataType.from_dtype[dtype]()._value,
-            rank,
+            Int32(rank),
             global_buf._handle,
             global_dim_arg.unsafe_ptr(),
             # global_strides_arg[0] is implicitly size_of[dtype]()

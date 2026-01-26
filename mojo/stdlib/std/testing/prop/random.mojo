@@ -177,4 +177,9 @@ struct Rng(Movable):
         Raises:
             If the underlying random number generator raises an error.
         """
-        return Int(self.rand_scalar[DType.int](min=min, max=max))
+        return Int(
+            self.rand_scalar[DType.int](
+                min=Scalar[DType.int](min),
+                max=Scalar[DType.int](max),
+            )
+        )

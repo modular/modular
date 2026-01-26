@@ -199,7 +199,7 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
         Args:
             value: The integer value to use for the barrier mask.
         """
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         """Compares two `AMDScheduleBarrierMask` instances for equality.

@@ -284,7 +284,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     """The format specifier."""
     # TODO: ord("a") conversion flag not supported yet
     comptime supported_conversion_flags = SIMD[DType.uint8, 2](
-        ord("s"), ord("r")
+        UInt8(ord("s")), UInt8(ord("r"))
     )
     """Currently supported conversion flags: `__str__` and `__repr__`."""
     comptime _FieldVariantType = Variant[
@@ -388,7 +388,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         var exclamation_index = -1
         var idx = 0
         while idx < field_len:
-            if field_ptr[idx] == ord("!"):
+            if field_ptr[idx] == UInt8(ord("!")):
                 exclamation_index = idx
                 break
             idx += 1
@@ -680,9 +680,9 @@ struct _FormatSpec(TrivialRegisterType):
 
     fn __init__(
         out self,
-        fill: UInt8 = ord(" "),
+        fill: UInt8 = UInt8(ord(" ")),
         align: UInt8 = 0,
-        sign: UInt8 = ord("-"),
+        sign: UInt8 = UInt8(ord("-")),
         coerce_z: Bool = False,
         alternate_form: Bool = False,
         width: UInt8 = 0,

@@ -260,7 +260,7 @@ struct Codepoint(
         #   UTF-8 encoding algorithms that do not properly exclude surrogate
         #   pair code points are actually relatively common (as I understand
         #   it); the algorithm above does not check for that.
-        var char = Codepoint(unsafe_unchecked_codepoint=result)
+        var char = Codepoint(unsafe_unchecked_codepoint=UInt32(result))
         return char, Int(num_bytes)
 
     # ===-------------------------------------------------------------------===#
@@ -555,19 +555,25 @@ struct Codepoint(
             comptime cont_marker = 0b1000_0000  # marker for continuation bytes
 
             if is_ascii:
-                ptr[0] = c
+                ptr[0] = Byte(c)
             elif num_bytes == 2:
-                ptr[0] = (c >> 6) | 0b1100_0000  # marker for 2 byte sequence
-                ptr[1] = (c & cont_mask) | cont_marker
+                ptr[0] = Byte(
+                    (c >> 6) | 0b1100_0000
+                )  # marker for 2 byte sequence
+                ptr[1] = Byte((c & cont_mask) | cont_marker)
             elif num_bytes == 3:
-                ptr[0] = (c >> 12) | 0b1110_0000  # marker for 3 byte sequence
-                ptr[1] = ((c >> 6) & cont_mask) | cont_marker
-                ptr[2] = (c & cont_mask) | cont_marker
+                ptr[0] = Byte(
+                    (c >> 12) | 0b1110_0000
+                )  # marker for 3 byte sequence
+                ptr[1] = Byte(((c >> 6) & cont_mask) | cont_marker)
+                ptr[2] = Byte((c & cont_mask) | cont_marker)
             else:
-                ptr[0] = (c >> 18) | 0b1111_0000  # marker for 4 byte sequence
-                ptr[1] = ((c >> 12) & cont_mask) | cont_marker
-                ptr[2] = ((c >> 6) & cont_mask) | cont_marker
-                ptr[3] = (c & cont_mask) | cont_marker
+                ptr[0] = Byte(
+                    (c >> 18) | 0b1111_0000
+                )  # marker for 4 byte sequence
+                ptr[1] = Byte(((c >> 12) & cont_mask) | cont_marker)
+                ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
+                ptr[3] = Byte((c & cont_mask) | cont_marker)
         else:
 
             @parameter
@@ -576,22 +582,22 @@ struct Codepoint(
                     ptr[0] = UInt8(c)
                     return 1
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + 1)
-                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-                ptr[0] = ((c >> shift) & mask) | num_bytes_marker
+                var mask = UInt8(0xFF) >> UInt8(num_bytes + 1)
+                var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
+                ptr[0] = (UInt8(c >> shift) & mask) | num_bytes_marker
                 for i in range(1, num_bytes):
                     shift -= 6
-                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
             else:
                 var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
-                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-                ptr[0] = ((c >> shift) & mask) | (
-                    num_bytes_marker & splat(num_bytes != 1)
+                var mask = UInt8(0xFF) >> UInt8(num_bytes + Int(num_bytes > 1))
+                var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
+                ptr[0] = (UInt8(c >> shift) & mask) | (
+                    num_bytes_marker & UInt8(splat(num_bytes != 1))
                 )
                 for i in range(1, num_bytes):
                     shift -= 6
-                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
 
         return num_bytes
 
@@ -608,7 +614,9 @@ struct Codepoint(
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        comptime sizes = SIMD[DType.uint32, 4](0, 2**7, 2**11, 2**16)
+        comptime sizes = SIMD[DType.uint32, 4](
+            0, UInt32(2**7), UInt32(2**11), UInt32(2**16)
+        )
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.

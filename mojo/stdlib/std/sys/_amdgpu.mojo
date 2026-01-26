@@ -155,7 +155,7 @@ fn append_bytes(
     msg_desc: UInt64,
     mut data: Span[UInt8],
 ) -> Tuple[UInt64, UInt64]:
-    var msg_desc_ = msg_set_len(msg_desc, (len(data) + 7) // 8)
+    var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
     @parameter
     @always_inline
@@ -167,7 +167,7 @@ fn append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte.cast[DType.uint64]() << (ii * 8)
+                arg |= byte.cast[DType.uint64]() << UInt64(ii * 8)
                 ii += 1
             data = data[0:0]
         return arg

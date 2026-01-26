@@ -2250,9 +2250,9 @@ fn chr(c: Int) -> String:
     ```
     """
     if c <= _LARGEST_UNICODE_ASCII_BYTE:
-        return _unsafe_chr_ascii(c)
+        return _unsafe_chr_ascii(UInt8(c))
 
-    var char_opt = Codepoint.from_u32(c)
+    var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
         abort(String("chr(", c, ") is not a valid Unicode codepoint"))
@@ -2294,10 +2294,10 @@ fn _repr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a representation of the given code point.
     """
-    comptime ord_tab = ord("\t")
-    comptime ord_new_line = ord("\n")
-    comptime ord_carriage_return = ord("\r")
-    comptime ord_back_slash = ord("\\")
+    comptime ord_tab = UInt8(ord("\t"))
+    comptime ord_new_line = UInt8(ord("\n"))
+    comptime ord_carriage_return = UInt8(ord("\r"))
+    comptime ord_back_slash = UInt8(ord("\\"))
 
     if c == ord_back_slash:
         return r"\\"
@@ -2326,7 +2326,7 @@ fn ascii(value: StringSlice) -> String:
     Returns:
         A string containing the ASCII representation of the object.
     """
-    comptime ord_squote = ord("'")
+    comptime ord_squote = UInt8(ord("'"))
     var result = String()
     var use_dquote = False
     var data = value.as_bytes()
@@ -2506,8 +2506,8 @@ fn _trim_and_handle_sign(
     var start: Int = 0
     while start < str_len and Codepoint(buff[start]).is_posix_space():
         start += 1
-    var p: Bool = buff[start] == ord("+")
-    var n: Bool = buff[start] == ord("-")
+    var p: Bool = buff[start] == UInt8(ord("+"))
+    var n: Bool = buff[start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2534,7 +2534,7 @@ fn _handle_base_prefix(
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
         var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == ord("0") and (
+        if buff[start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
@@ -2674,7 +2674,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     )
     var n = UInt32(n0)
     var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+        UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
     return (n0 + lookup_table[log2]) >> 32
 

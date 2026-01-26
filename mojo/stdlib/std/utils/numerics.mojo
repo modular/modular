@@ -264,8 +264,9 @@ struct FPUtils[
             The biased exponent as an Int.
         """
         return Int(
-            Self.bitcast_to_uint(value) >> Self.mantissa_width()
-            & ((1 << Self.exponent_width()) - 1)
+            Self.bitcast_to_uint(value)
+            >> Scalar[Self.uint_type](Self.mantissa_width())
+            & Scalar[Self.uint_type]((1 << Self.exponent_width()) - 1)
         )
 
     @staticmethod
@@ -311,7 +312,9 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
-        return Self.bitcast_to_uint(value) & Self.mantissa_mask()
+        return Self.bitcast_to_uint(value) & Scalar[Self.uint_type](
+            Self.mantissa_mask()
+        )
 
     @staticmethod
     @always_inline

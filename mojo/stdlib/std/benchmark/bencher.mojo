@@ -212,7 +212,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
             The throughput values as a floating point 64.
         """
         # TODO: do we need support other units of time (ms, ns)?
-        return (self.value) * 1e-9 / elapsed_sec
+        return Float64(self.value) * 1e-9 / elapsed_sec
 
 
 @fieldwise_init

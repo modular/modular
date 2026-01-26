@@ -1930,7 +1930,7 @@ __extension SIMD:
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
         elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Int(py=py)
+            self = Scalar[dtype](Int(py=py))
         else:
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()

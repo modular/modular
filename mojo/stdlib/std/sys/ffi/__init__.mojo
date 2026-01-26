@@ -451,7 +451,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterType):
     fn _dlopen(
         file: UnsafePointer[mut=False, c_char], flags: Int
     ) raises -> _DLHandle:
-        var handle = dlopen(file, flags)
+        var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
             raise Error(

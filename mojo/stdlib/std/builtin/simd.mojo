@@ -1995,7 +1995,9 @@ struct SIMD[dtype: DType, size: Int](
                 )
 
             comptime mask = FPUtils[Self.dtype].exponent_mantissa_mask()
-            return Self(from_bits=self.to_bits() & mask)
+            return Self(
+                from_bits=self.to_bits() & type_of(self.to_bits())(mask)
+            )
 
     @always_inline("nodebug")
     fn __round__(self) -> Self:
@@ -3461,7 +3463,9 @@ fn _convert_float8_to_f32_scalar[
     result = FPUtils.set_mantissa(result, mantissa)
 
     var x_bits = FPUtils.bitcast_to_uint(x)
-    var exp_mantissa = x_bits & FPUtils[dtype].exponent_mantissa_mask()
+    var exp_mantissa = x_bits & type_of(x_bits)(
+        FPUtils[dtype].exponent_mantissa_mask()
+    )
 
     if exp_mantissa == 0x00:
         result = Scalar[result_dtype](0)
@@ -3611,8 +3615,8 @@ fn _convert_f32_to_float8_scalar[
     comptime FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     comptime FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
     comptime FP32_NUM_BITS = bit_width_of[dtype]()
-    comptime FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
-    comptime FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
+    comptime FP8_EXPONENT_MASK: UInt8 = UInt8((1 << FP8_NUM_EXPONENT_BITS) - 1)
+    comptime FP8_MANTISSA_MASK: UInt8 = UInt8((1 << FP8_NUM_MANTISSA_BITS) - 1)
     comptime FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
     comptime FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
     comptime FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
@@ -3620,8 +3624,10 @@ fn _convert_f32_to_float8_scalar[
     comptime FP8_MAX_FLT = max_finite_byte()
 
     # Extract the bits in the FP32 type
-    var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
-    var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - FP32_EXPONENT_BIAS
+    var sign: UInt8 = UInt8(0x80) if FPUtils[dtype].get_sign(x) else UInt8(0x00)
+    var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - Int32(
+        FP32_EXPONENT_BIAS
+    )
     var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
 
     # NaN => NaN
@@ -3646,37 +3652,39 @@ fn _convert_f32_to_float8_scalar[
     if abs(x) >= Scalar[dtype](_max_finite[target]()):
         # satfinite
         return bitcast[target](sign | FP8_MAX_FLT)
-    elif exp >= FP8_MIN_EXPONENT:
+    elif exp >= Int32(FP8_MIN_EXPONENT):
         # normal fp32 to normal fp8
-        exp += FP8_EXPONENT_BIAS
+        exp += Int32(FP8_EXPONENT_BIAS)
         u = (
             (exp.cast[DType.uint32]() & FP8_EXPONENT_MASK.cast[DType.uint32]())
-            << FP8_NUM_MANTISSA_BITS
+            << UInt32(FP8_NUM_MANTISSA_BITS)
         ).cast[DType.uint8]()
         u = (
             u
             | (
-                mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
+                mantissa
+                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
             ).cast[DType.uint8]()
         )
     else:
         # normal single-precision to subnormal float8-precision representation
-        var rshift: Int32 = FP8_MIN_EXPONENT - exp
-        if rshift < FP32_NUM_BITS:
-            mantissa |= 1 << FP32_NUM_MANTISSA_BITS
+        var rshift: Int32 = Int32(FP8_MIN_EXPONENT) - exp
+        if rshift < Int32(FP32_NUM_BITS):
+            mantissa |= 1 << Int32(FP32_NUM_MANTISSA_BITS)
             sticky_bit = (
                 (mantissa & ((1 << rshift) - 1)).ne(0).cast[DType.int32]()
             )
             mantissa = mantissa >> rshift
             u = (
-                mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
+                mantissa
+                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
             ).cast[DType.uint8]() & FP8_MANTISSA_MASK
         else:
             mantissa = 0
             u = 0
 
     # round to nearest even
-    var NUM_BITS_SHIFT: Int32 = FP32_NUM_MANTISSA_BITS - (
+    var NUM_BITS_SHIFT: Int32 = Int32(FP32_NUM_MANTISSA_BITS) - Int32(
         FP8_NUM_MANTISSA_BITS + 1
     )
     var round_bit: Int32 = (mantissa >> NUM_BITS_SHIFT) & 1
@@ -3922,9 +3930,11 @@ fn _f32_to_bfloat16[
     width: Int, //
 ](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
     var f32_bits = f32.to_bits[DType.uint32]()
-    var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
+    var lsb = (f32_bits >> type_of(f32_bits)(_f32_bf16_mantissa_diff)) & 1
     var rounding_bias = 0x7FFF + lsb
-    var bf16_bits = (f32_bits + rounding_bias) >> _f32_bf16_mantissa_diff
+    var bf16_bits = (f32_bits + rounding_bias) >> type_of(f32_bits)(
+        _f32_bf16_mantissa_diff
+    )
     var bf16 = SIMD[DType.bfloat16, width](
         from_bits=bf16_bits.cast[DType.uint16]()
     )
@@ -4050,8 +4060,6 @@ fn _modf(x: SIMD) -> Tuple[type_of(x), type_of(x)]:
 # ===----------------------------------------------------------------------=== #
 # floor
 # ===----------------------------------------------------------------------=== #
-
-
 fn _floor(x: SIMD) -> type_of(x):
     @parameter
     if x.dtype.is_integral():
@@ -4066,9 +4074,12 @@ fn _floor(x: SIMD) -> type_of(x):
     comptime shift_factor = bitwidth - exponent_width - 1
 
     var bits = x._to_bits_signed()
-    var e = ((bits & mask) >> mantissa_width) - bias
-    bits = e.lt(shift_factor).select(
-        bits & ~((1 << (shift_factor - e)) - 1),
+    comptime BitsType = type_of(bits)
+    var e = ((bits & BitsType(mask)) >> BitsType(mantissa_width)) - BitsType(
+        bias
+    )
+    bits = e.lt(BitsType(shift_factor)).select(
+        bits & ~((1 << (BitsType(shift_factor) - e)) - 1),
         bits,
     )
     return type_of(x)(from_bits=bits)

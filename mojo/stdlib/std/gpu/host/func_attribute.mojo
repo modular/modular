@@ -238,7 +238,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
         Returns:
             A `FuncAttribute` instance with CACHE_MODE_CA attribute type.
         """
-        return FuncAttribute(Attribute.CACHE_MODE_CA, Int(val))
+        return FuncAttribute(Attribute.CACHE_MODE_CA, Int32(Int(val)))
 
     @always_inline
     @staticmethod

@@ -396,11 +396,15 @@ struct _TotalWritableBytes(Writer):
         self.size += string.byte_length()
 
 
+fn _ord_ascii(s: StringSlice) -> UInt8:
+    return UInt8(ord(s))
+
+
 # fmt: off
 comptime _hex_table = SIMD[DType.uint8, 16](
-    ord("0"), ord("1"), ord("2"), ord("3"), ord("4"),
-    ord("5"), ord("6"), ord("7"), ord("8"), ord("9"),
-    ord("a"), ord("b"), ord("c"), ord("d"), ord("e"), ord("f"),
+    _ord_ascii("0"), _ord_ascii("1"), _ord_ascii("2"), _ord_ascii("3"), _ord_ascii("4"),
+    _ord_ascii("5"), _ord_ascii("6"), _ord_ascii("7"), _ord_ascii("8"), _ord_ascii("9"),
+    _ord_ascii("a"), _ord_ascii("b"), _ord_ascii("c"), _ord_ascii("d"), _ord_ascii("e"), _ord_ascii("f"),
 )
 # fmt: on
 

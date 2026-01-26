@@ -354,7 +354,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func[PyCFunction]
         )
 
-        var flags = (
+        var flags = c_int(
             METH_VARARGS
             | (METH_STATIC if static_method else 0)
             | (METH_KEYWORDS if with_kwargs else 0)

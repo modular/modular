@@ -22,7 +22,7 @@ fn standardize_string_slice(
     """Put the input string in an inline array, aligned to the right and padded
     with "0" on the left.
     """
-    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
     memcpy(
@@ -115,12 +115,12 @@ fn to_integer(
             vector_with_exponents.unsafe_ptr() + i * simd_width
         ).load[width=simd_width]()
         accumulator += as_digits_index * vector_slice
-    return Int(accumulator.reduce_add())
+    return UInt64(Int(accumulator.reduce_add()))
 
 
 fn get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
     var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
-        result[i] = 10 ** (CONTAINER_SIZE - i - 1)
+        result[i] = 10 ** UInt64(CONTAINER_SIZE - i - 1)
     return result^

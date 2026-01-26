@@ -1160,4 +1160,4 @@ struct Int(
         if n >> 32 == 0:
             return _calc_initial_buffer_size_int32(n)
 
-        return _calc_initial_buffer_size_int64(n)
+        return _calc_initial_buffer_size_int64(UInt64(n))

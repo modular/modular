@@ -2721,7 +2721,9 @@ fn _memchr_impl[
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
-            output = haystack + Int(i + count_trailing_zeros(mask))
+            output = haystack + Int(
+                type_of(mask)(i) + count_trailing_zeros(mask)
+            )
             return
 
     for i in range(vectorized_end, length):
@@ -2805,7 +2807,7 @@ fn _memmem_impl[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = Int(i + count_trailing_zeros(mask))
+            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 output = haystack + offset
                 return

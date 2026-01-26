@@ -57,7 +57,7 @@ fn _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(UInt32(value), name.unsafe_ptr())
 
 
 fn _setup_categories(
@@ -244,10 +244,10 @@ struct EventAttributes(TrivialRegisterType):
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=size_of[_C_EventAttributes](),
-            category=category,
+            size=UInt16(size_of[_C_EventAttributes]()),
+            category=UInt32(category),
             color_type=Color.FORMAT,
-            color=Int(resolved_color),
+            color=UInt32(Int(resolved_color)),
             payload_type=0,
             _reserved=0,
             event_payload=0,

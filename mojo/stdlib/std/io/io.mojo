@@ -54,7 +54,7 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterType):
         """
 
         self.handle = fdopen(
-            dup(stream_id.value),
+            dup(Int32(stream_id.value)),
             # Guarantee this is nul terminated.
             get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
@@ -272,7 +272,7 @@ fn _printf[
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
-                    num_args,
+                    UInt32(num_args),
                     arguments[0],
                     arguments[1],
                     arguments[2],

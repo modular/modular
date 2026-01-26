@@ -80,7 +80,12 @@ fn _int_tuple_binary_apply[
     for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](binary_fn[a.element_type](a_elem, b_elem))
+        c.__setitem__[i](
+            binary_fn[a.element_type](
+                Scalar[a.element_type](a_elem),
+                Scalar[a.element_type](b_elem),
+            )
+        )
 
 
 @always_inline
@@ -109,7 +114,12 @@ fn _int_tuple_compare[
     for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](comp_fn[a.element_type](a_elem, b_elem))
+        c.__setitem__[i](
+            comp_fn[a.element_type](
+                Scalar[a.element_type](a_elem),
+                Scalar[a.element_type](b_elem),
+            )
+        )
 
     return c
 
@@ -328,7 +338,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             val: The value to store.
         """
-        self.data.__setitem__[idx](val)
+        self.data.__setitem__[idx](Scalar[Self.element_type](val))
 
     @always_inline("nodebug")
     fn __setitem__[idx: Int](mut self, val: Self._int_type):
@@ -350,7 +360,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             idx: The element index.
             val: The value to store.
         """
-        self.data[idx] = val
+        self.data[idx] = Scalar[Self.element_type](val)
 
     @always_inline("nodebug")
     fn as_tuple(self) -> StaticTuple[Int, Self.size]:

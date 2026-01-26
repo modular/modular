@@ -284,7 +284,7 @@ struct PrefetchLocality(TrivialRegisterType):
             value: An integer value representing the locality. Should be a value
                    in the range `[0, 3]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
 
 struct PrefetchRW(TrivialRegisterType):
@@ -305,7 +305,7 @@ struct PrefetchRW(TrivialRegisterType):
             value: An integer value representing the prefetch read-write option
                    to be used. Should be a value in the range `[0, 1]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -339,7 +339,7 @@ struct PrefetchCache(TrivialRegisterType):
             value: An integer value representing the prefetch cache option to be
                    used. Should be a value in the range `[0, 1]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
 
 struct PrefetchOptions(Defaultable, TrivialRegisterType):
@@ -683,8 +683,9 @@ fn strided_load[
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
     var offset = (
-        Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
+        SIMD[DType.int, simd_width](Int(addr))
+        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
+        * math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -730,8 +731,9 @@ fn strided_store[
         return
 
     var offset = (
-        Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
+        SIMD[DType.int, simd_width](Int(addr))
+        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
+        * math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 

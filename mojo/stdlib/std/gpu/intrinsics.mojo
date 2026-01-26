@@ -1099,7 +1099,7 @@ struct AMDBufferResource(TrivialRegisterType):
         self.desc[0] = address[0]
         # assuming 0 stride currently
         self.desc[1] = address[1]
-        self.desc[2] = size_of[dtype]() * num_records
+        self.desc[2] = UInt32(size_of[dtype]() * num_records)
 
         # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
@@ -1174,8 +1174,8 @@ struct AMDBufferResource(TrivialRegisterType):
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
 
-        var vector_offset_bytes = vector_offset * size_of[dtype]()
-        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+        var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
+        var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
 
         var load_val = llvm_intrinsic[
             "llvm.amdgcn.raw.buffer.load",
@@ -1225,8 +1225,8 @@ struct AMDBufferResource(TrivialRegisterType):
         comptime bytes = size_of[dtype]() * width
         comptime aux = _cache_operation_to_amd_aux[cache_policy]()
 
-        var vector_offset_bytes = vector_offset * size_of[dtype]()
-        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+        var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
+        var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
 
         llvm_intrinsic[
             "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
@@ -1282,8 +1282,8 @@ struct AMDBufferResource(TrivialRegisterType):
         comptime bytes = width * size_of[dtype]()
         comptime aux: Int32 = _cache_operation_to_amd_aux[cache_policy]()
 
-        var vector_offset_bytes = vector_offset * size_of[dtype]()
-        var scalar_offset_bytes = scalar_offset * size_of[dtype]()
+        var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
+        var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
 
         var store_val = bitcast[
             _get_buffer_intrinsic_simd_dtype[bytes](),

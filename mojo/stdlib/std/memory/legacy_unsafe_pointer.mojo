@@ -1060,7 +1060,10 @@ struct LegacyUnsafePointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(
+            SIMD[DType.int, width](size_of[dtype]()),
+            SIMD[DType.int, width](Int(self)),
+        )
         return gather[alignment=alignment](base, mask, default)
 
     @always_inline("nodebug")
@@ -1113,7 +1116,10 @@ struct LegacyUnsafePointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
-        var base = offset.cast[DType.int]().fma(size_of[dtype](), Int(self))
+        var base = offset.cast[DType.int]().fma(
+            SIMD[DType.int, width](size_of[dtype]()),
+            SIMD[DType.int, width](Int(self)),
+        )
         scatter[alignment=alignment](val, base, mask)
 
     @always_inline

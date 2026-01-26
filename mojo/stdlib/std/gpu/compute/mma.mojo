@@ -506,7 +506,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return Self(self.desc | (val << start_bit))
+        return Self(self.desc | (val << Int64(start_bit)))
 
     @staticmethod
     fn create[
@@ -557,7 +557,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
         var desc = Self(0)
         # bits [48 .. 32]
         # bits  0:14 address in share memory
-        desc = desc._insert_bit[0](start_address)
+        desc = desc._insert_bit[0](Int64(start_address))
         # bits 14:16 unused
         # bits 16:30 leading dim byte offset
         desc = desc._insert_bit[16](lead_dim)
@@ -579,7 +579,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
         Args:
             offset: Byte offset to add to base address.
         """
-        self.desc += (offset & 0x3FFFF) >> 4
+        self.desc += Int64((offset & 0x3FFFF) >> 4)
 
     @always_inline
     fn __add__(self, offset: Int) -> Self:
@@ -591,7 +591,7 @@ struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor, TrivialRegisterType):
         Returns:
             New descriptor with updated base address.
         """
-        return Self(self.desc + ((offset & 0x3FFFF) >> 4))
+        return Self(self.desc + Int64((offset & 0x3FFFF) >> 4))
 
 
 @always_inline

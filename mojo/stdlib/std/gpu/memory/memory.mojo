@@ -619,7 +619,7 @@ fn async_copy[
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
         comptime n_scalars = size // size_of[dtype]()
-        var n_src_scalars = src_size // size_of[dtype]()
+        var n_src_scalars = src_size // Int32(size_of[dtype]())
 
         @parameter
         if fill:
@@ -1185,9 +1185,9 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_i32(coords[2]),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
+                to_i32(Int32(coords[2])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )
@@ -1218,8 +1218,8 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )
@@ -1248,7 +1248,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
+                to_i32(Int32(coords[0])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )

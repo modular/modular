@@ -411,12 +411,12 @@ fn cluster_mask_base[
 
     @parameter
     if axis == 0:
-        return (1 << cluster_shape[0]) - 1
+        return UInt16((1 << cluster_shape[0]) - 1)
 
     var mask: UInt16 = 1
 
     @parameter
     for i in range(cluster_shape[1]):
-        mask |= mask << (i * cluster_shape[0])
+        mask |= mask << UInt16(i * cluster_shape[0])
 
     return mask

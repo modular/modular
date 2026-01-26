@@ -49,7 +49,7 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterType):
     comptime float4_e2m1 = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 @always_inline

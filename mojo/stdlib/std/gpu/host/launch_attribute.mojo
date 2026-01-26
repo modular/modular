@@ -239,7 +239,9 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterType):
         Args:
             dim: The dimension specification to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](dim.x(), dim.y(), dim.z(), 0)
+        var tmp = StaticTuple[UInt32, 4](
+            UInt32(dim.x()), UInt32(dim.y()), UInt32(dim.z()), 0
+        )
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
@@ -249,7 +251,7 @@ struct LaunchAttributeValue(Defaultable, TrivialRegisterType):
         Args:
             value: The boolean value to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](Int(value), 0, 0, 0)
+        var tmp = StaticTuple[UInt32, 4](UInt32(Int(value)), 0, 0, 0)
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 

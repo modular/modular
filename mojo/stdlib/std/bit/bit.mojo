@@ -339,11 +339,11 @@ fn bit_width[
 
     @parameter
     if dtype.is_unsigned():
-        return bitwidth - count_leading_zeros(val)
+        return SIMD[dtype, width](bitwidth) - count_leading_zeros(val)
     else:
         # For signed integers, handle positive and negative separately
         var abs_val = val.lt(0).select(bit_not(val), val)
-        return bitwidth - count_leading_zeros(abs_val)
+        return SIMD[dtype, width](bitwidth) - count_leading_zeros(abs_val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -399,7 +399,7 @@ fn log2_floor[
     __comptime_assert dtype.is_integral(), "dtype must be integral"
 
     comptime bitwidth = bit_width_of[dtype]()
-    var res = bitwidth - count_leading_zeros(val) - 1
+    var res = SIMD[dtype, width](bitwidth) - count_leading_zeros(val) - 1
 
     @parameter
     if dtype.is_signed():

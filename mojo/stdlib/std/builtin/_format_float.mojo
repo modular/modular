@@ -76,11 +76,15 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
     comptime max_k = 46 if Self.CarrierDType == DType.uint32 else 326
     comptime divide_magic_number = InlineArray[UInt32, 2](6554, 656)
     comptime n_max = (
-        (Scalar[Self.CarrierDType](2) << Self.sig_bits) + 1
+        (
+            Scalar[Self.CarrierDType](2)
+            << Scalar[Self.CarrierDType](Self.sig_bits)
+        )
+        + 1
     ) // 3 + 1 * 20
     comptime n_max_larger = (
-        Scalar[Self.CarrierDType](2) << Self.sig_bits
-    ) * Self.big_divisor - 1
+        Scalar[Self.CarrierDType](2) << Scalar[Self.CarrierDType](Self.sig_bits)
+    ) * Scalar[Self.CarrierDType](Self.big_divisor) - 1
     comptime kappa = _floor_log10_pow2(
         Self.carrier_bits - Self.sig_bits - 2
     ) - 1
@@ -207,7 +211,7 @@ fn _write_float[
             var exp_digits = InlineArray[Byte, 10](uninitialized=True)
             var exp_idx = 0
             while exp > 0:
-                exp_digits[exp_idx] = exp % 10
+                exp_digits[exp_idx] = Byte(exp % 10)
                 exp //= 10
                 exp_idx += 1
             for i in reversed(range(exp_idx)):
@@ -305,7 +309,9 @@ fn _to_decimal[
             return
 
         # Normal interval case
-        two_fc |= Scalar[CarrierDType](1) << (FP[dtype].sig_bits + 1)
+        two_fc |= Scalar[CarrierDType](1) << Scalar[CarrierDType](
+            FP[dtype].sig_bits + 1
+        )
     else:
         # For subnormal numbers
         binary_exp = FP[dtype].min_normal_exp - FP[dtype].sig_bits
@@ -320,7 +326,7 @@ fn _to_decimal[
         CarrierDType, FP[dtype].total_bits, FP[dtype].cache_bits
     ](cache_index, beta)
     var z_result = _compute_mul[CarrierDType](
-        ((two_fc | 1) << beta), cache_index
+        ((two_fc | 1) << Scalar[CarrierDType](beta)), cache_index
     )
 
     ################################################################
@@ -329,7 +335,10 @@ fn _to_decimal[
     sig = _divide_by_pow10[
         FP[dtype, CarrierDType].kappa + 1, FP[dtype, CarrierDType].n_max_larger
     ](z_result.integer_part)
-    var r = z_result.integer_part - FP[dtype].big_divisor * sig
+    var r = (
+        z_result.integer_part
+        - Scalar[CarrierDType](FP[dtype].big_divisor) * sig
+    )
 
     if r < deltai:
         exp = minus_k + FP[dtype].kappa + 1
@@ -349,8 +358,12 @@ fn _to_decimal[
 
     # delta is equal to 10^(kappa + elog10(2) - floor(elog10(2))), so dist cannot
     # be larger than r.
-    var dist = r - (deltai // 2) + (FP[dtype].small_divisor // 2)
-    var approx_y_parity = ((dist ^ (FP[dtype].small_divisor // 2)) & 1) != 0
+    var dist = (
+        r - (deltai // 2) + Scalar[CarrierDType](FP[dtype].small_divisor // 2)
+    )
+    var approx_y_parity = (
+        (dist ^ Scalar[CarrierDType](FP[dtype].small_divisor // 2)) & 1
+    ) != 0
 
     # Is dist divisible by 10^kappa
     var divisible_by_small_divisor = _check_divisibility_and_divide_by_pow10[
@@ -386,25 +399,25 @@ fn _compute_endpoint[
         var cache_high = _uint128_high(cache)
         if left_endpoint:
             return (
-                (cache_high - (cache_high >> (sig_bits + 2)))
-                >> (total_bits - sig_bits - 1 - beta)
+                (cache_high - (cache_high >> UInt64(sig_bits + 2)))
+                >> UInt64(total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
         else:
             return (
-                (cache_high + (cache_high >> (sig_bits + 1)))
-                >> (total_bits - sig_bits - 1 - beta)
+                (cache_high + (cache_high >> UInt64(sig_bits + 1)))
+                >> UInt64(total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
     else:
         var cache = global_constant[cache_f32]()[cache_index]
         if left_endpoint:
             return (
-                (cache - (cache >> (sig_bits + 2)))
-                >> (cache_bits - sig_bits - 1 - beta)
+                (cache - (cache >> UInt64(sig_bits + 2)))
+                >> UInt64(cache_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
         else:
             return (
-                (cache + (cache >> (sig_bits + 1)))
-                >> (cache_bits - sig_bits - 1 - beta)
+                (cache + (cache >> UInt64(sig_bits + 1)))
+                >> UInt64(cache_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
 
 
@@ -415,7 +428,7 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
     @parameter
     if not dtype.is_floating_point():
         for i in reversed(range(total_bits)):
-            output.write((x >> i) & 1)
+            output.write((x >> Scalar[dtype](i)) & 1)
             if i % 8 == 0:
                 output.write(" ")
     else:
@@ -424,7 +437,7 @@ fn _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
         comptime cast_type = DType.uint32 if dtype == DType.float32 else DType.uint64
         var casted = bitcast[cast_type](x)
         for i in reversed(range(total_bits)):
-            output.write((casted >> i) & 1)
+            output.write((casted >> Scalar[cast_type](i)) & 1)
             if i == total_bits - 1:
                 output.write(" ")
             if i == sig_bits:
@@ -565,7 +578,7 @@ fn _divide_by_pow10[
         elif N == 3 and n_max <= 15534100272597517998:
             return _umul128_upper64(n, 4722366482869645214) >> 8
         else:
-            return n / pow(10, N)
+            return n / Scalar[CarrierDType](pow(10, N))
     else:
 
         @parameter
@@ -578,7 +591,7 @@ fn _divide_by_pow10[
                 CarrierDType
             ]()
         else:
-            return n / pow(10, N)
+            return n / Scalar[CarrierDType](pow(10, N))
 
 
 fn _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
@@ -605,10 +618,10 @@ fn _compute_mul_parity[
         var r_high = _uint128_high(r)
         var r_low = _uint128_low(r)
         return _MulParity(
-            ((r_high >> (64 - beta)) & 1) != 0,
+            ((r_high >> UInt64(64 - beta)) & 1) != 0,
             (
-                ((r_high << beta) & UInt64(0xFFFFFFFFFFFFFFFF))
-                | (r_low >> (64 - beta))
+                ((r_high << UInt64(beta)) & UInt64(0xFFFFFFFFFFFFFFFF))
+                | (r_low >> UInt64(64 - beta))
             )
             == 0,
         )
@@ -622,8 +635,9 @@ fn _compute_mul_parity[
             global_constant[cache_f32]()[cache_index],
         )
         return _MulParity(
-            ((r >> (64 - beta)) & 1) != 0,
-            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> (32 - beta))) == 0,
+            ((r >> UInt64(64 - beta)) & 1) != 0,
+            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> UInt64(32 - beta)))
+            == 0,
         )
 
 
@@ -692,12 +706,12 @@ fn _compute_delta[
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
     if CarrierDType == DType.uint64:
         var cache = global_constant[cache_f64]()[cache_index]
-        return (_uint128_high(cache) >> (total_bits - 1 - beta)).cast[
+        return (_uint128_high(cache) >> UInt64(total_bits - 1 - beta)).cast[
             CarrierDType
         ]()
     else:
         var cache = global_constant[cache_f32]()[cache_index]
-        return (cache >> (cache_bits - 1 - beta)).cast[CarrierDType]()
+        return (cache >> UInt64(cache_bits - 1 - beta)).cast[CarrierDType]()
 
 
 fn _umul192_upper128[
@@ -738,8 +752,8 @@ fn _count_factors[
 ](var n: Scalar[CarrierDType], a: Int) -> Int:
     debug_assert(a > 1)
     var c = 0
-    while n % a == 0:
-        n /= a
+    while n % Scalar[CarrierDType](a) == 0:
+        n /= Scalar[CarrierDType](a)
         c += 1
     return c
 
@@ -752,7 +766,7 @@ fn _compute_round_up_for_shorter_interval_case[
         var cache_high = _uint128_high(cache)
         return (
             (
-                (cache_high >> (total_bits - sig_bits - 2 - beta)).cast[
+                (cache_high >> UInt64(total_bits - sig_bits - 2 - beta)).cast[
                     CarrierDType
                 ]()
             )
@@ -761,7 +775,9 @@ fn _compute_round_up_for_shorter_interval_case[
     else:
         var cache = global_constant[cache_f32]()[cache_index]
         return (
-            (cache >> (cache_bits - sig_bits - 2 - beta)).cast[CarrierDType]()
+            (cache >> UInt64(cache_bits - sig_bits - 2 - beta)).cast[
+                CarrierDType
+            ]()
             + 1
         ) / 2
 
@@ -770,9 +786,13 @@ fn _case_shorter_interval_left_endpoint_upper_threshold[
     CarrierDType: DType, sig_bits: Int
 ]() -> Int:
     var k = (
-        _count_factors((Scalar[CarrierDType](1) << (sig_bits + 2)) - 1, 5) + 1
+        _count_factors(
+            (Scalar[CarrierDType](1) << Scalar[CarrierDType](sig_bits + 2)) - 1,
+            5,
+        )
+        + 1
     )
-    return 2 + _floor_log2(pow(10, k)) // 3
+    return 2 + _floor_log2(UInt64(pow(10, k))) // 3
 
 
 fn _is_left_endpoint_integer_shorter_interval[
