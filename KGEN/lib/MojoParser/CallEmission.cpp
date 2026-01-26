@@ -262,32 +262,33 @@ static void emitInconclusiveCandidatesError(
       eval.takeDiag().abandon();
       continue;
     }
-    if (auto func = dyn_cast<FnOp>(candidate->getIfOperation())) {
-      if (validity == OverloadFitness::Validity::kValid) {
-        // This is a valid candidate, but we can't use it since we need to
-        // disprove the other candidates first.
-        diag.attachNote(candidate->getLoc())
-            << "candidate is valid but cannot be selected until other "
-               "candidates are disproved";
-        continue;
-      }
-      ArrayRef<ConstraintAttr> constraints = eval.getUnprovableConstraints();
-      diag.attachNote(candidate->getLoc()) << "cannot prove";
-      if (constraints.size() > 1)
-        diag << " or disprove";
-      diag << " constraint" << plural(constraints.size()) << " for candidate";
-      for (auto constraint : constraints)
-        LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag,
-                                        constraint);
-
-      if (func.getSynthetic()) {
-        diag.attachNote(candidate->getLoc())
-            << "generated function with type "
-            << ASTType(func.getFullSignature());
-      }
-    } else {
-      // This is an indirect reference with a constraint failure.
+    // This is an indirect reference with a constraint failure.
+    if (!candidate) {
       diag << "cannot prove constraint";
+      continue;
+    }
+
+    auto func = cast<FnOp>(candidate->getIfOperation());
+    if (validity == OverloadFitness::Validity::kValid) {
+      // This is a valid candidate, but we can't use it since we need to
+      // disprove the other candidates first.
+      diag.attachNote(candidate->getLoc())
+          << "candidate is valid but cannot be selected until other "
+             "candidates are disproved";
+      continue;
+    }
+    ArrayRef<ConstraintAttr> constraints = eval.getUnprovableConstraints();
+    diag.attachNote(candidate->getLoc()) << "cannot prove";
+    if (constraints.size() > 1)
+      diag << " or disprove";
+    diag << " constraint" << plural(constraints.size()) << " for candidate";
+    for (auto constraint : constraints)
+      LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag,
+                                      constraint);
+
+    if (func.getSynthetic()) {
+      diag.attachNote(candidate->getLoc()) << "generated function with type "
+                                           << ASTType(func.getFullSignature());
     }
   }
 
