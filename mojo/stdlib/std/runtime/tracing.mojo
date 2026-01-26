@@ -136,7 +136,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterType):
 # ===-----------------------------------------------------------------------===#
 
 
-struct TraceLevel(Comparable, ImplicitlyCopyable, TrivialRegisterType):
+struct TraceLevel(Comparable, TrivialRegisterType):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)

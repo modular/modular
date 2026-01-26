@@ -515,7 +515,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
 # TODO: add usage of these traits before trying to coerce to repr/str/int/float
 
 
-struct _FormatSpec(ImplicitlyCopyable, TrivialRegisterType):
+struct _FormatSpec(TrivialRegisterType):
     """Store every field of the format specifier in a byte (e.g., ord("+") for
     sign). It is stored in a byte because every [format specifier](
     https://docs.python.org/3/library/string.html#formatspec) is an ASCII

@@ -43,7 +43,7 @@ fn _sign(x: Int) -> Int:
 
 
 struct _ZeroStartingRange(
-    Iterable, Iterator, Movable, ReversibleRange, Sized, TrivialRegisterType
+    Iterable, Iterator, ReversibleRange, Sized, TrivialRegisterType
 ):
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]

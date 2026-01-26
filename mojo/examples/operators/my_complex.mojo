@@ -17,7 +17,6 @@ from math import sqrt
 struct Complex(
     Boolable,
     Equatable,
-    ImplicitlyCopyable,
     Representable,
     Stringable,
     TrivialRegisterType,

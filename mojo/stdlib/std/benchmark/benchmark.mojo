@@ -148,7 +148,7 @@ from utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Batch(ImplicitlyCopyable, TrivialRegisterType):
+struct Batch(TrivialRegisterType):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations

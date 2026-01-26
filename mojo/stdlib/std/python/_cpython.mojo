@@ -432,7 +432,7 @@ comptime Typed_newfunc = fn (
 
 
 @fieldwise_init
-struct PyType_Slot(ImplicitlyCopyable, TrivialRegisterType):
+struct PyType_Slot(TrivialRegisterType):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 

@@ -189,9 +189,7 @@ struct _TypeErasedWriter(Writer):
 
 
 @fieldwise_init
-struct _VTableErrorOp(
-    Equatable, ImplicitlyCopyable, Movable, TrivialRegisterType
-):
+struct _VTableErrorOp(Equatable, TrivialRegisterType):
     """Operation codes for vtable dispatch.
 
     These discriminator values tell the vtable which operation to perform on

@@ -53,9 +53,7 @@ def main():
 
 
 @fieldwise_init
-struct SourceLocation(
-    ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable
-):
+struct SourceLocation(Stringable, TrivialRegisterType, Writable):
     """Type to carry file name, line, and column information.
 
     This struct stores source location data and provides utilities for formatting

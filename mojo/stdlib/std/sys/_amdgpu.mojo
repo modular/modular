@@ -520,7 +520,7 @@ fn printf_append_string_n(
 
 
 @fieldwise_init
-struct Header(ImplicitlyCopyable, TrivialRegisterType):
+struct Header(TrivialRegisterType):
     var _handle: UnsafePointer[
         header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -608,7 +608,7 @@ struct Header(ImplicitlyCopyable, TrivialRegisterType):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
-struct header_t(ImplicitlyCopyable, TrivialRegisterType):
+struct header_t(TrivialRegisterType):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -616,7 +616,7 @@ struct header_t(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Payload(ImplicitlyCopyable, TrivialRegisterType):
+struct Payload(TrivialRegisterType):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
@@ -634,7 +634,7 @@ struct payload_t(Copyable):
 
 
 @fieldwise_init
-struct Buffer(ImplicitlyCopyable, TrivialRegisterType):
+struct Buffer(TrivialRegisterType):
     var _handle: UnsafePointer[
         buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
     ]
@@ -738,7 +738,7 @@ struct buffer_t(Copyable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ControlOffset(ImplicitlyCopyable, TrivialRegisterType):
+struct ControlOffset(TrivialRegisterType):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
@@ -753,7 +753,7 @@ struct ControlOffset(ImplicitlyCopyable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ControlWidth(ImplicitlyCopyable, TrivialRegisterType):
+struct ControlWidth(TrivialRegisterType):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)

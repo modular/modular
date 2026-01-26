@@ -1168,7 +1168,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterType):
         return Self(self.desc + ((offset >> 4) & Self.mask_14_bits))
 
 
-struct MMASmemDescriptorPair(ImplicitlyCopyable, TrivialRegisterType):
+struct MMASmemDescriptorPair(TrivialRegisterType):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout

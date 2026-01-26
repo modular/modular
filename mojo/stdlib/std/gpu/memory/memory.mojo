@@ -345,7 +345,7 @@ struct Fill(Equatable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct Consistency(Equatable, ImplicitlyCopyable, TrivialRegisterType):
+struct Consistency(Equatable, TrivialRegisterType):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory

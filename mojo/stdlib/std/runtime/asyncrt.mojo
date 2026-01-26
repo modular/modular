@@ -276,7 +276,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 @fieldwise_init
-struct TaskGroupContext(ImplicitlyCopyable, TrivialRegisterType):
+struct TaskGroupContext(TrivialRegisterType):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
