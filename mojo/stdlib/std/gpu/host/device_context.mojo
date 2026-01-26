@@ -221,9 +221,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-struct StreamPriorityRange(
-    ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable
-):
+struct StreamPriorityRange(Stringable, TrivialRegisterType, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher

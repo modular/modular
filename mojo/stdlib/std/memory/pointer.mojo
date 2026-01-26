@@ -202,7 +202,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Stringable, TrivialRegisterType, Writable):
+](Stringable, TrivialRegisterType, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
