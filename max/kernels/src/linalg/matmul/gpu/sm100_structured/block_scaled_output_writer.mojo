@@ -197,6 +197,7 @@ struct BlockScaledTileWriter[
         stage: Self.Stage,
         c_coord: Tuple[UInt32, UInt32, UInt32],
         c_shape: Tuple[UInt32, UInt32],
+        alpha: Float32,
     ):
         """Write accumulated results to global memory.
 
@@ -205,6 +206,7 @@ struct BlockScaledTileWriter[
             stage: OutputStage with pipeline, index, and TMEM handle.
             c_coord: (m_tile, n_tile, batch) coordinates.
             c_shape: (M, N) problem dimensions.
+            alpha: Tensor scale factor (scalar).
         """
         # Fragment registers
         var upper_frag_partial: SIMD[Self.accum_type, Self.rep_frag_size]
@@ -243,6 +245,15 @@ struct BlockScaledTileWriter[
             @parameter
             if loop_stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(stage.pipeline, stage.index)
+
+            # Apply tensor scale factor
+            upper_frag_partial = (
+                upper_frag_partial * alpha.cast[Self.accum_type]()
+            )
+            if Self.is_lower_frag_required:
+                lower_frag_partial = (
+                    lower_frag_partial * alpha.cast[Self.accum_type]()
+                )
 
             # Cast to epilogue dtype
             upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
