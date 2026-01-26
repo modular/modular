@@ -599,86 +599,6 @@ class PipelineRegistry:
                 chat_template=pipeline_config.retrieve_chat_template(),
                 context_validators=arch.context_validators,
             )
-
-        # For speculative decoding, retrieve draft model's architecture
-        factory_kwargs: dict[str, Any] = {
-            "pipeline_config": pipeline_config,
-            "pipeline_model": arch.pipeline_model,
-            "eos_token_id": tokenizer.eos,
-            "weight_adapters": arch.weight_adapters,
-            "tokenizer": typed_tokenizer,
-        }
-
-        # If using speculative decoding, add draft model-specific parameters
-        if pipeline_config.draft_model is not None:
-            draft_arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                use_legacy_module=pipeline_config.use_legacy_module,
-                task=task,
-            )
-            if draft_arch is None:
-                raise ValueError(
-                    f"MAX-Optimized architecture not found for draft model "
-                    f"'{pipeline_config.draft_model.model_path}'"
-                )
-            else:
-                tokenizer = arch.tokenizer(
-                    model_path=pipeline_config.model.model_path,
-                    pipeline_config=pipeline_config,
-                    revision=pipeline_config.model.huggingface_model_revision,
-                    max_length=max_length,
-                    trust_remote_code=pipeline_config.model.trust_remote_code,
-                    chat_template=pipeline_config.retrieve_chat_template(),
-                    context_validators=arch.context_validators,
-                )
-            # Cast tokenizer to the proper type for text generation pipeline compatibility
-            typed_tokenizer = cast(
-                PipelineTokenizer[
-                    Any, npt.NDArray[np.integer[Any]], TextGenerationRequest
-                ],
-                tokenizer,
-            )
-
-            # For speculative decoding, retrieve draft model's architecture
-            factory_kwargs: dict[str, Any] = {
-                "pipeline_config": pipeline_config,
-                "pipeline_model": arch.pipeline_model,
-                "eos_token_id": tokenizer.eos,
-                "weight_adapters": arch.weight_adapters,
-                "tokenizer": typed_tokenizer,
-            }
-
-            # If using speculative decoding, add draft model-specific parameters
-            if pipeline_config.draft_model_config is not None:
-                draft_arch = self.retrieve_architecture(
-                    huggingface_repo=pipeline_config.draft_model_config.huggingface_weight_repo,
-                    use_module_v3=pipeline_config.use_module_v3,
-                )
-                if draft_arch is None:
-                    raise ValueError(
-                        f"MAX-Optimized architecture not found for draft model "
-                        f"'{pipeline_config.draft_model_config.model_path}'"
-                    )
-                factory_kwargs["draft_pipeline_model"] = (
-                    draft_arch.pipeline_model
-                )
-                factory_kwargs["draft_weight_adapters"] = (
-                    draft_arch.weight_adapters
-                )
-
-            pipeline_factory = cast(
-                Callable[[], PipelineTypes],
-                functools.partial(  # type: ignore
-                    pipeline_class, **factory_kwargs
-                ),
-            )
-
-            if tokenizer.eos is None:
-                raise ValueError(
-                    "tokenizer.eos value is None, tokenizer configuration is incomplete."
-                )
-
-            return tokenizer, pipeline_factory
         else:
             tokenizer = arch.tokenizer(
                 model_path=pipeline_config.model.model_path,
@@ -710,7 +630,7 @@ class PipelineRegistry:
         if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                use_module_v3=pipeline_config.use_module_v3,
+                use_legacy_module=pipeline_config.use_legacy_module,
                 task=task,
             )
             if draft_arch is None:

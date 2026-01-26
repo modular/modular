@@ -226,7 +226,7 @@ async def _async_worker(
                 "Number of negative prompts must match number of prompts"
             )
 
-        batch:{RequestID: PixelContext} = {}
+        batch: {RequestID: PixelContext} = {}
         for (
             prompt,
             height,
