@@ -1068,7 +1068,7 @@ class PixelGenerationTokenizer(
         """Tokenize prompt(s) with encoder model(s).
 
         Returns:
-            Tuple of (token_ids, token_ids_2, negative_token_ids, negative_token_ids_2).
+            Tuple of (token_ids, attn_mask, token_ids_2, negative_token_ids, negative_token_ids_2).
             token_ids_2 and negative_token_ids_2 are None if no secondary tokenizer is configured.
         """
         if messages is not None:

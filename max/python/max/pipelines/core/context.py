@@ -590,7 +590,7 @@ class PixelContext:
         request_id: A unique identifier for this generation request.
         negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
         timesteps: Precomputed timestep schedule for denoising.
-        initial_noise: Precomputed initial noise (latents).
+        latents: Precomputed initial noise (latents).
         height: Height of the generated image/video in pixels.
         width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
