@@ -136,7 +136,11 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                     for ctx in replica_batch:
                         for kv_manager in self.kv_managers:
                             kv_manager.alloc(
-                                ctx, replica_idx=0, num_steps=num_steps
+                                ctx,
+                                replica_idx=batch_to_replica_idx[
+                                    ctx.request_id
+                                ],
+                                num_steps=num_steps,
                             )
                 step_outputs = self.execute(inputs)
                 outputs = []
@@ -158,7 +162,10 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 f"{request_id}"
                             )
 
-                        self.release(request_id)
+                        for kv_manager in self.kv_managers:
+                            kv_manager.release(
+                                request_id, replica_idx=replica_idx
+                            )
                 yield outputs
 
                 # Yield to the event loop.  If at no other point (e.g.
@@ -172,4 +179,10 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
                 for context in batch:
-                    self.release(context.request_id)
+                    for kv_manager in self.kv_managers:
+                        kv_manager.release(
+                            context.request_id,
+                            replica_idx=batch_to_replica_idx[
+                                context.request_id
+                            ],
+                        )
