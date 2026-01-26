@@ -112,6 +112,7 @@ MODELS = {
     ],
     "qwen/qwen3-8b": ["multi"],
     "qwen/qwen3-vl-4b-instruct": [
+        "8xB200",
         "max",  # 26.1
         "vllm@B200",
     ],
