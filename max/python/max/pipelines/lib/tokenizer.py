@@ -1191,6 +1191,20 @@ class PixelGenerationTokenizer(
         self, request: PixelGenerationRequest
     ) -> PixelContext:
         """Create a new PixelContext object, leveraging necessary information from PixelGenerationRequest."""
+        if request.guidance_scale < 1.0 or request.true_cfg_scale < 1.0:
+            logger.warning(
+                f"Guidance scales < 1.0 detected (guidance_scale={request.guidance_scale}, "
+                f"true_cfg_scale={request.true_cfg_scale}). This is mathematically possible"
+                " but may produce lower quality or unexpected results."
+            )
+
+        if request.true_cfg_scale > 1.0 and request.negative_prompt is None:
+            logger.warning(
+                f"true_cfg_scale={request.true_cfg_scale} is set, but no negative_prompt "
+                "is provided. True classifier-free guidance requires a negative prompt; "
+                "falling back to standard generation."
+            )
+
         do_true_cfg = (
             request.true_cfg_scale > 1.0 and request.negative_prompt is not None
         )
