@@ -583,7 +583,7 @@ class PixelContext:
     - Prompt tokenization -> tokens field
     - Negative prompt tokenization -> negative_tokens field
     - Timestep schedule computation -> timesteps field
-    - Initial noise generation -> initial_noise field
+    - Initial noise generation -> latents field
 
     Configuration:
         tokens: Tokenized prompt IDs (TokenBuffer).
