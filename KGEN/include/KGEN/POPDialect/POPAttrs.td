@@ -887,6 +887,7 @@ def POP_SIMDOrAttr  : POP_SIMDBinaryAttr<"Or">;
 def POP_SIMDAddAttr : POP_SIMDBinaryAttr<"Add">;
 def POP_SIMDSubAttr : POP_SIMDBinaryAttr<"Sub">;
 def POP_SIMDMulAttr : POP_SIMDBinaryAttr<"Mul">;
+def POP_SIMDDivAttr : POP_SIMDBinaryAttr<"Div">;
 
 def POP_SIMDShlAttr : POP_ExprAttr<"SIMDShl", "simd_shl"> {
   let summary = "SIMD Left Shift.";

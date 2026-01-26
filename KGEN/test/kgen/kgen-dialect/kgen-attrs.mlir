@@ -398,6 +398,38 @@ kgen.generator @closureSymbol(){
 } : () -> ()
 
 "some.op"() {
+  // CHECK: a = #pop<simd 3> : !pop.scalar<si32>
+  a = #pop.simd_div< #pop<simd 6> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<si32>,
+  // CHECK: b = #pop.simd<3, -42, 0, 0>
+  b = #pop.simd_div< #pop.simd<7, 42, -1, 0> : !pop.simd<4, si32>,
+                     #pop.simd<2, -1, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: c = #pop.simd_div<#kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>> : !pop.simd<4, si32>
+  c = #pop.simd_div< #kgen.unknown : !pop.simd<4, si32>, #kgen.unknown : !pop.simd<4, si32>>,
+
+  // Integer division by zero should not fold (undefined behavior)
+  // CHECK: d = #pop.simd_div<#pop<simd 6> : !pop.scalar<si32>, #pop<simd 0> : !pop.scalar<si32>> : !pop.scalar<si32>
+  d = #pop.simd_div< #pop<simd 6> : !pop.scalar<si32>, #pop<simd 0> : !pop.scalar<si32>>,
+
+  // CHECK: e = #pop<simd "2.5"> : !pop.scalar<f32>
+  e = #pop.simd_div< #pop<simd "5.0"> : !pop.scalar<f32>, #pop<simd "2.0"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+
+  // Float division by zero folds to inf (IEEE 754)
+  // CHECK: f = #pop<simd "+Inf"> : !pop.scalar<f32>
+  f = #pop.simd_div< #pop<simd "5.0"> : !pop.scalar<f32>, #pop<simd "0.0"> : !pop.scalar<f32>> : !pop.scalar<f32>,
+
+  // CHECK: g = #pop<simd 2> : !pop.scalar<index>
+  g = #pop.simd_div< #pop<simd 8> : !pop.scalar<index>, #pop<simd 4> : !pop.scalar<index>> : !pop.scalar<index>,
+
+  // CHECK: h = #pop<simd true> : !pop.scalar<bool>
+  h = #pop.simd_div< #pop<simd true> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // CHECK: i = #pop<simd false> : !pop.scalar<bool>
+  i = #pop.simd_div< #pop<simd false> : !pop.scalar<bool>, #pop<simd true> : !pop.scalar<bool>> : !pop.scalar<bool>,
+  // Bool division by zero (false) should not fold
+  // CHECK: j = #pop.simd_div<#pop<simd true> : !pop.scalar<bool>, #pop<simd false> : !pop.scalar<bool>> : !pop.scalar<bool>
+  j = #pop.simd_div< #pop<simd true> : !pop.scalar<bool>, #pop<simd false> : !pop.scalar<bool>>
+} : () -> ()
+
+"some.op"() {
   // CHECK: a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>
   a = #pop.simd_cmp<eq, #kgen.unknown : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<si32>> : !pop.scalar<bool>,
   // CHECK: b = #pop<simd false> : !pop.scalar<bool>

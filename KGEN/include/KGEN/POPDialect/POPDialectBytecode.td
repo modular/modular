@@ -132,6 +132,7 @@ def SIMDOrAttr  : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDAddAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDSubAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 def SIMDMulAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
+def SIMDDivAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
 
 def SIMDShlAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
 def SIMDShrAttr : DialectAttribute<(attr TypedAttr:$val, TypedAttr:$shft)>;
@@ -194,6 +195,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDAddAttr,
     SIMDSubAttr,
     SIMDMulAttr,
+    SIMDDivAttr,
 
     SIMDShlAttr,
     SIMDShrAttr,

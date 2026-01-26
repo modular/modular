@@ -2686,8 +2686,6 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldBinOp(POC::RemS);
   if (auto remUOp = dyn_cast<mlir::index::RemUOp>(op))
     return foldBinOp(POC::RemU);
-  if (auto divOp = dyn_cast<POP::DivOp>(op))
-    return foldBinOp(POC::Div);
 
   if (auto castOp = dyn_cast<POP::CastOp>(op))
     if (auto op = findValue(castOp.getOperand()))
@@ -2815,6 +2813,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     return foldSIMDBinOp<POP::SIMDSubAttr>(op, *this);
   if (isa<POP::MulOp>(op))
     return foldSIMDBinOp<POP::SIMDMulAttr>(op, *this);
+  if (isa<POP::DivOp>(op))
+    return foldSIMDBinOp<POP::SIMDDivAttr>(op, *this);
   if (isa<POP::SIMDAndOp>(op))
     return foldSIMDBinOp<POP::SIMDAndAttr>(op, *this);
   if (isa<POP::SIMDXOrOp>(op))

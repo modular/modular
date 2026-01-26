@@ -2246,6 +2246,50 @@ LogicalResult SIMDMulAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDDivAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  // Fold if possible. For integers, division by zero is undefined behavior,
+  // so we don't fold. For floats, IEEE 754 defines the result (inf or NaN).
+  if (auto fold = foldSIMDOp(
+          {lhs, rhs},
+          [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+            if (rhs.isZero())
+              return std::nullopt;
+            return lhs / rhs;
+          },
+          [](APFloat lhs, APFloat rhs) { return lhs / rhs; },
+          [](bool lhs, bool rhs) -> std::optional<bool> {
+            // Division by zero (false) is undefined, don't fold
+            if (!rhs)
+              return std::nullopt;
+            return lhs;
+          })) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr SIMDDivAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr lhs,
+                                  TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDDivAttr::get(context, lhs, rhs);
+}
+
+bool SIMDDivAttr::isConstant() const { return false; }
+
+Type SIMDDivAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult SIMDDivAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDCmpAttr
 //===----------------------------------------------------------------------===//
 
