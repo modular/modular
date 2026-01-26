@@ -1906,6 +1906,7 @@ def KGEN_StructGEPOp : KGENOp<"struct.gep", [Pure,
   ];
 
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

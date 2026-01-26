@@ -1573,10 +1573,18 @@ LogicalResult StructGEPOp::verify() {
   // If the index is a concrete integer, we can verify more strictly.
   if (auto indexAttr = dyn_cast<IntegerAttr>(getIndex())) {
     auto structType = dyn_cast<StructType>(elementType);
-    if (!structType)
+    if (!structType) {
+      // Allow identity case: when input and output types are the same,
+      // this is a no-op that can arise from single-element struct flattening.
+      // For example, a single-element @register_passable("trivial") struct
+      // with an Int field gets flattened to just `index`, and accessing
+      // field 0 becomes an identity operation.
+      if (getContainer().getType() == getType())
+        return success();
       return emitOpError("constant index requires pointer to concrete struct "
                          "type, got ")
              << elementType;
+    }
 
     auto numElements = structType.getNumElements();
     auto elementTypes = structType.getElementTypes();

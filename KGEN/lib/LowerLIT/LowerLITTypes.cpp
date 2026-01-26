@@ -738,10 +738,42 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     return StructGEPOp::create(b, op.getLoc(), adaptor.getContainer(), index);
   } else {
     // Index access: lower to kgen.struct.gep with parametric index
+
+    // Check if this is a single-element struct, similar to field access.
+    // For single-element structs, the container IS the element, so just
+    // return it directly instead of creating a GEP.
+    auto elementType = op.getContainer().getType().getElementType();
+    if (auto ref = dyn_cast<LIT::StructType>(elementType)) {
+      if (b.isSingleElement(ref))
+        return adaptor.getContainer();
+    }
+
     auto resultTypeOr = b.replace(op.getType(), TypeDomain::AsType);
     if (failed(resultTypeOr))
       return nullptr;
     auto resultType = cast<PointerType>(*resultTypeOr);
+
+    // Handle single-element struct flattening for parametric types.
+    // When a single-element trivial struct is accessed through parametric
+    // types (e.g., trait Self type), the struct may be flattened during
+    // lowering. In either case, there's no struct to GEP into, so return
+    // the container directly. We must check for ParamType to avoid
+    // prematurely short-circuiting parametric cases that will resolve to
+    // multi-element structs.
+    auto containerPtrType = cast<PointerType>(adaptor.getContainer().getType());
+    Type containerElemType = containerPtrType.getElementType();
+
+    // Detection method 1: Types match after lowering (identity operation).
+    // This catches cases where parametric types have resolved identically.
+    bool isIdentity = adaptor.getContainer().getType() == resultType;
+
+    // Detection method 2: Container already flattened to a concrete scalar.
+    // This catches cases where the struct was flattened before this point.
+    bool isFlattenedNonStruct = !isa<KGEN::StructType>(containerElemType) &&
+                                !isa<KGEN::ParamType>(containerElemType);
+
+    if (isIdentity || isFlattenedNonStruct)
+      return adaptor.getContainer();
 
     return StructGEPOp::create(b, op.getLoc(), resultType,
                                adaptor.getContainer(), *op.getIndex());
