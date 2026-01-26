@@ -1284,17 +1284,18 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
     mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
 
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
-  auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
+  auto [capturedRefs, _] = DeclResolver::createSelfContainedSignature(
       nestedFn.getFuncTypeGenerator());
   ASTDecl *closureTrait = shared.getOrCreateClosureTrait(
-      loc, *moduleDecl, wrapperSig, nestedFn.getInlineLevel());
+      loc, *moduleDecl, nestedFn.getFuncTypeGenerator(),
+      nestedFn.getInlineLevel());
   bool isCopyable = allCopyable(captures, shared, loc);
   TypeConvention convention = getTypeConvention(captures, shared, loc);
-  if (!wrapperSig.isRegisterPassable())
+  if (!nestedFn.getFuncTypeGenerator().isRegisterPassable())
     convention = TypeConvention::MemoryOnly;
   ASTDecl *closureWrapper = shared.getOrCreateUnifiedClosureWrapper(
-      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel(), isCopyable,
-      convention, captures.empty());
+      loc, nestedFn.getFuncTypeGenerator(), moduleDecl,
+      nestedFn.getInlineLevel(), isCopyable, convention, captures.empty());
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
   Value wrapperInstance = emitter.emitClosureOp(

@@ -57,6 +57,36 @@ fn itCaptures[THREE: Int](one: Int, four: Int):
         aThing[aParam2](one)
 
 
+trait Coordinate:
+    fn prettyPrint(self):
+        ...
+
+
+@fieldwise_init
+struct Cartesian(Coordinate, ImplicitlyCopyable):
+    var x: Int
+    var y: Int
+
+    fn prettyPrint(self):
+        print("{", self.x, ",", self.y, "}")
+
+
+fn useDefinesCapturingParamClosure[
+    X: Coordinate & ImplicitlyCopyable, C: fn () unified -> X
+](impl: C):
+    var coordinate = impl()
+    coordinate.prettyPrint()
+
+
+fn definesCapturingParamClosure[
+    X: Coordinate & ImplicitlyCopyable
+](something: X):
+    fn closureImpl() unified {var} -> X:
+        return something
+
+    useDefinesCapturingParamClosure[X, type_of(closureImpl)](closureImpl)
+
+
 def main():
     var one = atol(argv()[1])
     var four = atol(argv()[2])
@@ -71,3 +101,6 @@ def main():
         print(_bar.isMutable)
 
     hasOrigin(closure)
+
+    # CHECK: { 1 , 4 }
+    definesCapturingParamClosure(Cartesian(one, four))

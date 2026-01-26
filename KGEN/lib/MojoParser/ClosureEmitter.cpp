@@ -32,6 +32,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -546,6 +547,21 @@ getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
   return TraitType::get(moduleDecl.getContext(), symbols);
 }
 
+/// Replace GetWitnessAttr lookups on a specific type with lookups on the impl
+/// parameter. Used to redirect trait Self lookups to the wrapper struct's impl.
+static FnTypeGeneratorType replaceTraitWitnessLookupsWithParamWitnessLookups(
+    FnTypeGeneratorType sig, Type replaceMeType, ParamDeclAttr implType) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](GetWitnessAttr getWitness) -> TypedAttr {
+    if (getWitness.getTypeValue().getType() != replaceMeType)
+      return getWitness;
+    return GetWitnessAttr::get(
+        ParamDeclRefAttr::get(implType), getWitness.getTraitName(),
+        getWitness.getWitnessName(), getWitness.getType());
+  });
+  return cast<FnTypeGeneratorType>(replacer.replace(sig));
+}
+
 static SymbolConstantAttr buildSymbol(FnOp impl, ParamDeclAttr implType,
                                       ParamDeclAttr originSetParam) {
   MLIRContext *ctx = impl.getContext();
@@ -580,6 +596,10 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
   // to the self parameter.
   FnTypeGeneratorType wrapperSignature = specializeSignature(
       traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
+
+  wrapperSignature = replaceTraitWitnessLookupsWithParamWitnessLookups(
+      wrapperSignature, structDecl.getTypeDeclSelf().getMetaType(),
+      structDeclOp.getParams().front());
 
   // Calculate the argument types and result types in terms of the named
   // parameters. Since the name of the parameters have not changed from the
@@ -643,6 +663,20 @@ ASTDecl *ClosureEmitter::createStructWrapper(
   implParameters.push_back(originSetParam);
   ASTType selfType(paramType);
 
+  // For each aliasOp of the trait, create a GetWitnessAttr lookup on the impl
+  // parameter. The alias value is Self.impl.AliasName (lookup on wrapped type).
+  llvm::MapVector<StringAttr, std::pair<Type, TypedAttr>> aliases;
+  StringAttr traitName =
+      b.getStringAttr(getFlattenedSymbolName(getFullyResolvedSymbolRef(
+          cast<mlir::SymbolOpInterface>(trait.getOperation()))));
+  for (auto alias : trait.getFields().getOps<AliasDeclOp>()) {
+    StringAttr aliasName = alias.getParamDecl().getName();
+    Type aliasType = alias.getType();
+    TypedAttr aliasValue = GetWitnessAttr::get(ParamDeclRefAttr::get(implType),
+                                               traitName, aliasName, aliasType);
+    aliases.insert({aliasName, {aliasType, aliasValue}});
+  }
+
   // Create a struct with a single field of type "impl".
   std::pair<ASTDecl &, StructDeclOp> pair =
       createStruct(shared, moduleDecl, StringAttr::get(b.getContext(), name),
@@ -655,13 +689,16 @@ ASTDecl *ClosureEmitter::createStructWrapper(
                     *shared.declResolver);
   StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
 
+  b.setInsertionPointToEnd(&declOp.getFields().front());
+  for (auto [name, value] : aliases)
+    AliasDeclOp::create(b, ParamDeclAttr::get(name, value.first), value.second);
+
   // Populate the wrapper methods with a call to the result of a witness lookup.
   auto populateTraitFn = [&](ClosureParent &closureParent) -> FnOp {
     FnOp traitFnOp = closureParent.getDefiningOp(moduleDecl);
     b.setInsertionPointToEnd(&declOp.getFields().front());
     FnTypeGeneratorType wrappedSignature =
         specializeSignature(traitFnOp, selfType, *shared.declResolver);
-
     auto [op, parameters, result] =
         pushBackTraitFunctionImpl(traitFnOp, structDecl);
 
@@ -691,6 +728,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(
         llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
           return ParamDeclRefAttr::get(p);
         }));
+
     auto callOp = LIT::CallOp::create(
         b, result,
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext()),
@@ -755,7 +793,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     SymbolConstantAttr symbolConstant =
         buildSymbol(impl, implType, originSetParam);
     WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
-
+    if (name == "__call__") {
+      for (auto [name, value] : aliases)
+        WitnessOp::create(b, name, value.second);
+    }
     return witnessTable;
   };
 
@@ -865,6 +906,75 @@ ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
   }
   return traitDecl;
 }
+// Find all extern parameter references in the sig. For each reference, create
+// an alias. Replace the original extern parameter reference by calling the
+// custom replacer
+static std::pair<FnTypeGeneratorType, llvm::MapVector<StringRef, Type>>
+extractParameterReferencesIntoAliasRef(
+    FnTypeGeneratorType dependentSignatureType, StringRef selfName,
+    llvm::function_ref<TypedAttr(ParamDeclRefAttr)>
+        externParameterRefReplacer) {
+  DenseSet<StringRef> callParams;
+  for (PogMetadataAttr pog :
+       dependentSignatureType.getParamListAttrs().getPogs())
+    callParams.insert(pog.getName());
+  callParams.insert(selfName);
+  llvm::MapVector<StringRef, Type> aliasMembers;
+  mlir::AttrTypeReplacer externRefReplacer;
+  FnTypeGeneratorType canonicalType =
+      cast<FnTypeGeneratorType>(getCanonicalType(dependentSignatureType));
+  externRefReplacer.addReplacement(
+      [&](ParamDeclRefAttr reference) -> TypedAttr {
+        if (!callParams.contains(reference.getName().getValue())) {
+          auto ptr = aliasMembers.find(reference.getName());
+          if (ptr == aliasMembers.end())
+            aliasMembers.insert({reference.getName(), reference.getType()});
+          return externParameterRefReplacer(reference);
+        }
+        return reference;
+      });
+  auto newSignature =
+      cast<FnTypeGeneratorType>(externRefReplacer.replace(canonicalType));
+  return {newSignature, aliasMembers};
+}
+
+static std::pair<FnTypeGeneratorType, llvm::MapVector<StringRef, Type>>
+extractParameterReferencesIntoAliasRef(
+    ASTDecl &decl, FnTypeGeneratorType dependentSignatureType) {
+  TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
+  SharedState &shared = decl.getShared();
+  MLIRContext *ctx = shared.getContext();
+  ASTType selfType = decl.getTypeDeclSelf();
+  auto declRef = dyn_cast<ParamType>(selfType.mlirType);
+  auto ref = dyn_cast_if_present<ParamDeclRefAttr>(declRef.getParam());
+  assert(ref && "expected the self type of a trait to be a parameter");
+  StringAttr traitName = StringAttr::get(
+      ctx, getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
+  StringRef selfName = ref.getName().getValue();
+  auto externParamReplacer = [&](ParamDeclRefAttr reference) -> TypedAttr {
+    return GetWitnessAttr::get(PValue(selfType), traitName, reference.getName(),
+                               reference.getType());
+  };
+  return extractParameterReferencesIntoAliasRef(dependentSignatureType,
+                                                selfName, externParamReplacer);
+}
+
+/// Creates a cache key from a signature by replacing external parameter
+/// references with placeholders. This decouples the key from the declaring
+/// scope, making it self-contained. The result is only valid for uniquing
+/// (trait caching), not type checking.
+static std::pair<FnTypeGeneratorType, llvm::MapVector<StringRef, Type>>
+getSelfContainedKey(FnTypeGeneratorType dependentSignatureType) {
+  StringRef selfName = "Self";
+  MLIRContext *ctx = dependentSignatureType.getContext();
+  auto externParamReplacer = [&](ParamDeclRefAttr reference) -> TypedAttr {
+    return GetWitnessAttr::get(PValue(TypeType::get(ctx)),
+                               StringAttr::get(ctx, "__closure_extern_param__"),
+                               reference.getName(), reference.getType());
+  };
+  return extractParameterReferencesIntoAliasRef(dependentSignatureType,
+                                                selfName, externParamReplacer);
+}
 
 ASTDecl *
 ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
@@ -877,11 +987,21 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
   auto populate = [&](ASTDecl &decl,
                       DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl.getIfOperation());
-    RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
-    FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
-        refType, ArgConvention::ReadMem, dependentSignatureType);
+    auto [signatureNoSelf, aliasMembers] =
+        extractParameterReferencesIntoAliasRef(decl, dependentSignatureType);
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
         closureTrait.getLoc(), &closureTrait.getFields().front());
+    for (auto [aliasName, aliasType] : aliasMembers) {
+      shared.declResolver->addFullyResolvedDecl(
+          AliasDeclOp::create(
+              builder, ParamDeclAttr::get(ctx, builder.getStringAttr(aliasName),
+                                          aliasType)),
+          aliasName, decl.getLoc(), &decl);
+    }
+
+    RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
+    FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
+        refType, ArgConvention::ReadMem, signatureNoSelf);
     SmallVector<ParamDeclAttr> parameters(
         populateParametersFromFnGeneratorType(sig));
     auto callName = StringAttr::get(ctx, "__call__");
@@ -909,13 +1029,13 @@ ClosureEmitter::createClosureTrait(ASTDecl &moduleDecl, StringAttr name,
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
   };
-  auto key = dependentSignatureType.FnTypeGeneratorType::get(
-      dependentSignatureType.getInputParamTypes(),
-      dependentSignatureType.getValues(),
-      dependentSignatureType.getArgConventions(),
-      dependentSignatureType.getFnEffects().setUnified(false),
-      dependentSignatureType.getFnMetadata(),
-      dependentSignatureType.getMetadata());
+  FnTypeGeneratorType selfContained =
+      getSelfContainedKey(dependentSignatureType).first;
+  auto key = selfContained.FnTypeGeneratorType::get(
+      selfContained.getInputParamTypes(), selfContained.getValues(),
+      selfContained.getArgConventions(),
+      selfContained.getFnEffects().setUnified(false),
+      selfContained.getFnMetadata(), selfContained.getMetadata());
   auto createTraitFn = [&]() -> ASTDecl * {
     auto [closureTrait, traitDecl] = createTraitOp(
         moduleDecl, name, parents, nestedFunctionOrTypeLocation, populate);
@@ -1757,7 +1877,8 @@ static SymbolRefAttr getFullyResolvedSymbolRefUpTo(mlir::SymbolOpInterface op) {
 
 TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
-    SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef) {
+    SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
+    llvm::MapVector<StringRef, Type> const &aliases) {
   // create kgen.struct.generator
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
@@ -1766,7 +1887,17 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
 
   SmallVector<ParamDeclAttr> closureParams;
   auto capturesParam = ParamDeclAttr::get("CAPTURES", paramClosureType);
+  SmallVector<TypedAttr> paramBindings;
   closureParams.push_back(capturesParam);
+  ClosureAttr packedParamCaptures =
+      KGEN::ClosureAttr::get(ctx, paramClosureType);
+  paramBindings.push_back(packedParamCaptures);
+
+  for (auto [name, type] : aliases) {
+    auto param = ParamDeclAttr::get(StringAttr::get(ctx, name), type);
+    closureParams.push_back(param);
+    paramBindings.push_back(ParamDeclRefAttr::get(param));
+  }
   ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPointToStart(
@@ -1817,6 +1948,14 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
         ctx, parentSymbolRef, closureType.getName(),
         ClosureMethodAttr::get(ctx, method), paramValues, sig);
     WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
+
+    // add the alias entries
+    if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
+      for (auto [name, type] : aliases)
+        WitnessOp::create(
+            builder, name,
+            ParamDeclRefAttr::get(StringAttr::get(ctx, name), type));
+    }
   };
 
   for (ClosureParent &closureParent : closureParents) {
@@ -1829,11 +1968,9 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
       cast<mlir::SymbolOpInterface>(structGen.getOperation()));
   // Type value contains the reference to the struct gen op with the witness
   // table.
-  ClosureAttr packedParamCaptures =
-      KGEN::ClosureAttr::get(ctx, paramClosureType);
   auto typeValue = KGEN::TypeValueType::get(
-      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
-                                     {packedParamCaptures}, traitType));
+      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef, paramBindings,
+                                     traitType));
   auto typeParamAttr = TypeParamAttr::get(typeValue, closureType, traitType);
   return typeParamAttr;
 }
@@ -2005,9 +2142,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
-  TypedAttr witnessTable =
-      addWitnessTablesToClosure(moduleDecl, nestedFnDecl.getLoc(), parent,
-                                closureType, closureParents, parentSymbolRef);
+
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
@@ -2021,6 +2156,11 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
           .setRegisterPassable(false)
           .setCapturing(true),
       original.getFnMetadata(), original.getMetadata());
+  auto [key, aliases] = getSelfContainedKey(withoutUnified);
+  TypedAttr witnessTable = addWitnessTablesToClosure(
+      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents,
+      parentSymbolRef, aliases);
+
   auto closure = LIT::ClosureInitOp::create(
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
@@ -2036,10 +2176,12 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   OwnershipUseOp::create(builder, location, closure);
 
   // Create the wrapper instance by emitting a call to the Wrapper
-  // constructor.
+  // constructor. The wrapper struct only has impl and origin_set parameters;
+  // alias values are derived via GetWitnessAttr lookups on impl.
   auto originSet = OriginSetAttr::get(ctx, origins);
-  LIT::StructType closureWrapperType =
-      wrapper.bindReference({witnessTable, originSet});
+  SmallVector<TypedAttr> paramArgs({witnessTable, originSet});
+
+  LIT::StructType closureWrapperType = wrapper.bindReference(paramArgs);
   VarDeclOp var = VarDeclOp::create(
       builder, location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
@@ -2059,10 +2201,6 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       cast<mlir::SymbolOpInterface>(init.getOperation()));
   FnTypeGeneratorType fullSig =
       LIT::getFullSignature(wrapper, init.getFuncTypeGenerator());
-  SmallVector<TypedAttr> paramArgs;
-  paramArgs.reserve(2);
-  paramArgs.push_back(closure.getTypeValue());
-  paramArgs.push_back(originSet);
   auto boundSig = fullSig.getSpecializedGenerator(
       paramArgs, /*evaluationContext=*/nullptr, location);
   TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);

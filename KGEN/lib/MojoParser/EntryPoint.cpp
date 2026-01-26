@@ -159,7 +159,7 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
       return WalkResult::skip();
     }
     // Functions have nothing to check inside them.
-    if (isa<FnOp>(op))
+    if (isa<FnOp, TraitDeclOp>(op))
       return WalkResult::skip();
     return WalkResult::advance();
   });
