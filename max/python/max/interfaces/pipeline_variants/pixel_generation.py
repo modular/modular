@@ -24,11 +24,11 @@ from typing import Generic, Protocol, runtime_checkable
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import TokenBuffer
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
 from max.interfaces.status import GenerationStatus
+from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
 
