@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from max import Tensor
 from max import functional as F
 from max.dtype import DType
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module
-from max.nn.module_v3 import Linear
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 

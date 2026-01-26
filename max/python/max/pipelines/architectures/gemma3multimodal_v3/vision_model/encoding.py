@@ -14,21 +14,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max import Tensor
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import (
-    LayerNorm,
-    Module,
-)
-from max.nn.module_v3 import Sequential
+from max.nn import Module
+from max.nn.norm import LayerNorm
+from max.nn.sequential import Sequential
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention
 from .projection import Gemma3VisionMLP
 
 
-class Gemma3VisionEncoderLayer(Module):
+class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
     """An individual layer of encoding within a stack of encoding layers"""
 
     def __init__(
@@ -87,7 +85,9 @@ class Gemma3VisionEncoderLayer(Module):
         return hidden_states
 
 
-class Gemma3VisionEncoder(Module):
+class Gemma3VisionEncoder(
+    Module[[Tensor | Sequence[Tensor]], Tensor | Sequence[Tensor]]
+):
     """Wrapper class for a stack of vision encoder layers"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):

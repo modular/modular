@@ -21,47 +21,29 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.graph import DeviceRef, TensorType, Type
+from max.graph import DeviceRef, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
-from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.kv_cache import (NullKVCacheManager, PagedKVCacheManager,
+                          load_kv_manager)
+from max.nn.legacy.kv_cache import (KVCacheInputs, KVCacheInputsSequence,
+                                    KVCacheParams, PagedCacheValues)
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    KVCacheMixin,
-    ModelInputs,
-    ModelOutputs,
-    PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
-)
+from max.pipelines.lib import (CompilationTimer, KVCacheConfig, KVCacheMixin,
+                               ModelInputs, ModelOutputs, PipelineConfig,
+                               PipelineModel, SupportedEncoding)
 from transformers import AutoConfig
 
 from .model_config import Gemma3ForConditionalGenerationConfig
-from .vision_model.gemma3multimodal import (
-    Gemma3LanguageModel,
-    Gemma3VisionModel,
-)
-from .weight_adapters import (
-    convert_safetensor_language_state_dict,
-    convert_safetensor_vision_state_dict,
-)
+from .vision_model.gemma3multimodal import (Gemma3LanguageModel,
+                                            Gemma3VisionModel)
+from .weight_adapters import (convert_safetensor_language_state_dict,
+                              convert_safetensor_vision_state_dict)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -445,16 +427,17 @@ class Gemma3_MultiModalModelV3(
         state_dict: dict[str, WeightData],
     ) -> Callable[..., Any]:
         """Build the vision model with our input types and graph"""
+        device0 = self.devices[0]
         timer = CompilationTimer("vision model")
         with F.lazy():
-            vision_model = Gemma3VisionModel(config)
+            vision_model = Gemma3VisionModel(config, device0)
             vision_model.to(self.devices[0])
 
         timer.mark_build_complete()
 
         input_types = self._vision_model_input_types(config)
 
-        pixel_values = input_types[0]
+        pixel_values = input_types[0].tensor
 
         image_embeddings = vision_model(pixel_values)
 
@@ -475,8 +458,8 @@ class Gemma3_MultiModalModelV3(
 
         input_row_offsets = model_inputs.input_row_offsets
 
-        image_embeddings: list[Buffer]
-        image_token_indices: list[Buffer]
+        image_embeddings: Buffer
+        image_token_indices: Buffer
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
 
@@ -509,19 +492,16 @@ class Gemma3_MultiModalModelV3(
         )
 
         if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Buffer)
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
             return ModelOutputs(
-                logits=model_outputs[1].driver_tensor,
-                next_token_logits=model_outputs[0].driver_tensor,
-                logit_offsets=model_outputs[2].driver_tensor,
+                logits=cast(Buffer, model_outputs[1].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
             )
         else:
             assert isinstance(model_outputs[0], Buffer)
             return ModelOutputs(
-                logits=model_outputs[0].driver_tensor,
-                next_token_logits=model_outputs[0].driver_tensor,
+                logits=cast(Buffer, model_outputs[0].driver_tensor),
+                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
             )
 
     def prepare_initial_token_inputs(
@@ -563,8 +543,10 @@ class Gemma3_MultiModalModelV3(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            pixel_values=pixel_values,
-            image_token_indices=image_token_indices,
+            pixel_values=[pixel_values],  # FIXME temp fix for single GPU
+            image_token_indices=[
+                image_token_indices
+            ],  # FIXME temp fix for single GPU
         )
 
     def prepare_next_token_inputs(
@@ -573,22 +555,22 @@ class Gemma3_MultiModalModelV3(
         prev_model_inputs = cast(Gemma3MultiModalModelInputs, prev_model_inputs)
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
 
-        # Slice each tensor in the list, not the list itself
-        next_row_offsets = [
-            offsets_prealloc[:row_offsets_size]
-            for offsets_prealloc in self._input_row_offsets_prealloc
-        ]
+        next_row_offsets = self._input_row_offsets_prealloc[
+            :row_offsets_size
+        ].to(self.devices[0])
 
         return Gemma3MultiModalModelInputs(
             tokens=next_tokens,
-            input_row_offsets=next_row_offsets,
+            input_row_offsets=[
+                next_row_offsets
+            ],  # FIXME temp fix for single GPU
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             pixel_values=None,
         )
 
     def _prepare_vision_inputs(
-        self, context_batch: TextAndVisionContext
+        self, context_batch: Sequence[TextAndVisionContext]
     ) -> Buffer | None:
         """Use the VisionStacker to prepare batched vision inputs from multiple contexts.
         The Tokenizer should have already processed images into pixel_values (pan and scan etc)"""
@@ -610,7 +592,7 @@ class Gemma3_MultiModalModelV3(
         return tensor.to(device0)
 
     def _batch_image_token_indices(
-        self, context_batch: TextAndVisionContext
+        self, context_batch: Sequence[TextAndVisionContext]
     ) -> Buffer | None:
         """Batch image token indices from multiple contexts, adjusting for
         position in batch.
@@ -633,9 +615,9 @@ class Gemma3_MultiModalModelV3(
             batch_offset += ctx.tokens.active_length
 
         if not indices_and_offsets:
-            return [
-                Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
-            ]
+            return Buffer.zeros(shape=[0], dtype=DType.int32).to(
+                self.devices[0]
+            )
 
         np_indices = np.concatenate(indices_and_offsets).astype(
             np.int32, copy=False

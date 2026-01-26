@@ -17,33 +17,33 @@ import functools
 import logging
 from collections.abc import Sequence
 
-from attention import Gemma3Attention
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import (
-    MLP,
-    LayerList,
-    LayerNorm,
-    ReturnLogits,
-)
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.module_v3 import Embedding, Linear, Module
-from max.nn.rotary_embedding import (
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-)
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.nn.embedding import Embedding
+from max.nn.layer_list import LayerList
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import MLP, Linear
+from max.nn.module import Module
+from max.nn.norm import LayerNorm
+from max.nn.rotary_embedding import (Llama3RopeScalingParams,
+                                     Llama3RotaryEmbedding)
+# TODO reimplement?
+from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
+# TODO reimplement?
+from max.pipelines.architectures.gemma3.layers.transformer_block import \
+    Gemma3TransformerBlock
+# TODO reimplement?
+from max.pipelines.architectures.internvl.embedding_utils import \
+    merge_multimodal_embeddings
 from max.tensor import Tensor
-from rms_norm import Gemma3RMSNorm
-from transformer_block import Gemma3TransformerBlock
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
 from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector
+from .rms_norm import Gemma3RMSNorm
 
 logger = logging.getLogger("max.pipelines")
 
@@ -89,8 +89,8 @@ class Gemma3LanguageModel(Module):
         )
 
         self.embed_tokens = Embedding(
-            config.vocab_size,
-            dim=config.hidden_size,
+            text_config.vocab_size,
+            dim=text_config.hidden_size,
         )
 
         self.norm = Gemma3RMSNorm(
@@ -171,8 +171,8 @@ class Gemma3LanguageModel(Module):
         # Replace image placeholder tokens with vision embeddings
         h = merge_multimodal_embeddings(
             inputs_embeds=h,
-            multimodal_embeddings=image_embeddings,
-            image_token_indices=image_token_indices,
+            multimodal_embeddings=image_embeddings.driver_tensor,
+            image_token_indices=image_token_indices.driver_tensor,
         )
 
         # Run through transformer layers

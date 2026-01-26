@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from max import Tensor
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import (
-    Conv2d,
-)
-from max.nn.module_v3 import Embedding, Module
+from max.nn.conv import Conv2d
+from max.nn.embedding import Embedding
+from max.nn.module import Module
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
@@ -84,7 +83,7 @@ class Gemma3VisionEmbeddings(Module):
         total_patches = max_nb_patches_h * max_nb_patches_w
 
         # Create position IDs for each batch
-        position_ids = F.range(
+        position_ids = F.arange(
             start=0,
             stop=self.num_patches,
             step=1,
