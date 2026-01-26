@@ -84,10 +84,6 @@ class PixelGenerationRequest(Request):
     """
     Optional random number generator seed for reproducible generation.
     """
-    max_sequence_length: int = 512
-    """
-    Maximum sequence length for text encoder.
-    """
 
     def __post_init__(self) -> None:
         if self.prompt == "":
@@ -111,7 +107,6 @@ class PixelContext(BaseContext):
     Configuration:
         tokens: Tokenized prompt IDs (TokenBuffer).
         request_id: A unique identifier for this generation request.
-        max_sequence_length: Maximum sequence length for text encoder.
         negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
         timesteps: Precomputed timestep schedule for denoising.
         initial_noise: Precomputed initial noise (latents).
@@ -127,11 +122,8 @@ class PixelContext(BaseContext):
     tokens: TokenBuffer
     """Primary encoder tokens."""
 
-    # Request identification (required)
+    # Request identification
     request_id: RequestID = field(default_factory=RequestID)
-
-    max_sequence_length: int = field(default=512)
-    """Max sequence length for text encoder. Default 512 is sufficient for most prompts."""
 
     model_name: str = field(default="")
 

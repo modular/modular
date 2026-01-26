@@ -873,11 +873,11 @@ class PixelGenerationTokenizer(
         pipeline_config: PipelineConfig,
         subfolder: str,
         *,
+        subfolder_2: str | None = None,
         revision: str | None = None,
         max_length: int | None = None,
-        trust_remote_code: bool = False,
-        subfolder_2: str | None = None,
         max_length_2: int | None = None,
+        trust_remote_code: bool = False,
         chat_template: str | None = None,
         context_validators: list[Callable[[PixelContext], None]] | None = None,
         wrap_prompt_as_chat: bool = False,
@@ -1325,7 +1325,6 @@ class PixelGenerationTokenizer(
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
-            max_sequence_length=self.max_length,
             tokens=token_buffer,
             mask=attn_mask,
             tokens_2=token_buffer_2,
