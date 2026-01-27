@@ -245,14 +245,12 @@ class InternVLConfig(MAXModelConfigBase):
         ConfigCls = _select_llm_config_class(hf_llm_config)
         llm_config: Qwen2Config | Qwen3Config
         if ConfigCls is Qwen3Config:
-            llm_config = Qwen3Config.generate(
-                pipeline_config=pipeline_config,
+            llm_config = Qwen3Config.initialize_from_config(
+                pipeline_config, hf_llm_config
+            )
+            llm_config.finalize(
                 huggingface_config=hf_llm_config,
                 state_dict=llm_state_dict,
-                dtype=dtype,
-                n_devices=n_devices,
-                cache_dtype=cache_dtype,
-                kv_cache_config=kv_cache_config,
                 return_logits=return_logits,
                 norm_method=norm_method,
                 attention_bias=False,  # Qwen3 removes QKV biases

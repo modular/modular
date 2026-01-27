@@ -57,17 +57,15 @@ class Qwen3Model(LlamaModelBase):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Qwen3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Qwen3Config.initialize_from_config(
+            self.pipeline_config, self.huggingface_config
+        )
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
+            return_logits=self.return_logits,
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
-            return_logits=self.return_logits,
         )
 
         # Build Graph

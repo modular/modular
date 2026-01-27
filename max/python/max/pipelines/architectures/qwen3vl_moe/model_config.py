@@ -23,8 +23,10 @@ from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
+from typing_extensions import Self, override
 
 
 @dataclass
@@ -76,44 +78,53 @@ class VisionConfig:
     num_position_embeddings: int
     """Number of position embeddings for the vision encoder."""
 
-    @staticmethod
-    def generate(
-        vision_config: AutoConfig,
-        dtype: DType,
-        llm_dtype: DType,
+    @classmethod
+    def initialize_from_config(
+        cls,
         pipeline_config: PipelineConfig,
+        hf_vision_config: AutoConfig,
     ) -> VisionConfig:
-        """Generate VisionConfig from HuggingFace vision config.
+        """Initialize VisionConfig from HuggingFace vision config.
 
-        Args:
-            vision_config: HuggingFace vision configuration object.
-
-        Returns:
-            Configured VisionConfig instance.
+        Note: dtype fields will be set to defaults and should be updated
+        via finalize() once state_dict is available.
         """
-        return VisionConfig(
-            dtype=dtype,
-            llm_dtype=llm_dtype,
+        from max.dtype import DType as MaxDType
+
+        return cls(
+            # Defaults that will be overridden in finalize
+            dtype=MaxDType.bfloat16,
+            llm_dtype=MaxDType.bfloat16,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model.device_specs
             ],
-            patch_size=vision_config.patch_size,
-            temporal_patch_size=vision_config.temporal_patch_size,
-            in_channels=vision_config.in_channels,
-            hidden_size=vision_config.hidden_size,
-            num_attention_heads=vision_config.num_heads,
-            depth=vision_config.depth,
-            intermediate_size=vision_config.intermediate_size,
-            out_hidden_size=vision_config.out_hidden_size,
-            deepstack_visual_indexes=vision_config.deepstack_visual_indexes,
+            patch_size=hf_vision_config.patch_size,
+            temporal_patch_size=hf_vision_config.temporal_patch_size,
+            in_channels=hf_vision_config.in_channels,
+            hidden_size=hf_vision_config.hidden_size,
+            num_attention_heads=hf_vision_config.num_heads,
+            depth=hf_vision_config.depth,
+            intermediate_size=hf_vision_config.intermediate_size,
+            out_hidden_size=hf_vision_config.out_hidden_size,
+            deepstack_visual_indexes=hf_vision_config.deepstack_visual_indexes,
             rms_norm_eps=1e-06,
-            spatial_merge_size=vision_config.spatial_merge_size,
-            num_position_embeddings=vision_config.num_position_embeddings,
+            spatial_merge_size=hf_vision_config.spatial_merge_size,
+            num_position_embeddings=hf_vision_config.num_position_embeddings,
         )
 
+    def finalize(
+        self,
+        vision_dtype: DType,
+        llm_dtype: DType,
+    ) -> None:
+        """Finalize VisionConfig with state_dict dependent fields."""
+        self.dtype = vision_dtype
+        self.llm_dtype = llm_dtype
 
-class Qwen3VLConfig(MAXModelConfigBase):
+
+@dataclass(kw_only=True)
+class Qwen3VLConfig(ArchConfigWithKVCache):
     """Configuration for Qwen3VL models."""
 
     devices: list[DeviceRef]
@@ -164,11 +175,13 @@ class Qwen3VLConfig(MAXModelConfigBase):
     llm_config: Llama3Config
     """Language model configuration using Llama3 architecture."""
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Returns a dictionary describing the configuration parameters."""
-        # TODO: Populate this with helpful descriptions based on Args above.
-        return {}
+    def get_kv_params(self) -> KVCacheParams:
+        """Returns the KV cache parameters from the embedded LLM config."""
+        return self.llm_config.get_kv_params()
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length from the embedded LLM config."""
+        return self.llm_config.get_max_seq_len()
 
     @staticmethod
     def construct_kv_params(
@@ -212,42 +225,57 @@ class Qwen3VLConfig(MAXModelConfigBase):
             huggingface_config=llm_config,
         )
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        llm_state_dict: dict[str, WeightData],
-        vision_state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
-    ) -> Qwen3VLConfig:
-        """Generate Qwen3VLConfig from pipeline and HuggingFace configs.
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
         Args:
-            pipeline_config: Pipeline configuration.
-            huggingface_config: HuggingFace model configuration.
-            llm_state_dict: Model weights dictionary.
-            vision_state_dict: Vision model weights dictionary.
-            dtype: Data type for model parameters.
-            n_devices: Number of devices.
-            cache_dtype: KV cache data type.
-            kv_cache_config: KV cache configuration.
-            return_logits: Return logits configuration.
-            norm_method: Normalization method.
+            pipeline_config: The MAX Engine pipeline configuration.
 
         Returns:
-            Configured Qwen3VLConfig instance.
+            A Qwen3VLConfig instance with fields initialized from config.
         """
-        # Create VisionConfig from the vision config
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    @classmethod
+    def initialize_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> Self:
+        """Initializes a Qwen3VLConfig from pipeline and HuggingFace configs.
+
+        This method creates a config instance with all fields that can be
+        determined from the pipeline and HuggingFace configurations, without
+        needing the state_dict. Fields that depend on the state_dict should
+        be set via the `finalize()` method.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            A Qwen3VLConfig instance ready for finalization.
+        """
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
 
-        # Propagate quantization_config to vision_config if present on main config but not vision_config
+        text_config = huggingface_config.text_config
+
+        # Get quantization encoding for dtype
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        dtype = quantization_encoding.dtype
+
+        # Create VisionConfig from the vision config
+
+        # Propagate quantization_config to vision_config if present on main
+        # config but not vision_config
         if hasattr(huggingface_config, "quantization_config") and not hasattr(
             hf_vision_config, "quantization_config"
         ):
@@ -255,15 +283,14 @@ class Qwen3VLConfig(MAXModelConfigBase):
                 huggingface_config.quantization_config
             )
 
-        vision_config = VisionConfig.generate(
-            hf_vision_config,
-            vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
-            llm_state_dict["language_model.embed_tokens.weight"].dtype,
-            pipeline_config,
+        vision_config = VisionConfig.initialize_from_config(
+            pipeline_config, hf_vision_config
         )
 
-        # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
-        # Propagate quantization_config to text_config if present on main config but not text_config
+        # Create Llama3Config for the language model
+
+        # Propagate quantization_config to text_config if present on main config
+        # but not text_config
         if hasattr(huggingface_config, "quantization_config") and not hasattr(
             huggingface_config.text_config, "quantization_config"
         ):
@@ -271,18 +298,8 @@ class Qwen3VLConfig(MAXModelConfigBase):
                 huggingface_config.quantization_config
             )
         llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config.text_config
+            pipeline_config, text_config
         )
-        llm_config.finalize(
-            huggingface_config=huggingface_config.text_config,
-            state_dict=llm_state_dict,
-            return_logits=return_logits,
-            norm_method=norm_method,
-            attention_bias=True,  # Qwen3VL uses Qwen2 which has attention_bias=True
-        )
-        llm_config.interleaved_rope_weights = False
-
-        text_config = huggingface_config.text_config
 
         # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.
         # For dense models, num_experts=0 ensures the decoder always uses MLP layers
@@ -295,7 +312,7 @@ class Qwen3VLConfig(MAXModelConfigBase):
         norm_topk_prob = getattr(text_config, "norm_topk_prob", False)
         decoder_sparse_step = getattr(text_config, "decoder_sparse_step", 1)
 
-        return Qwen3VLConfig(
+        return cls(
             dtype=dtype,
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -319,3 +336,42 @@ class Qwen3VLConfig(MAXModelConfigBase):
             # Composed language model configuration
             llm_config=llm_config,
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        llm_state_dict: dict[str, WeightData],
+        vision_state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+    ) -> None:
+        """Finalize the Qwen3VLConfig instance with state_dict dependent fields.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+            llm_state_dict: Language model weights dictionary.
+            vision_state_dict: Vision encoder weights dictionary.
+            return_logits: Return logits configuration.
+            norm_method: Normalization method.
+        """
+        # Determine dtypes from state_dict
+        vision_dtype = vision_state_dict[
+            "vision_encoder.patch_embed.proj.weight"
+        ].dtype
+        llm_dtype = llm_state_dict["language_model.embed_tokens.weight"].dtype
+
+        # Finalize vision config
+        self.vision_config.finalize(
+            vision_dtype=vision_dtype,
+            llm_dtype=llm_dtype,
+        )
+
+        # Finalize llm config (with Qwen2 attention_bias=True)
+        self.llm_config.finalize(
+            huggingface_config=huggingface_config.text_config,
+            state_dict=llm_state_dict,
+            return_logits=return_logits,
+            norm_method=norm_method,
+            attention_bias=True,  # Qwen3VL uses Qwen2 which has attention_bias=True
+        )
+        self.llm_config.interleaved_rope_weights = False
