@@ -42,8 +42,7 @@ from sys.ffi import (
 from memory import Span
 
 
-@register_passable("trivial")
-struct FileDescriptor(Writer):
+struct FileDescriptor(TrivialRegisterType, Writer):
     """File descriptor of a file."""
 
     var value: Int

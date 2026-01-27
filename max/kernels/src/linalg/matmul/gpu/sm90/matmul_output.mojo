@@ -47,7 +47,6 @@ from .tile_writer import (
 import itertools
 
 
-@register_passable("trivial")
 struct MatmulTileWriter[
     dtype: DType,
     layout: Layout,
@@ -72,7 +71,7 @@ struct MatmulTileWriter[
         elementwise_compute_lambda_type
     ] = None,
     swapAB: Bool = False,
-]:
+](TrivialRegisterType):
     comptime N = Self.layout.shape[1].value()
     comptime frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[
         1

@@ -79,8 +79,7 @@ fn normalize_neg_index[
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
-@register_passable("trivial")
-struct Axis(Indexer, Intable):
+struct Axis(Indexer, Intable, TrivialRegisterType):
     var axis: Int
 
     @always_inline

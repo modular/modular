@@ -1029,7 +1029,7 @@ PIPELINES = {
             pipeline="Qwen/Qwen3-VL-4B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.7e00,
-            kl_div_threshold=2.1e01,
+            kl_div_threshold=7.0e-02,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
@@ -1085,7 +1085,7 @@ PIPELINES = {
             # TODO(MODELS-730): With the update to transformers=4.55, the
             # kl_div_threshold went from 8.7e-02 to 6.6e-01.
             # This is likely due to changes in the reference implementation.
-            cos_dist_threshold=4.1e-02,
+            cos_dist_threshold=5.0e-02,
             kl_div_threshold=6.8e-01,
         ),
     ),

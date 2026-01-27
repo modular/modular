@@ -82,8 +82,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
     return (kv_cache_shape, kv_cache_strides)
 
 
-@register_passable("trivial")
-struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
+struct KVCacheStaticParams(Equatable, TrivialRegisterType):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -117,8 +116,7 @@ struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
         return not (self == rhs)
 
 
-@register_passable("trivial")
-trait KVCacheT(DevicePassable, ImplicitlyCopyable):
+trait KVCacheT(DevicePassable, TrivialRegisterType):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -239,11 +237,10 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
         ...
 
 
-@register_passable("trivial")
 struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
-](KVCacheT):
+](KVCacheT, TrivialRegisterType):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
 
@@ -514,12 +511,11 @@ struct ContinuousBatchingKVCache[
         return offset_ptr
 
 
-@register_passable("trivial")
 struct PagedKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
-](KVCacheT):
+](KVCacheT, TrivialRegisterType):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
 

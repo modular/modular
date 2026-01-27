@@ -612,6 +612,7 @@ struct BlackwellBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        alpha: Float32,
     ):
         """Execute epilogue to store accumulated results to global memory.
 
@@ -631,6 +632,7 @@ struct BlackwellBlockScaledMatmulKernel[
             work_tile_coord: (m, n, k_start) coordinates.
             M: Problem M dimension.
             N: Problem N dimension.
+            alpha: Tensor scale factor (scalar).
         """
         # Use BlockScaledTileWriter for structured epilogue
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
@@ -639,6 +641,7 @@ struct BlackwellBlockScaledMatmulKernel[
             stage,
             work_tile_coord,
             (M, N),
+            alpha,
         )
 
     # ========== Compile-Time Validation ==========
@@ -680,6 +683,7 @@ struct BlackwellBlockScaledMatmulKernel[
         sfb_tma_op: TMATensorTile[
             Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
         ],
+        alpha: Float32,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -934,6 +938,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                     ),
                                     M=mnk[0],
                                     N=mnk[1],
+                                    alpha=alpha,
                                 )
 
                     tile_idx += 1

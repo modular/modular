@@ -33,6 +33,34 @@ from builtin.device_passable import DevicePassable
 from compile import get_type_name
 
 
+# ===-----------------------------------------------------------------------===#
+# Span aliases
+# ===-----------------------------------------------------------------------===#
+
+
+comptime MutSpan[
+    T: Copyable,
+    origin: MutOrigin,
+] = Span[T, origin]
+"""A span providing mutable access to its elements.
+
+Parameters:
+    T: The type of the elements in the span.
+    origin: The origin of the span.
+"""
+
+comptime ImmutSpan[
+    T: Copyable,
+    origin: ImmutOrigin,
+] = Span[T, origin]
+"""A span providing read-only access to its elements.
+
+Parameters:
+    T: The type of the elements in the span.
+    origin: The origin of the span.
+"""
+
+
 @fieldwise_init
 struct _SpanIter[
     mut: Bool,
@@ -86,7 +114,6 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@register_passable("trivial")
 struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     Boolable,
     Defaultable,
@@ -94,6 +121,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     ImplicitlyCopyable,
     Iterable,
     Sized,
+    TrivialRegisterType,
 ):
     """A non-owning view of contiguous data.
 

@@ -18,7 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
-from test_common.storage import load_image
+from test_common.storage import load_from_s3
 from test_common.test_data import MockTextGenerationRequest
 from test_common.torch_utils import _create_logits_store
 from transformers import (
@@ -100,34 +100,38 @@ def run_text_generation(
         request: MockTextGenerationRequest,
     ) -> dict[str, torch.Tensor]:
         if request.is_multimodal:
-            # Load images from request.images and inject into messages
-            loaded_images = [load_image(img) for img in request.images]
+            # Download images from S3 to local paths for processor
+            image_paths = [load_from_s3(img) for img in request.images]
             image_idx = 0
 
-            # Convert messages to dicts and inject images
+            # Convert messages to dicts and inject image paths
             messages_data: list[dict[str, Any]] = []
             for msg in request.messages:
                 msg_content: list[dict[str, Any]] = []
                 content = msg.content
                 if isinstance(content, list):
                     for item in content:
-                        if (
-                            isinstance(item, dict)
-                            and item.get("type") == "image"
-                        ):
-                            # Replace placeholder with actual image
+                        # Convert Pydantic model to dict if needed
+                        if hasattr(item, "model_dump"):
+                            item_dict = item.model_dump()
+                        elif isinstance(item, dict):
+                            item_dict = item
+                        else:
+                            raise ValueError(
+                                f"Content item: {item} is not a dict or Pydantic model"
+                            )
+
+                        if item_dict.get("type") == "image":
+                            # Replace placeholder with image path
                             msg_content.append(
                                 {
-                                    "type": "image_url",
-                                    "image_url": loaded_images[image_idx],
+                                    "type": "image",
+                                    "image": image_paths[image_idx],
                                 }
                             )
                             image_idx += 1
-                        elif isinstance(item, dict):
-                            msg_content.append(item)
                         else:
-                            # Convert Pydantic model to dict
-                            msg_content.append(item.model_dump())
+                            msg_content.append(item_dict)
                     messages_data.append(
                         {"role": msg.role, "content": msg_content}
                     )
@@ -141,6 +145,7 @@ def run_text_generation(
                 return_dict=True,
                 return_tensors="pt",
             )
+
             return {
                 k: v.to(device) if isinstance(v, torch.Tensor) else v
                 for k, v in inputs.items()

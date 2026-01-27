@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_prefill
+name: bench_prefill_subgraph
 file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_prefill.py
 
 deepseek-v2-commons: &deepseek-v2-commons
@@ -27,6 +27,4 @@ deepseek-v2-commons: &deepseek-v2-commons
 params:
 - <<: *deepseek-v2-commons
   $batch_size: [2]
-  $qkv_len: [8192]
-  # $batch_size: [1, 2]
-  # $qkv_len: [4096, 8192]
+  $qkv_len: [2048, 4096, 8192]

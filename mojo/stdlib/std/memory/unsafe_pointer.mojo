@@ -173,7 +173,6 @@ Parameters:
 """
 
 
-@register_passable("trivial")
 struct UnsafePointer[
     mut: Bool,
     //,
@@ -189,6 +188,7 @@ struct UnsafePointer[
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """`UnsafePointer` represents an indirect reference to one or more values

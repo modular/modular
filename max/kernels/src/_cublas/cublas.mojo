@@ -798,8 +798,7 @@ fn cublasStrmv(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasPointerMode_t:
+struct cublasPointerMode_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     comptime CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
@@ -959,8 +958,7 @@ fn cublasDgemmStridedBatched(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasMath_t:
+struct cublasMath_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_DEFAULT_MATH = cublasMath_t(0)
     comptime CUBLAS_TENSOR_OP_MATH = cublasMath_t(1)
@@ -2079,8 +2077,7 @@ fn cublasSrotm(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Algorithm:
+struct Algorithm(TrivialRegisterType):
     var _value: Int32
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
@@ -2650,8 +2647,7 @@ fn cublasRotgEx(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasDiagType_t:
+struct cublasDiagType_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     comptime CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
@@ -2678,8 +2674,7 @@ struct cublasDiagType_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ComputeType:
+struct ComputeType(TrivialRegisterType):
     var _value: Int32
     comptime COMPUTE_16F = Self(64)
     comptime COMPUTE_16F_PEDANTIC = Self(65)
@@ -4697,8 +4692,7 @@ fn cublasAsumEx(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct FillMode:
+struct FillMode(TrivialRegisterType):
     var _value: Int32
     comptime LOWER = Self(0)
     comptime UPPER = Self(1)
@@ -6153,8 +6147,7 @@ fn cublasDtbmv(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasAtomicsMode_t:
+struct cublasAtomicsMode_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     comptime CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
@@ -6454,8 +6447,7 @@ fn cublasCherkEx(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasSideMode_t:
+struct cublasSideMode_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     comptime CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
@@ -7082,8 +7074,7 @@ fn cublasStrmm(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cublasOperation_t:
+struct cublasOperation_t(TrivialRegisterType):
     var _value: Int32
     comptime CUBLAS_OP_N = cublasOperation_t(0)
     comptime CUBLAS_OP_T = cublasOperation_t(1)

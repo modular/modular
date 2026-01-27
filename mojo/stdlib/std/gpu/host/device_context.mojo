@@ -221,8 +221,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
+struct StreamPriorityRange(Stringable, TrivialRegisterType, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -261,8 +260,7 @@ struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _DeviceBufferMode:
+struct _DeviceBufferMode(TrivialRegisterType):
     var _mode: Int
 
     comptime _SYNC = _DeviceBufferMode(0)
@@ -1668,8 +1666,7 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
 
-@register_passable("trivial")
-struct EventFlags:
+struct EventFlags(TrivialRegisterType):
     """Provides flags for creating events.
 
     These flags can be combined using the bitwise OR operator (`|`, `|=`).
@@ -1986,7 +1983,7 @@ struct DeviceFunction[
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -2320,15 +2317,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2356,15 +2353,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2861,15 +2858,15 @@ struct DeviceFunction[
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs,
                 dense_args_sizes,
             ),
@@ -2955,7 +2952,7 @@ struct DeviceFunction[
             ](
                 UnsafePointer(to=result),
                 self._handle,
-                block_size,
+                Int32(block_size),
                 UInt(dynamic_shared_mem_size),
             )
         )
@@ -3100,7 +3097,7 @@ struct DeviceExternalFunction:
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -3222,15 +3219,15 @@ struct DeviceExternalFunction:
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
             )
         )
@@ -3360,7 +3357,7 @@ struct DeviceContext(ImplicitlyCopyable):
             ](
                 UnsafePointer(to=result),
                 api.as_c_string_slice().unsafe_ptr(),
-                device_id,
+                Int32(device_id),
             )
         )
         self._handle = result
@@ -3726,7 +3723,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3804,7 +3801,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3877,7 +3874,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3956,7 +3953,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -4029,7 +4026,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)

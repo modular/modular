@@ -2023,7 +2023,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         var tile_idx = 0
 
         while not work_info.is_done():
-            if not work_info.is_valid():
+            if (
+                not work_info.is_valid()
+                or expert_ids[Int(scheduler.current_group_idx)] < 0
+            ):
                 work_info = scheduler.fetch_next_work()
                 continue
             with MatmulProfilerType[3](workspace, tile_idx):

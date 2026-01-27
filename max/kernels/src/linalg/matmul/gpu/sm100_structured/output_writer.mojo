@@ -52,7 +52,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-@register_passable("trivial")
 struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
@@ -78,7 +77,7 @@ struct TileWriter[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-]:
+](TrivialRegisterType):
     """Output tile writer for SM100 matmul epilogue.
 
     Stores pointer to TMA descriptor. SMEM tiles passed per-call.

@@ -46,6 +46,7 @@ from memory import (
     pack_bits,
 )
 from python import ConvertibleToPython, Python, PythonObject
+from format._utils import _write_hex
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
@@ -459,7 +460,6 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         return result
 
 
-@register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
     ConvertibleToPython,
@@ -474,6 +474,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Representable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A non-owning view into encoded string data.
@@ -821,31 +822,40 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         Args:
             writer: The object to write to.
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
+        comptime `\\` = Byte(ord("\\"))
+        comptime `'` = Byte(ord("'"))
+        comptime `\t` = Byte(ord("\t"))
+        comptime `\n` = Byte(ord("\n"))
+        comptime `\r` = Byte(ord("\r"))
+
+        # Always start and end with a single quote
         writer.write_string("'")
 
         for s in self.codepoint_slices():
-            if s == "\\":
+            var b0 = s.unsafe_ptr()[0]  # safe
+            # Python escapes backslashes but they are ASCII printable
+            if b0 == `\\`:
                 writer.write_string(r"\\")
-            elif s == "\t":
-                writer.write_string(r"\t")
-            elif s == "\n":
-                writer.write_string(r"\n")
-            elif s == "\r":
-                writer.write_string(r"\r")
-            elif s == "'":
+            elif b0 == `'`:  # escape single quotes
                 writer.write_string(r"\'")
-            else:
-                var codepoint = Codepoint.ord(s)
-                var u32 = codepoint.to_u32()
-                if codepoint.is_ascii_printable():
-                    writer.write_string(s)
-                elif u32 < 0x10:
-                    _write_int[radix=16](writer, u32, prefix=r"\x0")
-                elif u32 < 0x20 or u32 == 0x7F:
-                    _write_int[radix=16](writer, u32, prefix=r"\x")
-                else:  # multi-byte character
-                    writer.write_string(s)
+            elif Codepoint._is_ascii_printable(b0):
+                writer.write_string(s)
+            elif b0 == `\t`:
+                writer.write_string(r"\t")
+            elif b0 == `\n`:
+                writer.write_string(r"\n")
+            elif b0 == `\r`:
+                writer.write_string(r"\r")
+            elif b0 < 0b1000_0000:  # non-printable ASCII
+                _write_hex[amnt_hex_bytes=2](writer, b0)
+            else:  # multi-byte character
+                writer.write_string(s)
 
         writer.write_string("'")
 
@@ -1113,13 +1123,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[Self.origin, forward=False](self)
+        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
         """Gets a single byte at the specified byte index.
@@ -1531,6 +1542,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator of references to the string elements.
         """
         return CodepointSliceIter[Self.origin](self)
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[Self.origin, False]:
+        """Iterates backwards over the string slice, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string slice, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string slice elements.
+        """
+        return CodepointSliceIter[Self.origin, forward=False](self)
 
     @always_inline
     fn as_bytes(self) -> Span[Byte, Self.origin]:
@@ -2711,7 +2736,9 @@ fn _memchr_impl[
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
-            output = haystack + Int(i + count_trailing_zeros(mask))
+            output = haystack + Int(
+                type_of(mask)(i) + count_trailing_zeros(mask)
+            )
             return
 
     for i in range(vectorized_end, length):
@@ -2795,7 +2822,7 @@ fn _memmem_impl[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = Int(i + count_trailing_zeros(mask))
+            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 output = haystack + offset
                 return

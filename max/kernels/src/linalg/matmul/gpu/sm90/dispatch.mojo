@@ -29,7 +29,15 @@ from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
-from .config import build_configs, MatmulConfig as MatmulConfigSM90
+from .config import (
+    build_configs,
+    build_configs_generic,
+    swapAB_smallM,
+    swapAB_smallM_ceildiv,
+    swapAB_midM_linear,
+    swapAB_largeM_clustered,
+    MatmulConfig as MatmulConfigSM90,
+)
 
 comptime MAX_M = Int.MAX
 
@@ -2446,7 +2454,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     @parameter
     if a_is_bfloat16_or_float32 and (static_N == 4096 and static_K == 1536):
-        if m > 64:
+        if m > 256:
             comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
             if (
                 _search[miscellaneous_table, domain=nk_idx_list]()
@@ -2459,6 +2467,373 @@ fn matmul_dispatch_sm90_bf16_fp32[
         (static_N == 1536 and static_K == 4096)
         or (static_N == 1536 and static_K == 4608)
     ):
+        comptime cond = (static_N == 1536 and static_K == 4096)
+
+        @parameter
+        if cond:
+            if m < 32:
+                var runtime_config = swapAB_smallM[
+                    a_type,
+                    b_type,
+                    c_type,
+                    prioritize_compute_over_ctas=True,
+                    transpose_b=transpose_b,
+                ](
+                    UInt(m),
+                    UInt(static_N),
+                    UInt(static_K),
+                    Index(1, 1, 1),
+                    1,
+                    1,
+                    False,
+                    pdl_level,
+                    4,
+                    16,
+                )
+
+                @parameter
+                fn config_fn(
+                    m: Int,
+                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                    return swapAB_smallM[
+                        a_type,
+                        b_type,
+                        c_type,
+                        prioritize_compute_over_ctas=True,
+                        transpose_b=transpose_b,
+                    ](
+                        UInt(m),
+                        UInt(static_N),
+                        UInt(static_K),
+                        Index(1, 1, 1),
+                        1,
+                        1,
+                        False,
+                        pdl_level,
+                        4,
+                        16,
+                    )
+
+                comptime configs = build_configs_generic[1, 32, config_fn]()
+
+                @parameter
+                for config in configs:
+                    if runtime_config == config:
+                        # Only convert to base config after match is found
+                        comptime base_config = config.to_base_config()
+
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            config=base_config,
+                            schedule = MatmulSchedule.NONE,
+                            swapAB=True,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            ctx,
+                        )
+                        return DISPATCH_HIT
+
+            elif m < 41:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 16, 64),
+                    mma_shape=Index(64, 16, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 49:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 24, 64),
+                    mma_shape=Index(64, 24, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=14,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 65:
+                pass
+
+            elif m < 97:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 24, 64),
+                    mma_shape=Index(64, 24, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 120:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 32, 64),
+                    mma_shape=Index(64, 32, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 129:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 32, 64),
+                    mma_shape=Index(64, 32, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=16,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=4,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    # swapAB = True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 161:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 40, 64),
+                    mma_shape=Index(64, 40, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 169:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 56, 64),
+                    mma_shape=Index(64, 56, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+
+                return DISPATCH_HIT
+
+            elif m < 193:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 48, 64),
+                    mma_shape=Index(64, 48, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+
+            elif m < 225:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 56, 64),
+                    mma_shape=Index(64, 56, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=12,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+
+            elif m < 257:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 64, 64),
+                    mma_shape=Index(64, 64, 16),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=10,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
+                    swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+
         comptime nk_idx_list = miscellaneous_table.query_index[rule_eq_nk]()
         if _search[miscellaneous_table, domain=nk_idx_list]() == DISPATCH_HIT:
             return DISPATCH_HIT
@@ -2851,9 +3226,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
     # is not multiple of 16B.
     @parameter
     if a_type == DType.bfloat16 and BN != -1:
+        comptime cond = static_N == 4096 and static_K == 1536
 
         @parameter
-        if static_N != 4096 or static_K != 1536:
+        if not cond:
             if m <= 128:
                 comptime default_bf16_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
@@ -2879,6 +3255,122 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     ctx,
                 )
                 return DISPATCH_HIT
+
+        @parameter
+        if cond:
+            # m < 41: BN = ceildiv(m, 8) * 8, stages=12
+            if m < 41:
+                var runtime_config = swapAB_smallM_ceildiv[
+                    a_type, b_type, c_type, transpose_b
+                ](UInt(m), pdl_level)
+
+                @parameter
+                fn config_fn_small(
+                    m_val: Int,
+                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                    return swapAB_smallM_ceildiv[
+                        a_type, b_type, c_type, transpose_b
+                    ](UInt(m_val), pdl_level)
+
+                comptime configs_small = build_configs_generic[
+                    1, 41, config_fn_small
+                ]()
+
+                @parameter
+                for config in configs_small:
+                    if runtime_config == config:
+                        comptime base_config = config.to_base_config()
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            config=base_config,
+                            schedule = MatmulSchedule.NONE,
+                            swapAB=True,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            ctx,
+                        )
+                        return DISPATCH_HIT
+
+            elif m < 65:
+                pass
+
+            # m 65-128: BN = 40 + ((m-65)//16)*8, stages=8
+            elif m < 129:
+                var runtime_config = swapAB_midM_linear[
+                    a_type, b_type, c_type, transpose_b
+                ](UInt(m), pdl_level)
+
+                @parameter
+                fn config_fn_mid(
+                    m_val: Int,
+                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                    return swapAB_midM_linear[
+                        a_type, b_type, c_type, transpose_b
+                    ](UInt(m_val), pdl_level)
+
+                comptime configs_mid = build_configs_generic[
+                    65, 129, config_fn_mid
+                ]()
+
+                @parameter
+                for config in configs_mid:
+                    if runtime_config == config:
+                        comptime base_config = config.to_base_config()
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            config=base_config,
+                            schedule = MatmulSchedule.NONE,
+                            swapAB=True,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            ctx,
+                        )
+                        return DISPATCH_HIT
+
+            # m 129-240: BN = 72 + ((m-129)//16)*8, cluster=(2,1,1), k_group=2
+            elif m <= 240:
+                var runtime_config = swapAB_largeM_clustered[
+                    a_type, b_type, c_type, transpose_b
+                ](UInt(m), pdl_level)
+
+                @parameter
+                fn config_fn_large(
+                    m_val: Int,
+                ) -> MatmulConfigSM90[a_type, b_type, c_type, transpose_b]:
+                    return swapAB_largeM_clustered[
+                        a_type, b_type, c_type, transpose_b
+                    ](UInt(m_val), pdl_level)
+
+                comptime configs_large = build_configs_generic[
+                    129, 241, config_fn_large
+                ]()
+
+                @parameter
+                for config in configs_large:
+                    if runtime_config == config:
+                        comptime base_config = config.to_base_config()
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            config=base_config,
+                            schedule = MatmulSchedule.NONE,
+                            swapAB=True,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                            ctx,
+                        )
+                        return DISPATCH_HIT
 
         @parameter
         fn get_k_groups[N: Int]() -> OptionalReg[UInt]:

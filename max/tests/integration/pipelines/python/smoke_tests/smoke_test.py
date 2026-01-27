@@ -500,6 +500,12 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        try:
+            gracefully_stop_process(server_process)
+        except Exception:
+            logger.exception(f"Failed to shutdown {framework.upper()}")
+
+    if results:
         summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
         if output_path is not None:
@@ -507,9 +513,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-        logger.info(pformat(summary, indent=2))
-
-        gracefully_stop_process(server_process)
+            logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

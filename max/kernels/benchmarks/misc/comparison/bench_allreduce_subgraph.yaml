@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_decode
+name: bench_allreduce_subgraph
 file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_allreduce.py
 
 allreduce-commons: &allreduce-commons
@@ -20,4 +20,4 @@ allreduce-commons: &allreduce-commons
 params:
 - <<: *allreduce-commons
   $num_gpus: [2,4,8]
-  $num_bytes: "[2**i for i in [14]]"
+  $num_bytes: "[2**i for i in [14, 16, 18, 20, 22, 24, 26]]"

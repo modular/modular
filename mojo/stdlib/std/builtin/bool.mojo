@@ -65,7 +65,6 @@ trait Boolable:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Bool(
     Boolable,
     Comparable,
@@ -79,6 +78,7 @@ struct Bool(
     Intable,
     Representable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """The primitive Bool scalar value used in Mojo."""
