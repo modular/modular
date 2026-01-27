@@ -1168,7 +1168,7 @@ fn _get_dgx_spark_target() -> _TargetType:
 
 
 comptime DGXSpark = GPUInfo.from_family(
-    family=NvidiaBlackwellFamily,
+    family=NvidiaBlackwellConsumerFamily,
     name="DGX Spark",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
