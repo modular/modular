@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -23,13 +23,6 @@ import torch
 Fixtures for flux1 tests, including config, generated input tensors, and dummy
 weights.
 """
-
-# Flux1 dev 1K×1K T2I generation input dimensions:
-# hidden_states : torch.Size([1, 4096, 3072]), torch.bfloat16
-# encoder_hidden_states : torch.Size([1, 512, 3072]), torch.bfloat16
-# attention_mask : None
-# image_rotary_emb [0]: torch.Size([4608, 128]), torch.float32
-# image_rotary_emb [1]: torch.Size([4608, 128]), torch.float32
 
 
 @pytest.fixture
@@ -52,7 +45,7 @@ def input_tensor(flux_config: dict[str, Any]) -> torch.Tensor:
     hidden_dim = (
         flux_config["num_attention_heads"] * flux_config["attention_head_dim"]
     )
-    # 1K×1K generation: 4096 image tokens
+    # 1024x1024 generation: 4096 image tokens
     return torch.randn(1, 4096, hidden_dim).to(torch.bfloat16).to("cuda")
 
 
@@ -107,115 +100,138 @@ def attention_weights(flux_config: dict[str, Any]) -> dict[str, torch.Tensor]:
     weights = {
         # Main image stream projections (with bias)
         "to_q.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_q.weight"][0] + WEIGHT_STATS["to_q.weight"][1],
+        )
+        * WEIGHT_STATS["to_q.weight"][0]
+        + WEIGHT_STATS["to_q.weight"][1],
         "to_q.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_q.bias"][0] + WEIGHT_STATS["to_q.bias"][1],
+        )
+        * WEIGHT_STATS["to_q.bias"][0]
+        + WEIGHT_STATS["to_q.bias"][1],
         "to_k.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_k.weight"][0] + WEIGHT_STATS["to_k.weight"][1],
+        )
+        * WEIGHT_STATS["to_k.weight"][0]
+        + WEIGHT_STATS["to_k.weight"][1],
         "to_k.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_k.bias"][0] + WEIGHT_STATS["to_k.bias"][1],
+        )
+        * WEIGHT_STATS["to_k.bias"][0]
+        + WEIGHT_STATS["to_k.bias"][1],
         "to_v.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_v.weight"][0] + WEIGHT_STATS["to_v.weight"][1],
+        )
+        * WEIGHT_STATS["to_v.weight"][0]
+        + WEIGHT_STATS["to_v.weight"][1],
         "to_v.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_v.bias"][0] + WEIGHT_STATS["to_v.bias"][1],
-
+        )
+        * WEIGHT_STATS["to_v.bias"][0]
+        + WEIGHT_STATS["to_v.bias"][1],
         # Q/K normalization
         "norm_q.weight": torch.randn(
             head_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["norm_q.weight"][0] + WEIGHT_STATS["norm_q.weight"][1],
+        )
+        * WEIGHT_STATS["norm_q.weight"][0]
+        + WEIGHT_STATS["norm_q.weight"][1],
         "norm_k.weight": torch.randn(
             head_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["norm_k.weight"][0] + WEIGHT_STATS["norm_k.weight"][1],
-
+        )
+        * WEIGHT_STATS["norm_k.weight"][0]
+        + WEIGHT_STATS["norm_k.weight"][1],
         # Output projection (with bias)
         "to_out.0.weight": torch.randn(
-            hidden_dim, inner_dim,
+            hidden_dim,
+            inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_out.0.weight"][0] + WEIGHT_STATS["to_out.0.weight"][1],
+        )
+        * WEIGHT_STATS["to_out.0.weight"][0]
+        + WEIGHT_STATS["to_out.0.weight"][1],
         "to_out.0.bias": torch.randn(
             hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_out.0.bias"][0] + WEIGHT_STATS["to_out.0.bias"][1],
-
+        )
+        * WEIGHT_STATS["to_out.0.bias"][0]
+        + WEIGHT_STATS["to_out.0.bias"][1],
         # Encoder (text) stream projections for dual-stream attention (with bias)
         "add_q_proj.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_q_proj.weight"][0] + WEIGHT_STATS["add_q_proj.weight"][1],
+        )
+        * WEIGHT_STATS["add_q_proj.weight"][0]
+        + WEIGHT_STATS["add_q_proj.weight"][1],
         "add_q_proj.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_q_proj.bias"][0] + WEIGHT_STATS["add_q_proj.bias"][1],
+        )
+        * WEIGHT_STATS["add_q_proj.bias"][0]
+        + WEIGHT_STATS["add_q_proj.bias"][1],
         "add_k_proj.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_k_proj.weight"][0] + WEIGHT_STATS["add_k_proj.weight"][1],
+        )
+        * WEIGHT_STATS["add_k_proj.weight"][0]
+        + WEIGHT_STATS["add_k_proj.weight"][1],
         "add_k_proj.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_k_proj.bias"][0] + WEIGHT_STATS["add_k_proj.bias"][1],
+        )
+        * WEIGHT_STATS["add_k_proj.bias"][0]
+        + WEIGHT_STATS["add_k_proj.bias"][1],
         "add_v_proj.weight": torch.randn(
-            inner_dim, hidden_dim,
+            inner_dim,
+            hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_v_proj.weight"][0] + WEIGHT_STATS["add_v_proj.weight"][1],
+        )
+        * WEIGHT_STATS["add_v_proj.weight"][0]
+        + WEIGHT_STATS["add_v_proj.weight"][1],
         "add_v_proj.bias": torch.randn(
             inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["add_v_proj.bias"][0] + WEIGHT_STATS["add_v_proj.bias"][1],
-
+        )
+        * WEIGHT_STATS["add_v_proj.bias"][0]
+        + WEIGHT_STATS["add_v_proj.bias"][1],
         # Encoder Q/K normalization
         "norm_added_q.weight": torch.randn(
             head_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["norm_added_q.weight"][0] + WEIGHT_STATS["norm_added_q.weight"][1],
+        )
+        * WEIGHT_STATS["norm_added_q.weight"][0]
+        + WEIGHT_STATS["norm_added_q.weight"][1],
         "norm_added_k.weight": torch.randn(
             head_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["norm_added_k.weight"][0] + WEIGHT_STATS["norm_added_k.weight"][1],
-
+        )
+        * WEIGHT_STATS["norm_added_k.weight"][0]
+        + WEIGHT_STATS["norm_added_k.weight"][1],
         # Encoder output projection (with bias)
         "to_add_out.weight": torch.randn(
-            hidden_dim, inner_dim,
+            hidden_dim,
+            inner_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_add_out.weight"][0] + WEIGHT_STATS["to_add_out.weight"][1],
+        )
+        * WEIGHT_STATS["to_add_out.weight"][0]
+        + WEIGHT_STATS["to_add_out.weight"][1],
         "to_add_out.bias": torch.randn(
             hidden_dim,
             dtype=torch.bfloat16,
-        ) 
-        * WEIGHT_STATS["to_add_out.bias"][0] + WEIGHT_STATS["to_add_out.bias"][1],
+        )
+        * WEIGHT_STATS["to_add_out.bias"][0]
+        + WEIGHT_STATS["to_add_out.bias"][1],
     }
 
     return weights
@@ -233,7 +249,6 @@ def image_rotary_emb(
 
     # Total sequence length = encoder tokens + image tokens
     total_seq_len = encoder_hidden_states.shape[1] + input_tensor.shape[1]
-    # For 1K×1K: 512 + 4096 = 4608
 
     # Flux uses full head dimension for rotary embeddings
     # Generated in float32 for numerical precision

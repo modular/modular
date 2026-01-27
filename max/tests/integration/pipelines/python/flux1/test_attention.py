@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import pytest
-import torch
 from typing import Any
+
+import torch
 from diffusers.models.transformers.transformer_flux import FluxAttention
 from max import functional as F
+from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import TensorType
-from max.driver import Accelerator
 from max.pipelines.architectures.flux1.layers.flux_attention import (
     FluxAttention as MaxFluxAttention,
 )
