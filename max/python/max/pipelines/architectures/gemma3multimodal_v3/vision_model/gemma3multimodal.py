@@ -98,8 +98,8 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
 
         self.norm = Gemma3RMSNorm(
             text_config.hidden_size,
-            text_config.rms_norm_eps,
-            dtype=config.dtype,
+            dtype=DType.bfloat16,
+            eps=text_config.rms_norm_eps,
         )
 
         self.lm_head = Linear(
@@ -108,6 +108,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         )
 
         create_norm = functools.partial(
+            text_config.hidden_size,
             Gemma3RMSNorm,
             DType.bfloat16,
             eps=text_config.rms_norm_eps,
@@ -189,7 +190,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = F.gather(h, last_token_indices, axis=0)
         last_logits = F.cast(
-            self.lm_head(self.norm(last_token_h)),
+            self.lm_head(Tensor.from_graph_value(self.norm(last_token_h))),
             DType.float32,
         )
 
@@ -213,7 +214,10 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
 
             # Gather, normalize, and get logits
             variable_tokens = self.norm(F.gather(h, last_indices, axis=0))
-            logits = F.cast(self.lm_head(variable_tokens), DType.float32)
+            logits = F.cast(
+                self.lm_head(Tensor.from_graph_value(variable_tokens)),
+                DType.float32,
+            )
             offsets = F.arange(
                 0,
                 last_indices.shape[0] + return_n_logits[0],
@@ -225,8 +229,11 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
 
         elif self.return_logits == ReturnLogits.ALL and h:
             # Apply normalization to all hidden states and get all logits
-            all_normalized = self.norm(h)
-            logits = F.cast(self.lm_head(all_normalized), DType.float32)
+            all_normalized = self.norm(h.__tensorvalue__())
+            logits = F.cast(
+                self.lm_head(Tensor.from_graph_value(all_normalized)),
+                DType.float32,
+            )
             offsets = input_row_offsets
 
         if offsets is not None:

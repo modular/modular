@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Module
@@ -86,9 +84,7 @@ class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
         return hidden_states
 
 
-class Gemma3VisionEncoder(
-    Module[[Tensor | Sequence[Tensor]], Tensor | Sequence[Tensor]]
-):
+class Gemma3VisionEncoder(Module[[Tensor], Tensor]):
     """Wrapper class for a stack of vision encoder layers"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
@@ -107,22 +103,11 @@ class Gemma3VisionEncoder(
 
     def __call__(
         self,
-        hidden_states: Tensor | Sequence[Tensor],
-    ) -> Tensor | Sequence[Tensor]:
+        hidden_states: Tensor,
+    ) -> Tensor:
         """Process hidden states through the stack of encoder layers"""
         # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
-        # TODO this is a temporary workaround while working single GPU and
-        # keeping type checking happy
-        if isinstance(hidden_states, Sequence):
-            outputs = []
-            for device_idx, state in enumerate(hidden_states):
-                device_output = state
-                for layer in self.layers_per_device[device_idx]:
-                    device_output = layer(device_output)
-                outputs.append(device_output)
-            return outputs
-        else:
-            for layer in self.layers:
-                hidden_states = layer(hidden_states)
-            # hidden_states = self.layers(hidden_states) #TODO could this be used
+        for layer in self.layers:
+            hidden_states = layer(hidden_states)
+        # hidden_states = self.layers(hidden_states) #TODO could this be used
         return hidden_states
