@@ -73,10 +73,10 @@ class Gemma3VisionEmbeddings(Module[[Tensor], Tensor]):
 
         # apply conv2d to pixel values
         patch_embeds = self.patch_embedding(pixel_values.__tensorvalue__())
-        patch_embeds = Tensor.from_graph_value(patch_embeds)
+        patch_embeds_tensor = Tensor.from_graph_value(patch_embeds)
 
         # Flatten spatial dimensions and transpose ->  [batch_size, num_patches, embed_dim]
-        embeddings = F.flatten(patch_embeds, start_dim=2)
+        embeddings = F.flatten(patch_embeds_tensor, start_dim=2)
         embeddings = F.transpose(embeddings, 1, 2)
 
         max_nb_patches_h = max_im_h // self.patch_size

@@ -278,7 +278,7 @@ class Gemma3VisionModel(Module[[Tensor], Tensor]):
     ) -> Tensor:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
-        hidden_states: Tensor | Sequence[Tensor] = self.embeddings(pixel_values)
+        hidden_states: Tensor = self.embeddings(pixel_values)
 
         # Pass through encoder layers
         hidden_states = self.encoder(hidden_states)
