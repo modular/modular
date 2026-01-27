@@ -403,8 +403,7 @@ extractMutInputFromTensorStruct(LIT::StructType structType) {
 /// functions. For example, the IOSpec struct carries only parameters:
 ///
 ///     @value
-///     @register_passable("trivial")
-///     struct IOSpec[mut: Bool, input: IO]:
+///     struct IOSpec[mut: Bool, input: IO](TrivialRegisterType):
 ///         ...
 ///
 /// Functions parameterized on an IOSpec in Mojo will take a `mut` and an
