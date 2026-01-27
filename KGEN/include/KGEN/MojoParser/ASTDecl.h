@@ -156,13 +156,7 @@ public:
   std::optional<DocString> getParsedDocString() const;
 
   /// Given a decl for a struct or trait type, return true if this type conforms
-  /// to the specified trait type.  On failure, this *might* set 'diag' to an
-  /// inflight diagnostic that explains why this doesn't conform.  It can be
-  /// reported or abandoned based on the client's needs.
-  bool doesNominalTypeConformTo(TraitType trait,
-                                std::optional<MojoInflightDiag> &diag);
-
-  /// Helper for clients that don't care about the diagnostic.
+  /// to the specified trait type.
   bool doesNominalTypeConformTo(TraitType trait);
 
   /// Find all extensions in this scope that target a specific struct.

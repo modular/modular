@@ -752,11 +752,8 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 }
 
 /// Given a decl for a struct or trait type, return true if this type conforms
-/// to the specified trait type.  On failure, this may set 'diag' to an
-/// inflight diagnostic that explains why this doesn't conform.  It can be
-/// reported or abandoned based on the client's needs.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
-                                       std::optional<MojoInflightDiag> &diag) {
+/// to the specified trait type.
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
   if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
@@ -823,15 +820,6 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
   // not resolve ConformanceOp and raise error immediately but delaying to when
   // a concrete witness attribute is queried.
   return requiredSymbols.empty();
-}
-
-/// Helper for clients that don't care about the diagnostic.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
-  std::optional<MojoInflightDiag> diag;
-  bool result = doesNominalTypeConformTo(trait, diag);
-  if (diag)
-    diag->abandon();
-  return result;
 }
 
 void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
@@ -1111,13 +1099,10 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  std::optional<MojoInflightDiag> checkDiag;
-  if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+  if (!metaTypeDecl->doesNominalTypeConformTo(trait)) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
-    if (checkDiag)
-      diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
     return {};
   }
 
