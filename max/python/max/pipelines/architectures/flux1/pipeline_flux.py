@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Literal
 from queue import Queue
+from typing import Literal
 
 import numpy as np
 import PIL.Image
@@ -142,19 +142,23 @@ class FluxPipeline(DiffusionPipeline):
         num_images_per_prompt: int = 1,
         device: DeviceRef | None = None,
     ) -> tuple[Buffer, Buffer, Tensor]:
-        text_input_ids = Tensor.constant(tokens.active, dtype=DType.int64, device=device)
+        text_input_ids = Tensor.constant(
+            tokens.active, dtype=DType.int64, device=device
+        )
         if tokens_2 is not None:
-            text_input_ids_2 = Tensor.constant(tokens_2.active, dtype=DType.int64, device=device)
+            text_input_ids_2 = Tensor.constant(
+                tokens_2.active, dtype=DType.int64, device=device
+            )
         else:
             text_input_ids_2 = text_input_ids
-        
+
         # t5 embeddings
         prompt_embeds = self.text_encoder_2(text_input_ids_2)
-        
+
         # clip embeddings
         clip_embeddings = self.text_encoder(text_input_ids)
         pooled_prompt_embeds = clip_embeddings[1]
-        
+
         text_ids = Tensor.zeros(
             (prompt_embeds.shape[1], 3),
             device=device,
@@ -177,17 +181,34 @@ class FluxPipeline(DiffusionPipeline):
 
         return prompt_embeds, pooled_prompt_embeds, text_ids
 
-    
-    def _denoise_latents(self, latents: Tensor, prompt_embeds: Tensor, pooled_prompt_embeds: Tensor, text_ids: Tensor, guidance: Tensor, timestep: Tensor, latent_image_ids: Tensor) -> Tensor:
+    def _denoise_latents(
+        self,
+        latents: Tensor,
+        prompt_embeds: Tensor,
+        pooled_prompt_embeds: Tensor,
+        text_ids: Tensor,
+        guidance: Tensor,
+        timestep: Tensor,
+        latent_image_ids: Tensor,
+    ) -> Tensor:
         noise_pred = self.transformer(
             latents,
             prompt_embeds,
             pooled_prompt_embeds,
-            timestep, latent_image_ids, text_ids, guidance,
+            timestep,
+            latent_image_ids,
+            text_ids,
+            guidance,
         )[0]
         return noise_pred
-    
-    def _decode_latents(self, latents: Tensor, height: int, width: int, output_type: Literal["np", "latent", "pil"] = "np") -> Tensor:
+
+    def _decode_latents(
+        self,
+        latents: Tensor,
+        height: int,
+        width: int,
+        output_type: Literal["np", "latent", "pil"] = "np",
+    ) -> Tensor:
         if output_type == "latent":
             image = latents
         else:
@@ -204,23 +225,33 @@ class FluxPipeline(DiffusionPipeline):
                 image, output_type=output_type
             )
         return image
-    
-    
-    def execute(self, inputs: FluxModelInputs, callback_queue: Queue[np.ndarray] | None = None, output_type: Literal["np", "latent", "pil"] = "np") -> PixelGenerationOutput:
+
+    def execute(
+        self,
+        inputs: FluxModelInputs,
+        callback_queue: Queue[np.ndarray] | None = None,
+        output_type: Literal["np", "latent", "pil"] = "np",
+    ) -> PixelGenerationOutput:
         """Execute the pipeline."""
 
         execute_device = self._execution_device()
-        
+
         # 1. Encode prompts
-        prompt_embeds, pooled_prompt_embeds, text_ids = self._prepare_prompt_embeddings(
-            tokens=inputs.tokens,
-            tokens_2=inputs.tokens_2,
-            num_images_per_prompt=inputs.num_images_per_prompt,
-            device=execute_device,
+        prompt_embeds, pooled_prompt_embeds, text_ids = (
+            self._prepare_prompt_embeddings(
+                tokens=inputs.tokens,
+                tokens_2=inputs.tokens_2,
+                num_images_per_prompt=inputs.num_images_per_prompt,
+                device=execute_device,
+            )
         )
 
         if inputs.do_true_cfg:
-            negative_prompt_embeds, negative_pooled_prompt_embeds, negative_text_ids = self._prepare_prompt_embeddings(
+            (
+                negative_prompt_embeds,
+                negative_pooled_prompt_embeds,
+                negative_text_ids,
+            ) = self._prepare_prompt_embeddings(
                 tokens=inputs.negative_tokens,
                 tokens_2=inputs.negative_tokens_2,
                 num_images_per_prompt=inputs.num_images_per_prompt,
@@ -229,7 +260,9 @@ class FluxPipeline(DiffusionPipeline):
 
         # 2. Denoise
         latents: Buffer = Buffer.from_numpy(inputs.latents).to(execute_device)
-        latent_image_ids: Buffer = Buffer.from_numpy(inputs.latent_image_ids).to(execute_device)
+        latent_image_ids: Buffer = Buffer.from_numpy(
+            inputs.latent_image_ids
+        ).to(execute_device)
         timesteps: np.ndarray = inputs.timesteps
         num_timesteps = timesteps.shape[0]
 
@@ -260,10 +293,26 @@ class FluxPipeline(DiffusionPipeline):
             timestep = np.full((batch_size,), t, dtype=np.float32)
             timestep = Tensor.from_dlpack(timestep).to(prompt_embeds.device)
 
-            noise_pred = self._denoise_latents(latents, prompt_embeds, pooled_prompt_embeds, text_ids, guidance, timestep, latent_image_ids)
+            noise_pred = self._denoise_latents(
+                latents,
+                prompt_embeds,
+                pooled_prompt_embeds,
+                text_ids,
+                guidance,
+                timestep,
+                latent_image_ids,
+            )
 
             if inputs.do_true_cfg:
-                neg_noise_pred = self._denoise_latents(latents, negative_prompt_embeds, negative_pooled_prompt_embeds, negative_text_ids, guidance, timestep, latent_image_ids)
+                neg_noise_pred = self._denoise_latents(
+                    latents,
+                    negative_prompt_embeds,
+                    negative_pooled_prompt_embeds,
+                    negative_text_ids,
+                    guidance,
+                    timestep,
+                    latent_image_ids,
+                )
 
                 noise_pred = neg_noise_pred + inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
@@ -278,10 +327,17 @@ class FluxPipeline(DiffusionPipeline):
                 latents = latents.to(latents_dtype)
 
             if callback_queue is not None:
-                image = self._decode_latents(latents, inputs.height, inputs.width, output_type=output_type)
+                image = self._decode_latents(
+                    latents,
+                    inputs.height,
+                    inputs.width,
+                    output_type=output_type,
+                )
                 callback_queue.put_nowait(image)
 
         # 3. Decode
-        outputs = self._decode_latents(latents, inputs.height, inputs.width, output_type=output_type)
+        outputs = self._decode_latents(
+            latents, inputs.height, inputs.width, output_type=output_type
+        )
 
         return FluxPipelineOutput(images=outputs)
