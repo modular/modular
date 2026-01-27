@@ -52,4 +52,22 @@ defm large_data_threshold: CommandOptionHidden<["--", "-"], "large-data-threshol
   TargetOptionGroup, Index<9>, MetaVarName<"LDT">,
   HelpText<"Choose large data threshold for x86_64 medium code model.">>;
 
+//===----------------------------------------------------------------------===//
+// Print Target Information Options
+//===----------------------------------------------------------------------===//
+
+def print_effective_target : Flag<["--"], "print-effective-target">,
+  Group<TargetOptionGroup>, Index<10>,
+  HelpText<"Print the effective target configuration after absorbing all "
+           "command-line flags and exit.">;
+
+def print_supported_targets : Flag<["--"], "print-supported-targets">,
+  Group<TargetOptionGroup>, Index<11>,
+  HelpText<"Print all available target names and exit.">;
+
+def print_supported_cpus : Flag<["--"], "print-supported-cpus">,
+  Group<TargetOptionGroup>, Index<12>,
+  HelpText<"Print valid CPU names for the specified target and exit. "
+           "Requires --target-triple.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
