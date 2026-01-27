@@ -23,13 +23,14 @@ from max.graph import DeviceRef
 from max.nn.embedding import Embedding
 from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList
-from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.linear import MLP
 from max.nn.legacy.norm import LayerNorm
 from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
 from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
 from max.nn.module import Module
 
 # TODO reimplement?
@@ -99,7 +100,6 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
 
         self.norm = Gemma3RMSNorm(
             text_config.hidden_size,
-            DType.bfloat16,
             text_config.rms_norm_eps,
         )
 
@@ -111,7 +111,6 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         create_norm = functools.partial(
             Gemma3RMSNorm,
             text_config.hidden_size,
-            DType.bfloat16,
             eps=text_config.rms_norm_eps,
         )
 
@@ -279,7 +278,7 @@ class Gemma3VisionModel(Module[[Tensor], Tensor]):
     ) -> Tensor:
         """Processes vision inputs through the Gemma3 vision tower and produces a
         sequence of image embeddings"""
-        hidden_states: Tensor = self.embeddings(pixel_values)
+        hidden_states: Tensor | Sequence[Tensor] = self.embeddings(pixel_values)
 
         # Pass through encoder layers
         hidden_states = self.encoder(hidden_states)

@@ -14,4 +14,6 @@
 
 from .arch import gemma3_multimodal_arch_v3
 
-__all__ = ["gemma3_multimodal_arch_v3"]
+ARCHITECTURES = "gemma3_multimodal_arch_v3"
+
+__all__ = ["gemma3_multimodal_arch_v3", "ARCHITECTURES"]

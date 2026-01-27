@@ -90,13 +90,15 @@ class Gemma3VisionAttention(Module[[Tensor], Tensor]):
         )
 
         output = flash_attention_gpu(
-            xq,
-            xk,
-            xv,
+            xq.__tensorvalue__(),
+            xk.__tensorvalue__(),
+            xv.__tensorvalue__(),
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=self.scaling,
         )
 
         output = output.reshape([batch_size, n_patches, -1])
+
+        output = Tensor.from_graph_value(output)
 
         return self.out_proj(output)

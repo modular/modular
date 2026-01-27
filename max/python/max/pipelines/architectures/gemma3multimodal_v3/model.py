@@ -28,7 +28,6 @@ from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache.null_cache_manager import NullKVCacheManager
 from max.kv_cache.paged_cache.cache_manager import PagedKVCacheManager
 from max.kv_cache.registry import load_kv_manager
 from max.nn.legacy.kv_cache import (
@@ -455,13 +454,12 @@ class Gemma3_MultiModalModelV3(
 
         input_types = self._vision_model_input_types(config)
 
-        pixel_values = input_types[0].tensor
-
-        image_embeddings = vision_model(pixel_values)
+        pixel_values = input_types[0]
+        # image_embeddings = vision_model(pixel_values)
 
         compiled_vision_model = vision_model.compile(
-            # pixel_values, #FIXME not sure if required or not
-            image_embeddings,
+            pixel_values,
+            # image_embeddings,
             weights=state_dict,
         )
         timer.done()
@@ -544,13 +542,9 @@ class Gemma3_MultiModalModelV3(
 
         # stack our images in a list of tensors
         pixel_values = self._prepare_vision_inputs(context_batch)
-        if pixel_values is not None:
-            pixel_values = [pixel_values]
 
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
-        if image_token_indices is not None:
-            image_token_indices = [image_token_indices]
 
         return Gemma3MultiModalModelInputs(
             tokens=Buffer.from_numpy(tokens).to(dev),
@@ -559,8 +553,8 @@ class Gemma3_MultiModalModelV3(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            pixel_values=pixel_values,  # FIXME temp fix for single GPU
-            image_token_indices=image_token_indices,  # FIXME temp fix for single GPU
+            pixel_values=pixel_values,
+            image_token_indices=image_token_indices,
         )
 
     def prepare_next_token_inputs(
@@ -645,7 +639,7 @@ class Gemma3_MultiModalModelV3(
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=kv_params,
             max_batch_size=max_batch_size,
@@ -677,9 +671,13 @@ class Gemma3_MultiModalModelV3(
             kv_caches_per_dev.append(
                 PagedCacheValues(
                     kv_blocks=BufferValue(kv_inputs_flat[start_idx]),
-                    cache_lengths=BufferValue(kv_inputs_flat[start_idx + 1]),
-                    lookup_table=BufferValue(kv_inputs_flat[start_idx + 2]),
-                    max_lengths=BufferValue(kv_inputs_flat[start_idx + 3]),
+                    cache_lengths=kv_inputs_flat[
+                        start_idx + 1
+                    ].__tensorvalue__(),
+                    lookup_table=kv_inputs_flat[
+                        start_idx + 2
+                    ].__tensorvalue__(),
+                    max_lengths=kv_inputs_flat[start_idx + 3].__tensorvalue__(),
                 )
             )
         return kv_caches_per_dev
