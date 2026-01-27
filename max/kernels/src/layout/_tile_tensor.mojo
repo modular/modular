@@ -61,7 +61,7 @@ struct TileTensor[
     element_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
         ComptimeInt[1]
     ],
-](Copyable, DevicePassable, Writable):
+](DevicePassable, ImplicitlyCopyable, TrivialRegisterType, Writable):
     comptime rank = Variadic.size(Self.shape_types)
     comptime element_size = Coord[*Self.element_shape_types].STATIC_PRODUCT
     comptime SHAPE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
@@ -80,7 +80,7 @@ struct TileTensor[
     comptime device_type = Self
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self.copy()
+        target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
@@ -105,7 +105,7 @@ struct TileTensor[
         var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         self.ptr = span.unsafe_ptr()
-        self.layout = layout^
+        self.layout = layout
 
     @always_inline
     fn __init__(
@@ -161,7 +161,7 @@ struct TileTensor[
             device_buffer.unsafe_ptr()
             .mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
-            layout^,
+            layout,
         )
 
     @always_inline
@@ -200,7 +200,7 @@ struct TileTensor[
             host_buffer.unsafe_ptr()
             .mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
-            layout^,
+            layout,
         )
 
     @always_inline("nodebug")
@@ -470,7 +470,7 @@ struct TileTensor[
             for i in range(num_elements):
                 var idx = self.layout(Idx(i))
                 self.ptr.mut_cast[True]()[idx] = val
-        return self.copy()
+        return self
 
     @always_inline("nodebug")
     fn dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
@@ -583,7 +583,7 @@ struct TileTensor[
             )
 
         # Strides remain unchanged
-        var new_layout = Layout(new_shape^, self.layout.stride)
+        var new_layout = Layout(new_shape, self.layout.stride)
 
         return TileTensor[
             shape_types=NewShapeTypes,
@@ -593,7 +593,7 @@ struct TileTensor[
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
             element_shape_types = Self.element_shape_types,
-        ](self.ptr + offset, new_layout^)
+        ](self.ptr + offset, new_layout)
 
     # ===------------------------------------------------------------------=== #
     # Vectorization
@@ -746,7 +746,7 @@ struct TileTensor[
             Coord(ComptimeInt[1]()),
         )
 
-        return Self.CoalescedType(self.ptr, new_layout^)
+        return Self.CoalescedType(self.ptr, new_layout)
 
     @always_inline("nodebug")
     fn to_layout_tensor(
@@ -847,7 +847,7 @@ struct TileTensor[
         `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
-        return {self.ptr.as_any_origin(), self.layout.copy()}
+        return {self.ptr.as_any_origin(), self.layout}
 
 
 @always_inline("nodebug")
@@ -876,7 +876,7 @@ fn stack_allocation[
             Scalar[dtype],
             address_space=address_space,
         ](),
-        layout^,
+        layout,
     )
 
 
@@ -963,7 +963,7 @@ fn _distribute[
     __comptime_assert StrideType.ALL_DIMS_KNOWN
     var stride = StrideType()
 
-    var layout = Layout(shape^, stride^)
+    var layout = Layout(shape, stride)
 
     return TileTensor[
         data_layout_tensor.dtype,
@@ -973,7 +973,7 @@ fn _distribute[
         element_shape_types = data_layout_tensor.element_shape_types,
     ](
         UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
-        layout^,
+        layout,
     )
 
 
@@ -1120,7 +1120,7 @@ fn _vectorize[
     var new_shape = Coord[*NewShapeTypes]()
     var new_stride = Coord[*NewStrideTypes]()
 
-    var new_layout = Layout(new_shape^, new_stride^)
+    var new_layout = Layout(new_shape, new_stride)
 
     return TileTensor[
         shape_types=NewShapeTypes,
@@ -1130,7 +1130,7 @@ fn _vectorize[
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
         element_shape_types=vector_shape_types,
-    ](data_layout_tensor.ptr, new_layout^)
+    ](data_layout_tensor.ptr, new_layout)
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
