@@ -19,14 +19,10 @@ modular_py_test(
     size = "large",
     srcs = glob(["test_*.py"]),
     env_inherit = ["HF_TOKEN"],
-    gpu_constraints = ["//:has_gpu"],
     tags = [
-        "gpu",
-        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
     deps = [
         "//max/python/max/engine",
