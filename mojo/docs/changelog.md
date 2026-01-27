@@ -21,6 +21,10 @@ what we publish.
 
 ### Language enhancements
 
+- `@register_passable("trivial")` is now deprecated,
+   conform to `TrivialRegisterType` trait instead.
+   The decorator will be removed after next release.
+
 ### Language changes
 
 ### Library changes
@@ -31,7 +35,7 @@ what we publish.
   in reverse order, maintaining consistency with the existing `codepoints()`
   and `codepoint_slices()` methods. The deprecated `__reversed__()` methods
   will continue to work but will emit deprecation warnings.
-  
+
 - The `StringSlice` constructor from `String` now propagates mutability. If you
   have a mutable reference to a `String`, `StringSlice(str)` returns a mutable
   `StringSlice`. The `String.as_string_slice()` method is now deprecated in
@@ -47,6 +51,9 @@ what we publish.
 
 - `String.resize` will now panic if `fill_byte` is >=128. Previously it would
   create invalid UTF-8.
+
+- All traits and structs with `@register_passable("trivial")` decorator are now
+  extending `TrivialRegisterType` trait. The decorator is removed from them.
 
 ### Tooling changes
 
