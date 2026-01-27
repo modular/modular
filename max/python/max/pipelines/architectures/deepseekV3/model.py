@@ -148,14 +148,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             graph_mode = "auto"
 
-        kv_params = DeepseekV3Config.construct_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-
         dtype = self.encoding.dtype
         if dtype == DType.float8_e4m3fn:
             float8_config = parse_float8_config(config, state_dict, dtype)
@@ -225,53 +217,22 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             correction_bias_dtype = state_dict[correction_bias_key].dtype
         else:
             correction_bias_dtype = None
-        return DeepseekV3Config(
-            dtype=self.encoding.dtype,
-            norm_dtype=norm_dtype,
-            correction_bias_dtype=correction_bias_dtype,
-            kv_params=kv_params,
-            devices=[DeviceRef.from_device(dev) for dev in self.devices],
-            vocab_size=config.vocab_size,
-            hidden_size=config.hidden_size,
-            intermediate_size=config.intermediate_size,
-            moe_intermediate_size=config.moe_intermediate_size,
-            moe_layer_freq=config.moe_layer_freq,
-            num_hidden_layers=config.num_hidden_layers,
-            num_attention_heads=config.num_attention_heads,
-            num_key_value_heads=config.num_key_value_heads,
-            n_shared_experts=config.n_shared_experts,
-            n_routed_experts=config.n_routed_experts,
-            routed_scaling_factor=config.routed_scaling_factor,
-            kv_lora_rank=config.kv_lora_rank,
-            q_lora_rank=config.q_lora_rank,
-            qk_rope_head_dim=config.qk_rope_head_dim,
-            v_head_dim=config.v_head_dim,
-            qk_nope_head_dim=config.qk_nope_head_dim,
-            topk_method=config.topk_method,
-            n_group=config.n_group,
-            topk_group=config.topk_group,
-            num_experts_per_tok=config.num_experts_per_tok,
-            first_k_dense_replace=config.first_k_dense_replace,
-            norm_topk_prob=config.norm_topk_prob,
-            hidden_act=config.hidden_act,
-            max_position_embeddings=config.max_position_embeddings,
-            rms_norm_eps=config.rms_norm_eps,
-            tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
-            rope_scaling=config.rope_scaling,
-            rope_interleave=getattr(config, "rope_interleave", True),
-            scoring_func=config.scoring_func,
-            attention_bias=config.attention_bias,
-            attention_dropout=config.attention_dropout,
-            max_batch_context_length=max_batch_total_tokens,
-            float8_config=float8_config,
-            ep_config=ep_config,
-            graph_mode=graph_mode,
-            data_parallel_degree=data_parallel_degree,
-            use_subgraphs=self.pipeline_config.model.use_subgraphs,
-            return_logits=self.return_logits,
-            return_hidden_states=self.return_hidden_states,
-        )
+
+        # Initialize config with parameters from pipeline_config
+        model_config = DeepseekV3Config.initialize(self.pipeline_config)
+
+        # Finalize config with state_dict-dependent parameters
+        model_config.norm_dtype = norm_dtype
+        model_config.correction_bias_dtype = correction_bias_dtype
+        model_config.max_batch_context_length = max_batch_total_tokens
+        model_config.float8_config = float8_config
+        model_config.ep_config = ep_config
+        model_config.graph_mode = graph_mode
+        model_config.data_parallel_degree = data_parallel_degree
+        model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
+
+        return model_config
 
     @classmethod
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:
