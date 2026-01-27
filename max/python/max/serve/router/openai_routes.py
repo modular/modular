@@ -585,31 +585,61 @@ class OpenAIPixelResponseGenerator:
     async def generate_images(
         self, requests: list[PixelGenerationRequest]
     ) -> ImagesResponse:
-        self.logger.debug("Image generation: Start: %s", requests[0])
-        output = await self.pipeline.generate_full_image(requests[0])
-        assert output.pixel_data is not None
-        # Convert numpy image data to base64-encoded PNG
-        images_data: list[Image] = []
+        self.logger.debug("Image generation: Start: %s", requests)
+        record_request_start()
+        metrics_req = requests[0]
+        request_timer = StopWatch(start_ns=metrics_req.timestamp_ns)
+        status_code = 200
 
-        if output.pixel_data.size > 0:
-            image_array = output.pixel_data
+        try:
+            outputs = await asyncio.gather(
+                *[self.pipeline.generate_full_image(req) for req in requests]
+            )
 
-            # Handle different number of images (batch dimension)
-            if len(image_array.shape) == 4:
-                # Batch of images: (N, H, W, C)
-                for img_data in image_array:
-                    img_b64 = self._encode_image_to_base64(img_data)
-                    images_data.append(Image(b64_json=img_b64))
-            else:
-                # Single image: (H, W, C)
-                img_b64 = self._encode_image_to_base64(image_array)
-                images_data.append(Image(b64_json=img_b64))
+            # Create a mapping from request_id to prompt for populating revised_prompt
+            prompt_map = {req.request_id: req.prompt for req in requests}
 
-        response = ImagesResponse(
-            created=int(datetime.now().timestamp()),
-            data=images_data,
-        )
-        return response
+            images_data: list[Image] = []
+            for output in outputs:
+                assert output.pixel_data is not None
+                # Convert numpy image data to base64-encoded PNG
+                if output.pixel_data.size > 0:
+                    image_array = output.pixel_data
+
+                    revised_prompt = prompt_map.get(output.request_id)
+
+                    # Handle different number of images (batch dimension)
+                    if len(image_array.shape) == 4:
+                        # Batch of images: (N, H, W, C)
+                        for img_data in image_array:
+                            img_b64 = self._encode_image_to_base64(img_data)
+                            images_data.append(
+                                Image(
+                                    b64_json=img_b64,
+                                    revised_prompt=revised_prompt,
+                                )
+                            )
+                    else:
+                        # Single image: (H, W, C)
+                        img_b64 = self._encode_image_to_base64(image_array)
+                        images_data.append(
+                            Image(
+                                b64_json=img_b64,
+                                revised_prompt=revised_prompt,
+                            )
+                        )
+
+            response = ImagesResponse(
+                created=int(datetime.now().timestamp()),
+                data=images_data,
+            )
+            return response
+        finally:
+            record_request_end(
+                status_code,
+                metrics_req.request_path,
+                request_timer.elapsed_ms,
+            )
 
     def _encode_image_to_base64(self, image_array: Any) -> str:
         """Encode a numpy image array to base64 PNG string."""
@@ -619,9 +649,20 @@ class OpenAIPixelResponseGenerator:
         from PIL import Image as PILImage
 
         # Denormalize to [0, 255] if needed
+        # We handle both [0, 1] and [-1, 1] normalization ranges.
+        # If the max is <= 1.0, we assume it's normalized.
         if image_array.max() <= 1.0:
-            image_array = (image_array * 255).astype(np.uint8)
+            if image_array.min() >= 0.0:
+                # Range [0, 1]
+                image_array = (image_array * 255).astype(np.uint8)
+            elif image_array.min() >= -1.0:
+                # Range [-1, 1]
+                image_array = ((image_array + 1.0) * 127.5).astype(np.uint8)
+            else:
+                # Unexpected range, but still <= 1.0 max. Fallback to * 255
+                image_array = (image_array * 255).astype(np.uint8)
         else:
+            # Already in [0, 255] range
             image_array = image_array.astype(np.uint8)
 
         # Create PIL Image and encode to PNG
@@ -1643,12 +1684,20 @@ async def openai_create_image(
             request_id=RequestID(request_id),
             model_name=image_request.model,
             prompt=image_request.prompt,
+            prompt_2=image_request.prompt_2,
             height=height,
             width=width,
-            num_images_per_prompt=image_request.n,
-            guidance_scale=image_request.guidance_scale,
+            num_images_per_prompt=image_request.n
+            if image_request.n is not None
+            else 1,
+            guidance_scale=image_request.guidance_scale
+            if image_request.guidance_scale is not None
+            else 3.5,
             negative_prompt=image_request.negative_prompt,
-            num_inference_steps=image_request.num_inference_steps,
+            negative_prompt_2=image_request.negative_prompt_2,
+            num_inference_steps=image_request.num_inference_steps
+            if image_request.num_inference_steps is not None
+            else 50,
         )
 
         response = await response_generator.generate_images([image_gen_request])
