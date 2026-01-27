@@ -15,11 +15,147 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from functools import partial
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import grouped_matmul_ragged, moe_create_indices
+from max.nn.legacy.float8_config import Float8Config
+from max.nn.legacy.kernels import (
+    grouped_dynamic_scaled_fp8_matmul,
+    grouped_matmul_ragged,
+    moe_create_indices,
+    quantize_dynamic_scaled_float8,
+)
 from max.nn.legacy.moe import MoE, MoEGate
+from max.support.math import ceildiv
+
+
+def _compute_shard_range(
+    shard_dim: int, shard_idx: int, num_devices: int
+) -> tuple[int, int]:
+    """Compute the start and end indices for a shard.
+
+    Args:
+        shard_dim: The dimension to shard.
+        shard_idx: The index of the shard.
+        num_devices: The total number of devices.
+
+    Returns:
+        A tuple of (start, end) indices for the shard.
+    """
+    base_size, remainder = divmod(shard_dim, num_devices)
+
+    # Give first 'remainder' devices an extra column/row.
+    if shard_idx < remainder:
+        start = shard_idx * (base_size + 1)
+        end = start + base_size + 1
+    else:
+        start = (
+            remainder * (base_size + 1) + (shard_idx - remainder) * base_size
+        )
+        end = start + base_size
+
+    return start, end
+
+
+def gate_up_scale_sharding_strategy(
+    weight: Weight,
+    i: int,
+    num_devices: int,
+    moe_dim: int,
+    block_size: int,
+    axis: int = 2,
+) -> TensorValue:
+    """Shards a combined gate/up projection scale tensor.
+
+    This strategy properly maps weight shard indices to scale indices,
+    accounting for the block size used in FP8 quantization. Unlike the
+    generic gate_up sharding, this ensures the scale slices correspond
+    exactly to the sharded weight elements.
+
+    Args:
+        weight: The scale :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        moe_dim: The original moe_dim (half of the gate_up weight dimension).
+        block_size: The block size used for quantization scaling.
+        axis: The axis along which the gate and up scales are concatenated.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded scale for the i-th device.
+    """
+    # Compute the weight shard range within each half (gate and up)
+    weight_start, weight_end = _compute_shard_range(moe_dim, i, num_devices)
+
+    # Map weight indices to scale indices
+    # For the gate portion: weight indices [weight_start, weight_end)
+    scale_gate_start = weight_start // block_size
+    scale_gate_end = ceildiv(weight_end, block_size)
+
+    # For the up portion: weight indices [moe_dim + weight_start, moe_dim + weight_end)
+    scale_up_start = (moe_dim + weight_start) // block_size
+    scale_up_end = ceildiv(moe_dim + weight_end, block_size)
+
+    rank = len(weight.shape)
+    if axis < 0:
+        axis += rank
+
+    # Create slices for gate scale
+    gate_slices = [slice(None)] * rank
+    gate_slices[axis] = slice(scale_gate_start, scale_gate_end)
+
+    # Create slices for up scale
+    up_slices = [slice(None)] * rank
+    up_slices[axis] = slice(scale_up_start, scale_up_end)
+
+    sharded_gate_scale = weight[tuple(gate_slices)]
+    sharded_up_scale = weight[tuple(up_slices)]
+
+    return ops.concat((sharded_gate_scale, sharded_up_scale), axis=axis)
+
+
+def down_proj_scale_sharding_strategy(
+    weight: Weight,
+    i: int,
+    num_devices: int,
+    moe_dim: int,
+    block_size: int,
+    axis: int = 1,
+) -> TensorValue:
+    """Shards a down projection scale tensor along axis.
+
+    This strategy properly maps weight shard indices to scale indices,
+    accounting for the block size used in FP8 quantization. Unlike the
+    generic axiswise sharding, this ensures the scale slices correspond
+    exactly to the sharded weight elements.
+
+    Args:
+        weight: The scale :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        moe_dim: The original moe_dim (the weight dimension being sharded).
+        block_size: The block size used for quantization scaling.
+        axis: The axis along which to shard.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded scale for the i-th device.
+    """
+    # Compute the weight shard range
+    weight_start, weight_end = _compute_shard_range(moe_dim, i, num_devices)
+
+    # Map weight indices to scale indices
+    scale_start = weight_start // block_size
+    scale_end = ceildiv(weight_end, block_size)
+
+    rank = len(weight.shape)
+    if axis < 0:
+        axis += rank
+
+    # Create slices for the scale
+    slices = [slice(None)] * rank
+    slices[axis] = slice(scale_start, scale_end)
+
+    return weight[tuple(slices)]
 
 
 class Qwen3VLMoEGate(MoEGate):
@@ -145,6 +281,7 @@ class Qwen3VLMoE(MoE):
         gate_cls: Callable[..., MoEGate] = Qwen3VLMoEGate,
         dtype: DType = DType.bfloat16,
         mlp_only_layers: list[int] | None = None,
+        float8_config: Float8Config | None = None,
         is_sharding: bool = False,
     ) -> None:
         """
@@ -156,6 +293,8 @@ class Qwen3VLMoE(MoE):
             moe_dim: The intermediate dimension of each expert.
             dtype: The data type of the MoE.
             mlp_only_layers: List of layer indices that use MLP instead of MoE (unused here, kept for compatibility).
+            float8_config: Configuration for FP8 quantization.
+            is_sharding: Whether the module is being sharded.
         """
         super().__init__(
             devices=devices,
@@ -170,7 +309,7 @@ class Qwen3VLMoE(MoE):
             ep_size=1,
             apply_router_weight_first=False,
             ep_batch_manager=None,
-            float8_config=None,
+            float8_config=float8_config,
             is_sharding=is_sharding,
         )
         self.mlp_only_layers = mlp_only_layers
@@ -199,6 +338,36 @@ class Qwen3VLMoE(MoE):
             device=self.devices[0],
         )
 
+        # Gate, Up, and Down projection scales for FP8 quantization.
+        if self.float8_config:
+            block_size = self.float8_config.weight_scale.block_size
+            assert block_size is not None, "FP8 MoE requires block scaling"
+
+            gate_up_scale_shape = [
+                self.num_experts,
+                ceildiv(self.hidden_dim, block_size[0]),
+                ceildiv(2 * self.moe_dim, block_size[1]),
+            ]
+
+            down_scale_shape = [
+                self.num_experts,
+                ceildiv(self.moe_dim, block_size[0]),
+                ceildiv(self.hidden_dim, block_size[1]),
+            ]
+
+            self._experts_gate_up_proj_weight_scale = Weight(
+                "experts.gate_up_proj_scale",
+                shape=gate_up_scale_shape,
+                dtype=self.float8_config.weight_scale.dtype,
+                device=self.devices[0],
+            )
+            self._experts_down_proj_weight_scale = Weight(
+                "experts.down_proj_scale",
+                shape=down_scale_shape,
+                dtype=self.float8_config.weight_scale.dtype,
+                device=self.devices[0],
+            )
+
     @property
     def gate_up_proj(self) -> TensorValue:
         """Return combined gate_up projection weights for grouped_matmul_ragged.
@@ -217,6 +386,16 @@ class Qwen3VLMoE(MoE):
         """
         # Transpose for grouped_matmul_ragged: [num_experts, hidden_dim, moe_dim]
         return self._experts_down_proj_weight.transpose(1, 2)
+
+    @property
+    def gate_up_proj_scale(self) -> TensorValue:
+        """Return combined gate_up projection scales for grouped_dynamic_scaled_fp8_matmul."""
+        return self._experts_gate_up_proj_weight_scale.transpose(1, 2)
+
+    @property
+    def down_proj_scale(self) -> TensorValue:
+        """Return down projection scales for grouped_dynamic_scaled_fp8_matmul."""
+        return self._experts_down_proj_weight_scale.transpose(1, 2)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -240,6 +419,42 @@ class Qwen3VLMoE(MoE):
                     axis=1, num_devices=strategy.num_devices
                 )
             )
+
+            if self.float8_config:
+                # Use custom scale sharding that properly maps weight indices
+                # to scale indices based on block size
+                block_size = self.float8_config.weight_scale.block_size
+                assert block_size is not None, "FP8 MoE requires block scaling"
+
+                # Create custom sharding strategy for gate_up scale
+                gate_up_scale_shard_fn = partial(
+                    gate_up_scale_sharding_strategy,
+                    moe_dim=self.moe_dim,
+                    block_size=block_size[1],
+                    axis=2,
+                )
+                self._experts_gate_up_proj_weight_scale.sharding_strategy = (
+                    ShardingStrategy(
+                        num_devices=strategy.num_devices,
+                        shard=gate_up_scale_shard_fn,
+                    )
+                )
+
+                # Create custom sharding strategy for down_proj scale
+                # Down proj weight is sharded on axis=1 (moe_dim), so scale
+                # needs to map weight indices to scale indices using block_size[0]
+                down_proj_scale_shard_fn = partial(
+                    down_proj_scale_sharding_strategy,
+                    moe_dim=self.moe_dim,
+                    block_size=block_size[0],
+                    axis=1,
+                )
+                self._experts_down_proj_weight_scale.sharding_strategy = (
+                    ShardingStrategy(
+                        num_devices=strategy.num_devices,
+                        shard=down_proj_scale_shard_fn,
+                    )
+                )
         else:
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for Qwen3VLMoE"
@@ -281,30 +496,100 @@ class Qwen3VLMoE(MoE):
 
         permutated_states = ops.gather(x, token_indices, axis=0)
 
-        # Gate + Up projection
-        gate_up_projs = grouped_matmul_ragged(
-            permutated_states,
-            self.gate_up_proj,
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-        )
+        if self.float8_config:
+            # FP8 Path
+            assert self.float8_config.input_scale.block_size is not None
+            input_block_size = self.float8_config.input_scale.block_size[1]
 
-        # Standard gated activation: up * act_fn(gate)
-        # Split gate and up projections (concatenated format)
-        up = gate_up_projs[:, self.moe_dim :]
-        gate = gate_up_projs[:, : self.moe_dim]
+            # Ensure input is BF16 for dynamic quantization
+            if permutated_states.dtype != DType.bfloat16:
+                raise ValueError("Input must be BF16 for dynamic quantization")
 
-        gated_output = up * ops.silu(gate)
+            # 1. Quantize Input
+            permutated_states_fp8, permutated_states_scales = (
+                quantize_dynamic_scaled_float8(
+                    permutated_states,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    group_size_or_per_token=input_block_size,
+                    out_type=self.dtype,
+                    scales_type=self.float8_config.weight_scale.dtype,
+                )
+            )
 
-        # Down projection
-        down_projs = grouped_matmul_ragged(
-            gated_output,
-            self.down_proj,
-            expert_start_indices,
-            expert_ids,
-            expert_usage_stats.to(DeviceRef.CPU()),
-        )
+            # 2. Gate + Up Projection
+            gate_up_projs = grouped_dynamic_scaled_fp8_matmul(
+                permutated_states_fp8,
+                self.gate_up_proj,
+                permutated_states_scales,
+                self.gate_up_proj_scale,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats.to(DeviceRef.CPU()),
+                self.float8_config.input_scale,
+                self.float8_config.weight_scale,
+            )
+
+            # Activation computed in BF16
+            if gate_up_projs.dtype != DType.bfloat16:
+                raise ValueError(
+                    "Gate + Up projection output must be BF16 for dynamic quantization"
+                )
+
+            up = gate_up_projs[:, self.moe_dim :]
+            gate = gate_up_projs[:, : self.moe_dim]
+            gate_up_projs = up * ops.silu(gate)
+
+            # 3. Quantize Intermediate
+            gate_up_projs_fp8, gate_up_projs_scales = (
+                quantize_dynamic_scaled_float8(
+                    gate_up_projs,
+                    self.float8_config.input_scale,
+                    self.float8_config.weight_scale,
+                    group_size_or_per_token=input_block_size,
+                    out_type=self.dtype,
+                    scales_type=self.float8_config.weight_scale.dtype,
+                )
+            )
+
+            # 4. Down Projection
+            down_projs = grouped_dynamic_scaled_fp8_matmul(
+                gate_up_projs_fp8,
+                self.down_proj,
+                gate_up_projs_scales,
+                self.down_proj_scale,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats.to(DeviceRef.CPU()),
+                self.float8_config.input_scale,
+                self.float8_config.weight_scale,
+            )
+        else:
+            # BF16 path
+            # Gate + Up projection
+            gate_up_projs = grouped_matmul_ragged(
+                permutated_states,
+                self.gate_up_proj,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats.to(DeviceRef.CPU()),
+            )
+
+            # Standard gated activation: up * act_fn(gate)
+            # Split gate and up projections (concatenated format)
+            up = gate_up_projs[:, self.moe_dim :]
+            gate = gate_up_projs[:, : self.moe_dim]
+
+            gated_output = up * ops.silu(gate)
+
+            # Down projection
+            down_projs = grouped_matmul_ragged(
+                gated_output,
+                self.down_proj,
+                expert_start_indices,
+                expert_ids,
+                expert_usage_stats.to(DeviceRef.CPU()),
+            )
 
         # Restore token order and reshape
         down_projs = ops.gather(
@@ -339,6 +624,14 @@ class Qwen3VLMoE(MoE):
         )
         experts_down_proj_shards = self._experts_down_proj_weight.shard(devices)
 
+        if self.float8_config:
+            experts_gate_up_proj_scale_shards = (
+                self._experts_gate_up_proj_weight_scale.shard(devices)
+            )
+            experts_down_proj_scale_shards = (
+                self._experts_down_proj_weight_scale.shard(devices)
+            )
+
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -352,6 +645,8 @@ class Qwen3VLMoE(MoE):
                 gate_cls=self.gate_cls,
                 dtype=self.dtype,
                 mlp_only_layers=self.mlp_only_layers,
+                float8_config=self.float8_config,
+                is_sharding=True,
             )
             # Replace layers and weights with sharded versions.
             sharded.gate = gate_shards[shard_idx]
@@ -363,6 +658,14 @@ class Qwen3VLMoE(MoE):
             sharded._experts_down_proj_weight = experts_down_proj_shards[
                 shard_idx
             ]
+
+            if self.float8_config:
+                sharded._experts_gate_up_proj_weight_scale = (
+                    experts_gate_up_proj_scale_shards[shard_idx]
+                )
+                sharded._experts_down_proj_weight_scale = (
+                    experts_down_proj_scale_shards[shard_idx]
+                )
 
             shards.append(sharded)
 

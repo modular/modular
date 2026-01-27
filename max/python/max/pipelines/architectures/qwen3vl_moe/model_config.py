@@ -246,6 +246,15 @@ class Qwen3VLConfig(MAXModelConfigBase):
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
+
+        # Propagate quantization_config to vision_config if present on main config but not vision_config
+        if hasattr(huggingface_config, "quantization_config") and not hasattr(
+            hf_vision_config, "quantization_config"
+        ):
+            hf_vision_config.quantization_config = (
+                huggingface_config.quantization_config
+            )
+
         vision_config = VisionConfig.generate(
             hf_vision_config,
             vision_state_dict["vision_encoder.patch_embed.proj.weight"].dtype,
@@ -254,6 +263,13 @@ class Qwen3VLConfig(MAXModelConfigBase):
         )
 
         # Create Llama3Config for the language model (with Qwen2 attention_bias=True)
+        # Propagate quantization_config to text_config if present on main config but not text_config
+        if hasattr(huggingface_config, "quantization_config") and not hasattr(
+            huggingface_config.text_config, "quantization_config"
+        ):
+            huggingface_config.text_config.quantization_config = (
+                huggingface_config.quantization_config
+            )
         llm_config = Llama3Config.initialize_from_config(
             pipeline_config, huggingface_config.text_config
         )
