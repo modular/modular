@@ -193,6 +193,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scale_offsets_device_nd = NDBuffer[DType.uint32, 1](
         a_scale_offsets_device.unsafe_ptr(), num_active_experts
     )
+    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
+        num_experts
+    )
+    var expert_scales_device_nd = NDBuffer[DType.float32, 1](
+        expert_scales_device.unsafe_ptr(), num_experts
+    )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
         c_device.unsafe_ptr(), dynamic_c_shape
@@ -211,6 +217,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
         num_experts
     )
+    var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+        num_experts
+    )
+    # Initialize expert_scales to non-trivial values: 1 + (i+1)/num_experts
+    for i in range(num_experts):
+        expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
     a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
@@ -451,6 +463,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ctx.enqueue_copy(expert_ids_device, expert_ids_host_ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
+    ctx.enqueue_copy(expert_scales_device, expert_scales_host_ptr)
+
+    var expert_scales_tensor = from_ndbuffer_row_major(expert_scales_device_nd)
 
     comptime matmul_config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
@@ -479,6 +494,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         expert_ids_tensor,
         a_scales_tensor,
         b_scales_tensor,
+        expert_scales_tensor,
         num_active_experts,
         ctx,
     )
@@ -580,6 +596,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             ),
         )
 
+        var expert_scale = expert_scales_host_ptr[Int(expert_id)]
         vendor_blas.matmul(
             ctx,
             c_slice,
@@ -589,6 +606,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             b_scales=new_b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
+            alpha=expert_scale,
         )
 
     ctx.synchronize()
@@ -616,6 +634,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     a_offsets_host_ptr.free()
     a_scale_offsets_ptr.free()
     expert_ids_host_ptr.free()
+    expert_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -625,6 +644,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = a_offsets_device^
     _ = a_scale_offsets_device^
     _ = expert_ids_device^
+    _ = expert_scales_device^
 
 
 def main():

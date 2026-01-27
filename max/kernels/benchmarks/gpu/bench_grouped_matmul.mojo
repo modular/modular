@@ -271,7 +271,6 @@ fn bench_grouped_matmul[
             "Only support nvfp4 scaling kind for float4-e2m1fn",
         ]()
 
-        # Allocate a_scale_offsets on device
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
         ](num_active_experts)
@@ -356,6 +355,22 @@ fn bench_grouped_matmul[
         var a_scales = from_ndbuffer_row_major(a_scales_dev)
         var b_scales = from_ndbuffer_row_major(b_scales_dev)
 
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+            num_experts
+        )
+        var expert_scales_dev = NDBuffer[DType.float32, 1](
+            expert_scales_dev_buffer.unsafe_ptr(), num_experts
+        )
+        var expert_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
+            num_experts
+        )
+        for i in range(num_experts):
+            expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
+                num_experts
+            )
+        ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
+        var expert_scales = from_ndbuffer_row_major(expert_scales_dev)
+
         @parameter
         @__copy_capture(
             a_dev,
@@ -372,6 +387,7 @@ fn bench_grouped_matmul[
             a_offsets,
             expert_ids,
             a_scale_offsets,
+            expert_scales,
         )
         @always_inline
         fn bench_func_nvfp4(mut bench: Bencher):
@@ -415,6 +431,7 @@ fn bench_grouped_matmul[
                         expert_ids,
                         a_scales,
                         b_scales,
+                        expert_scales,
                         num_active_experts,
                         ctx,
                     )
@@ -446,6 +463,8 @@ fn bench_grouped_matmul[
         _ = a_scales_dev_buffer^
         _ = b_scales_dev_buffer^
         _ = a_scale_offsets_dev_buffer^
+        _ = expert_scales_dev_buffer^
+        expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
         constrained[
