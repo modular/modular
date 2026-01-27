@@ -157,11 +157,6 @@ def _Model_capture(self: Model, *inputs: Buffer) -> None:
     self._capture(list(inputs))
 
 
-def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
-    """Verify inputs match the captured graph's baseline trace."""
-    self._debug_verify_replay(list(inputs))
-
-
 def _Model_replay(self: Model, *inputs: Buffer) -> None:
     """Replay the captured device graph for these inputs."""
     self._replay(list(inputs))
@@ -172,7 +167,6 @@ Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
-Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
 
 

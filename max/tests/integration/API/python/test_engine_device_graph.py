@@ -70,39 +70,7 @@ def test_execution_trace_capture_replay() -> None:
     )
 
 
-def test_debug_verify_replay_uses_captured_graph_key() -> None:
-    if accelerator_count() == 0:
-        pytest.skip("GPU not available")
-
-    accelerator = Accelerator()
-    session = InferenceSession(devices=[accelerator])
-
-    with Graph(
-        "debug_verify_replay",
-        input_types=[TensorType(DType.float32, ["x"], device=DeviceRef.GPU(0))],
-    ) as graph:
-        graph.output(graph.inputs[0].tensor + 1)
-
-    model = session.load(graph)
-    input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
-        model.input_devices[0]
-    )
-
-    # Capture the graph for this input signature.
-    model.capture(input_tensor)
-
-    # Should verify successfully for the captured input signature.
-    model.debug_verify_replay(input_tensor)
-
-    # Different shape should not match captured key and should error.
-    other_input = Buffer.from_numpy(np.arange(5, dtype=np.float32)).to(
-        model.input_devices[0]
-    )
-    with pytest.raises(RuntimeError, match="No captured graph"):
-        model.debug_verify_replay(other_input)
-
-
-def test_debug_verify_replay_detects_buffer_reuse() -> None:
+def test_replay_with_external_allocations() -> None:
     if accelerator_count() == 0:
         pytest.skip("GPU not available")
 
@@ -167,9 +135,5 @@ def test_debug_verify_replay_detects_buffer_reuse() -> None:
             Buffer(DType.float32, [256, 256], device=model.input_devices[0])
         )
     accelerator.synchronize()
-
-    # TODO: Update this assertion once buffer address stability is guaranteed.
-    with pytest.raises(RuntimeError, match="Launch trace mismatch"):
-        model.debug_verify_replay(input_buf)
 
     del external_buffers
