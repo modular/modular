@@ -183,14 +183,16 @@ fn broadcast_pull_2stage_kernel[
     my_rank: Int,
     root: Int,
 ):
-    """Two-stage broadcast: scatter from root, then allgather among non-root GPUs.
+    """Two-stage broadcast: scatter from root, then allgather among all GPUs.
 
-    Stage 1 (Scatter): Root's data is split into (ngpus-1) chunks. Each non-root
-    GPU reads its assigned chunk directly from root's input buffer and writes
-    it to its signal payload.
+    Stage 1 (Scatter): Root's data is split into ngpus chunks. Each GPU
+    reads its assigned chunk directly from root's input buffer and writes
+    it to its signal payload. Non-root GPUs also write to their result buffer.
+    Root copies all N elements from source to dest (local operation).
 
-    Stage 2 (Allgather): Each non-root GPU gathers the remaining chunks from
-    other non-root GPUs' signal payloads. Root already has all data.
+    Stage 2 (Allgather): Non-root GPUs gather the remaining chunks from
+    all other GPUs' signal payloads (including root's). Root skips this stage
+    since it already has all data.
 
     Parameters:
         dtype: Data dtype of tensor elements.
@@ -217,11 +219,8 @@ fn broadcast_pull_2stage_kernel[
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
-    # Partition data among (ngpus-1) non-root GPUs
-    comptime num_participants = ngpus - 1
-    var part_size = (
-        num_elements // simd_width // num_participants
-    ) * simd_width
+    # Partition data among all ngpus GPUs
+    var part_size = (num_elements // simd_width // ngpus) * simd_width
     var thr_local_start = global_tid * simd_width
     var elem_stride = stride * simd_width  # Stride in elements, not threads
 
@@ -245,19 +244,22 @@ fn broadcast_pull_2stage_kernel[
             rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
 
-    # Map my_rank to participant index (0-indexed among non-root GPUs)
-    # For root=0: GPU1->participant0, GPU2->participant1, etc.
-    # For root=k: GPUs 0..k-1 map to participants 0..k-1,
-    #             GPUs k+1..n-1 map to participants k..n-2
-    var my_participant_idx = my_rank - 1 if my_rank > root else my_rank
-    var is_root = my_rank == root
-
     # === Stage 1: Scatter from root ===
     # Initial barrier to ensure all GPUs are ready
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
+    var is_root = my_rank == root
+
+    # Each GPU reads its chunk from root's input and writes to payload
+    var my_chunk_start = my_rank * part_size
+    var my_chunk_end = (
+        num_elements if my_rank == ngpus - 1 else my_chunk_start + part_size
+    )
+    var my_payload = payloads[my_rank]
+
     if is_root:
-        # Root: copy input directly to output (root already has all data)
+        # Root: copy all N from source to dest, AND write our chunk to payload
+        # Single loop to avoid reading data twice
         var num_simd_vectors = num_elements // simd_width
         for idx in range(global_tid, num_simd_vectors, stride):
             var elem_idx = idx * simd_width
@@ -266,27 +268,27 @@ fn broadcast_pull_2stage_kernel[
             ]().load[width=simd_width, alignment=alignment, invariant=True](
                 elem_idx
             )
+            # Always write to result
             result.store[width=simd_width, alignment=alignment](
                 result.get_nd_index(elem_idx), data
             )
+            # Also write to payload if this is our chunk (for others to gather)
+            if elem_idx >= my_chunk_start and elem_idx < my_chunk_end:
+                my_payload.address_space_cast[_target_address_space]().store[
+                    alignment=alignment
+                ](elem_idx - my_chunk_start, data)
     else:
-        # Non-root: read my chunk from root's input
-        # Write to BOTH my payload (for others to read) AND my output (for myself)
-        var rank_start = my_participant_idx * part_size
-        var rank_end = (
-            num_elements if my_participant_idx
-            == num_participants - 1 else rank_start + part_size
-        )
-        var my_payload = payloads[my_rank]
-
-        for idx in range(rank_start + thr_local_start, rank_end, elem_stride):
+        # Non-root: read our chunk from root, write to payload + result
+        for idx in range(
+            my_chunk_start + thr_local_start, my_chunk_end, elem_stride
+        ):
             var data = root_input_ptr.address_space_cast[
                 _target_address_space
             ]().load[width=simd_width, alignment=alignment, invariant=True](idx)
             # Store to my payload (for other GPUs to read in Stage 2)
             my_payload.address_space_cast[_target_address_space]().store[
                 alignment=alignment
-            ](idx - rank_start, data)
+            ](idx - my_chunk_start, data)
             # Also store directly to my output (skip redundant copy in Stage 2)
             result.store[width=simd_width, alignment=alignment](
                 result.get_nd_index(idx), data
@@ -298,36 +300,26 @@ fn broadcast_pull_2stage_kernel[
     )
 
     # === Stage 2: Gather remaining chunks ===
-    # Non-root GPUs gather the chunks they don't have from other non-root GPUs.
+    # Non-root GPUs gather the chunks they don't have from all other GPUs.
+    # Root skips this - it already has all data from Stage 1.
     # Use round-robin access pattern to balance NVLink traffic.
     if not is_root:
-        # Gather (ngpus-2) chunks from other non-root GPUs
-        # Swap loop order: iterate elements in outer loop, peers in inner loop
-        # This interleaves reads across all peers for better parallelism
-
         # Calculate max chunk size (last chunk may have remainder)
-        var max_chunk_size = num_elements - (num_participants - 1) * part_size
+        var max_chunk_size = num_elements - (ngpus - 1) * part_size
 
         for idx in range(thr_local_start, max_chunk_size, elem_stride):
 
             @parameter
-            for offset in range(1, num_participants):
+            for offset in range(1, ngpus):
                 # Round-robin: each GPU starts gathering from a different peer
-                var participant_idx = (
-                    my_participant_idx + offset
-                ) % num_participants
+                var src_rank = (my_rank + offset) % ngpus
 
-                var chunk_start = participant_idx * part_size
+                var chunk_start = src_rank * part_size
                 var chunk_end = (
-                    num_elements if participant_idx
-                    == num_participants - 1 else chunk_start + part_size
+                    num_elements if src_rank
+                    == ngpus - 1 else chunk_start + part_size
                 )
 
-                # Map participant index to GPU rank
-                var src_rank = (
-                    participant_idx if participant_idx
-                    < root else participant_idx + 1
-                )
                 var src_payload = payloads[src_rank]
 
                 # Check if idx is within this chunk's bounds
@@ -482,19 +474,19 @@ fn broadcast_2stage[
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
-    """Two-stage broadcast: scatter from root, then allgather among non-root GPUs.
+    """Two-stage broadcast: scatter from root, then allgather among all GPUs.
 
-    This algorithm achieves better bandwidth than ring broadcast by:
-    1. Stage 1 (Scatter): Root sends 1/(ngpus-1) of data to each non-root GPU
-       in parallel, utilizing root's full outbound NVLink bandwidth.
-    2. Stage 2 (Allgather): Non-root GPUs gather from each other in parallel,
-       with each GPU reading (ngpus-2) chunks from other non-root GPUs.
+    This algorithm achieves better bandwidth than simple pull broadcast by:
+    1. Stage 1 (Scatter): Each GPU reads 1/ngpus of the data from root and
+       writes to its payload buffer, utilizing root's outbound NVLink bandwidth.
+    2. Stage 2 (Allgather): All GPUs gather from each other in parallel,
+       with each GPU reading (ngpus-1) chunks from other GPUs' payloads.
 
-    The root GPU already has all data, so it only participates in stage 1
-    (copying input to output) and the barriers.
+    All GPUs (including root) participate uniformly in both stages, which
+    better utilizes root's NVLink bandwidth and simplifies partitioning.
 
     IMPORTANT: Signal buffers must be sized to hold at least:
-        size_of(Signal) + (num_elements / (ngpus-1)) * size_of(dtype)
+        size_of(Signal) + (num_elements / ngpus) * size_of(dtype)
     This is the payload space needed for each GPU's chunk.
 
     Parameters:
@@ -533,12 +525,12 @@ fn broadcast_2stage[
 
     comptime BLOCK_SIZE = 256
     # Limit blocks - tuning parameter
-    comptime MAX_BLOCKS = 512
+    comptime MAX_BLOCKS = 384
 
-    # Grid size: each GPU processes 1/(ngpus-1) of the elements in scatter phase
+    # Grid size: each GPU processes 1/ngpus of the elements in scatter phase
     var grid_size = min(
         _max_num_blocks.or_else(MAX_BLOCKS),
-        ceildiv(num_elements // (simd_width * (ngpus - 1)), BLOCK_SIZE),
+        ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
     )
 
     comptime kernel = broadcast_pull_2stage_kernel[

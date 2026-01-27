@@ -31,11 +31,15 @@ You can generate random tensors using different distributions::
 
 from __future__ import annotations
 
+from max._realization_context import seed, set_seed
 from max.driver import Device
 from max.dtype import DType
 from max.functional import functional
 from max.graph import DeviceRef, ShapeLike, ops
 from max.tensor import TensorType, defaults
+
+__all__ = ["gaussian", "normal", "seed", "set_seed", "uniform"]
+
 
 #: Generates random values from a uniform distribution for tensors of a given type.
 #: See :func:`max.graph.ops.random.uniform` for details.
@@ -57,9 +61,6 @@ def uniform(  # noqa: ANN201
     device: Device | None = None,
 ):
     """Creates a tensor filled with random values from a uniform distribution.
-
-    .. caution::
-        This is an experimental API that may change in future versions.
 
     Generates a tensor with values uniformly distributed between the specified
     minimum and maximum bounds. This is useful for initializing weights,
@@ -110,9 +111,6 @@ def gaussian(  # noqa: ANN201
     device: Device | None = None,
 ):
     """Creates a tensor filled with random values from a Gaussian (normal) distribution.
-
-    .. caution::
-        This is an experimental API that may change in future versions.
 
     Generates a tensor with values sampled from a normal (Gaussian) distribution
     with the specified mean and standard deviation. This is commonly used for

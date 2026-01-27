@@ -135,6 +135,8 @@ def get_pipeline_for_task(
         return AudioGeneratorPipeline
     elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
         return SpeechTokenGenerationPipeline
+    elif task == PipelineTask.PIXEL_GENERATION:
+        raise NotImplementedError("Pixel generation not yet implemented")
 
 
 @dataclass(frozen=False)

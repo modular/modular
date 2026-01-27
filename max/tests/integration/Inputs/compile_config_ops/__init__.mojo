@@ -42,7 +42,7 @@ struct UseLogger:
         output: OutputTensor[dtype = DType.int32, rank=1],
     ):
         logger.error("I'm a custom Mojo function!")
-        output[0] = Int(logger.level._value)
+        output[0] = logger.level._value
 
 
 @compiler.register("add_one_custom")

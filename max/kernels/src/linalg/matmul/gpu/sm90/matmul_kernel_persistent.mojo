@@ -140,8 +140,8 @@ __extension HopperMatmulSM90Kernel:
                         c,
                         smem.c_tile,
                         output_reg_tile,
-                        UInt(warp_group_thread_idx),
-                        UInt(local_warp_group_idx),
+                        warp_group_thread_idx,
+                        local_warp_group_idx,
                         thread_idx.x - UInt(WARPGROUP_SIZE),
                         Int(block_y),
                         Int(block_x),
@@ -219,8 +219,8 @@ __extension HopperMatmulSM90Kernel:
             warpgroup_reg_alloc[232]()
 
             var local_warp_group_idx = warp_group_idx - 1
-            var c_reg_tile = Self.AccumRegTileType.stack_allocation()
-            var final_c_reg_tile = Self.AccumRegTileType.stack_allocation()
+            var c_reg_tile = Self.AccumRegTile.stack_allocation()
+            var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
 
             # Enter consumer mode
             with ring_buffer.consumer() as consumer:
@@ -242,8 +242,8 @@ __extension HopperMatmulSM90Kernel:
                 c,
                 smem.c_tile,
                 output_reg_tile,
-                UInt(warp_group_thread_idx),
-                UInt(local_warp_group_idx),
+                warp_group_thread_idx,
+                local_warp_group_idx,
                 thread_idx.x - UInt(WARPGROUP_SIZE),
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],

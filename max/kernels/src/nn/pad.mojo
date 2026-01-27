@@ -301,7 +301,7 @@ fn pad_shape[
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if Int(paddings_buf.dim[0]()) != 2 * input_buf.rank:
+    if paddings_buf.dim[0]() != 2 * input_buf.rank:
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
@@ -311,7 +311,7 @@ fn pad_shape[
     for axis in range(input_buf.rank):
         var pre_pad = Int(paddings_buf[2 * axis])
         var post_pad = Int(paddings_buf[2 * axis + 1])
-        output_shape[axis] = pre_pad + Int(input_buf.dim[axis]()) + post_pad
+        output_shape[axis] = pre_pad + input_buf.dim[axis]() + post_pad
 
     return output_shape
 
@@ -373,9 +373,8 @@ fn _do_pad[
     )
 
 
-@register_passable("trivial")
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable
+    TrivialRegisterType
 ):
     var pre_pad: Int
     var post_pad: Int
@@ -614,9 +613,8 @@ fn _memcpy_regions_fast[
         _common_loop[pre_copy=False, singleton=False]()
 
 
-@register_passable("trivial")
 struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
-    ImplicitlyCopyable
+    TrivialRegisterType
 ):
     var pre_pad: Int
     var post_pad: Int

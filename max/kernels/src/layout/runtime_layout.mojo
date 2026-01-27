@@ -41,14 +41,13 @@ from .runtime_tuple import (
 # IntTuple.
 
 
-@register_passable("trivial")
 struct RuntimeLayout[
     layout: Layout,
     /,
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Defaultable, Stringable, Writable):
+](Defaultable, Stringable, TrivialRegisterType, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,

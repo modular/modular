@@ -22,13 +22,9 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import TensorType, _ChainType
-from ..value import (
-    BufferValue,
-    BufferValueLike,
-    TensorValue,
-    TensorValueLike,
-)
+from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .concat import concat
+from .utils import _buffer_values, _tensor_values
 
 T = TypeVar("T")
 
@@ -42,14 +38,6 @@ def _batched(iterable: Iterable[T], n: int) -> Iterable[tuple[T, ...]]:
         if not batch:
             return
         yield batch
-
-
-def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
-    return [BufferValue(v) for v in values]
-
-
-def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
-    return [TensorValue(v) for v in values]
 
 
 def allgather(

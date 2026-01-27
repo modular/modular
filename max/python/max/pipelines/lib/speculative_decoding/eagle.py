@@ -31,11 +31,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import NullKVCacheManager
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-)
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -184,13 +180,18 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         Returns:
             The calculated num_steps for the batch
         """
-        assert not isinstance(model.kv_manager, NullKVCacheManager)
         for context in batch:
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
-            if not model.kv_manager.contains(context.request_id):
-                model.kv_manager.claim(context.request_id)
+            # For draft model: claim if not already claimed (target model is claimed by scheduler)
+            # For target model: scheduler handles claiming, so skip here
+            if is_draft:
+                if not model.kv_manager.contains(
+                    context.request_id, replica_idx=0
+                ):
+                    model.kv_manager.claim(context.request_id, replica_idx=0)
+            # For target model, scheduler handles claiming via batch_constructor
         return num_steps
 
     def _prepare_draft_batch(
@@ -238,8 +239,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     context.tokens.rewind_processing(-delta)
 
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         for i, context in enumerate(batch):
             if needs_ce:
@@ -297,8 +300,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Tuple of (ModelInputs for target model, 1)
         """
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         # Running 1 step of the target model to get initial token and hidden states for EAGLE
         inputs = model.prepare_initial_token_inputs(
@@ -338,8 +343,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             Tuple of (Updated ModelInputs, num_steps)
         """
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(batch, num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
+        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
+            [batch], num_steps
+        )
 
         kv_cache_updated_inputs: KVCacheInputs
         if isinstance(kv_cache_inputs, Sequence):
@@ -656,7 +663,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
     def _target_extend(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> tuple[ModelOutputs, Buffer]:
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
         target_inputs, _ = self.prepare_batch(
             self._target_model,
             context_batch,
@@ -706,7 +713,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         3. Verify draft tokens with target model
         4. Update contexts and build response
         """
-        context_batch = list(inputs.batch.values())
+        context_batch = inputs.flat_batch
 
         needs_ce = context_batch[0].tokens.generated_length == 0
         if needs_ce:
@@ -788,8 +795,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         res = self.build_response(context_batch=context_batch)
 
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
+        self._target_model.kv_manager.step([context_batch])
+        self._draft_model.kv_manager.step([context_batch])
 
         return res
 

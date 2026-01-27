@@ -79,8 +79,8 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in uint32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.uint32]()):
+    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
+    if layout.cosize() <= Int(max_finite[DType.int32]()):
         return DType.int32
 
     return DType.int64
@@ -269,8 +269,9 @@ that are not known at compile time or have not been specified.
 """
 
 
-@register_passable("trivial")
-struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](
+    Iterable, Iterator, TrivialRegisterType
+):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[
@@ -2755,7 +2756,7 @@ fn depth(src: IntTuple) -> Int:
         print(depth(IntTuple(1))) # prints 0
         print(depth(IntTuple(1, 2))) # prints 1
         print(depth((IntTuple(1, 2)))) # prints 2
-        ````
+        ```
     """
     if is_int(src):
         return 0
@@ -2806,7 +2807,7 @@ fn _flat_apply_perm(tuple: IntTuple, perm: IntList) -> IntTuple:
     var n = len(tuple)
     var result = IntTuple()
     for i in range(n):
-        result.append(tuple[Int(perm[i])])
+        result.append(tuple[perm[i]])
     return result
 
 
@@ -2815,7 +2816,7 @@ fn _flat_apply_invperm(tuple: IntTuple, perm: IntList) -> IntTuple:
     var n = len(tuple)
     var result = IntTuple(num_elems=n)
     for i in range(n):
-        result.replace_entry(Int(perm[i]), int_value=Int(tuple[i]))
+        result.replace_entry(perm[i], int_value=Int(tuple[i]))
     return result
 
 

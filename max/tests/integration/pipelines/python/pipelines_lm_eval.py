@@ -186,6 +186,13 @@ class PipelineSitter:
     ),
 )
 @click.option("--mistral-evals-arg", "mistral_evals_args", multiple=True)
+@click.option(
+    "--override-longbench-v2",
+    type=click.Path(
+        exists=True, executable=True, dir_okay=False, path_type=Path
+    ),
+)
+@click.option("--longbench-v2-arg", "longbench_v2_args", multiple=True)
 def main(
     override_pipelines: Path | None,
     skip_pipelines: bool,
@@ -197,6 +204,8 @@ def main(
     lm_eval_args: Sequence[str],
     override_mistral_evals: Path | None,
     mistral_evals_args: Sequence[str],
+    override_longbench_v2: Path | None,
+    longbench_v2_args: Sequence[str],
 ) -> None:
     """Start pipelines server, run an evaluator, and then shut down server."""
     logging.basicConfig(
@@ -263,6 +272,24 @@ def main(
     else:
         # Docker mode - use installed mistral-evals
         mistral_evals_program = ["/opt/venv/bin/mistral-evals"]
+
+    if override_longbench_v2 is not None:
+        longbench_v2_program = [str(override_longbench_v2)]
+    elif runfiles is not None:
+        # Bazel mode - use runfiles
+        longbench_v2_program = [
+            sys.executable,
+            _must_rlocation_str(
+                runfiles,
+                "_main/max/tests/integration/pipelines/python/run_longbench_v2.py",
+            ),
+        ]
+    else:
+        # Docker mode - use script directly
+        longbench_v2_program = [
+            "/opt/venv/bin/python",
+            "/app/max/tests/integration/pipelines/python/run_longbench_v2.py",
+        ]
     logger.debug("Pipelines binary at: %r", pipelines_program)
     evaluator_args: list[str] = []
     if evaluator == "lm-eval":
@@ -271,6 +298,9 @@ def main(
     elif evaluator == "mistral-evals":
         evaluator_program = mistral_evals_program
         evaluator_args.extend(mistral_evals_args)
+    elif evaluator == "longbench-v2":
+        evaluator_program = longbench_v2_program
+        evaluator_args.extend(longbench_v2_args)
     else:
         logger.error("Unrecognized evaluator %r", evaluator)
         sys.exit(1)

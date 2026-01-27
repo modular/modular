@@ -15,7 +15,10 @@
 # Run via Bazel: br //Kernels/benchmarks/comparison:bench_ep_baseline
 #
 # This script establishes baseline performance metrics for MAX EP dispatch/combine operations.
-# Times dispatch_async, dispatch_wait, combine_async, and combine_wait phases and reports effective GB/s.
+# Supports two modes:
+#   1. Separate kernels (default): Times dispatch_async, dispatch_wait, combine_async, combine_wait
+#   2. Fused kernels (--oneshot-ep): Times fused dispatch and combine kernels
+# Reports effective GB/s for each phase.
 
 from __future__ import annotations
 
@@ -63,16 +66,24 @@ class EPBenchmarkArgs:
     nodes: int
     max_tokens_per_rank: int | None
     profile: bool
+    oneshot_ep: bool = False
 
 
-def build_ep_graph(config: EPConfig) -> Graph:
+def build_ep_graph(config: EPConfig, oneshot_ep: bool = False) -> Graph:
     """
-    Build a MAX Graph that performs:
+    Build a MAX Graph that performs EP dispatch and combine operations.
+
+    When oneshot_ep=False (default):
       - ep_dispatch_async on all local GPUs
       - ep_dispatch_wait to gather per-GPU received tokens
       - (no-op expert compute placeholder)
       - ep_combine_async to return tokens
       - ep_combine_wait to reconstruct per-device outputs
+
+    When oneshot_ep=True:
+      - ep_dispatch (fused) on all local GPUs
+      - ep_combine (fused) to return and reconstruct tokens
+
     The graph returns one small reduction per device to avoid large host copies.
     """
     manager = EPBatchManager(config)
@@ -148,32 +159,49 @@ def build_ep_graph(config: EPConfig) -> Graph:
             )  # (max_tokens_per_rank, top_k)
 
         # Dispatch on each device
-        for dev_id in range(config.n_gpus_per_node):
-            manager.ep_dispatch_async(
-                tokens_vals[dev_id], topk_vals[dev_id], device_id=dev_id
-            )
-
-        # Gather results
         dispatched: list[tuple[TensorValue, ...]] = []
-        for dev_id in range(config.n_gpus_per_node):
-            dispatched.append(manager.ep_dispatch_wait(device_id=dev_id))
-            # dispatched entries (non-FP8): (recv_tokens, row_offsets, expert_ids, stats)
-            # we ignore stats/ids here; feed recv_tokens back to combine below
+        if oneshot_ep:
+            for dev_id in range(config.n_gpus_per_node):
+                dispatched.append(
+                    manager.ep_dispatch(
+                        tokens_vals[dev_id], topk_vals[dev_id], device_id=dev_id
+                    )
+                )
+        else:
+            for dev_id in range(config.n_gpus_per_node):
+                manager.ep_dispatch_async(
+                    tokens_vals[dev_id], topk_vals[dev_id], device_id=dev_id
+                )
+
+            # Gather results
+            for dev_id in range(config.n_gpus_per_node):
+                dispatched.append(manager.ep_dispatch_wait(device_id=dev_id))
+                # dispatched entries (non-FP8): (recv_tokens, row_offsets, expert_ids, stats)
+                # we ignore stats/ids here; feed recv_tokens back to combine below
 
         # Combine on each device; use the first tensor returned by dispatch_wait as combine input
-        for dev_id in range(config.n_gpus_per_node):
-            recv_tokens = dispatched[dev_id][0]  # tokens to send back
-            manager.ep_combine_async(recv_tokens, device_id=dev_id)
-
-        # Complete combine
         outputs = []
-        for dev_id in range(config.n_gpus_per_node):
-            out = manager.ep_combine_wait(
-                router_weights_vals[dev_id], device_id=dev_id
-            )  # (num_tokens, hidden)
-            # Reduce to a small scalar per device (sum) to minimize host transfer
-            # Keep reduction on-device for profiling clarity
-            outputs.append(ops.sum(out))
+        if oneshot_ep:
+            for dev_id in range(config.n_gpus_per_node):
+                recv_tokens = dispatched[dev_id][0]  # tokens to send back
+                out = manager.ep_combine(
+                    recv_tokens, router_weights_vals[dev_id], device_id=dev_id
+                )  # (num_tokens, hidden)
+                # Reduce to a small scalar per device (sum) to minimize host transfer
+                outputs.append(ops.sum(out))
+        else:
+            for dev_id in range(config.n_gpus_per_node):
+                recv_tokens = dispatched[dev_id][0]  # tokens to send back
+                manager.ep_combine_async(recv_tokens, device_id=dev_id)
+
+            # Complete combine
+            for dev_id in range(config.n_gpus_per_node):
+                out = manager.ep_combine_wait(
+                    router_weights_vals[dev_id], device_id=dev_id
+                )  # (num_tokens, hidden)
+                # Reduce to a small scalar per device (sum) to minimize host transfer
+                # Keep reduction on-device for profiling clarity
+                outputs.append(ops.sum(out))
 
         g.output(*outputs)
         return g
@@ -286,7 +314,7 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     initializer.ep_init(session)
 
     # Build and compile EP bench graph
-    graph = build_ep_graph(config)
+    graph = build_ep_graph(config, oneshot_ep=args.oneshot_ep)
     model = session.load(graph)
 
     # Prepare runtime inputs
@@ -303,32 +331,6 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     def run_once() -> list[Buffer]:
         return model.execute(*execute_inputs)
 
-    # Measure individual phases (average per call, seconds)
-    # We allow multiple kernels with the same name in the trace aggregation.
-    times_dispatch = bench_kineto_with_cupti_warmup(
-        run_once,
-        kernel_names=(
-            "shmem_ep_comm_dispatch_async_k",
-            "shmem_ep_comm_dispatch_wait_ke",
-        ),
-        num_tests=args.iters,
-        suppress_kineto_output=not args.profile,
-        with_multiple_kernels=True,
-    )
-    assert isinstance(times_dispatch, tuple)
-
-    times_combine = bench_kineto_with_cupti_warmup(
-        run_once,
-        kernel_names=(
-            "shmem_ep_comm_combine_async_ke",
-            "shmem_ep_comm_combine_wait_ker",
-        ),
-        num_tests=args.iters,
-        suppress_kineto_output=not args.profile,
-        with_multiple_kernels=True,
-    )
-    assert isinstance(times_combine, tuple)
-
     # Compute effective bandwidth per device (bytes / avg_time)
     bytes_per_token_dispatch = compute_bytes_per_token(
         args.hidden, args.dispatch_dtype
@@ -340,38 +342,105 @@ def run_bench_max_ep(args: EPBenchmarkArgs) -> None:
     dispatch_bytes = args.num_tokens * args.num_topk * bytes_per_token_dispatch
     combine_bytes = args.num_tokens * args.num_topk * bytes_per_token_combine
 
-    # times_* are average per call; convert to GB/s
-    dispatch_send_gbps = (dispatch_bytes / 1e9) / times_dispatch[0]
-    dispatch_wait_gbps = (dispatch_bytes / 1e9) / times_dispatch[1]
-    combine_send_gbps = (combine_bytes / 1e9) / times_combine[0]
-    combine_wait_gbps = (combine_bytes / 1e9) / times_combine[1]
-
-    total_bytes = dispatch_bytes + combine_bytes
-    total_time_s = sum(times_dispatch) + sum(times_combine)
-    total_gbps = (total_bytes / 1e9) / (
-        total_time_s / 2.0
-    )  # divide by 2 to average send/cb overlap conservatively
-
     print("=" * 80)
     print(
         f"MAX EP Benchmark (tokens={args.num_tokens}, hidden={args.hidden}, top_k={args.num_topk}, experts={args.num_experts}, gpus={n_gpus})"
     )
+    print(
+        f"Mode: {'fused (oneshot)' if args.oneshot_ep else 'separate (async/wait)'}"
+    )
     print("=" * 80)
     print(f"{'Phase':<20} {'Avg time (ms)':<15} {'GB/s (per device)':<20}")
-    print(
-        f"{'dispatch':<20} {times_dispatch[0] * 1e3:<15.3f} {dispatch_send_gbps:<20.2f}"
-    )
-    print(
-        f"{'dispatch_wait':<20} {times_dispatch[1] * 1e3:<15.3f} {dispatch_wait_gbps:<20.2f}"
-    )
-    print(
-        f"{'combine':<20} {times_combine[0] * 1e3:<15.3f} {combine_send_gbps:<20.2f}"
-    )
-    print(
-        f"{'combine_wait':<20} {times_combine[1] * 1e3:<15.3f} {combine_wait_gbps:<20.2f}"
-    )
-    print("-" * 80)
-    print(f"{'dispatch+combine':<20} {'~':<15} {total_gbps:<20.2f}")
+
+    if args.oneshot_ep:
+        # Fused kernels: single dispatch and combine kernel each
+        time_dispatch = bench_kineto_with_cupti_warmup(
+            run_once,
+            kernel_names="shmem_ep_comm_dispatch_kernel",
+            num_tests=args.iters,
+            suppress_kineto_output=not args.profile,
+            with_multiple_kernels=True,
+        )
+        assert isinstance(time_dispatch, float)
+
+        time_combine = bench_kineto_with_cupti_warmup(
+            run_once,
+            kernel_names="shmem_ep_comm_combine_kernel",
+            num_tests=args.iters,
+            suppress_kineto_output=not args.profile,
+            with_multiple_kernels=True,
+        )
+        assert isinstance(time_combine, float)
+
+        dispatch_gbps = (dispatch_bytes / 1e9) / time_dispatch
+        combine_gbps = (combine_bytes / 1e9) / time_combine
+
+        total_bytes = dispatch_bytes + combine_bytes
+        total_time_s = time_dispatch + time_combine
+        total_gbps = (total_bytes / 1e9) / total_time_s
+
+        print(
+            f"{'dispatch (fused)':<20} {time_dispatch * 1e3:<15.3f} {dispatch_gbps:<20.2f}"
+        )
+        print(
+            f"{'combine (fused)':<20} {time_combine * 1e3:<15.3f} {combine_gbps:<20.2f}"
+        )
+        print("-" * 80)
+        print(
+            f"{'dispatch+combine':<20} {total_time_s * 1e3:<15.3f} {total_gbps:<20.2f}"
+        )
+    else:
+        # Separate kernels: dispatch_async, dispatch_wait, combine_async, combine_wait
+        times_dispatch = bench_kineto_with_cupti_warmup(
+            run_once,
+            kernel_names=(
+                "shmem_ep_comm_dispatch_async_k",
+                "shmem_ep_comm_dispatch_wait_ke",
+            ),
+            num_tests=args.iters,
+            suppress_kineto_output=not args.profile,
+            with_multiple_kernels=True,
+        )
+        assert isinstance(times_dispatch, tuple)
+
+        times_combine = bench_kineto_with_cupti_warmup(
+            run_once,
+            kernel_names=(
+                "shmem_ep_comm_combine_async_ke",
+                "shmem_ep_comm_combine_wait_ker",
+            ),
+            num_tests=args.iters,
+            suppress_kineto_output=not args.profile,
+            with_multiple_kernels=True,
+        )
+        assert isinstance(times_combine, tuple)
+
+        dispatch_async_gbps = (dispatch_bytes / 1e9) / times_dispatch[0]
+        dispatch_wait_gbps = (dispatch_bytes / 1e9) / times_dispatch[1]
+        combine_async_gbps = (combine_bytes / 1e9) / times_combine[0]
+        combine_wait_gbps = (combine_bytes / 1e9) / times_combine[1]
+
+        total_bytes = dispatch_bytes + combine_bytes
+        total_time_s = sum(times_dispatch) + sum(times_combine)
+        total_gbps = (total_bytes / 1e9) / (
+            total_time_s / 2.0
+        )  # divide by 2 to average send/wait overlap conservatively
+
+        print(
+            f"{'dispatch_async':<20} {times_dispatch[0] * 1e3:<15.3f} {dispatch_async_gbps:<20.2f}"
+        )
+        print(
+            f"{'dispatch_wait':<20} {times_dispatch[1] * 1e3:<15.3f} {dispatch_wait_gbps:<20.2f}"
+        )
+        print(
+            f"{'combine_async':<20} {times_combine[0] * 1e3:<15.3f} {combine_async_gbps:<20.2f}"
+        )
+        print(
+            f"{'combine_wait':<20} {times_combine[1] * 1e3:<15.3f} {combine_wait_gbps:<20.2f}"
+        )
+        print("-" * 80)
+        print(f"{'dispatch+combine':<20} {'~':<15} {total_gbps:<20.2f}")
+
     print("=" * 80)
 
 
@@ -436,6 +505,11 @@ def parse_args() -> EPBenchmarkArgs:
     parser.add_argument(
         "--profile", action="store_true", help="Print Kineto tables"
     )
+    parser.add_argument(
+        "--oneshot-ep",
+        action="store_true",
+        help="Use oneshot EP dispatch/combine",
+    )
     ns = parser.parse_args()
 
     def _to_max_dtype(s: str) -> DType:
@@ -459,6 +533,7 @@ def parse_args() -> EPBenchmarkArgs:
         nodes=ns.nodes,
         max_tokens_per_rank=(ns.max_tokens_per_rank or None),
         profile=ns.profile,
+        oneshot_ep=ns.oneshot_ep,
     )
 
 
@@ -474,6 +549,7 @@ def bench_ep(
     max_tokens_per_rank: int | None = None,
     iters: int = 30,
     profile: bool = False,
+    oneshot_ep: bool = True,
 ) -> None:
     """
     Convenience API mirroring bench_blackwell_prefill.bench_prefill.
@@ -492,6 +568,7 @@ def bench_ep(
         nodes=nodes,
         max_tokens_per_rank=max_tokens_per_rank,
         profile=profile,
+        oneshot_ep=oneshot_ep,
     )
     run_bench_max_ep(args)
 

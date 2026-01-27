@@ -63,3 +63,33 @@ def test_uniform_defaults() -> None:
 
     with pytest.raises(AssertionError):
         assert_all_close(t1, t2)
+
+
+def test_set_seed_deterministic() -> None:
+    """Test that set_seed makes random generation deterministic."""
+    random.set_seed(42)
+    t1 = random.uniform([20], dtype=DType.float32, device=CPU())
+
+    random.set_seed(42)
+    t2 = random.uniform([20], dtype=DType.float32, device=CPU())
+
+    assert_all_close(t1, t2)
+
+
+def test_set_seed_different_seeds() -> None:
+    """Test that different seeds produce different results."""
+    random.set_seed(42)
+    t1 = random.uniform([20], dtype=DType.float32, device=CPU())
+
+    random.set_seed(123)
+    t2 = random.uniform([20], dtype=DType.float32, device=CPU())
+
+    with pytest.raises(AssertionError):
+        assert_all_close(t1, t2)
+
+
+def test_seed_returns_tensor() -> None:
+    """Test that seed() returns the global seed tensor."""
+    seed_tensor = random.seed()
+    assert seed_tensor is not None
+    assert seed_tensor.dtype.is_integral()

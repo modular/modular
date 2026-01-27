@@ -66,7 +66,6 @@ comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
-@export(ABI="C")
 fn static_conv(
     output: LayoutTensor[mut=True, value_type, Layout.row_major(N, HO, WO, F)],
     input: LayoutTensor[value_type, Layout.row_major(N, H, W, C)],

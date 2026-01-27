@@ -132,8 +132,7 @@ fn struct_field_index_by_name[
     )
 
 
-@register_passable("trivial")
-struct ReflectedType[T: __mlir_type.`!kgen.type`]:
+struct ReflectedType[T: __mlir_type.`!kgen.type`](TrivialRegisterType):
     """Wrapper struct for compile-time type values from reflection.
 
     This struct wraps a `!kgen.type` value as a type parameter, allowing

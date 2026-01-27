@@ -21,4 +21,11 @@ Use this package for performance measurement, benchmarking, profiling, or when
 you need to introduce delays in your code.
 """
 
-from .time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
+from .time import (
+    global_perf_counter_ns,
+    monotonic,
+    perf_counter,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)

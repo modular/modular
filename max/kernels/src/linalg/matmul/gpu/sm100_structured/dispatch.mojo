@@ -37,7 +37,7 @@ from ....utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ....utils_gpu import MatmulKernels
+from ....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
 from .config import MatmulConfig, build_configs, choose_config
 from .. import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ...vendor.matmul import matmul as matmul_vendor
@@ -129,7 +129,7 @@ fn matmul_dispatch_sm100[
         ](c_tensor, a_tensor, b_tensor, ctx)
 
     @parameter
-    if env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]():
+    if _vendor_blas_fallback_disabled():
 
         @parameter
         if (

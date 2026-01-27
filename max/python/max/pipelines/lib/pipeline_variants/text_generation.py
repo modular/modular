@@ -313,7 +313,7 @@ class TextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[
         Any,
@@ -328,7 +328,7 @@ class TextGenerationPipeline(
         per context, and builds initial model inputs.
 
         Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
+            batches: Per-replica list of contexts.
             num_steps: Desired number of steps to run.
 
         Returns:
@@ -338,15 +338,8 @@ class TextGenerationPipeline(
                 - Optional[np.ndarray]: The structured decoding bitmask or None.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
-        # Initialize a flat batch of contexts and their replica ids.
-        replica_ids: list[int] = [
-            replica_idx
-            for replica_idx, batch in enumerate(batches)
-            for _ in batch.values()
-        ]
         replica_batches: list[list[TextGenerationContextType]] = [
-            [ctx for ctx in self._maybe_sort_loras(batch).values()]
-            for batch in batches
+            self._maybe_sort_loras(batch) for batch in batches
         ]
         flat_batch = flatten2d(replica_batches)
 
@@ -354,21 +347,13 @@ class TextGenerationPipeline(
         bitmask = self.initialize_bitmask(flat_batch)
 
         # Keep a global index for bitmask indexing.
-        i = 0
-        for i, (replica_idx, context) in enumerate(
-            zip(replica_ids, flat_batch, strict=False)
-        ):
+        for i, context in enumerate(flat_batch):
             # Update state for structured output. Initialize a matcher if needed, this includes:
             # - Initializing a matcher if needed [once per request]
             # - Jumping ahead in generation if possible
             # - Updating the bitmask for the context.
             if bitmask is not None:
                 self.update_for_structured_output(context, bitmask, i)
-
-            if not self._pipeline_model.kv_manager.contains(context.request_id):
-                self._pipeline_model.kv_manager.claim(
-                    context.request_id, replica_idx=replica_idx
-                )
 
             # Update num_steps.
             num_steps = calculate_num_steps(
@@ -382,7 +367,7 @@ class TextGenerationPipeline(
 
         # Retrieve the KV Cache Inputs.
         kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
+            replica_batches, num_steps
         )
 
         # Log batch details
@@ -403,8 +388,8 @@ class TextGenerationPipeline(
 
     @traced
     def _maybe_sort_loras(
-        self, batch: dict[RequestID, TextGenerationContextType]
-    ) -> dict[RequestID, TextGenerationContextType]:
+        self, batch: list[TextGenerationContextType]
+    ) -> list[TextGenerationContextType]:
         """
         Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
         to be adjacent to each other.
@@ -619,10 +604,15 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(flat_batch)
+        self._pipeline_model.kv_manager.step(inputs.batches)
 
         return res
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

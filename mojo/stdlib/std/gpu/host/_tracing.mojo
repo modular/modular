@@ -57,7 +57,7 @@ fn _setup_category(
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(UInt32(value), name.unsafe_ptr())
 
 
 fn _setup_categories(
@@ -136,8 +136,7 @@ comptime NVTXVersion = 2
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Color(Intable):
+struct Color(Intable, TrivialRegisterType):
     var _value: Int
 
     comptime FORMAT = 1  # ARGB
@@ -181,8 +180,7 @@ struct Color(Intable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _C_EventAttributes:
+struct _C_EventAttributes(TrivialRegisterType):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -227,8 +225,7 @@ fn color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-@register_passable("trivial")
-struct EventAttributes:
+struct EventAttributes(TrivialRegisterType):
     var _value: _C_EventAttributes
 
     @always_inline
@@ -247,10 +244,10 @@ struct EventAttributes:
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=size_of[_C_EventAttributes](),
-            category=category,
+            size=UInt16(size_of[_C_EventAttributes]()),
+            category=UInt32(category),
             color_type=Color.FORMAT,
-            color=Int(resolved_color),
+            color=UInt32(Int(resolved_color)),
             payload_type=0,
             _reserved=0,
             event_payload=0,
@@ -259,8 +256,9 @@ struct EventAttributes:
         )
 
 
-@register_passable("trivial")
-struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes]:
+struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes](
+    TrivialRegisterType
+):
     comptime fn_type = Self.type
 
     @staticmethod

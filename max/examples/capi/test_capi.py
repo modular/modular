@@ -25,10 +25,11 @@ def build_graph() -> None:
     # Build the graph for the accelerator
     device = Accelerator()
 
-    # Input tensors are expected on the accelerator
+    # Input tensors are expected on the accelerator. `vector_width` is a
+    # symbolic dimension allowing for dynamic shapes on the vector inputs.
     input_type = TensorType(
         dtype=DType.float32,
-        shape=(8,),
+        shape=("vector_width",),
         device=DeviceRef.from_device(device),
     )
 

@@ -66,7 +66,7 @@ from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import gemm_kernel_amd
 
-from ...structuring import SMemTileType
+from ...structuring import SMemTile
 
 
 @always_inline
@@ -80,7 +80,7 @@ fn distance[
 
 comptime WarpSplitKReductionSMem[
     c_type: DType, BM: Int, BN: Int, num_warp_k_partitions: Int
-] = SMemTileType[
+] = SMemTile[
     c_type,
     Layout.row_major(1, BM * BN * (num_warp_k_partitions // 2)),
 ]
@@ -392,7 +392,7 @@ fn multistage_mma[
     comptime num_reg_tiles = 2 * Int(k_group_size)
     # Register tiles.
     comptime a_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_m_mmas), a_frag_size
+        2 * Int(k_group_size) * num_m_mmas, a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -402,11 +402,11 @@ fn multistage_mma[
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     comptime b_reg_layout = Layout.row_major(
-        Int(2 * Int(k_group_size) * num_n_mmas), b_frag_size
+        2 * Int(k_group_size) * num_n_mmas, b_frag_size
     )
     var b_reg_tiles = (
         LayoutTensor[
@@ -417,7 +417,7 @@ fn multistage_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[Int(2 * Int(k_group_size))]()
+        .split[2 * Int(k_group_size)]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -545,12 +545,12 @@ fn multistage_mma[
                         )
                     else:
                         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                        copy_local_to_local(a_reg_tiles[Int(next)], a_iter[])
+                        copy_local_to_local(a_reg_tiles[next], a_iter[])
                         a_iter._incr()
 
                     mma_op.load_b(
                         b_warp_tile,
-                        b_reg_tiles[Int(next)],
+                        b_reg_tiles[next],
                         UInt(kidx),
                         UInt(warp_x),
                     )
@@ -973,14 +973,14 @@ fn multistage_gemm_kernel[
 
                 @parameter
                 if dst_simd_width_x == 1:
-                    epilogue[alignment=alignment]((Int(m), Int(n)), vec)
+                    epilogue[alignment=alignment]((m, n), vec)
                 else:
 
                     @parameter
                     for j in range(dst_simd_width_x):
                         if m + j < Int(M):
                             epilogue[alignment=alignment](
-                                (Int(m + j), Int(n)), vec[j].cast[c_type]()
+                                (m + j, n), vec[j].cast[c_type]()
                             )
 
     # Store FP32 mma results to half precision buffer in global memory.
@@ -1056,7 +1056,7 @@ fn multistage_gemm_kernel[
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < Int(M) and n < Int(N):
                     epilogue[alignment=alignment](
-                        (Int(m), Int(n)),
+                        (m, n),
                         accum_smem_warp_tile.ptr.load[
                             width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
@@ -1149,10 +1149,10 @@ fn multistage_gemm_split_k_kernel[
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
     var a_part = a.split[axis=1, split_alignment=BK](
-        Int(num_partitions), Int(block_idx.z)
+        num_partitions, Int(block_idx.z)
     )
     var b_part = b.split[axis= 1 if transpose_b else 0, split_alignment=BK](
-        Int(num_partitions), Int(block_idx.z)
+        num_partitions, Int(block_idx.z)
     )
 
     comptime work_space_tensor_type = LayoutTensor[

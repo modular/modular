@@ -341,7 +341,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to read from file: " + String(err))
 
-        return Int(bytes_read)
+        return bytes_read
 
     fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
@@ -415,7 +415,7 @@ struct FileHandle(Defaultable, Movable, Writer):
                 var err = get_errno()
                 raise Error("Failed to read from file: " + String(err))
 
-            num_read += Int(chunk_bytes_read)
+            num_read += chunk_bytes_read
 
             # If we read all of the 'size' bytes then we're done.
             if num_read == size or chunk_bytes_read == 0:
@@ -527,7 +527,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to write to file: " + String(err))
 
-        return Int(bytes_written)
+        return bytes_written
 
     fn write_all(mut self, bytes: Span[Byte, _]) raises:
         """Write all bytes to the file, handling partial writes automatically.
@@ -621,7 +621,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             if bytes_written == 0:
                 abort("write() returned 0 bytes (file may be full or closed)")
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
     fn write_string(mut self, string: StringSlice):
         """
@@ -694,7 +694,7 @@ struct FileHandle(Defaultable, Movable, Writer):
                     "Write returned 0 bytes (file may be full or closed)"
                 )
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
     fn __enter__(var self) -> Self:
         """The function to call when entering the context.

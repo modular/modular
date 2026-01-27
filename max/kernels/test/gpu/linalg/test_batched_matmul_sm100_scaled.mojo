@@ -261,17 +261,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
+    var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
+
     batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
-    ](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_nd,
-        b_scales_device_nd,
-        ctx,
-    )
+    ](c_ref, a, b, a_scales, b_scales, ctx)
 
     ctx.synchronize()
 

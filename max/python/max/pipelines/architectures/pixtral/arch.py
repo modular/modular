@@ -27,6 +27,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import PixtralModel
+from .model_config import PixtralConfig
 
 pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration_Legacy",
@@ -51,4 +52,5 @@ pixtral_arch = SupportedArchitecture(
         validate_requires_vision_context,
         validate_only_one_image,
     ],
+    config=PixtralConfig,
 )

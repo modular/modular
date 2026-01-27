@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import shutil
@@ -47,7 +46,6 @@ from test_common import (
     test_data,
     torch_utils,
 )
-from test_common.storage import load_image
 from test_common.torch_utils import MockTextGenerationRequest
 
 
@@ -426,20 +424,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Qwen2.5VL."""
-
-        multi_modal_requests = copy.deepcopy(qwen2_5vl_utils.INSTRUCT_REQUESTS)
-
-        # Download images from s3 and update the messages.
-        for request in multi_modal_requests:
-            for message in request.messages:
-                if isinstance(message.content, list):
-                    for content in message.content:
-                        if (
-                            isinstance(content, dict)
-                            and content["type"] == "image"
-                        ):
-                            content["image"] = load_image(content["image"])
-
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.
         long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
@@ -448,7 +432,7 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
             MockTextGenerationRequest.text_only(prompt)
             for prompt in text_only_prompts
         ]
-        return multi_modal_requests + text_only_requests
+        return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -538,20 +522,6 @@ class Qwen3VLPipelineOracle(PipelineOracle):
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
         """Input requests for Qwen3VL."""
-
-        multi_modal_requests = copy.deepcopy(qwen3vl_utils.INSTRUCT_REQUESTS)
-
-        # Download images from s3 and update the messages.
-        for request in multi_modal_requests:
-            for message in request.messages:
-                if isinstance(message.content, list):
-                    for content in message.content:
-                        if (
-                            isinstance(content, dict)
-                            and content["type"] == "image"
-                        ):
-                            content["image"] = load_image(content["image"])
-
         # Torch model tries to return EOT for the default long text prompt,
         # so add another bullet point to get it to generate more tokens.
         long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
@@ -560,7 +530,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             MockTextGenerationRequest.text_only(prompt)
             for prompt in text_only_prompts
         ]
-        return multi_modal_requests + text_only_requests
+        return qwen3vl_utils.INSTRUCT_REQUESTS + text_only_requests
 
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
@@ -1230,6 +1200,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    ),
+    "Qwen/Qwen3-VL-4B-Instruct": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-4B-Instruct"
     ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",

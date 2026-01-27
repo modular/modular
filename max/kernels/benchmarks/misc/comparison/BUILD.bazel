@@ -23,6 +23,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
+        "bench_allreduce.py",
         "bench_blackwell_grouped_gemm.py",
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",
@@ -112,23 +113,16 @@ modular_py_binary(
 # AllReduce benchmark: NCCL vs SGLang custom allreduce
 # SGLang's custom allreduce (cross_device_reduce_1stage) is optimized for
 # small message sizes (<256KB) using NVLink P2P communication.
-# Run with torchrun for multi-GPU benchmarks:
-#   pip install sglang[all]
-#   torchrun --nproc_per_node=4 $(bazel-bin path) --num-bytes 16384 262144
+# Moved to kbench. Please run the following:
+# kbench bench_allreduce --mpirun-np 8
+
 modular_py_binary(
-    name = "bench_allreduce",
-    srcs = ["bench_allreduce.py"],
-    ignore_unresolved_imports = [
-        "sglang",  # Not a hard failure if sglang is not installed
-    ],
-    main = "bench_allreduce.py",
+    name = "install_sglang",
+    srcs = ["install_sglang.py"],
+    main = "install_sglang.py",
     tags = [
         "gpu",
         "manual",
-    ],
-    deps = [
-        requirement("torch"),
-        "//max/python/max/support",
     ],
 )
 

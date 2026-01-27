@@ -52,8 +52,10 @@ from shmem.ep_comm import (
     EPLocalSyncCounters,
     dispatch_async_kernel,
     dispatch_wait_kernel,
+    dispatch_kernel,
     combine_async_kernel,
     combine_wait_kernel,
+    combine_kernel,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
@@ -452,7 +454,6 @@ struct Struct_ep_dispatch_wait:
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
         row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
         atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -481,7 +482,6 @@ struct Struct_ep_dispatch_wait:
                 computation.
             row_offsets: Cumulative token counts for grouped matmul.
             expert_ids: Local expert IDs for grouped matmul.
-            expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
@@ -582,14 +582,6 @@ struct Struct_ep_dispatch_wait:
                 block_dim=hw_info.max_thread_block_size,
             )
 
-            # The grouped matmul kernel needs this tensor to be filled
-            expert_usage_stats_host[0] = (
-                n_ranks * max_token_per_rank
-            )  # max number of tokens per expert
-            expert_usage_stats_host[1] = (
-                n_experts // n_ranks
-            )  # number of active experts
-
 
 @compiler.register("ep.dispatch_wait.fused_shared_expert")
 struct Struct_ep_dispatch_wait_fused_shared_expert:
@@ -610,7 +602,6 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
         row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
         atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -642,7 +633,6 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
                 computation.
             row_offsets: Cumulative token counts for grouped matmul.
             expert_ids: Local expert IDs for grouped matmul.
-            expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
@@ -753,14 +743,6 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
-
-            # The grouped matmul kernel needs this tensor to be filled
-            expert_usage_stats_host[0] = (
-                n_ranks * max_token_per_rank
-            )  # max number of tokens per expert
-            expert_usage_stats_host[1] = (
-                n_experts // n_ranks + 1
-            )  # number of active experts
 
 
 @compiler.register("ep.dispatch_async.fp8")
@@ -972,7 +954,6 @@ struct Struct_ep_dispatch_wait_fp8:
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
         row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
         atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -1004,7 +985,6 @@ struct Struct_ep_dispatch_wait_fp8:
             output_scales: Scales of the aggregated tokens.
             row_offsets: Cumulative token counts for grouped matmul.
             expert_ids: Local expert IDs for grouped matmul.
-            expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
@@ -1115,14 +1095,6 @@ struct Struct_ep_dispatch_wait_fp8:
                 block_dim=hw_info.max_thread_block_size,
             )
 
-            # The grouped matmul kernel needs this tensor to be filled
-            expert_usage_stats_host[0] = (
-                n_ranks * max_token_per_rank
-            )  # max number of tokens per expert
-            expert_usage_stats_host[1] = (
-                n_experts // n_ranks
-            )  # number of active experts
-
 
 @compiler.register("ep.dispatch_wait.fp8.fused_shared_expert")
 struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
@@ -1146,7 +1118,6 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
         row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
         expert_ids: OutputTensor[dtype = DType.int32, rank=1],
-        expert_usage_stats_host: OutputTensor[dtype = DType.uint32, rank=1],
         src_info: OutputTensor[dtype = DType.int32, rank=2],
         atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
         recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
@@ -1181,7 +1152,6 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
             output_scales: Scales of the aggregated tokens.
             row_offsets: Cumulative token counts for grouped matmul.
             expert_ids: Local expert IDs for grouped matmul.
-            expert_usage_stats_host: Statistics for grouped matmul kernel.
             src_info: Source routing information for combine phase.
             atomic_counters: EP kernel synchronization counters.
             recv_ptrs: Receive buffer pointers for each local GPU.
@@ -1304,13 +1274,423 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
                 block_dim=hw_info.max_thread_block_size,
             )
 
-            # The grouped matmul kernel needs this tensor to be filled
-            expert_usage_stats_host[0] = (
-                n_ranks * max_token_per_rank
-            )  # max number of tokens per expert
-            expert_usage_stats_host[1] = (
-                n_experts // n_ranks + 1
-            )  # number of active experts
+
+@compiler.register("ep.dispatch")
+struct Struct_ep_dispatch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dispatch_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
+        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
+        src_info: OutputTensor[dtype = DType.int32, rank=2],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=dispatch_dtype, rank=2],
+        topk_ids: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the fused Expert Parallelism dispatch kernel.
+
+        This function launches the fused dispatch_kernel from ep_comm.mojo that
+        combines both dispatch_async and dispatch_wait functionality in a single
+        kernel launch. It distributes input tokens to expert devices based on
+        top-k routing decisions, then waits for all tokens to arrive and
+        aggregates them for grouped matmul computation.
+
+        Parameters:
+            dispatch_dtype: Data type of the dispatched tokens.
+            hidden_size: Model hidden dimension size.
+            top_k: Number of experts each token is routed to.
+            n_experts: Total experts across all devices.
+            max_token_per_rank: Maximum tokens any device can send.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Number of physical nodes.
+            fused_shared_expert: Whether to pack shared expert inputs with
+                routed experts' inputs.
+            target: Target.
+
+        Arguments:
+            output_tokens: Aggregated tokens ready for grouped matmul.
+            row_offsets: Row offsets for grouped matmul.
+            expert_ids: Expert IDs for grouped matmul.
+            src_info: Source routing information for combine phase.
+            atomic_counters: EP kernel synchronization counters.
+            input_tokens: Tokens to dispatch to experts.
+            topk_ids: Expert assignments from router.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
+            context: Device context pointer.
+        """
+        # Ensure this kernel only runs on GPU targets
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        __comptime_assert dispatch_dtype == DType.bfloat16
+
+        var input_tokens_tensor = (
+            input_tokens.to_layout_tensor().get_immutable()
+        )
+        var topk_ids_tensor = topk_ids.to_layout_tensor().get_immutable()
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var row_offsets_tensor = row_offsets.to_layout_tensor()
+        var expert_ids_tensor = expert_ids.to_layout_tensor()
+        var src_info_tensor = src_info.to_layout_tensor()
+
+        # Ensure the shape for the input tensors are correct
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch: input tokens shape doesn't match hidden size."
+        __comptime_assert (
+            topk_ids_tensor.shape[1]() == top_k
+        ), "EP dispatch: topk ids shape doesn't match top k."
+
+        var gpu_ctx = context.get_device_context()
+        var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
+            SIMD[DType.uint8, gpu_simd_width], target=gpu_target
+        ]()
+
+        comptime n_ranks = n_gpus_per_node * n_nodes
+
+        var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
+            output_tokens_tensor.bitcast[DType.bfloat16]()
+        )
+
+        comptime fused_dispatch = dispatch_kernel[
+            dispatch_dtype,
+            hw_info.max_thread_block_size,
+            input_tokens_tensor.layout,
+            topk_ids_tensor.layout,
+            row_offsets_tensor.layout,
+            expert_ids_tensor.layout,
+            src_info_tensor.layout,
+            hw_info.sm_count,
+            n_experts,
+            n_ranks,
+            max_token_per_rank,
+            n_gpus_per_node,  # p2p world size
+            type_of(format_handler),
+            fused_shared_expert=fused_shared_expert,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "dispatch_dtype=", dispatch_dtype,
+                ";hidden_size=", hidden_size,
+                ";top_k=", top_k,
+                ";n_experts=", n_experts,
+                ";max_token_per_rank=", max_token_per_rank,
+                ";n_gpus_per_node=", n_gpus_per_node,
+                ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.dispatch",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            var func = gpu_ctx.compile_function[
+                fused_dispatch, fused_dispatch
+            ]()
+            var cached_module_key = String(
+                "EP_FUSED_DISPATCH_INITED_DEV_", gpu_id
+            )
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    UnsafePointer[NoneType, MutExternalOrigin](
+                        unsafe_from_address=1
+                    ),
+                )
+
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+
+            # Create inline arrays to store all the p2p accessible pointers
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
+            )
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutExternalOrigin
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
+
+            gpu_ctx.enqueue_function(
+                func,
+                input_tokens_tensor,
+                topk_ids_tensor,
+                format_handler,
+                row_offsets_tensor,
+                expert_ids_tensor,
+                src_info_tensor,
+                send_buf,
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
+                ep_counters,
+                my_rank,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
+            )
+
+
+@compiler.register("ep.dispatch.fp8")
+struct Struct_ep_dispatch_fp8:
+    @always_inline
+    @staticmethod
+    fn execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2],
+        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
+        src_info: OutputTensor[dtype = DType.int32, rank=2],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2],
+        topk_ids: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the fused Expert Parallelism FP8 dispatch kernel.
+
+        This function launches the fused dispatch_kernel from ep_comm.mojo that
+        combines both dispatch_async and dispatch_wait functionality in a single
+        kernel launch. It distributes input tokens (quantizing to FP8) to expert
+        devices based on top-k routing decisions, then waits for all tokens to
+        arrive and aggregates them for grouped matmul computation.
+
+        Parameters:
+            input_dtype: Data type of the input tokens.
+            dispatch_dtype: FP8 data type to dispatch tokens as.
+            dispatch_scale_dtype: Data type for FP8 scales.
+            hidden_size: Model hidden dimension size.
+            top_k: Number of experts each token is routed to.
+            n_experts: Total experts across all devices.
+            max_token_per_rank: Maximum tokens any device can send.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Number of physical nodes.
+            dispatch_scale_granularity: FP8 quant granularity.
+            fused_shared_expert: Whether to pack shared expert inputs with
+                routed experts' inputs.
+            target: Target.
+
+        Arguments:
+            output_tokens: Aggregated FP8 tokens ready for grouped matmul.
+            output_scales: Scales for the aggregated FP8 tokens.
+            row_offsets: Row offsets for grouped matmul.
+            expert_ids: Expert IDs for grouped matmul.
+            src_info: Source routing information for combine phase.
+            atomic_counters: EP kernel synchronization counters.
+            input_tokens: Tokens to dispatch to experts.
+            topk_ids: Expert assignments from router.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
+            context: Device context pointer.
+        """
+        # Ensure this kernel only runs on GPU targets
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        __comptime_assert (
+            dispatch_scale_granularity == "block"
+        ), "EP dispatch.fp8: dispatch scale granularity must be block."
+
+        var input_tokens_tensor = (
+            input_tokens.to_layout_tensor().get_immutable()
+        )
+        var topk_ids_tensor = topk_ids.to_layout_tensor().get_immutable()
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var output_scales_tensor = output_scales.to_layout_tensor()
+        var row_offsets_tensor = row_offsets.to_layout_tensor()
+        var expert_ids_tensor = expert_ids.to_layout_tensor()
+        var src_info_tensor = src_info.to_layout_tensor()
+
+        # Ensure the shape for the input tensors are correct
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP dispatch.fp8: input tokens shape doesn't match hidden size."
+        __comptime_assert (
+            topk_ids_tensor.shape[1]() == top_k
+        ), "EP dispatch.fp8: topk ids shape doesn't match top k."
+
+        var gpu_ctx = context.get_device_context()
+        var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime gpu_target = get_gpu_target()
+        comptime gpu_simd_width = simd_width_of[
+            DType.uint8, target=gpu_target
+        ]()
+        comptime gpu_alignment = align_of[
+            SIMD[DType.uint8, gpu_simd_width], target=gpu_target
+        ]()
+
+        comptime n_ranks = n_gpus_per_node * n_nodes
+
+        var format_handler = BlockwiseFP8TokenFormat[
+            hidden_size, top_k, gpu_alignment
+        ](output_tokens_tensor, output_scales_tensor)
+
+        # In order to use TMA, the scales of tokens for each expert must be
+        # aligned to 16 bytes.
+        comptime expert_m_padding = 16 // size_of[dispatch_scale_dtype]()
+
+        comptime fused_dispatch = dispatch_kernel[
+            input_dtype,
+            hw_info.max_thread_block_size,
+            input_tokens_tensor.layout,
+            topk_ids_tensor.layout,
+            row_offsets_tensor.layout,
+            expert_ids_tensor.layout,
+            src_info_tensor.layout,
+            hw_info.sm_count,
+            n_experts,
+            n_ranks,
+            max_token_per_rank,
+            n_gpus_per_node,  # p2p world size
+            type_of(format_handler),
+            expert_m_padding=expert_m_padding,
+            fused_shared_expert=fused_shared_expert,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "input_dtype=", input_dtype,
+                ";dispatch_dtype=", dispatch_dtype,
+                ";dispatch_scale_dtype=", dispatch_scale_dtype,
+                ";dispatch_scale_granularity=", dispatch_scale_granularity,
+                ";hidden_size=", hidden_size,
+                ";top_k=", top_k,
+                ";n_experts=", n_experts,
+                ";max_token_per_rank=", max_token_per_rank,
+                ";n_gpus_per_node=", n_gpus_per_node,
+                ";n_nodes=", n_nodes,
+                ";fused_shared_expert=", fused_shared_expert,
+                ";my_rank=", my_rank,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.dispatch.fp8",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            var func = gpu_ctx.compile_function[
+                fused_dispatch, fused_dispatch
+            ]()
+            var cached_module_key = String(
+                "EP_FUSED_DISPATCH_FP8_INITED_DEV_", gpu_id
+            )
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    UnsafePointer[NoneType, MutExternalOrigin](
+                        unsafe_from_address=1
+                    ),
+                )
+
+            var send_buf = unsafe_aliasing_address_to_device_buffer[
+                DType.uint8
+            ](Int(send_ptrs[gpu_id]), 1, gpu_ctx)
+
+            # Create inline arrays to store all the p2p accessible pointers
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
+            )
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutExternalOrigin
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
+
+            gpu_ctx.enqueue_function(
+                func,
+                input_tokens_tensor,
+                topk_ids_tensor,
+                format_handler,
+                row_offsets_tensor,
+                expert_ids_tensor,
+                src_info_tensor,
+                send_buf,
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
+                ep_counters,
+                my_rank,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1804,6 +2184,210 @@ struct Struct_ep_combine_wait:
                 my_rank,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
+            )
+
+
+@compiler.register("ep.combine")
+struct Struct_ep_combine:
+    @always_inline
+    @staticmethod
+    @parameter
+    fn execute[
+        combine_dtype: DType,
+        router_weights_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        lambdas_have_fusion: Bool,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2],
+        src_info: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        router_weights: InputTensor[dtype=router_weights_dtype, rank=2],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the fused Expert Parallelism combine kernel.
+
+        This function launches the fused combine_kernel from ep_comm.mojo that
+        combines both combine_async and combine_wait functionality in a single
+        kernel launch. It sends expert outputs back to their original devices,
+        then waits for all transfers to complete and computes the weighted sum
+        of routed expert outputs for each token.
+
+        Parameters:
+            combine_dtype: Data type for tokens during combine phase.
+            router_weights_dtype: Data type for router weights.
+            hidden_size: Model hidden dimension size.
+            top_k: Number of experts each token was routed to.
+            n_experts: Total experts across all devices.
+            max_token_per_rank: Maximum tokens any device can receive.
+            n_gpus_per_node: GPUs per physical node.
+            n_nodes: Number of physical nodes.
+            fused_shared_expert: Whether to add shared expert outputs to the
+                combined routed expert outputs.
+            lambdas_have_fusion: Whether we need to use fused output lambda.
+            target: Target.
+
+        Arguments:
+            output_tokens: Final output tensor with expert results.
+            atomic_counters: EP kernel synchronization counters.
+            input_tokens: Expert output tokens to send back.
+            src_info: Source routing information from dispatch phase.
+            send_ptrs: Send buffer pointers for each local GPU.
+            recv_ptrs: Receive buffer pointers for each local GPU.
+            recv_count_ptrs: Receive count buffer pointers for each local GPU.
+            router_weights: Router weights for the current device.
+            context: Device context pointer.
+        """
+        # Ensure this kernel only runs on GPU targets
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+
+        var input_tokens_tensor = input_tokens.to_layout_tensor()
+        var src_info_tensor = src_info.to_layout_tensor()
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var router_weights_tensor = router_weights.to_layout_tensor()
+
+        @parameter
+        @always_inline
+        @__copy_capture(router_weights_tensor)
+        fn router_weights_fn(token_idx: Int, topk_id: Int) -> Float32:
+            return router_weights_tensor.load[width=1](token_idx, topk_id).cast[
+                DType.float32
+            ]()
+
+        # Ensure the shape for the tensors are correct
+        __comptime_assert (
+            input_tokens_tensor.shape[1]() == hidden_size
+        ), "EP combine: input tokens shape doesn't match hidden size."
+        __comptime_assert (
+            output_tokens_tensor.shape[1]() == hidden_size
+        ), "EP combine: output tokens shape doesn't match hidden size."
+
+        var gpu_ctx = context.get_device_context()
+        var gpu_id = Int(gpu_ctx.id())
+        var my_rank = Int32(shmem_my_pe())
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
+        comptime n_ranks = n_gpus_per_node * n_nodes
+
+        @parameter
+        @always_inline
+        fn output_fn[
+            dtype: DType, width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[dtype, width]):
+            output_tokens._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                coords,
+                rebind[SIMD[combine_dtype, width]](val),
+            )
+
+        comptime fused_combine = combine_kernel[
+            combine_dtype,
+            hw_info.max_thread_block_size,
+            input_tokens_tensor.layout,
+            src_info_tensor.layout,
+            output_tokens_tensor.layout,
+            hw_info.sm_count,
+            top_k,
+            n_experts,
+            n_ranks,
+            combine_msg_size,
+            max_token_per_rank,
+            n_gpus_per_node,
+            router_weights_wrapper = OptionalReg[
+                fn (Int, Int) capturing -> Float32
+            ](router_weights_fn),
+            fused_shared_expert=fused_shared_expert,
+            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+                output_fn
+            ) if lambdas_have_fusion else None,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "combine_dtype=", combine_dtype,
+                ";hidden_size=", hidden_size,
+                ";top_k=", top_k,
+                ";n_experts=", n_experts,
+                ";max_token_per_rank=", max_token_per_rank,
+                ";n_gpus_per_node=", n_gpus_per_node,
+                ";n_nodes=", n_nodes,
+                ";my_rank=", my_rank,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.combine",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            var func = gpu_ctx.compile_function[fused_combine, fused_combine]()
+            var cached_module_key = String(
+                "EP_FUSED_COMBINE_INITED_DEV_", gpu_id
+            )
+
+            # Don't initialize the module repeatedly
+            if not Int(global_cache_lookup(cached_module_key)):
+                shmem_module_init(func)
+                global_cache_insert(
+                    cached_module_key,
+                    UnsafePointer[NoneType, MutExternalOrigin](
+                        unsafe_from_address=1
+                    ),
+                )
+
+            var send_ptr = UnsafePointer[UInt8, MutExternalOrigin](
+                unsafe_from_address=Int(send_ptrs[gpu_id])
+            )
+
+            # Create inline arrays to store all the p2p accessible pointers
+            var recv_ptrs_arr = InlineArray[
+                UnsafePointer[UInt8, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+            var recv_count_ptrs_arr = InlineArray[
+                UnsafePointer[UInt64, MutExternalOrigin], n_gpus_per_node
+            ](fill={})
+
+            var ep_counters = EPLocalSyncCounters[n_experts](
+                atomic_counters._ptr
+            )
+
+            @parameter
+            for i in range(n_gpus_per_node):
+                recv_ptrs_arr[i] = UnsafePointer[UInt8, MutExternalOrigin](
+                    unsafe_from_address=Int(recv_ptrs[i])
+                )
+                recv_count_ptrs_arr[i] = UnsafePointer[
+                    UInt64, MutExternalOrigin
+                ](unsafe_from_address=Int(recv_count_ptrs[i]))
+
+            gpu_ctx.enqueue_function(
+                func,
+                input_tokens_tensor,
+                src_info_tensor,
+                output_tokens_tensor,
+                send_ptr,
+                recv_ptrs_arr,
+                recv_count_ptrs_arr,
+                ep_counters,
+                my_rank,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
             )
 
 

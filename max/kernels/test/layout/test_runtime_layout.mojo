@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from layout import LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import coalesce as coalesce_layout
 from layout.layout import crd2idx
@@ -192,6 +193,24 @@ def test_make_layout():
     )
 
 
+def test_large_layout_linear_index():
+    print("== test_large_layout_linear_index")
+    # Shape size exceeds Int32 max but stays within UInt32 max.
+    # This ensures the runtime layout uses Int64 for linear indexing.
+    comptime large_layout = Layout.row_major(65536, 57344)
+    comptime tensor_type = LayoutTensor[DType.uint8, large_layout]
+
+    var shape = tensor_type.RuntimeLayoutType.ShapeType(65536, 57344)
+    var stride = tensor_type.RuntimeLayoutType.StrideType(57344, 1)
+    var runtime_layout = tensor_type.RuntimeLayoutType(shape, stride)
+
+    var idx = runtime_layout(
+        RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](65535, 57343)
+    )
+    var expected = Int(65535) * 57344 + 57343
+    assert_equal(Int(idx), expected)
+
+
 def main():
     test_runtime_layout_const()
     test_static_and_dynamic_size()
@@ -200,3 +219,4 @@ def main():
     test_sublayout_indexing()
     test_coalesce()
     test_make_layout()
+    test_large_layout_linear_index()

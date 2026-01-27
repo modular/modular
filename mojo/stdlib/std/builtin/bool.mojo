@@ -65,7 +65,6 @@ trait Boolable:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Bool(
     Boolable,
     Comparable,
@@ -79,6 +78,7 @@ struct Bool(
     Intable,
     Representable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """The primitive Bool scalar value used in Mojo."""
@@ -94,10 +94,10 @@ struct Bool(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MIN = Bool(False)
+    comptime MIN: Bool = False
     """The minimum value of a Bool."""
 
-    comptime MAX = Bool(True)
+    comptime MAX: Bool = True
     """The maximum value of a Bool."""
 
     # ===-------------------------------------------------------------------===#

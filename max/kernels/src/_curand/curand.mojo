@@ -81,8 +81,7 @@ fn _get_dylib_function[
 comptime curandDistributionShift_t = UnsafePointer[curandDistributionShift_st]
 
 
-@register_passable("trivial")
-struct curandDistributionShift_st:
+struct curandDistributionShift_st(TrivialRegisterType):
     var probability: curandDistribution_t
     var host_probability: curandDistribution_t
     var shift: UInt32
@@ -90,8 +89,7 @@ struct curandDistributionShift_st:
     var host_gen: UInt32
 
 
-@register_passable("trivial")
-struct curandDistributionM2Shift_st:
+struct curandDistributionM2Shift_st(TrivialRegisterType):
     var histogram: curandHistogramM2_t
     var host_histogram: curandHistogramM2_t
     var shift: UInt32
@@ -99,8 +97,7 @@ struct curandDistributionM2Shift_st:
     var host_gen: UInt32
 
 
-@register_passable("trivial")
-struct curandHistogramM2_st:
+struct curandHistogramM2_st(TrivialRegisterType):
     var V: curandHistogramM2V_t
     var host_V: curandHistogramM2V_t
     var K: curandHistogramM2V_t
@@ -111,8 +108,7 @@ struct curandHistogramM2_st:
 comptime curandDistribution_t = UnsafePointer[Float64]
 
 
-@register_passable("trivial")
-struct curandDiscreteDistribution_st:
+struct curandDiscreteDistribution_st(TrivialRegisterType):
     var self_host_ptr: curandDiscreteDistribution_t
     var M2: curandDistributionM2Shift_t
     var host_M2: curandDistributionM2Shift_t
@@ -172,8 +168,7 @@ fn curandGenerateLongLong(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct libraryPropertyType_t:
+struct libraryPropertyType_t(TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
@@ -203,8 +198,7 @@ fn curandGetProperty(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandRngType(Equatable, Identifiable, Writable):
+struct curandRngType(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND generator types
     ."""
@@ -551,8 +545,7 @@ comptime curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandMethod(Equatable, Identifiable, Writable):
+struct curandMethod(Equatable, Identifiable, TrivialRegisterType, Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
@@ -709,8 +702,7 @@ comptime curandMethod_t = curandMethod
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandStatus(Equatable, Identifiable, Writable):
+struct curandStatus(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND function call status types
     ."""
@@ -782,8 +774,9 @@ struct curandStatus(Equatable, Identifiable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandDirectionVectorSet(Equatable, Identifiable, Writable):
+struct curandDirectionVectorSet(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     """
     CURAND choice of direction vector set
     ."""
@@ -1245,8 +1238,7 @@ comptime curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandOrdering(Equatable, Identifiable, Writable):
+struct curandOrdering(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND ordering of results in memory
     ."""

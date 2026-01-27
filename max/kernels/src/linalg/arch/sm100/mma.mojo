@@ -46,8 +46,7 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct Major:
+struct Major(TrivialRegisterType):
     var val: Int
 
     comptime K = Major(0)
@@ -148,7 +147,6 @@ fn smem_descriptor[
     ](ptr)
 
 
-@register_passable("trivial")
 struct MmaOpSM100_SS[
     c_type: DType,
     a_type: DType,
@@ -163,7 +161,7 @@ struct MmaOpSM100_SS[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
-](Defaultable):
+](Defaultable, TrivialRegisterType):
     var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
     var mask: UInt16
 
@@ -306,7 +304,6 @@ struct MmaOpSM100_SS[
         return UMMAKind(-1)
 
 
-@register_passable("trivial")
 struct MmaOpSM100_BlockScaled_SS[
     c_type: DType,
     a_type: DType,
@@ -324,7 +321,7 @@ struct MmaOpSM100_BlockScaled_SS[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
-](Defaultable):
+](Defaultable, TrivialRegisterType):
     var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
 
