@@ -91,13 +91,20 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn get_mma_shape() -> IndexList[3]:
+        comptime wider_mfma_supported = (
+            _cdna_4_or_newer() and Self.config.depth != 64
+        )
         var mma_shape = (
             IndexList[3](32, 32, 16) if (
-                (_cdna_4_or_newer() and Self.config.depth != 64)
+                wider_mfma_supported
                 # will deal with 64 later
                 or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
-        ) if not Self.token_gen else IndexList[3](16, 16, 16)
+        ) if not Self.token_gen else (
+            IndexList[3](16, 16, 32) if wider_mfma_supported else IndexList[3](
+                16, 16, 16
+            )
+        )
         return mma_shape
 
     @staticmethod
