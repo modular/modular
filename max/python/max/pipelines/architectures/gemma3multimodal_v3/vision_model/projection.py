@@ -18,10 +18,10 @@ from max.graph import DeviceRef, Weight
 from max.graph.ops import avg_pool2d
 from max.nn.linear import Linear
 from max.nn.module import Module
+from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
-from .rms_norm import Gemma3RMSNorm
 
 
 class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):
@@ -52,6 +52,7 @@ class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):
 
         self.mm_soft_emb_norm = Gemma3RMSNorm(
             config.vision_config.hidden_size,
+            dtype=vision_dtype,
             eps=config.vision_config.layer_norm_eps,
         )
 
