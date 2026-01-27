@@ -31,8 +31,7 @@ def apply_rotary_emb(
     for broadcasting compatibility. The resulting tensors contain rotary embeddings and are returned as real tensors.
 
     Args:
-        x: Query or key tensor to apply rotary embeddings. Shape depends on
-            caller; the last dimension is split into complex pairs.
+        x: Query or key tensor to apply rotary embeddings. [B, H, S, D] or [B, S, H, D]
         freqs_cis: Precomputed cosine/sine frequency tensors for complex
             exponentials. Shape ([S, D], [S, D]).
         sequence_dim: Dimension representing the sequence (1 or 2).
@@ -53,7 +52,7 @@ def apply_rotary_emb(
     cos, sin = cos.to(x.device), sin.to(x.device)
 
     # Used for flux, cogvideox, hunyuan-dit
-    half_last_dim = x.shape[-1] // 2
+    half_last_dim = int(x.shape[-1]) // 2
     x_reshaped = F.reshape(x, list(x.shape[:-1]) + [half_last_dim, 2])
     chunks = F.split(x_reshaped, 1, axis=-1)
     x_real = F.squeeze(chunks[0], axis=-1)
@@ -63,7 +62,9 @@ def apply_rotary_emb(
     batch_sz = x_rotated_stacked.shape[0]
     seq_len = x_rotated_stacked.shape[1]
     heads = x_rotated_stacked.shape[2]
-    flattened_last_dim = x_rotated_stacked.shape[3] * x_rotated_stacked.shape[4]
+    flattened_last_dim = int(x_rotated_stacked.shape[3]) * int(
+        x_rotated_stacked.shape[4]
+    )
     x_rotated = F.reshape(
         x_rotated_stacked, (batch_sz, seq_len, heads, flattened_last_dim)
     )

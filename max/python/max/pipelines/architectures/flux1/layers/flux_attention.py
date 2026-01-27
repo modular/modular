@@ -18,13 +18,15 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Linear, Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.norm import RMSNorm
-from max.nn.sequential import ModuleList
+from max.nn.sequential import Sequential
 from max.tensor import Tensor
 
 from .activations import GELU
 from .embeddings import apply_rotary_emb
+
+flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 
 class FluxAttention(Module):
@@ -99,10 +101,12 @@ class FluxAttention(Module):
         )
 
         if not self.pre_only:
-            self.to_out = Linear(
-                self.inner_dim,
-                self.out_dim,
-                bias=out_bias,
+            self.to_out = Sequential(
+                Linear(
+                    self.inner_dim,
+                    self.out_dim,
+                    bias=out_bias,
+                )
             )
 
         if added_kv_proj_dim is not None:
@@ -175,13 +179,6 @@ class FluxAttention(Module):
             encoder_key = self.add_k_proj(encoder_hidden_states)
             encoder_value = self.add_v_proj(encoder_hidden_states)
 
-        query = self.norm_q(query)
-        key = self.norm_k(key)
-
-        if (
-            encoder_hidden_states is not None
-            and self.added_kv_proj_dim is not None
-        ):
             encoder_seq_len = encoder_query.shape[1]
             encoder_query = F.reshape(
                 encoder_query,
@@ -272,15 +269,13 @@ class FeedForward(Module):
                 f"Activation function {activation_fn} is not implemented"
             )
 
-        self.net = ModuleList(
-            [
-                act_fn,
-                Linear(
-                    inner_dim,
-                    dim_out,
-                    bias=bias,
-                ),
-            ]
+        self.net = Sequential(
+            act_fn,
+            Linear(
+                inner_dim,
+                dim_out,
+                bias=bias,
+            ),
         )
 
     def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
