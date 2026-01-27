@@ -108,8 +108,8 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         )
 
         create_norm = functools.partial(
-            text_config.hidden_size,
             Gemma3RMSNorm,
+            text_config.hidden_size,
             DType.bfloat16,
             eps=text_config.rms_norm_eps,
         )
