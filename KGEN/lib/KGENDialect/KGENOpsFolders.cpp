@@ -1502,26 +1502,35 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "non-constant inputs");
 
   int64_t offset = 0;
-  auto structType = getContainer().getType().getElementAs<StructType>();
-
   // Move the address over the elements before the one we are reading.
   unsigned index = idxAttr.getInt();
-  auto numElements = structType.getNumElements();
-  if (!numElements || index >= *numElements)
-    return ErrorTree(getLoc(), "struct field index out of bounds");
+  SmallVector<Type> elementTypes;
+  if (!llvm::isa<StructType>(getContainer().getType().getElementType())) {
+    // Might be a single element struct which got flattened during lower-lit :(
+    if (index != 0)
+      return ErrorTree(getLoc(), "struct field index out of bounds");
 
-  auto elementTypes = structType.getElementTypes();
-  if (!elementTypes)
-    return ErrorTree(getLoc(), "struct element types not resolved");
+    elementTypes.push_back(getContainer().getType().getElementType());
+  } else {
+    StructType structType = getContainer().getType().getElementAs<StructType>();
+    std::optional<size_t> numElements = structType.getNumElements();
+    if (!numElements || index >= *numElements)
+      return ErrorTree(getLoc(), "struct field index out of bounds");
+
+    std::optional<SmallVector<Type>> eltTypesOr = structType.getElementTypes();
+    if (!eltTypesOr)
+      return ErrorTree(getLoc(), "struct element types not resolved");
+    elementTypes = std::move(*eltTypesOr);
+  }
 
   for (unsigned i = 0; i != index; ++i) {
-    auto dl = cast<DataLayoutInterface>((*elementTypes)[i]);
+    auto dl = cast<DataLayoutInterface>(elementTypes[i]);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     offset += *dl.getTypeSize(state.getTarget());
   }
 
   // Align the address to the target element.
-  Type targetType = (*elementTypes)[index];
+  Type targetType = elementTypes[index];
   offset = llvm::alignTo(
       offset,
       *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
