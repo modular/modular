@@ -590,8 +590,16 @@ class PipelineConfig(ConfigFileModel):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
-        defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()
-        if defer_resolve not in {"1", "true", "yes"}:
+        # Check both the defer_resolve field and the environment variable
+        defer_resolve_env = os.getenv(
+            "MODULAR_PIPELINE_DEFER_RESOLVE", ""
+        ).lower()
+        should_defer = self.defer_resolve or defer_resolve_env in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not should_defer:
             self.resolve()
         return self
 

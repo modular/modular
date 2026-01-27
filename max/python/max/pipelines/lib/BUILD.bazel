@@ -11,6 +11,8 @@ modular_py_library(
         # Optional dep of max.graph, used for loading gguf files
         # TODO: Possible this dep should be pushed elsewhere
         requirement("gguf"),
+        # Diffusers config files are loaded, but the package itself is not imported
+        requirement("diffusers"),
     ],
     deps = [
         "//max/python/max/config",

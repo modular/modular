@@ -194,6 +194,9 @@ class MAXModelConfig(MAXModelConfigBase):
     _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
 
+    _diffusers_config: dict[str, Any] | None = PrivateAttr(default=None)
+    """Diffusers config for diffusion pipelines. This should only be set by internal code."""
+
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
@@ -225,36 +228,40 @@ class MAXModelConfig(MAXModelConfigBase):
             explicitly define this __init__ method to seed the PrivateAttr(s).
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
+            seeded_diffusers_config = data.pop("_diffusers_config", None)
             super().__init__(**data)
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
+            if seeded_diffusers_config is not None:
+                self._diffusers_config = seeded_diffusers_config
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
         """Customize pickling to avoid serializing non-picklable HF config.
 
-        Drops `_huggingface_config` from the serialized state to ensure
-        the object remains pickleable across processes; it will be
-        lazily re-initialized on access via the `huggingface_config` property.
+        Drops `_huggingface_config` and `_diffusers_config` from the serialized state to ensure
+        the object remains pickleable across processes; they will be
+        lazily re-initialized on access via their respective properties.
         """
         # NOTE: In pydantic v2, PrivateAttr values live in `__pydantic_private__`,
         # not necessarily in `__dict__`. Preserve private state across processes,
-        # but explicitly drop `_huggingface_config` to avoid serializing possibly
+        # but explicitly drop `_huggingface_config` and `_diffusers_config` to avoid serializing possibly
         # non-picklable / remote-code-derived transformer objects.
         state = self.__dict__.copy()
         private = getattr(self, "__pydantic_private__", None)
         if private is not None:
             private_state = dict(private)
             private_state["_huggingface_config"] = None
+            private_state["_diffusers_config"] = None
             state["__pydantic_private__"] = private_state
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state while ensuring `_huggingface_config` is reset.
+        """Restore state while ensuring `_huggingface_config` and `_diffusers_config` are reset.
 
-        `_huggingface_config` is restored as None to preserve the lazy
-        loading behavior defined in `huggingface_config`.
+        `_huggingface_config` and `_diffusers_config` are restored as None to preserve the lazy
+        loading behavior defined in their respective properties.
         """
         private_state = dict(state.pop("__pydantic_private__", None) or {})
 
@@ -262,6 +269,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Restore pydantic private attrs (and fill any missing defaults).
         private_state.setdefault("_huggingface_config", None)
+        private_state.setdefault("_diffusers_config", None)
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
@@ -452,6 +460,88 @@ class MAXModelConfig(MAXModelConfigBase):
                 )
             )
         return self._huggingface_config
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def diffusers_config(self) -> dict[str, Any] | None:
+        """Retrieve the diffusers config for diffusion pipelines.
+
+        Note: For multiprocessing, __getstate__ clears _diffusers_config
+        before pickling. Each worker process will reload the config fresh.
+
+        Returns:
+            The diffusers config dict if this is a diffusion pipeline, None otherwise.
+            The dict will have a structure with "_class_name" and "components" keys,
+            where each component includes "class_name" and "config_dict" fields.
+        """
+        if self._diffusers_config is None:
+            model_index = PIPELINE_REGISTRY.get_active_diffusers_config(
+                huggingface_repo=self.huggingface_model_repo
+            )
+            if model_index is not None:
+                # Enhance the model_index with component configs
+                self._diffusers_config = self._load_diffusers_components(
+                    model_index
+                )
+            else:
+                self._diffusers_config = None
+        return self._diffusers_config
+
+    def _load_diffusers_components(
+        self, model_index: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load component configs for a diffusers pipeline.
+
+        Args:
+            model_index: The raw model_index.json dict from HuggingFace.
+
+        Returns:
+            Enhanced config dict with "components" key containing loaded configs.
+        """
+        import json
+
+        from huggingface_hub import hf_hub_download
+
+        # Extract class name and version
+        class_name = model_index.get("_class_name")
+        diffusers_version = model_index.get("_diffusers_version")
+
+        # Build components dict with loaded configs
+        components = {}
+        for component_name, component_info in model_index.items():
+            if component_name.startswith("_"):
+                continue
+
+            if not isinstance(component_info, list) or len(component_info) != 2:
+                continue
+
+            library, class_type = component_info
+
+            # Try to load the component's config file
+            component_config = {}
+            try:
+                config_file_path = hf_hub_download(
+                    repo_id=self.huggingface_model_repo.repo_id,
+                    filename=f"{component_name}/config.json",
+                    revision=self.huggingface_model_repo.revision,
+                )
+                with open(config_file_path) as f:
+                    component_config = json.load(f)
+            except Exception as e:
+                logger.debug(f"Could not load config for {component_name}: {e}")
+
+            components[component_name] = {
+                "library": library,
+                "class_name": class_type,
+                "config_dict": component_config,
+            }
+
+        # Build the final config structure
+        return {
+            "_class_name": class_name,
+            "_diffusers_version": diffusers_version,
+            "components": components,
+        }
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
