@@ -2584,6 +2584,10 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (isTrivialRegisterPassable(callNode)) {
+      // MOCO-3189: Mark deprecated and remove after 26.2.
+      shared.emitWarning(traitOp->getLoc(),
+                         "@register_passable(\"trivial\") is deprecated, "
+                         "conform to TrivialRegisterType instead");
       traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
       return success();
     }
@@ -2620,6 +2624,10 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @register_passable("trivial")
       if (isTrivialRegisterPassable(callNode)) {
+        // MOCO-3189: Mark deprecated and remove after 26.2.
+        shared.emitWarning(structOp->getLoc(),
+                           "@register_passable(\"trivial\") is deprecated, "
+                           "conform to TrivialRegisterType instead");
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         if (ASTDecl *decl = shared.lookupBuiltinTrait(
                 "ImplicitlyCopyable", structDecl.getParentDecl(),
