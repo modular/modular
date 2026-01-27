@@ -30,7 +30,7 @@ from utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
 
-from ...structuring import RegTileType
+from ...structuring import RegTile
 
 
 @always_inline("nodebug")
@@ -64,8 +64,7 @@ fn _check_scheduler_constraints[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ReductionMode(ImplicitlyCopyable):
+struct ReductionMode(TrivialRegisterType):
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior
@@ -88,7 +87,6 @@ struct ReductionMode(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct SplitKTileScheduler[
     problem_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
@@ -98,7 +96,7 @@ struct SplitKTileScheduler[
     cluster_shape: IndexList[2],
     raster_order: RasterOrder,
     reduction_mode: ReductionMode = ReductionMode.Deterministic,
-]:
+](TrivialRegisterType):
     var prob_shape: IndexList[3]  # M x N x K
     var block_id_in_cluster: IndexList[2]
     var blocks_per_problem: UInt32
@@ -392,18 +390,14 @@ struct SplitKTileScheduler[
 
         if cluster_size == 1:
             if dyn_raster_order == RasterOrder.AlongN:
-                launch_grid_shape[1] = Int(H100.sm_count)
+                launch_grid_shape[1] = H100.sm_count
             else:
-                launch_grid_shape[0] = Int(H100.sm_count)
+                launch_grid_shape[0] = H100.sm_count
         else:
             if dyn_raster_order == RasterOrder.AlongN:
-                launch_grid_shape[1] = Int(H100.sm_count) // Int(
-                    dyn_cluster_shape[0]
-                )
+                launch_grid_shape[1] = H100.sm_count // dyn_cluster_shape[0]
             else:
-                launch_grid_shape[0] = Int(H100.sm_count) // Int(
-                    dyn_cluster_shape[1]
-                )
+                launch_grid_shape[0] = H100.sm_count // dyn_cluster_shape[1]
 
         return launch_grid_shape
 
@@ -513,7 +507,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -567,7 +561,7 @@ struct SplitKTileScheduler[
                     reduction_workspace,
                     c_reg_tile,
                     reduction_tile_idx,
-                    UInt32(warp_group_local_idx),
+                    warp_group_local_idx,
                     UInt32(warp_group_thread_idx),
                 )
 
@@ -595,7 +589,7 @@ struct SplitKTileScheduler[
                 reduction_workspace,
                 c_reg_tile,
                 reduction_tile_idx,
-                UInt32(warp_group_local_idx),
+                warp_group_local_idx,
                 UInt32(warp_group_thread_idx),
             )
 
@@ -649,7 +643,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -686,7 +680,7 @@ struct SplitKTileScheduler[
             @parameter
             for i in range(c_frag_size):
                 work_space_tile_reshaped[
-                    Int(mma_id * c_frag_size + i), Int(warp_group_thread_idx)
+                    mma_id * c_frag_size + i, Int(warp_group_thread_idx)
                 ] = c_reg_tile[mma_id, i]
 
     @always_inline
@@ -700,7 +694,7 @@ struct SplitKTileScheduler[
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
@@ -738,7 +732,7 @@ struct SplitKTileScheduler[
             for i in range(c_frag_size):
                 var sum_val = (
                     work_space_tile_reshaped[
-                        Int(mma_id * c_frag_size + i),
+                        mma_id * c_frag_size + i,
                         Int(warp_group_thread_idx),
                     ]
                     + c_reg_tile[mma_id, i]
@@ -759,7 +753,7 @@ struct SplitKTileScheduler[
                         )
                     else:
                         work_space_tile_reshaped[
-                            Int(mma_id * c_frag_size + i),
+                            mma_id * c_frag_size + i,
                             Int(warp_group_thread_idx),
                         ] = sum_val
                 else:

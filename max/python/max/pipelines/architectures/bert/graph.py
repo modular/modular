@@ -29,58 +29,44 @@ import numpy as np
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm
 from max.nn.legacy.sequential import Sequential
-from max.pipelines.lib import PipelineConfig
-from transformers import AutoConfig
 
-
-def _quantization_encoding(
-    pipeline_config: PipelineConfig,
-) -> QuantizationEncoding | None:
-    if supported_encoding := pipeline_config.model.quantization_encoding:
-        return supported_encoding.quantization_encoding
-    return None
+from .model_config import BertModelConfig
 
 
 class BertEmbeddings(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        config = self.config = huggingface_config
+    def __init__(self, config: BertModelConfig) -> None:
+        hf_config = config.huggingface_config
+        dtype = config.dtype
+        device = config.device
         self.word_embeddings = Embedding(
-            config.vocab_size,
-            config.hidden_size,
+            hf_config.vocab_size,
+            hf_config.hidden_size,
             dtype,
             device,
-            _quantization_encoding(pipeline_config),
         )
         self.position_embeddings = Embedding(
-            config.max_position_embeddings,
-            config.hidden_size,
+            hf_config.max_position_embeddings,
+            hf_config.hidden_size,
             dtype,
             device,
         )
         self.token_type_embeddings = Embedding(
-            config.type_vocab_size,
-            config.hidden_size,
+            hf_config.type_vocab_size,
+            hf_config.hidden_size,
             dtype,
             device,
         )
         self.layer_norm = LayerNorm(
-            config.hidden_size,
+            hf_config.hidden_size,
             devices=[device],
             dtype=DType.float32,
-            eps=config.layer_norm_eps,
+            eps=hf_config.layer_norm_eps,
             use_bias=True,
         )
 
@@ -112,43 +98,36 @@ class BertEmbeddings(Module):
 
 
 class BertSelfAttention(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        config = huggingface_config
-        self.num_attention_heads = config.num_attention_heads
+    def __init__(self, config: BertModelConfig) -> None:
+        hf_config = config.huggingface_config
+        dtype = config.dtype
+        device = config.device
+        self.num_attention_heads = hf_config.num_attention_heads
         self.attention_head_size = int(
-            config.hidden_size / config.num_attention_heads
+            hf_config.hidden_size / hf_config.num_attention_heads
         )
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = Linear(
-            config.hidden_size,
+            hf_config.hidden_size,
             self.all_head_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
         self.key = Linear(
-            config.hidden_size,
+            hf_config.hidden_size,
             self.all_head_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
         self.value = Linear(
-            config.hidden_size,
+            hf_config.hidden_size,
             self.all_head_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
 
     def transpose_for_scores(self, x: TensorValue) -> TensorValue:
@@ -160,9 +139,7 @@ class BertSelfAttention(Module):
         return ops.permute(x, [0, 2, 1, 3])
 
     def __call__(
-        self,
-        hidden_states: TensorValue,
-        attention_mask: TensorValue,
+        self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
         query_layer = self.transpose_for_scores(self.query(hidden_states))
         key_layer = self.transpose_for_scores(self.key(hidden_states))
@@ -187,27 +164,22 @@ class BertSelfAttention(Module):
 
 
 class BertSelfOutput(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        config = huggingface_config
+    def __init__(self, config: BertModelConfig) -> None:
+        hf_config = config.huggingface_config
+        dtype = config.dtype
+        device = config.device
         self.dense = Linear(
-            config.hidden_size,
-            config.hidden_size,
+            hf_config.hidden_size,
+            hf_config.hidden_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
         self.layer_norm = LayerNorm(
-            config.hidden_size,
+            hf_config.hidden_size,
             devices=[device],
             dtype=DType.float32,
-            eps=config.layer_norm_eps,
+            eps=hf_config.layer_norm_eps,
             use_bias=True,
         )
 
@@ -220,24 +192,12 @@ class BertSelfOutput(Module):
 
 
 class BertAttention(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        self.self = BertSelfAttention(
-            pipeline_config, huggingface_config, dtype, device
-        )
-        self.output = BertSelfOutput(
-            pipeline_config, huggingface_config, dtype, device
-        )
+    def __init__(self, config: BertModelConfig) -> None:
+        self.self = BertSelfAttention(config)
+        self.output = BertSelfOutput(config)
 
     def __call__(
-        self,
-        hidden_states: TensorValue,
-        attention_mask: TensorValue,
+        self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
         self_output = self.self(hidden_states, attention_mask)
         attention_output = self.output(self_output, hidden_states)
@@ -254,23 +214,18 @@ _ACTIVATIONS = {
 
 
 class BertIntermediate(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        config = huggingface_config
+    def __init__(self, config: BertModelConfig) -> None:
+        hf_config = config.huggingface_config
+        dtype = config.dtype
+        device = config.device
         self.dense = Linear(
-            config.hidden_size,
-            config.intermediate_size,
+            hf_config.hidden_size,
+            hf_config.intermediate_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
-        self.intermediate_act_fn = _ACTIVATIONS[config.hidden_act]
+        self.intermediate_act_fn = _ACTIVATIONS[hf_config.hidden_act]
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
         hidden_states = self.dense(hidden_states)
@@ -279,27 +234,22 @@ class BertIntermediate(Module):
 
 
 class BertOutput(Module):
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
-    ) -> None:
-        config = huggingface_config
+    def __init__(self, config: BertModelConfig) -> None:
+        hf_config = config.huggingface_config
+        dtype = config.dtype
+        device = config.device
         self.dense = Linear(
-            config.intermediate_size,
-            config.hidden_size,
+            hf_config.intermediate_size,
+            hf_config.hidden_size,
             dtype,
             device,
             has_bias=True,
-            quantization_encoding=_quantization_encoding(pipeline_config),
         )
         self.layer_norm = LayerNorm(
-            config.hidden_size,
+            hf_config.hidden_size,
             devices=[device],
             dtype=DType.float32,
-            eps=config.layer_norm_eps,
+            eps=hf_config.layer_norm_eps,
             use_bias=True,
         )
 
@@ -314,20 +264,11 @@ class BertOutput(Module):
 class BertLayer(Module):
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
+        config: BertModelConfig,
     ) -> None:
-        self.attention = BertAttention(
-            pipeline_config, huggingface_config, dtype, device
-        )
-        self.intermediate = BertIntermediate(
-            pipeline_config, huggingface_config, dtype, device
-        )
-        self.output = BertOutput(
-            pipeline_config, huggingface_config, dtype, device
-        )
+        self.attention = BertAttention(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
 
     def __call__(
         self,
@@ -343,18 +284,12 @@ class BertLayer(Module):
 class BertEncoder(Module):
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
+        config: BertModelConfig,
     ) -> None:
-        config = huggingface_config
-        num_hidden_layers = config.num_hidden_layers
+        hf_config = config.huggingface_config
+        num_hidden_layers = hf_config.num_hidden_layers
         self.layer = Sequential(
-            [
-                BertLayer(pipeline_config, huggingface_config, dtype, device)
-                for _ in range(num_hidden_layers)
-            ]
+            [BertLayer(config) for _ in range(num_hidden_layers)]
         )
 
     def __call__(
@@ -368,24 +303,11 @@ class BertEncoder(Module):
 class BertModel(Module):
     def __init__(
         self,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        dtype: DType,
-        device: DeviceRef,
+        config: BertModelConfig,
     ) -> None:
-        self.embeddings = BertEmbeddings(
-            pipeline_config,
-            huggingface_config=huggingface_config,
-            dtype=dtype,
-            device=device,
-        )
-        self.encoder = BertEncoder(
-            pipeline_config,
-            huggingface_config=huggingface_config,
-            dtype=dtype,
-            device=device,
-        )
-        self.pool_outputs = pipeline_config.pool_embeddings
+        self.embeddings = BertEmbeddings(config)
+        self.encoder = BertEncoder(config)
+        self.pool_outputs = config.pool_embeddings
 
     def __call__(
         self,
@@ -431,28 +353,20 @@ class BertModel(Module):
 
 
 def build_graph(
-    pipeline_config: PipelineConfig,
+    config: BertModelConfig,
     state_dict: Mapping[str, DLPackArray | WeightData],
-    huggingface_config: AutoConfig,
-    dtype: DType,
-    input_device: DeviceRef,
 ) -> Graph:
     input_ids_type = TensorType(
-        DType.int64, shape=["batch_size", "seq_len"], device=input_device
+        DType.int64, shape=["batch_size", "seq_len"], device=config.device
     )
     attention_mask_type = TensorType(
-        DType.float32, shape=["batch_size", "seq_len"], device=input_device
+        DType.float32, shape=["batch_size", "seq_len"], device=config.device
     )
 
     with Graph(
         "bert", input_types=[input_ids_type, attention_mask_type]
     ) as graph:
-        model = BertModel(
-            pipeline_config,
-            huggingface_config,
-            dtype,
-            device=input_device,
-        )
+        model = BertModel(config)
         model.load_state_dict(state_dict)
         input_ids = graph.inputs[0].tensor
         attention_mask = graph.inputs[1].tensor

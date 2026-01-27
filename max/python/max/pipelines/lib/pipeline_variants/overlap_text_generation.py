@@ -178,7 +178,7 @@ class OverlapTextGenerationPipeline(
     @traced
     def prepare_batch(
         self,
-        batches: list[dict[RequestID, TextGenerationContextType]],
+        batches: list[list[TextGenerationContextType]],
         num_steps: int,
     ) -> tuple[
         Any,
@@ -191,7 +191,7 @@ class OverlapTextGenerationPipeline(
         ``num_steps`` per context, and builds initial model inputs.
 
         Args:
-            batches: Per-replica mapping of ``RequestID`` to context.
+            batches: Per-replica list of contexts.
             num_steps: Desired number of steps to run.
 
         Returns:
@@ -200,29 +200,20 @@ class OverlapTextGenerationPipeline(
                 - int: The clamped number of steps to run.
                 - list[TextGenerationContextType]: The flattened context batch.
         """
-        for replica_idx, replica_batch in enumerate(batches):
-            for request_id, context in replica_batch.items():
-                if not self._pipeline_model.kv_manager.contains(request_id):
-                    self._pipeline_model.kv_manager.claim(
-                        request_id, replica_idx=replica_idx
-                    )
-
+        for replica_batch in batches:
+            for context in replica_batch:
                 # Update num_steps.
                 num_steps = calculate_num_steps(
                     context, num_steps, self._pipeline_model.max_seq_len
                 )
 
         # Retrieve the KV Cache Inputs.
-        flat_batch = [
-            context for batch in batches for context in batch.values()
-        ]
+        flat_batch = [context for batch in batches for context in batch]
         kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            flat_batch, num_steps
+            batches, num_steps
         )
 
-        replica_batches = [
-            [context for context in batch.values()] for batch in batches
-        ]
+        replica_batches = batches
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,
@@ -330,10 +321,15 @@ class OverlapTextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(flat_batch)
+        self._pipeline_model.kv_manager.step(inputs.batches)
 
         return res
 
     def release(self, request_id: RequestID) -> None:
-        """Mark the context as complete, releasing the cache slot from the KV manager."""
-        self._pipeline_model.kv_manager.release(request_id)
+        """Mark the context as complete, releasing the cache slot from the KV manager.
+
+        Note: KV cache lifecycle is now managed by the scheduler. This method
+        is kept for interface compatibility but is a no-op for regular pipelines.
+        """
+        # KV cache release is handled by the scheduler via batch_constructor
+        pass

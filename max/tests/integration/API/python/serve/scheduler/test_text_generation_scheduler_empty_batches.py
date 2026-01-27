@@ -37,7 +37,7 @@ def create_mock_pipeline() -> Mock:
 def next_token_behavior(
     inputs: TextGenerationInputs[TextContext],
 ) -> dict[RequestID, TextGenerationOutput]:
-    assert len(inputs.batch) == 0
+    assert len(inputs.flat_batch) == 0
     responses: dict[RequestID, TextGenerationOutput] = {}
     return responses
 

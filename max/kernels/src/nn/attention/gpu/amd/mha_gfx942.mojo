@@ -74,7 +74,7 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
         if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var group_idx = lane_id() % UInt(mma_shape[0])
-            return block_idx.y * UInt(Self.group) + UInt(group_idx)
+            return block_idx.y * UInt(Self.group) + group_idx
         else:
             return block_idx.x
 
@@ -244,7 +244,7 @@ __extension Attention:
             ):
                 return
 
-            var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+            var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tensor(
                 self.k.block_paged_ptr[Int(Self.BN)](
@@ -289,7 +289,7 @@ __extension Attention:
                 num_b_rows,
                 self.smem_manager.get_k_ptr[k_tile.dtype](),
             )
-            var v_tile_slice = v_tile.slice[:, : Int(Self.output_depth)]()
+            var v_tile_slice = v_tile.slice[:, : Self.output_depth]()
             var v_buffer = VBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_pv(),
                 swizzle=None,

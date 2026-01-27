@@ -32,6 +32,7 @@ _EXTRA_CONSTRAINTS = {
     "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
     "test_cluster_dims_attribute.mojo": ["//:h100_gpu"],
     "test_cluster_sync.mojo": ["//:h100_gpu"],
+    "test_sleep.mojo": ["//:nvidia_gpu"],  # Tests NVIDIA-specific sleep loop fix
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],

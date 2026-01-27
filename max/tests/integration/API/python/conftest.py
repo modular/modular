@@ -113,8 +113,8 @@ def mo_model_path(modular_path: Path) -> Path:
         / "tests"
         / "integration"
         / "API"
-        / "c"
-        / "mo-model.api"
+        / "Inputs"
+        / "mo-model.mlir"
     )
 
 

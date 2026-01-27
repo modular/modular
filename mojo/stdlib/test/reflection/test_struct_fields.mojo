@@ -62,8 +62,7 @@ struct MixedVisibility:
 
 
 # Dedicated struct with explicit MLIR-typed field for testing is_struct_type.
-@register_passable("trivial")
-struct StructWithMLIRField:
+struct StructWithMLIRField(TrivialRegisterType):
     """A struct with an explicit MLIR-typed field for testing purposes."""
 
     var mojo_field: Int
@@ -76,8 +75,7 @@ struct WrapperWithValue[T: AnyType, //, value: T]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleParam:
+struct SimpleParam(TrivialRegisterType):
     var b: Bool
 
 
@@ -158,8 +156,7 @@ struct Foo[
 
 # Test struct for offset calculations - designed with predictable layout
 @fieldwise_init
-@register_passable("trivial")
-struct OffsetTestStruct:
+struct OffsetTestStruct(TrivialRegisterType):
     """Struct with predictable field layout for offset testing."""
 
     var a: Int8  # 1 byte at offset 0
@@ -169,23 +166,20 @@ struct OffsetTestStruct:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleOffsetStruct:
+struct SimpleOffsetStruct(TrivialRegisterType):
     """Simple struct for basic offset tests."""
 
     var x: Int64  # 8 bytes at offset 0
     var y: Int64  # 8 bytes at offset 8
 
 
-@register_passable("trivial")
-struct SingleFieldStruct:
+struct SingleFieldStruct(TrivialRegisterType):
     """Struct with a single field."""
 
     var value: Int32
 
 
-@register_passable("trivial")
-struct AllSameTypeStruct:
+struct AllSameTypeStruct(TrivialRegisterType):
     """Struct with all fields of the same type."""
 
     var a: Int64

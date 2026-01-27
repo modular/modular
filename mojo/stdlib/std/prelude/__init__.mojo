@@ -139,6 +139,7 @@ from builtin.type_aliases import (
     unsafe_origin_mutcast,
 )
 from builtin.value import (
+    TrivialRegisterType,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,

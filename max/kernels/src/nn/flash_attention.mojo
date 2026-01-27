@@ -542,7 +542,7 @@ struct _FlashAttentionConfig[
         @parameter
         if depth_static_dim != UNKNOWN_VALUE:
             # Extract the static depth dimension with a guard against zero.
-            var depth_dim = max(Int(depth_static_dim), 1)
+            var depth_dim = max(depth_static_dim, 1)
 
             # Compute the number of columns for the output block array. If the
             # count is too large, then use the default size.

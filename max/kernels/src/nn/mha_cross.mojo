@@ -178,7 +178,7 @@ fn _bmm1_bs[
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
-    output_offset = Int((q_seq_start * num_heads + Int(head)) * depth)
+    output_offset = (q_seq_start * num_heads + Int(head)) * depth
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
@@ -193,7 +193,7 @@ fn _bmm1_bs[
     var p = p_ptr + p_offset
 
     var kv_head = Int(head // UInt(group))
-    var output = output_ptr + Int(output_offset)
+    var output = output_ptr + output_offset
 
     var accum = Float32(0.0)
 
@@ -316,8 +316,8 @@ fn mha_cross_gpu_naive[
         q_max_seq_len,
         kv_max_seq_len,
         max_cache_size,
-        Int(num_heads),
-        Int(depth),
+        num_heads,
+        depth,
         Int(group),
         mask_functor,
         grid_dim=(
@@ -358,8 +358,8 @@ fn mha_cross_gpu_naive[
         q_max_seq_len,
         kv_max_seq_len,
         max_cache_size,
-        Int(num_heads),
-        Int(depth),
+        num_heads,
+        depth,
         Int(group),
         grid_dim=(
             ceildiv(depth, 32),

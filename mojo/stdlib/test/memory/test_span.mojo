@@ -14,6 +14,7 @@
 from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true, assert_false
 from math import iota
+from memory import ImmutSpan, MutSpan
 
 
 def test_span_list_int():
@@ -447,6 +448,30 @@ def test_iter_empty():
     var it = iter(span)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
+
+
+def test_mut_span_alias():
+    var data = [1, 2, 3, 4, 5]
+
+    fn fill_span(span: MutSpan[Int, _]):
+        span.fill(42)
+
+    fill_span(data)
+    for val in data:
+        assert_equal(val, 42)
+
+
+def test_immut_span_alias():
+    var data = [1, 2, 3, 4, 5]
+
+    fn sum_span(span: ImmutSpan[Int, _]) -> Int:
+        var total = 0
+        for i in range(len(span)):
+            total += span[i]
+        return total
+
+    # ImmutSpan works with both mutable and immutable data
+    assert_equal(sum_span(data), 15)
 
 
 def main():

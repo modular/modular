@@ -27,11 +27,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
@@ -42,6 +38,7 @@ from max.nn.legacy.kv_cache import (
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
     KVCacheMixin,
@@ -191,7 +188,9 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Gemma3_MultiModalModel(
+    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+):
     """Gemma 3 multimodal pipeline model for text generation.
 
     This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
@@ -255,13 +254,11 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
-        # Initialize empty signal buffers
-        self.signal_buffers = [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
+        # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
+        # to avoid GPU memory allocation during compile-only mode (cross-compilation).
+        # Force initialization here to ensure buffers are ready before model execution,
+        # preventing potential race conditions in multi-GPU scenarios.
+        _ = self.signal_buffers
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
@@ -732,7 +729,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
+    ) -> PagedKVCacheManager:
         return load_kv_manager(
             params=kv_params,
             max_batch_size=max_batch_size,

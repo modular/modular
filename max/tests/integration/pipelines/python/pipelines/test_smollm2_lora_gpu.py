@@ -47,14 +47,16 @@ def generate_tokens_from_contexts(
     kv_managers = pipeline.kv_managers
     for kv_manager in kv_managers:
         for context in active_contexts.values():
-            kv_manager.claim(context.request_id)
+            kv_manager.claim(context.request_id, replica_idx=0)
 
     while active_contexts:
         for kv_manager in kv_managers:
             for context in active_contexts.values():
-                kv_manager.alloc(context, num_steps=1)
+                kv_manager.alloc(context, replica_idx=0, num_steps=1)
         response = pipeline.execute(
-            TextGenerationInputs(batches=[active_contexts], num_steps=1)
+            TextGenerationInputs(
+                batches=[list(active_contexts.values())], num_steps=1
+            )
         )
         for req_id, resp in response.items():
             all_tokens[req_id].extend(resp.tokens)

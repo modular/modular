@@ -40,13 +40,12 @@ from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -65,7 +64,7 @@ struct MatmulConfig[
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
-    var num_output_stages: UInt
+    var num_output_stages: Int
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
@@ -156,14 +155,14 @@ struct MatmulConfig[
         var c_smem_bytes = (
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
-            * Int(self.num_output_stages)
+            * self.num_output_stages
             * size_of[Self.c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16
@@ -469,7 +468,6 @@ fn build_configs[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct BlockScaledMatmulConfig[
     a_type: DType,
     b_type: DType,
@@ -477,7 +475,7 @@ struct BlockScaledMatmulConfig[
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     # Mandatory parameters
@@ -498,7 +496,7 @@ struct BlockScaledMatmulConfig[
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
-    var num_output_stages: UInt
+    var num_output_stages: Int
     var output_tile_shape: IndexList[2]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
@@ -608,14 +606,14 @@ struct BlockScaledMatmulConfig[
         var c_smem_bytes = (
             self.output_tile_shape[0]
             * self.output_tile_shape[1]
-            * Int(self.num_output_stages)
+            * self.num_output_stages
             * size_of[Self.c_type]()
         )
         # Add tmem addr (4) and tmem dealloc mbar(8)
         var output_smem_bytes = c_smem_bytes + 12
 
         # response 128B, clc mbar 16B, clc-load pipeline mbar 16B
-        var clc_smem_bytes = 160 * Int(self.num_clc_pipeline_stages)
+        var clc_smem_bytes = 160 * self.num_clc_pipeline_stages
 
         # Usage by mma-output-pipeline
         var mma_output_smem_bytes = self.num_accum_pipeline_stages * 16

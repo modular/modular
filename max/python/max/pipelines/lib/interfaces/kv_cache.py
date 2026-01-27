@@ -22,7 +22,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import Pipeline
 from max.kv_cache import (
-    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
@@ -44,7 +43,7 @@ class KVCacheMixin(Protocol):
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:

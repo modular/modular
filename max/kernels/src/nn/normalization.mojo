@@ -223,7 +223,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if thread_idx.x < UInt(block_dim.x // UInt(WARP_SIZE)):
+        if thread_idx.x < block_dim.x // UInt(WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -1812,7 +1812,7 @@ fn rms_norm_fused_residual_add_gpu[
             )
 
     else:
-        var shared_mem_size = Int(cols * size_of[dtype]())
+        var shared_mem_size = cols * size_of[dtype]()
 
         comptime kernel = rms_norm_fused_residual_add_gpu_block[
             mut1 = gamma1.mut,

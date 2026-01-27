@@ -134,7 +134,7 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](Int(warp_col), 0)
+        return IndexList[2](warp_col, 0)
 
 
 @fieldwise_init
@@ -152,7 +152,7 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](0, Int(warp_col))
+        return IndexList[2](0, warp_col)
 
 
 struct KVBufferImpl[
@@ -828,7 +828,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(Int32(bounds))),
+                Int(readfirstlane(bounds)),
             )
             gmem_warp_iter._incr()
 

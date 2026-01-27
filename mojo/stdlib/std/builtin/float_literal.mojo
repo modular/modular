@@ -21,9 +21,8 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 @nonmaterializable(Float64)
-@register_passable("trivial")
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
-    Boolable, Defaultable, Floatable, Intable, Stringable
+    Boolable, Defaultable, Floatable, Intable, Stringable, TrivialRegisterType
 ):
     """Mojo floating point literal type.
 

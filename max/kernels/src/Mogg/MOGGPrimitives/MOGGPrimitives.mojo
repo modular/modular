@@ -54,8 +54,7 @@ fn bytecount_with_dtype[dtype: DType](shape: IndexList) -> Int:
 # just create a C++ function for it. For the time being, this is safe because of
 # the `constrained` and `static_assert` we added to ensure the type has the
 # right byte size.
-@register_passable("trivial")
-struct StateContext:
+struct StateContext(TrivialRegisterType):
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
 
@@ -84,10 +83,7 @@ struct StateContext:
 fn pack_string_res(
     str_ptr: UnsafePointer[Byte, ImmutAnyOrigin], str_len: Int
 ) raises -> String:
-    var span = Span[Byte, ImmutAnyOrigin](
-        ptr=UnsafePointer[Byte, origin=ImmutAnyOrigin](str_ptr),
-        length=Int(str_len),
-    )
+    var span = Span(ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
     return String(StringSlice(from_utf8=span))
 
@@ -415,7 +411,7 @@ fn unpack_tensor_spec[
 
     @parameter
     for i in range(spec_rank):
-        shape[i] = Int(storage[i])
+        shape[i] = storage[i]
 
     return shape
 
@@ -1332,8 +1328,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
-@register_passable("trivial")
-struct MyIntReg(ImplicitlyCopyable):
+struct MyIntReg(TrivialRegisterType):
     var val: Int
 
     fn __init__(out self, val: Int):

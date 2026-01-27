@@ -18,8 +18,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-# The Device class is not used in this file, but is used by others that import
-# this file. Ruff will try to remove it, so ignore that Ruff check on this line.
 from max._core.driver import (  # noqa: F401
     CPU,
     Accelerator,

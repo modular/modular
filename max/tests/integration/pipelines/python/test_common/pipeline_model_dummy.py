@@ -15,12 +15,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+import numpy as np
+import numpy.typing as npt
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask, TextGenerationContext
+from max.interfaces import (
+    PipelineTask,
+    TextGenerationContext,
+    TextGenerationRequest,
+    TokenBuffer,
+)
 from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
 from max.pipelines import (
     KVCacheConfig,
@@ -96,7 +103,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         cache if the ID hasn't been seen before, and return the inputs and
         caches as a list of tensors."""
         return DummyModelInputs(
-            input1=Buffer.zeros((0, 0), DType.float32),
+            input1=Buffer.zeros((1, 5), DType.float32),
             input2=Buffer.zeros((0, 0), DType.float32),
             input3=Buffer.zeros((0, 0), DType.float32),
             input4=Buffer.zeros((0, 0), DType.float32),
@@ -220,6 +227,69 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
             ) from e
 
 
+class DummyTextTokenizer(TextTokenizer):
+    def __init__(
+        self, model_path: str, pipeline_config: PipelineConfig, *args, **kwargs
+    ) -> None:
+        self.max_length = pipeline_config.max_length or 100
+        self.delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
+
+    @property
+    def eos(self) -> int:
+        """The end of sequence token for this tokenizer."""
+        return -1
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        return False
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        prompt: str | Sequence[int]
+        if request.prompt is None:
+            # Definitely not the correct way to do this, but it's for testing
+            # purposes.
+            prompt = str(request.messages)
+        else:
+            prompt = request.prompt
+        token_ids = await self.encode(prompt)
+
+        return TextContext(
+            request_id=request.request_id,
+            max_length=self.max_length,
+            tokens=TokenBuffer(token_ids.astype(np.int64, copy=False)),
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
+            sampling_params=request.sampling_params,
+        )
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        return self.delegate.encode(prompt, add_special_tokens)
+
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
+        return self.delegate.decode(encoded, **kwargs)
+
+    class Delegate:
+        def __init__(self, max_length: int) -> None:
+            self.max_length = max_length
+
+        def encode(
+            self, prompt: str | Sequence[int], add_special_tokens: bool = True
+        ) -> npt.NDArray[np.integer[Any]]:
+            if isinstance(prompt, str):
+                return np.array([ord(c) for c in prompt[: self.max_length]])
+            else:
+                return np.array(prompt[: self.max_length])
+
+        def decode(
+            self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+        ) -> str:
+            return "".join([chr(i) for i in encoded])
+
+
 DUMMY_LLAMA_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
@@ -246,7 +316,7 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
         SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     pipeline_model=DummyLlamaPipelineModel,
-    tokenizer=TextTokenizer,
+    tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
@@ -268,7 +338,7 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=DummyLlamaPipelineModel,
-    tokenizer=TextTokenizer,
+    tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
@@ -297,7 +367,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
     },
     pipeline_model=DummyPipelineModel,
-    tokenizer=TextTokenizer,
+    tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     rope_type=RopeType.normal,

@@ -82,12 +82,12 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.request import (
-    REQUEST_DRIVER_CLASSES,
     ProgressBarRequestDriver,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
+    get_request_driver_class,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_server_metrics,
@@ -739,46 +739,6 @@ async def run_multiturn_benchmark(
     return [output for sublist in session_outputs for output in sublist]
 
 
-def resolve_backend_for_chat(backend: Backend, chat: bool) -> Backend:
-    """Resolve the appropriate backend enum for chat or non-chat requests.
-
-    If chat is True and the backend doesn't already indicate chat usage,
-    attempts to find a chat variant of the backend (e.g., "vllm" -> "vllm-chat").
-    Otherwise, returns the original backend.
-
-    Args:
-        backend: The base backend enum.
-        chat: Whether chat completions endpoint is being used.
-
-    Returns:
-        The resolved Backend enum to use for the request driver.
-
-    Raises:
-        ValueError: If the resolved backend is not supported.
-    """
-    # Convert Backend enum to string value for manipulation
-    backend_str = backend.value
-
-    # Handle backend construction: add "-chat" only if not already present
-    # and if the resulting backend exists in REQUEST_DRIVER_CLASSES
-    if chat and not backend_str.endswith("-chat"):
-        potential_chat_backend_str = backend_str + "-chat"
-        try:
-            potential_chat_backend = Backend(potential_chat_backend_str)
-            if potential_chat_backend in REQUEST_DRIVER_CLASSES:
-                return potential_chat_backend
-        except ValueError:
-            pass
-
-    if backend not in REQUEST_DRIVER_CLASSES:
-        raise ValueError(
-            f"No associated request driver for backend '{backend.value}'. "
-            f"Supported backends: {', '.join(b.value for b in Backend if b in REQUEST_DRIVER_CLASSES)}"
-        )
-
-    return backend
-
-
 def create_benchmark_pbar(
     disable_tqdm: bool,
     num_chat_sessions: int | None,
@@ -925,7 +885,9 @@ async def benchmark(
             api_url=base_url,
         )
 
-    request_driver_class: type[RequestDriver] = REQUEST_DRIVER_CLASSES[backend]
+    request_driver_class: type[RequestDriver] = get_request_driver_class(
+        api_url
+    )
     # Create a request driver instance without pbar for test prompt
     # (pbar will be set later for the actual benchmark runs)
     test_request_driver: RequestDriver = request_driver_class()
@@ -1690,9 +1652,6 @@ def main(args: argparse.Namespace) -> None:
             f"Supported backends: {', '.join(b.value for b in Backend)}"
         ) from e
 
-    # Resolve the appropriate backend for this request type
-    resolved_backend = resolve_backend_for_chat(backend=backend, chat=chat)
-
     # Handle trace flag
     trace_path = None
     if args.trace:
@@ -1705,7 +1664,7 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Starting benchmark run")
     benchmark_result: dict[str, Any] = asyncio.run(
         benchmark(
-            backend=resolved_backend,
+            backend=backend,
             api_url=api_url,
             base_url=base_url,
             model_id=model_id,

@@ -18,8 +18,7 @@ from utils import IndexList, StaticTuple
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct DataType:
+struct DataType(TrivialRegisterType):
     """
     Enum representing acceptable data types for the TensorMap descriptor.
     """
@@ -67,8 +66,7 @@ struct DataType:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct InterleaveMode:
+struct InterleaveMode(TrivialRegisterType):
     """Enum representing interleave modes for tensor memory access.
 
     Interleaving controls how data is distributed across memory channels
@@ -83,12 +81,12 @@ struct InterleaveMode:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
 struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Enum representing memory swizzling patterns for tensor access optimization.
@@ -180,8 +178,7 @@ struct SwizzleMode(
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct L2Promotion:
+struct L2Promotion(TrivialRegisterType):
     """Enum representing L2 cache promotion policies for tensor data.
 
     L2 promotion controls how tensor data is cached in the L2 cache
@@ -197,8 +194,7 @@ struct L2Promotion:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct OOBFill:
+struct OOBFill(TrivialRegisterType):
     """Enum representing out-of-bounds fill behavior for tensor access.
 
     Controls what values are returned when accessing tensor elements
@@ -307,12 +303,14 @@ fn create_tensormap[
 
     @parameter
     for i in range(rank):
-        global_dim_arg[i] = global_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
-        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
+        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_strides_arg[i] = Int64(
+            global_strides[rank - i - 1] * size_of[dtype]()
+        )
+        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
 
     debug_assert(
-        global_strides_arg[0] == size_of[dtype](),
+        global_strides_arg[0] == Int64(size_of[dtype]()),
         "TMA GMEM should be row-major, global stride",
         " at dim 0 should be size_of[dtype](): ",
         size_of[dtype](),
@@ -347,7 +345,7 @@ fn create_tensormap[
         ](
             tensormap_ptr,
             DataType.from_dtype[dtype]()._value,
-            rank,
+            Int32(rank),
             global_buf._handle,
             global_dim_arg.unsafe_ptr(),
             # global_strides_arg[0] is implicitly size_of[dtype]()

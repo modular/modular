@@ -37,7 +37,7 @@ from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from linalg.structuring import SMemTileArrayType, SMemTileType
+from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv
 from utils.static_tuple import StaticTuple
@@ -82,8 +82,7 @@ fn tma_wait_pipelined[
 # =============================================================================
 
 
-@register_passable("trivial")
-struct AccumTile[dtype: DType, size: Int]:
+struct AccumTile[dtype: DType, size: Int](TrivialRegisterType):
     """Upper + lower TMEM fragments (16 rows each) for SM100 output."""
 
     var upper: SIMD[Self.dtype, Self.size]
@@ -104,8 +103,7 @@ struct AccumTile[dtype: DType, size: Int]:
 # =============================================================================
 
 
-@register_passable("trivial")
-struct AccumBarrier[cta_group: Int]:
+struct AccumBarrier[cta_group: Int](TrivialRegisterType):
     """Pipeline barrier helper for single-CTA vs 2-CTA arrival patterns."""
 
     @staticmethod
@@ -139,7 +137,7 @@ fn store_fragment_to_smem[
     stageN: Int,
     transpose_c: Bool = False,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](vec: SIMD, dst: SMemTileType, warp_offset: UInt32 = 0):
+](vec: SIMD, dst: SMemTile, warp_offset: UInt32 = 0):
     """Store fragment to SMEM via st.matrix instruction."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
@@ -170,7 +168,7 @@ fn store_fragment_to_smem[
         comptime trans_layout = Layout(
             IntTuple(8, 2, 2), IntTuple(stride0, 8 * stride1, 8 * stride0)
         )
-        stsm_lane_offset = UInt32(RLayout32Bits[trans_layout]()(Int(lane)))
+        stsm_lane_offset = RLayout32Bits[trans_layout]()(Int(lane))
     else:
         stsm_lane_offset = (
             UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
@@ -212,14 +210,13 @@ fn store_fragment_to_smem[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct EpilogueConfig[
     MMA_M: Int,
     MMA_N: Int,
     stageN: Int,
     cta_group: Int,
     transpose_c: Bool,
-]:
+](TrivialRegisterType):
     """Computed epilogue parameters based on MMA and CTA configuration."""
 
     # Lower fragment needed except for cta_group=1, MMA_M=64
@@ -241,7 +238,6 @@ struct EpilogueConfig[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TMAStoreCoords[
     BM: Int,
     BN: Int,
@@ -252,7 +248,7 @@ struct TMAStoreCoords[
     c_smem_shape0: Int,
     stage: Int,
     batched: Bool = False,
-]:
+](TrivialRegisterType):
     """TMA store coordinates and warp election for SM100 epilogue.
 
     When batched=True, includes a batch coordinate for 3D TMA stores.
@@ -341,7 +337,6 @@ struct TMAStoreCoords[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TMAStoreExecutor[
     c_type: DType,
     c_smem_layout: Layout,
@@ -356,7 +351,7 @@ struct TMAStoreExecutor[
     transpose_c: Bool,
     is_lower_frag_required: Bool,
     batched: Bool = False,
-]:
+](TrivialRegisterType):
     """Execute TMA store from SMEM to GMEM with proper tiling.
 
     Handles 3 paths: transpose+cta_group2+MMA128, transpose+other, non-transpose.
@@ -378,9 +373,7 @@ struct TMAStoreExecutor[
         c_layout: Layout,
         c_desc_layout: Layout,
     ](
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
             Self.BM,
             Self.BN,
@@ -418,9 +411,7 @@ struct TMAStoreExecutor[
         c_layout: Layout,
         c_desc_layout: Layout,
     ](
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
             Self.BM,
             Self.BN,
@@ -506,9 +497,7 @@ struct TMAStoreExecutor[
         c_layout: Layout,
         c_desc_layout: Layout,
     ](
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
             Self.BM,
             Self.BN,
@@ -551,8 +540,7 @@ struct TMAStoreExecutor[
 # =============================================================================
 
 
-@register_passable("trivial")
-struct FragmentCoords[stageN: Int, repeats: Int]:
+struct FragmentCoords[stageN: Int, repeats: Int](TrivialRegisterType):
     """Fragment element coordinates for tcgen05 16x256b matrix layout."""
 
     comptime load_width = 2
@@ -582,7 +570,6 @@ struct FragmentCoords[stageN: Int, repeats: Int]:
 # =============================================================================
 
 
-@register_passable("trivial")
 struct EpilogueApplier[
     MMA_M: Int,
     stageN: Int,
@@ -590,7 +577,7 @@ struct EpilogueApplier[
     repeats: Int,
     cta_group: Int,
     transpose_c: Bool,
-]:
+](TrivialRegisterType):
     """Apply element-wise epilogue lambda to register fragments."""
 
     comptime Coords = FragmentCoords[Self.stageN, Self.repeats]
@@ -732,7 +719,6 @@ struct EpilogueApplier[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TMEMToSMemWriter[
     c_type: DType,
     accum_type: DType,
@@ -746,7 +732,7 @@ struct TMEMToSMemWriter[
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_c: Bool = False,
-]:
+](TrivialRegisterType):
     """Write TMEM accumulators to SMEM via st.matrix (SM100-specific)."""
 
     comptime Config = EpilogueConfig[
@@ -773,9 +759,7 @@ struct TMEMToSMemWriter[
         self,
         upper_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_frag: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
         """Write pre-loaded fragments to SMEM (use after register-based epilogue).
         """
@@ -798,9 +782,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
         """Transposed output: reshape to swizzle-friendly layout."""
 
@@ -822,7 +804,7 @@ struct TMEMToSMemWriter[
                 ),
             )
 
-            var new_smem = SMemTileType[
+            var new_smem = SMemTile[
                 Self.c_type,
                 smem_logical_layout,
                 alignment = c_smem_tile.alignment,
@@ -860,7 +842,7 @@ struct TMEMToSMemWriter[
                 Self.stageN, 4, tile_width
             )
 
-            var new_smem = SMemTileType[
+            var new_smem = SMemTile[
                 Self.c_type,
                 smem_logical_layout,
                 alignment = c_smem_tile.alignment,
@@ -884,9 +866,7 @@ struct TMEMToSMemWriter[
         self,
         upper_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
         lower_casted: SIMD[Self.c_type, Self.Config.fragment_size * repeat],
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
         """Non-transposed output: simple row-major tiling."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
@@ -924,7 +904,6 @@ from layout.layout import coalesce, flatten
 # =============================================================================
 
 
-@register_passable("trivial")
 struct SMemEpilogueWriter[
     # Infer-only: deduced from c_tiles argument type
     c_type: DType,
@@ -947,7 +926,7 @@ struct SMemEpilogueWriter[
     stage: Int,
     rep_frag_size: Int,
     compute_lambda_fn: elementwise_compute_lambda_type,
-]:
+](TrivialRegisterType):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
     comptime N_dim = 0 if Self.transpose_c else 1
@@ -960,7 +939,7 @@ struct SMemEpilogueWriter[
     comptime barrier_threads = Self.num_output_warps * WARP_SIZE
     comptime OutputSyncBarrier = WarpGroupBarrier[Self.barrier_threads]
     comptime Tile = AccumTile[Self.epilogue_dtype, Self.rep_frag_size]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
 
@@ -975,7 +954,7 @@ struct SMemEpilogueWriter[
     fn __init__(
         out self,
         warp_id: UInt32,
-        c_tiles: SMemTileArrayType[
+        c_tiles: SMemTileArray[
             Self.c_type,
             Self.c_smem_layout,
             Self.num_output_stages,
@@ -1009,9 +988,7 @@ struct SMemEpilogueWriter[
         self,
         upper_frag: SIMD[Self.epilogue_dtype, Self.rep_frag_size],
         lower_frag: SIMD[Self.epilogue_dtype, Self.rep_frag_size],
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
         """Transpose path: reshape tiles and apply epilogue."""
 
@@ -1033,7 +1010,7 @@ struct SMemEpilogueWriter[
                 ),
             )
 
-            var new_smem = SMemTileType[
+            var new_smem = SMemTile[
                 Self.c_type, smem_logical_layout, alignment=128
             ](c_smem_tile.ptr)
             warp_j, warp_i = divmod(Int(self.warp_id), 2)
@@ -1090,7 +1067,7 @@ struct SMemEpilogueWriter[
                 Self.stageN, 4, tile_width
             )
 
-            var new_smem = SMemTileType[
+            var new_smem = SMemTile[
                 Self.c_type, smem_logical_layout, alignment=128
             ](c_smem_tile.ptr)
             var _c_smem_warp_tile = new_smem.tile[Self.stageN, 1, tile_width](
@@ -1102,9 +1079,9 @@ struct SMemEpilogueWriter[
 
             var c_smem_warp_tile_upper = c_smem_warp_tile
             warp_offset = Int(self.warp_id) * tile_width
-            store_fragment_to_smem[
-                Self.swizzle, Int(Self.stageN), Self.transpose_c
-            ](upper_frag, c_smem_warp_tile_upper, warp_offset)
+            store_fragment_to_smem[Self.swizzle, Self.stageN, Self.transpose_c](
+                upper_frag, c_smem_warp_tile_upper, warp_offset
+            )
 
             Self.OutputSyncBarrier.sync()
 
@@ -1135,9 +1112,7 @@ struct SMemEpilogueWriter[
         self,
         upper_frag: SIMD[Self.epilogue_dtype, Self.rep_frag_size],
         lower_frag: SIMD[Self.epilogue_dtype, Self.rep_frag_size],
-        c_smem_tile: SMemTileType[
-            Self.c_type, Self.c_smem_layout, alignment=128
-        ],
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
     ):
         """Non-transpose path: tile per warp and apply epilogue."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
@@ -1213,7 +1188,7 @@ fn shared_memory_epilogue_transpose[
     N: UInt32,
     c_col: UInt,
     c_row: UInt,
-    c_smem: SMemTileType[c_type, c_smem_layout, alignment=128],
+    c_smem: SMemTile[c_type, c_smem_layout, alignment=128],
     warp_i: UInt,
     warp_j: UInt,
 ):
@@ -1264,9 +1239,9 @@ fn shared_memory_epilogue_transpose[
                     Int(0),
                     Int(crd[3].get_int()),
                     Int(warp_j),
-                    Int(iter_j),
+                    iter_j,
                     Int(warp_i),
-                    Int(iter_i),
+                    iter_i,
                 )
                 var offset = simd_size * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
@@ -1348,9 +1323,9 @@ fn shared_memory_epilogue_transpose[
                         Int(crd[0].get_int()),
                         Int(0),
                         Int(crd[2].get_int()),
-                        Int(iter_j),
+                        iter_j,
                         Int(warp_i),
-                        Int(iter_i),
+                        iter_i,
                     )
                     var offset = simd_size * RLayout32Bits[result]()(coord)
                     var logical_crd = idx2crd(
@@ -1401,8 +1376,8 @@ fn shared_memory_epilogue[
     N: UInt32,
     c_col: UInt,
     c_row: UInt,
-    c_smem_warp_tile_upper: SMemTileType[c_type, c_smem_upper_layout, ...],
-    c_smem_warp_tile_lower: SMemTileType[c_type, c_smem_lower_layout, ...],
+    c_smem_warp_tile_upper: SMemTile[c_type, c_smem_upper_layout, ...],
+    c_smem_warp_tile_lower: SMemTile[c_type, c_smem_lower_layout, ...],
 ):
     """Apply element-wise epilogue to non-transposed SMEM tile.
 

@@ -391,8 +391,7 @@ struct OwnedDLHandle(Movable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _DLHandle(Boolable, Copyable):
+struct _DLHandle(Boolable, Copyable, TrivialRegisterType):
     """Represents a non-owning reference to a dynamically linked library.
 
     `_DLHandle` is a lightweight, trivially copyable reference to a dynamic
@@ -452,7 +451,7 @@ struct _DLHandle(Boolable, Copyable):
     fn _dlopen(
         file: UnsafePointer[mut=False, c_char], flags: Int
     ) raises -> _DLHandle:
-        var handle = dlopen(file, flags)
+        var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
             raise Error(

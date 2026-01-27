@@ -1,7 +1,8 @@
 <div align="center">
     <img src="https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png">
 
-  [About Modular] | [Get started] | [API docs] | [Contributing] | [Changelog]
+[About Modular] | [Get started] | [API docs] | [Contributing]
+  | [Changelog] | [MAX Model Development]
 </div>
 
 [About Modular]: https://www.modular.com/
@@ -9,10 +10,9 @@
 [API docs]: https://docs.modular.com/max/api
 [Contributing]: ./CONTRIBUTING.md
 [Changelog]: https://docs.modular.com/max/changelog
+[MAX Model Development]: ./max/development.md
 
 ---
-[Join us next Thursday, December 11th][dec-meetup] at Modular's Los Altos
-offices for a [Modular Meetup][meetup-group] going inside the MAX platform!
 
 # Modular Platform
 
@@ -104,6 +104,13 @@ build](https://docs.modular.com/max/packages).
 
 ## News & Announcements
 
+**[2025/12]** [The Path to Mojo 1.0][mojo-1.0] was officially announced
+with a planned release in H1 2026 and tons of details on what to expect.
+
+**[2025/12]** We hosted our [Inside the MAX Framework Meetup][dec-meetup]
+reintroducing the MAX framework and taking the community through upcoming
+changes.
+
 **[2025/11]** [Modular Platform 25.7][25.7] provides a fully open MAX Python
 API, expanded hardware support for NVIDIA Grace superchips, improved Mojo GPU
 programming experience, and much more.
@@ -113,8 +120,8 @@ programming experience, and much more.
 community input into how the Modular platform can reduce fragmentation and
 provide a unified AI stack.
 
-**[2025/09]** [Modular raises $250M][funding] to scale AI's unified compute
-layer, bringing total funding to $380M at a $1.6B valuation.
+**[2025/09]** [Modular raises \$250M][250-funding] to scale AI's unified compute
+layer, bringing Modular's total raise to $380M at a $1.6B valuation.
 
 **[2025/09]** [Modular Platform 25.6][25.6] delivers a unified compute layer
 spanning from laptops to datacenter GPUs, with industry-leading throughput on
@@ -138,7 +145,10 @@ Mojo and MAX.
 [GPU Kernel Hackathon][hackathon], featuring talks from Modular and
 Anthropic engineers.
 
+[mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
+[dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv
 [25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
+[250-funding]: https://www.modular.com/blog/modular-raises-250m-to-scale-ais-unified-compute-layer
 [pytorch-llvm]: https://www.modular.com/blog/pytorch-and-llvm-in-2025-keeping-up-with-ai-innovation
 [25.6]: https://www.modular.com/blog/modular-25-6-unifying-the-latest-gpus-from-nvidia-amd-and-apple
 [25.5]: https://www.modular.com/blog/modular-platform-25-5
@@ -146,8 +156,6 @@ Anthropic engineers.
 [amd]: https://www.modular.com/blog/modular-x-amd-unleashing-ai-performance-on-amd-gpus
 [hack-weekend]: https://www.meetup.com/modular-meetup-group/events/308311461/
 [hackathon]: https://www.modular.com/blog/modverse-48
-[dec-meetup]: https://www.meetup.com/modular-meetup-group/events/311998048/
-[meetup-group]: https://www.meetup.com/modular-meetup-group/
 
 ---
 
@@ -155,18 +163,19 @@ Anthropic engineers.
 
 We host regular meetups, hackathons, and community calls. Join us!
 
-| Channel               | Link                                |
-|-----------------------|-------------------------------------|
-| 💬 Discord            | [discord.gg/modular][discord]       |
-| 💬 Forum              | [forum.modular.com][forum]          |
+| Channel               | Link                                            |
+|-----------------------|-------------------------------------------------|
+| 💬 Discord            | [discord.gg/modular][discord]                   |
+| 💬 Forum              | [forum.modular.com][forum]                      |
 | 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
-| 🎥 Community Meetings | Recordings on [YouTube][youtube]    |
+| 🎥 Community Meetings | Recordings on [YouTube][youtube]                |
 
 **Upcoming events** will be posted on our [Meetup page][meetup-group] and
 [Discord][discord].
 
 [discord]: https://discord.gg/modular
 [forum]: https://forum.modular.com/
+[meetup-group]: https://www.meetup.com/modular-meetup-group/
 [youtube]: https://www.youtube.com/@modularinc
 
 ## Contribute

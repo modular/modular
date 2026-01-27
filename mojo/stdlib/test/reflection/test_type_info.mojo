@@ -206,8 +206,7 @@ struct WrapperWithValue[T: AnyType, //, value: T]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleParam:
+struct SimpleParam(TrivialRegisterType):
     var b: Bool
 
 

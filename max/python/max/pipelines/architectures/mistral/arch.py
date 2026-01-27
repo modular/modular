@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import MistralModel
+from .model_config import MistralConfig
 
 mistral_arch = SupportedArchitecture(
     name="MistralForCausalLM_Legacy",
@@ -38,4 +39,5 @@ mistral_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=MistralConfig,
 )

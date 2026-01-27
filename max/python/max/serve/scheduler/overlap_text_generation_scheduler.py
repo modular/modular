@@ -124,7 +124,7 @@ class OverlapTokenGenerationScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
-        if len(inputs.batch) > 0:
+        if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
                 num_terminated_reqs = self._schedule(inputs)
         else:
@@ -155,7 +155,9 @@ class OverlapTokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        batch_request_ids = list(inputs.batch.keys())
+        batch_request_ids = [
+            context.request_id for context in inputs.flat_batch
+        ]
 
         # Execute the batch.
         try:

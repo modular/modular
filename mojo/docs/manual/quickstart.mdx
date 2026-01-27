@@ -19,8 +19,26 @@ but we recommend either `pixi` or `uv`.
 
 <Tabs groupId="install">
 
-<TabItem value="pixi" label="pixi" default>
-1. If you don't have `pixi`, install it:
+<TabItem value="uv" label="uv" default>
+
+1. If needed, install `uv`:
+
+    ```sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+2. Create a project and install Mojo:
+
+    ```bash
+    uv init temperature-analyzer && cd temperature-analyzer
+    uv venv && source .venv/bin/activate
+    uv pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
+    ```
+
+</TabItem>
+
+<TabItem value="pixi" label="pixi">
+1. If needed, install `pixi`:
 
     ```sh
     curl -fsSL https://pixi.sh/install.sh | sh
@@ -37,32 +55,71 @@ but we recommend either `pixi` or `uv`.
     ```
 </TabItem>
 
-<TabItem value="uv" label="uv">
+<TabItem value="pip" label="pip">
 
-1. If you don't have it, install `uv`:
+Create a project and install Mojo:
+
+```sh
+mkdir temperature-analyzer && cd temperature-analyzer
+python3 -m venv .venv && source .venv/bin/activate
+pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
+```
+
+</TabItem>
+
+<TabItem value="conda" label="conda">
+
+<Tabs groupId="os">
+
+<TabItem value="mac" label="macOS">
+1. If needed, install Conda:
 
     ```sh
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    brew install miniconda
+    conda init zsh
+    source ~/.zshrc # Or other shell rc file
     ```
-
-    Then restart your terminal to make `uv` accessible.
 
 2. Create a project and install Mojo:
 
-    ```bash
-    uv init temperature-analyzer && cd temperature-analyzer
-    uv venv && source .venv/bin/activate
-    uv pip install mojo \
-    --extra-index-url https://modular.gateway.scarf.sh/simple/
+    ```sh
+    conda create -n temperature-analyzer
+    conda activate temperature-analyzer
+    conda install -c conda-forge -c https://conda.modular.com/max/ mojo
+    ```
+
+</TabItem>
+
+<TabItem value="linux" label="Linux">
+
+1. If needed, install Conda:
+
+    ```sh
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh
+    conda init bash
+    source ~/.bashrc # Or other shell rc file
+    ```
+
+2. Create a project and install Mojo:
+
+    ```sh
+    conda create -n temperature-analyzer
+    conda activate temperature-analyzer
+    conda install -c conda-forge -c https://conda.modular.com/max/ mojo
     ```
 
 </TabItem>
 
 </Tabs>
 
-3. Create `analyzer.mojo` in your favorite IDE or editor.
+</TabItem>
+
+</Tabs>
 
 ## Hello Mojo
+
+Create `analyzer.mojo` in your favorite IDE or editor.
 
 Add this to `analyzer.mojo`:
 
@@ -89,8 +146,8 @@ Update your file to add temperature data:
 fn main():
     print("Temperature Analyzer")
 
-    # At compile time, the square brackets tell Mojo the list type
-    temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
+    # Square brackets tell Mojo the `List` type at compile time
+    var temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
 
     print("Recorded", len(temps), "temperatures")
 ```
@@ -117,7 +174,7 @@ Add this function above `main()` to calculate the average temperature:
 
 ```mojo
 fn calculate_average(temps: List[Float64]) -> Float64:
-    total: Float64 = 0.0
+    var total: Float64 = 0.0
     for index in range(len(temps)):
         total += temps[index]
     return total / len(temps)
@@ -129,7 +186,7 @@ fn main():
 Add to the end of `main()` to call the function:
 
 ```mojo
-    avg = calculate_average(temps)
+    var avg = calculate_average(temps)
     print("Average: {}°C".format(avg))
 ```
 
@@ -152,16 +209,20 @@ Handle empty data by updating `calculate_average`. Now the function
 can raise an error.
 
 ```mojo
-# Square brackets tell Mojo the list type at compile time
 fn calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:  # Empty list of temperatures
         raise Error("No temperature data")
 
-    total: Float64 = 0
+    var total: Float64 = 0.0
     for index in range(len(temps)):
         total += temps[index]
     return total / len(temps)
 ```
+
+What changed:
+- You add `raises` before the return arrow.
+- You add the check for an empty list.
+- You raise an `Error` if it's empty.
 
 ## Handle errors
 
@@ -169,12 +230,12 @@ In `main()`, wrap your code in `try-except` for error handling:
 
 ```mojo
     try:
-        avg = calculate_average(temps)
+        var avg = calculate_average(temps)
         print("Average: {}°C".format(avg))
 
-        if avg > 25:
+        if avg > 25.0:
             print("Status: Hot week")
-        elif avg > 20:
+        elif avg > 20.0:
             print("Status: Comfortable week")
         else:
             print("Status: Cool week")
@@ -203,6 +264,18 @@ pixi add numpy
 ```
 </TabItem>
 
+<TabItem value="pip" label="pip">
+```bash
+pip install numpy
+```
+</TabItem>
+
+<TabItem value="conda" label="conda">
+```bash
+conda install numpy
+```
+</TabItem>
+
 </Tabs>
 
 Then, add the following imports at the top of your file:
@@ -214,8 +287,8 @@ from python import Python, PythonObject
 Now, calculate Python stats at the end of the `try` block in `main()`:
 
 ```mojo
-        np = Python.import_module("numpy")
-        pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
+        var np = Python.import_module("numpy")
+        var pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
         print("Temperature standard deviation:", np.std(pytemps))
 ```
 
@@ -227,24 +300,24 @@ Your complete `analyzer.mojo`:
 from python import Python, PythonObject
 
 fn calculate_average(temps: List[Float64]) raises -> Float64:
-    if len(temps) == 0.0:
+    if len(temps) == 0:
         raise Error("No temperature data")
 
-    total: Float64 = 0.0
+    var total: Float64 = 0.0
     for index in range(len(temps)):
         total += temps[index]
     return total / len(temps)
 
 fn main():
     print("Temperature Analyzer")
-    temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
+    var temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
     print("Recorded", len(temps), "temperatures")
 
     for index in range(len(temps)):
         print("  Day {}: {}°C".format(index + 1, temps[index]))
 
     try:
-        avg = calculate_average(temps)
+        var avg = calculate_average(temps)
         print("Average: {}°C".format(avg))
 
         if avg > 25.0:
@@ -254,8 +327,8 @@ fn main():
         else:
             print("Status: Cool week")
 
-        np = Python.import_module("numpy")
-        pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
+        var np = Python.import_module("numpy")
+        var pytemps: PythonObject = [20.5, 22.3, 19.8, 25.1]
         print("Temperature standard deviation:", np.std(pytemps))
         _ = pytemps^ # Allow the Python object to deallocate
     except e:

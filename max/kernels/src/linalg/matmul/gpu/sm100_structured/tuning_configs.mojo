@@ -15,8 +15,7 @@ from ..tile_scheduler import RasterOrder
 from internal_utils import Table, TuningConfig
 
 
-@register_passable("trivial")
-struct TuningConfigSM100(TuningConfig):
+struct TuningConfigSM100(TrivialRegisterType, TuningConfig):
     # The kernel parameters are optimal for shape in [M:M_end]xNxK.
     var M: Int
     var M_end: Int

@@ -412,30 +412,30 @@ struct _DictIndex(Movable):
     fn get_index(self, reserved: Int, slot: UInt64) -> Int:
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
         else:
             var data = self.data.bitcast[Int64]()
-            return Int(data.load(slot & (reserved - 1)))
+            return Int(data.load(slot & UInt64(reserved - 1)))
 
     fn set_index(mut self, reserved: Int, slot: UInt64, value: Int):
         if reserved <= 128:
             var data = self.data.bitcast[Int8]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int8(value))
         elif reserved <= 2**16 - 2:
             var data = self.data.bitcast[Int16]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int16(value))
         elif reserved <= 2**32 - 2:
             var data = self.data.bitcast[Int32]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int32(value))
         else:
             var data = self.data.bitcast[Int64]()
-            return data.store(slot & (reserved - 1), value)
+            return data.store(slot & UInt64(reserved - 1), Int64(value))
 
     fn __del__(deinit self):
         self.data.free()
@@ -1317,10 +1317,12 @@ struct Dict[
     fn _next_index_slot(self, mut slot: UInt64, mut perturb: UInt64):
         comptime PERTURB_SHIFT = 5
         perturb >>= PERTURB_SHIFT
-        slot = ((5 * slot) + Int(perturb + 1)) & (self._reserved() - 1)
+        slot = ((5 * slot) + UInt64(Int(perturb + 1))) & UInt64(
+            self._reserved() - 1
+        )
 
     fn _find_empty_index(self, hash: UInt64) -> UInt64:
-        var slot = hash & (self._reserved() - 1)
+        var slot = hash & UInt64(self._reserved() - 1)
         var perturb = hash
         while True:
             var index = self._get_index(slot)
@@ -1330,7 +1332,7 @@ struct Dict[
 
     fn _find_index(self, hash: UInt64, key: Self.K) -> Tuple[Bool, UInt64, Int]:
         # Return (found, slot, index)
-        var slot = hash & (self._reserved() - 1)
+        var slot = hash & UInt64(self._reserved() - 1)
         var perturb = hash
         while True:
             var index = self._get_index(slot)

@@ -3355,12 +3355,10 @@ fn generic_kv_cache_radd_dispatch[
 
         var h_idx: UInt
         var hd_idx: UInt
-        h_idx, hd_idx = divmod(
-            UInt(corrected_dim), collection_t.kv_params.head_size
-        )
+        h_idx, hd_idx = divmod(corrected_dim, collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(Int(corrected_batch_idx))
-        var cache_token_idx = Int(tok_idx) + cache_length
+        var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
             Int(corrected_batch_idx), Int(h_idx), cache_token_idx, Int(hd_idx)
@@ -3526,10 +3524,10 @@ fn kv_cache_2m_iadd_dispatch[
 
         if idx[0] < m:
             cache = k_cache
-            row_idx = Int(idx[0])
+            row_idx = idx[0]
         else:
             cache = v_cache
-            row_idx = Int(idx[0] - m)
+            row_idx = idx[0] - m
 
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
@@ -3539,7 +3537,7 @@ fn kv_cache_2m_iadd_dispatch[
         h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
-        var cache_token_idx = Int(tok_idx) + cache_length
+        var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
             batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)
