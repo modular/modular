@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv, floor
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -435,7 +435,7 @@ fn init_vector_launch[
     length: Int,
     init_type: InitializationType,
     context: DeviceContext,
-    value: OptionalReg[Scalar[dtype]] = None,
+    value: Optional[Scalar[dtype]] = None,
 ) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
