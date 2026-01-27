@@ -87,6 +87,9 @@ from linalg.fp4_quantization import (
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
+from linalg.grouped_matmul_sm100_1d1d import (
+    grouped_matmul_dynamic_scaled_nvfp4,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
 from linalg.lora import shrink_qkv_permute_3mn_sm100
@@ -7560,6 +7563,98 @@ struct Struct_grouped_matmul_ragged:
             managed_tensor_slice_to_ndbuffer(expert_start_indices),
             managed_tensor_slice_to_ndbuffer(expert_ids),
             Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.dynamic.scaled.nvfp4")
+struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
+    """MOGG wrapper for grouped NVFP4 matrix multiplication.
+
+    Provides graph compiler integration for NVFP4-quantized grouped matmul
+    operations used in Mixture of Experts (MoE) layers on SM100 GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        tokens_padded_per_expert: Bool,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=scales_type, rank=5],
+        b_scales: InputTensor[dtype=scales_type, rank=6],
+        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: InputTensor[dtype = DType.int32, rank=1],
+        a_scale_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        expert_scales: InputTensor[dtype = DType.float32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped NVFP4 matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        NVFP4-quantized (4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            a_type: The input A data type. Constraints: Must be `uint8`.
+            b_type: The input B data type. Constraints: Must be `uint8`.
+            scales_type: The scale factor data type.
+                Constraints: Must be `float8_e4m3fn`.
+            tokens_padded_per_expert: Whether tokens are padded per expert.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in tcgen05 5D layout.
+            b_scales: The B scale factors in tcgen05 6D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            a_scale_offsets: The starting scale index for each expert.
+            expert_scales: The per-expert scaling factors for the epilogue.
+            max_num_tokens_per_expert: The maximum tokens per expert.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        __comptime_assert is_gpu[
+            target
+        ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        cuda_ctx = context.get_device_context()
+        var c_layout_tensor = c.to_layout_tensor()
+        var a_layout_tensor = a.to_layout_tensor()
+        var b_layout_tensor = b.to_layout_tensor()
+        var a_scales_layout_tensor = a_scales.to_layout_tensor()
+        var b_scales_layout_tensor = b_scales.to_layout_tensor()
+        var expert_start_indices_layout_tensor = (
+            expert_start_indices.to_layout_tensor()
+        )
+        var a_scale_offsets_layout_tensor = a_scale_offsets.to_layout_tensor()
+        var expert_ids_layout_tensor = expert_ids.to_layout_tensor()
+        var expert_scales_layout_tensor = expert_scales.to_layout_tensor()
+        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target,](
+            c_layout_tensor,
+            a_layout_tensor,
+            b_layout_tensor,
+            a_scales_layout_tensor,
+            b_scales_layout_tensor,
+            expert_start_indices_layout_tensor,
+            a_scale_offsets_layout_tensor,
+            expert_ids_layout_tensor,
+            expert_scales_layout_tensor,
             Int(num_active_experts),
             cuda_ctx,
         )

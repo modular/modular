@@ -2084,3 +2084,138 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
+
+
+fn grouped_matmul_dynamic_scaled_nvfp4[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    scales_type: DType,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    a_offsets_layout: Layout,
+    a_scale_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    expert_scales_layout: Layout,
+    //,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+](
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
+    a_scale_offsets: LayoutTensor[
+        DType.uint32, a_scale_offsets_layout, MutAnyOrigin
+    ],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_scales: LayoutTensor[
+        DType.float32, expert_scales_layout, MutAnyOrigin
+    ],
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Performs grouped matrix multiplication with NVFP4 quantization.
+
+    Computes C = A @ B^T for multiple expert groups in a Mixture of Experts
+    (MoE) layer. Inputs A and B are NVFP4 quantized (4-bit floating point),
+    packed as uint8 (2 values per byte), with float8_e4m3fn scale factors.
+    Each group of 16 elements along the K dimension shares a single scale
+    factor (1D block scaling).
+
+    Parameters:
+        c_type: The data type of the output tensor C.
+        c_layout: The memory layout of the output tensor C.
+        a_type: The data type of input tensor A. Constraints: Must be `uint8`.
+        a_layout: The memory layout of input tensor A.
+        b_type: The data type of input tensor B. Constraints: Must be `uint8`.
+        b_layout: The memory layout of input tensor B.
+        scales_type: The data type of scale factors.
+            Constraints: Must be `float8_e4m3fn`.
+        a_scales_layout: The memory layout of A's scale factors.
+        b_scales_layout: The memory layout of B's scale factors.
+        a_offsets_layout: The memory layout of the token offset indices.
+        a_scale_offsets_layout: The memory layout of A's scale offset indices.
+        expert_ids_layout: The memory layout of the expert ID tensor.
+        expert_scales_layout: The memory layout of the per-expert scale tensor.
+        transpose_b: Whether B is transposed. Constraints: Must be `True`.
+        target: The target device.
+
+    Args:
+        c: The output tensor of shape (total_tokens, N).
+        a: The input tensor of shape (total_tokens, K // 2), packed NVFP4.
+        b: The weight tensor of shape (num_experts, N, K // 2), packed NVFP4.
+        a_scales: The scale factors for A in tcgen05 5D layout.
+        b_scales: The scale factors for B in tcgen05 6D layout.
+        a_offsets: The starting token index for each expert group.
+        a_scale_offsets: The starting scale index for each expert group.
+        expert_ids: The expert ID for each group.
+        expert_scales: The per-expert scaling factors applied in the epilogue.
+        num_active_experts: The number of active experts in this batch.
+        ctx: The device context for GPU execution.
+
+    Constraints:
+        - The target device must be SM100 (B200).
+    """
+    __comptime_assert (
+        ctx.default_device_info == B200
+    ), "Only support SM100 for grouped NVFP4 matmul"
+    __comptime_assert transpose_b, "Only support transpose_b = True"
+    __comptime_assert (
+        a_type == b_type == DType.uint8
+    ), "input A and B dtype should be uint8 for NVFP4"
+    __comptime_assert (
+        scales_type == NVFP4_SF_DTYPE
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+    if num_active_experts == 0:
+        return
+
+    var c_tensor = c
+    var a_tensor = a
+    var b_tensor = b
+    var a_offsets_tensor = a_offsets
+    var a_scale_offsets_tensor = a_scale_offsets
+    var expert_ids_tensor = expert_ids
+    var a_scales_tensor = a_scales
+    var b_scales_tensor = b_scales
+    var expert_scales_tensor = expert_scales
+
+    comptime MMA_K = 32
+    comptime bm = 128
+    comptime bn = 128
+    comptime mma_shape = Index(bm, bn, MMA_K)
+
+    comptime matmul_config = BlockScaledMatmulConfig[
+        a_type, b_type, c_type, scales_type, scales_type, transpose_b
+    ](
+        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=mma_shape,
+        block_swizzle_size=8,
+        cta_group=1,
+        AB_swapped=False,
+        k_group_size=1,
+        num_accum_pipeline_stages=2,
+    )
+
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=matmul_config,
+    ](
+        c_tensor,
+        a_tensor,
+        a_offsets_tensor,
+        a_scale_offsets_tensor,
+        b_tensor,
+        expert_ids_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
+        expert_scales_tensor,
+        num_active_experts,
+        ctx,
+    )
