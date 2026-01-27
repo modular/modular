@@ -257,9 +257,7 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
       assert(actualDeclOp);
       if (!actualDeclOp)
         return false;
-      // Get and emit the diagnostic.
-      std::optional<MojoInflightDiag> diag = std::nullopt;
-      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType, diag))
+      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType))
         continue;
 
       return false;
@@ -1461,15 +1459,10 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
-  std::optional<MojoInflightDiag> checkDiag;
-  if (!wrapperDecl->doesNominalTypeConformTo(trait, checkDiag)) {
+  if (!wrapperDecl->doesNominalTypeConformTo(trait)) {
     MojoInflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
         << mlirType << " to trait " << ASTType(trait);
-    if (checkDiag) {
-      diag << " as it is unable to satisfy the following requirements";
-      diag.attachNote(wrapperDecl->getLoc()) << std::move(*checkDiag);
-    }
     return {};
   }
 
