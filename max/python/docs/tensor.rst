@@ -4,8 +4,6 @@
 :type: module
 :lang: python
 
-.. py:currentmodule:: max
-
 .. automodule:: max.tensor
    :members:
    :undoc-members:
