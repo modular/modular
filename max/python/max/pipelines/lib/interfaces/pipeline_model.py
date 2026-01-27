@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
@@ -64,9 +64,19 @@ class AlwaysSignalBuffersMixin:
         perform allreduce, even for single-device setups. Therefore,
         signal buffers are always required to match the graph inputs.
 
+        In compile-only mode (virtual device mode), returns an empty list
+        to avoid GPU memory allocation which is not supported.
+
         Returns:
-            List of signal buffer tensors, one per device.
+            List of signal buffer tensors, one per device, or empty list
+            in compile-only mode.
         """
+        # In compile-only mode (virtual device mode), skip signal buffer
+        # allocation since VirtualDevice does not support memory allocation.
+        # Signal buffers are only needed during model execution, not compilation.
+        if is_virtual_device_mode():
+            return []
+
         from max.nn.legacy.comm import Signals
 
         return [
@@ -229,8 +239,13 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         Returns:
             List of signal buffer tensors, one per device for multi-device setups,
-            or an empty list for single-device setups.
+            or an empty list for single-device setups or compile-only mode.
         """
+        # In compile-only mode (virtual device mode), skip signal buffer
+        # allocation since VirtualDevice does not support memory allocation.
+        if is_virtual_device_mode():
+            return []
+
         # Import here to avoid circular dependency
         from max.nn.legacy.comm import Signals
 
