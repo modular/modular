@@ -2504,9 +2504,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2533,9 +2531,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2566,9 +2562,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 4, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2607,9 +2601,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 5, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2736,12 +2728,12 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        MutAnyOrigin,
+        ptr.origin,
     ],
 ):
     comptime split_rank = len(flatten(ret.layout.shape))
@@ -2763,13 +2755,13 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        MutAnyOrigin,
+        ptr.origin,
     ],
 ):
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
@@ -2796,7 +2788,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd, iota
 from math.constants import log2e
@@ -147,7 +144,7 @@ comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
     alignment=128,
 ]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, address_space = AddressSpace.SHARED
+    type, MutAnyOrigin, address_space = AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
@@ -483,7 +480,7 @@ struct TMemTile[
         comptime load_dtype = DType.uint32
         # alias load_dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
         var ptr: UnsafePointer[
-            Scalar[load_dtype], address_space = AddressSpace.LOCAL
+            Scalar[load_dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
         ]
 
         ptr = rebind[type_of(ptr)](dst.ptr)
@@ -1519,7 +1516,7 @@ fn mha_sm100_dispatch[
     comptime BM = fa4_config.BM
     comptime BN = fa4_config.BN
     comptime num_threads = fa4_config.num_threads
-    q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
+    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -1570,7 +1567,7 @@ fn mha_sm100_dispatch[
     if sink:
         comptime SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
-            rebind[UnsafePointer[Scalar[KVType.dtype]]](
+            rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
                 sink_weights.value().ptr
             )
         }
@@ -3878,21 +3875,23 @@ struct SM100MHA2Q[
                             mask_strategy = mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
-        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+        var sink_weights_ptr = UnsafePointer[
+            Scalar[Self.qkv_type], ImmutAnyOrigin
+        ]()
         var sink_weight: Scalar[Self.accum_type]
 
         @parameter
         if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
-                sink_weights.value()
-            )
+            sink_weights_ptr = rebind[
+                UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
+            ](sink_weights.value())
             var head_idx: UInt32 = seq_info.head_idx
             sink_weight = (
                 sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
             )
             row_max = max(row_max, sink_weight)
         else:
-            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+            sink_weights_ptr = {}
             sink_weight = 0.0
 
         var row_sum: f32x2 = store_exp(row_max)

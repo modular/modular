@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import _current_target, simd_width_of
 from sys.intrinsics import _type_is_eq
 
@@ -1136,7 +1133,7 @@ fn _matmul_common[
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
-        var c_ptr = UnsafePointer[Scalar[output_dtype]].alloc(TOTAL_SEQ_LEN * N)
+        var c_ptr = alloc[Scalar[output_dtype]](TOTAL_SEQ_LEN * N)
 
         c_nd = {
             c_ptr,
@@ -1146,7 +1143,7 @@ fn _matmul_common[
         }
     else:
         c_nd = {
-            UnsafePointer[Scalar[output_dtype]](),
+            UnsafePointer[Scalar[output_dtype], MutExternalOrigin](),
             RuntimeLayout[c_nd.layout].row_major(
                 IndexList[2](TOTAL_SEQ_LEN, N)
             ),
@@ -1189,7 +1186,7 @@ fn _qmatmul_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[dtype]](),
+        UnsafePointer[Scalar[dtype], MutAnyOrigin](),
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
@@ -1241,7 +1238,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[output_dtype]](),
+        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
@@ -2176,7 +2173,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = UnsafePointer[Float32].alloc(TOTAL_SEQ_LEN * N)
+    var c_ptr = alloc[Float32](TOTAL_SEQ_LEN * N)
 
     c_nd = {
         c_ptr,

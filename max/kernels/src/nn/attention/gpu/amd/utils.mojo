@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import lane_id, thread_idx, block_idx
@@ -164,14 +161,20 @@ struct SharedMemoryManager[
     token_gen: Bool,
 ]:
     var p_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     # p_smem is used for p
     var k_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     var v_smem: UnsafePointer[
-        Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        Scalar[Self.dtype],
+        MutExternalOrigin,
+        address_space = AddressSpace.SHARED,
     ]
     # k_v_smem is used for k, v, and scratch
     comptime alignment = align_of[
@@ -222,6 +225,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.k_smem.bitcast[Scalar[_dtype]]()
@@ -233,6 +237,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.v_smem.bitcast[Scalar[_dtype]]()
@@ -244,6 +249,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.p_smem.bitcast[Scalar[_dtype]]()
@@ -255,6 +261,7 @@ struct SharedMemoryManager[
         self,
     ) -> UnsafePointer[
         Scalar[_dtype],
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ]:
         return self.k_smem.bitcast[Scalar[_dtype]]() if Self.token_gen else {}
@@ -350,7 +357,7 @@ struct GlobalMemoryManager[
         qtype: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[qtype]],
+        ptr: UnsafePointer[Scalar[qtype], MutAnyOrigin],
         out result: LayoutTensor[
             qtype,
             Self.q_gmem_layout,
@@ -367,7 +374,7 @@ struct GlobalMemoryManager[
         out_type: DType,
     ](
         self,
-        ptr: UnsafePointer[Scalar[out_type]],
+        ptr: UnsafePointer[Scalar[out_type], MutAnyOrigin],
         out result: LayoutTensor[
             out_type,
             Self.output_gmem_layout,
@@ -385,12 +392,12 @@ struct GlobalMemoryManager[
         //,
     ](
         self,
-        ptr: UnsafePointer[Scalar[kvtype], ...],
+        ptr: UnsafePointer[Scalar[kvtype], MutAnyOrigin],
         kv_tile_num_rows: UInt32,
         out result: LayoutTensor[
             kvtype,
             Self.kv_gmem_layout,
-            ptr.origin,
+            MutAnyOrigin,
             masked=True,
             address_space = ptr.address_space,
         ],
@@ -621,7 +628,9 @@ fn copy_dram_to_sram_lds[
         # )
 
         var desc_ptr_ = UnsafePointer[
-            Scalar[DType.bfloat16], address_space = AddressSpace.BUFFER_RESOURCE
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space = AddressSpace.BUFFER_RESOURCE,
         ]()
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
@@ -629,6 +638,7 @@ fn copy_dram_to_sram_lds[
         ptr_to_ptr[0] = ptr_to_simd.bitcast[
             UnsafePointer[
                 Scalar[DType.bfloat16],
+                MutAnyOrigin,
                 address_space = AddressSpace.BUFFER_RESOURCE,
             ]
         ]()[0]

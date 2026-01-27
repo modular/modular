@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
@@ -429,7 +426,7 @@ fn _matmul_common[
 
     @parameter
     if is_cpu[target]():
-        var c_ptr = UnsafePointer[Scalar[dtype]].alloc(BS * SEQ_LEN * N)
+        var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
 
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
@@ -437,7 +434,7 @@ fn _matmul_common[
         )
     else:
         c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            UnsafePointer[Scalar[dtype]](),
+            UnsafePointer[Scalar[dtype], MutExternalOrigin](),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
@@ -1372,9 +1369,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.size()
-    )
+    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
     ](
@@ -1390,9 +1385,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.blocks.size(),
     )
 
-    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.size()
-    )
+    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr,
         RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
@@ -1405,9 +1398,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.cache_lengths.size(),
     )
 
-    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.size()
-    )
+    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
         lookup_table_ptr,
         RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
@@ -1428,9 +1419,7 @@ def print_kv_cache_cont_batch_generic_gpu[
         kv_collection.max_cache_length,
     )
 
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
-        valid_lengths.size()
-    )
+    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](
@@ -1487,9 +1476,7 @@ def print_kv_cache_paged_generic_gpu[
     is_print_compact: Bool,
     context: DeviceContextPtr,
 ):
-    var blocks_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_collection.blocks.size()
-    )
+    var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
     ](
@@ -1504,9 +1491,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.blocks.ptr,
         kv_collection.blocks.size(),
     )
-    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.cache_lengths.size()
-    )
+    var cache_lengths_ptr = alloc[UInt32](kv_collection.cache_lengths.size())
     var cache_lengths_host_nd = type_of(kv_collection.cache_lengths)(
         cache_lengths_ptr,
         RuntimeLayout[type_of(kv_collection.cache_lengths).layout].row_major(
@@ -1518,9 +1503,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.cache_lengths.ptr,
         kv_collection.cache_lengths.size(),
     )
-    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
-        kv_collection.lookup_table.size()
-    )
+    var lookup_table_ptr = alloc[UInt32](kv_collection.lookup_table.size())
     var lookup_table_host_nd = type_of(kv_collection.lookup_table)(
         lookup_table_ptr,
         RuntimeLayout[type_of(kv_collection.lookup_table).layout].row_major(
@@ -1539,9 +1522,7 @@ def print_kv_cache_paged_generic_gpu[
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
     )
-    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
-        valid_lengths.size()
-    )
+    var valid_lengths_host_ptr = alloc[UInt32](valid_lengths.size())
     var valid_lengths_host_nd = LayoutTensor[
         valid_lengths.dtype, valid_lengths.layout
     ](

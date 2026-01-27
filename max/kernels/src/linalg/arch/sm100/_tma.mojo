@@ -104,9 +104,7 @@ fn create_tma_descriptor[
         create_tensormap(
             DeviceBuffer(
                 ctx,
-                gmem_tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                gmem_tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),

@@ -14,9 +14,6 @@
 from collections import OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
@@ -148,7 +145,7 @@ fn mha_sm90_dispatch[
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
-    q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
+    var q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
     comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
@@ -947,7 +944,7 @@ fn _mha_sm90[
         BN = Int(config.block_n()),
         BK = Int(config.padded_depth),
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -1178,13 +1175,13 @@ fn _mha_sm90[
     comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
 
     @parameter
     if not SinkType.is_null:
-        sink_weights_ptr = rebind[UnsafePointer[Scalar[kv_type]]](
-            sink_weights.value()
-        )
+        sink_weights_ptr = rebind[
+            UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
+        ](sink_weights.value())
 
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
     consumed_mbar_kv = produced_mbar_kv + pipeline_stages
@@ -1601,7 +1598,9 @@ fn _mha_sm90[
                 for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
-            var output_ptr: UnsafePointer[Scalar[output_type]] = o_ptr_arg
+            var output_ptr: UnsafePointer[
+                Scalar[output_type], MutAnyOrigin
+            ] = o_ptr_arg
 
             @parameter
             if decoding and PartitionType.do_partition:

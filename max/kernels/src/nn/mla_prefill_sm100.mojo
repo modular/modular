@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 from math import ceildiv, exp2, recip
 from math.constants import log2e
@@ -973,21 +970,23 @@ struct SM100MLA[
                             mask_strategy = mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
-        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+        var sink_weights_ptr = UnsafePointer[
+            Scalar[Self.qkv_type], ImmutAnyOrigin
+        ]()
         var sink_weight: Scalar[Self.accum_type]
 
         @parameter
         if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
-                sink_weights.value()
-            )
+            sink_weights_ptr = rebind[
+                UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
+            ](sink_weights.value())
             var head_idx: UInt32 = seq_info.head_idx
             sink_weight = (
                 sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
             )
             row_max = max(row_max, sink_weight)
         else:
-            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+            sink_weights_ptr = {}
             sink_weight = 0.0
 
         @parameter
@@ -1754,7 +1753,9 @@ fn mla_sm100_prefill[
     comptime SinkType = NullPointer[output_type]
     comptime KVRowOffsetsNull = NullPointer[DType.uint32]
     comptime PartitionType = NoPartition[get_accum_type[q.dtype]()]
-    var valid_len: ValidLengthType = {valid_length.ptr}
+    var valid_len: ValidLengthType = {
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
+    }
 
     comptime SM100MLAType = SM100MLA[
         KVType,
@@ -1790,7 +1791,11 @@ fn mla_sm100_prefill[
         q_num_heads = fa4_config.num_q_heads,
         group = fa4_config.group,
         decoding=False,
-    ](ctx, q.ptr, num_rows_q)
+    ](
+        ctx,
+        q.ptr.as_unsafe_pointer(),
+        num_rows_q,
+    )
 
     # [batch_size * num_keys, num_heads, kv_depth]
     k_tma_op = k.create_tma_tile[
