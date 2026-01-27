@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import BaseContext, PipelineTask
+from max.interfaces import PixelContext, PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     SupportedEncoding,
-    TextTokenizer,
 )
 
 from .pipeline_flux import FluxPipeline
@@ -31,7 +30,6 @@ flux1_arch = SupportedArchitecture(
         "black-forest-labs/FLUX.1-schnell",
     ],
     pipeline_model=FluxPipeline,
-    tokenizer=TextTokenizer,
-    context_type=BaseContext,
+    context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
 )
