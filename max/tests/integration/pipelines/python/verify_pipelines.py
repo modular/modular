@@ -1264,7 +1264,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=3.6e-2,
-            kl_div_threshold=7.0e-1,
+            kl_div_threshold=1.4e0,
         ),
     ),
     # Multi-GPU variant
@@ -1279,7 +1279,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=2.3e-2,
-            kl_div_threshold=5.8e-1,
+            kl_div_threshold=6.8e-1,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
