@@ -879,8 +879,6 @@ class PixelGenerationTokenizer(
         trust_remote_code: bool = False,
         chat_template: str | None = None,
         context_validators: list[Callable[[PixelContext], None]] | None = None,
-        wrap_prompt_as_chat: bool = False,
-        default_chat_template_options: dict[str, Any] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -929,10 +927,6 @@ class PixelGenerationTokenizer(
         self._context_validators = (
             context_validators if context_validators else []
         )
-
-        # Prompt wrapping and default chat template options
-        self._wrap_prompt_as_chat = wrap_prompt_as_chat
-        self._default_chat_template_options = default_chat_template_options
 
         # Extract diffusers_config
         if not pipeline_config or not hasattr(
@@ -1107,10 +1101,13 @@ class PixelGenerationTokenizer(
         messages: list[TextGenerationRequestMessage],
         chat_template_options: dict[str, Any] | None = None,
     ) -> str:
+        chat_template_options = chat_template_options or {
+            "add_generation_prompt": True
+        }
         templated_message = self.delegate.apply_chat_template(
             [message.flatten_content() for message in messages],
             tokenize=False,
-            **(chat_template_options or {}),
+            **chat_template_options,
         )
         if not isinstance(templated_message, str):
             raise ValueError("Chat template did not return a string")
@@ -1209,15 +1206,6 @@ class PixelGenerationTokenizer(
             request.true_cfg_scale > 1.0 and request.negative_prompt is not None
         )
         messages: list[TextGenerationRequestMessage] | None = None
-        chat_template_options: dict[str, Any] | None = None
-        if self._wrap_prompt_as_chat:
-            messages = [
-                TextGenerationRequestMessage(
-                    role="user", content=request.prompt
-                )
-            ]
-            if self._default_chat_template_options:
-                chat_template_options = self._default_chat_template_options
 
         # 1. Tokenize prompts
         (
@@ -1232,7 +1220,7 @@ class PixelGenerationTokenizer(
             request.negative_prompt,
             request.negative_prompt_2,
             messages,
-            chat_template_options,
+            request.chat_template_options,
             do_true_cfg,
         )
 

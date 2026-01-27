@@ -19,7 +19,7 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, Protocol, runtime_checkable
+from typing import Any, Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
@@ -83,6 +83,10 @@ class PixelGenerationRequest(Request):
     seed: int | None = None
     """
     Optional random number generator seed for reproducible generation.
+    """
+    chat_template_options: dict[str, Any] | None = None
+    """
+    Optional dictionary of options to pass when applying the chat template.
     """
 
     def __post_init__(self) -> None:
