@@ -16,7 +16,7 @@ This version is still a work in progress.
 
 <!-- INSERT HERE : This line is required for post-process-docs.py -->
 
-## v0.26.1 (2025-01-29)
+## v0.26.1 (2026-01-29)
 
 ### Documentation {#26-1-documentation}
 
