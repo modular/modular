@@ -34,7 +34,7 @@ from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import AddressSpace, external_memory, CacheEviction
 from gpu.compute.mma import MMAOperandDescriptor
 from gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
@@ -4254,7 +4254,7 @@ struct SM100MHA2Q[
             mbark0.mbar[].expect_bytes(qk_bytes)
         # copy q0
         if e != 0:
-            q_tma_op.async_copy(
+            q_tma_op.async_copy[eviction_policy = CacheEviction.EVICT_FIRST](
                 QType(q_smem),
                 mbark0.mbar[],
                 StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
@@ -4284,7 +4284,9 @@ struct SM100MHA2Q[
             if e != 0:
                 mbark.mbar[].expect_bytes(qk_bytes)
             if e != 0:
-                q_tma_op.async_copy(
+                q_tma_op.async_copy[
+                    eviction_policy = CacheEviction.EVICT_FIRST
+                ](
                     QType(q_smem + q_elements * qk_stage),
                     mbark.mbar[],
                     StaticTuple[UInt32, 3](d_idx, q_head_idx, q_gmem_row),

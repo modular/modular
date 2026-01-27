@@ -51,6 +51,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
+    CacheEviction,
 )
 from gpu.sync import (
     cp_async_bulk_commit_group,
@@ -722,7 +723,8 @@ struct TMATensorTile[
 
     @always_inline
     fn async_copy[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
@@ -740,6 +742,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -801,7 +805,10 @@ struct TMATensorTile[
                     + "\ndesc_layout="
                     + String(Self.desc_layout)
                 )
-                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
+                cp_async_bulk_tensor_shared_cluster_global[
+                    cta_group=cta_group,
+                    eviction_policy=eviction_policy,
+                ](
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
@@ -812,7 +819,9 @@ struct TMATensorTile[
                 )
 
     @always_inline("nodebug")
-    fn async_copy_3d(
+    fn async_copy_3d[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
@@ -832,6 +841,10 @@ struct TMATensorTile[
                  Must be 128-byte aligned.
             mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
             coords: The 3D coordinates in the source tensor from which to copy data.
+
+        Parameters:
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_FIRST.
 
         Constraints:
 
@@ -885,7 +898,9 @@ struct TMATensorTile[
                         IntTuple(m, i, j)
                     ) * copy_size
 
-                    cp_async_bulk_tensor_shared_cluster_global(
+                    cp_async_bulk_tensor_shared_cluster_global[
+                        eviction_policy=eviction_policy
+                    ](
                         dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
@@ -898,7 +913,8 @@ struct TMATensorTile[
 
     @always_inline
     fn async_copy_4d[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
@@ -918,6 +934,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -975,7 +993,8 @@ struct TMATensorTile[
                         ) * copy_size
 
                         cp_async_bulk_tensor_shared_cluster_global[
-                            cta_group=cta_group
+                            cta_group=cta_group,
+                            eviction_policy=eviction_policy,
                         ](
                             dst.ptr.mut_cast[True]() + copy_offset,
                             UnsafePointer(to=self.descriptor).bitcast[
@@ -992,7 +1011,8 @@ struct TMATensorTile[
 
     @always_inline
     fn async_copy_5d[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
@@ -1012,6 +1032,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -1084,7 +1106,8 @@ struct TMATensorTile[
                             ) * copy_size
 
                             cp_async_bulk_tensor_shared_cluster_global[
-                                cta_group=cta_group
+                                cta_group=cta_group,
+                                eviction_policy=eviction_policy,
                             ](
                                 dst.ptr.mut_cast[True]() + copy_offset,
                                 UnsafePointer(to=self.descriptor).bitcast[
@@ -1102,7 +1125,10 @@ struct TMATensorTile[
 
     @always_inline("nodebug")
     fn async_copy[
-        rank: Int, //, cta_group: Int = 1
+        rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
@@ -1121,6 +1147,8 @@ struct TMATensorTile[
             rank: The dimensionality of the tensor (must be 2, 3, 4, or 5).
             cta_group: If set to 2, only the leader CTA needs to be notified upon completion.
                 Defaults to 1.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -1137,15 +1165,17 @@ struct TMATensorTile[
 
         @parameter
         if rank == 2:
-            self.async_copy(dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
+            self.async_copy[eviction_policy=eviction_policy](
+                dst, mem_barrier, (Int(coords[0]), Int(coords[1]))
+            )
         elif rank == 3:
-            self.async_copy_3d(
+            self.async_copy_3d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
                 (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif rank == 4:
-            self.async_copy_4d(
+            self.async_copy_4d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
                 (
@@ -1156,7 +1186,7 @@ struct TMATensorTile[
                 ),
             )
         elif rank == 5:
-            self.async_copy_5d(
+            self.async_copy_5d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
                 (
@@ -3207,7 +3237,9 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
-    fn async_copy_from(
+    fn async_copy_from[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
+    ](
         self,
         src: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.SHARED
@@ -3225,6 +3257,10 @@ struct RaggedTMA3DTile[
             ragged_idx: Index into the ragged dimension.
             dynamic_dim: Number of rows to copy.
             middle_idx: Index into the middle (generally head) dimension.
+
+        Parameters:
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_FIRST.
         """
 
         var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
@@ -3234,7 +3270,9 @@ struct RaggedTMA3DTile[
         for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
-            cp_async_bulk_tensor_global_shared_cta(
+            cp_async_bulk_tensor_global_shared_cta[
+                eviction_policy=eviction_policy
+            ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(
