@@ -23,7 +23,7 @@ import pytest
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines.lib import (
+from max.pipelines.lib import (  # type: ignore[attr-defined]
     PixelGenerationConfig,
     SupportedEncoding,
 )

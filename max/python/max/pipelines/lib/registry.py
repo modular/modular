@@ -35,7 +35,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines.core import (
+from max.pipelines.core import (  # type: ignore[attr-defined] #TODO: can be removed once #5816 is merged.
     PixelContext,
     TextAndVisionContext,
     TextContext,
@@ -56,7 +56,10 @@ from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo
 from .interfaces import ArchConfig, PipelineModel
-from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
+from .pipeline_variants import (  # type: ignore[attr-defined] #TODO: can be removed once #5835 is merged.
+    PixelGenerationPipeline,
+    TextGenerationPipeline,
+)
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -373,7 +376,7 @@ class PipelineRegistry:
         """
         # Check for diffusers-style model first (via pipeline_config)
         if pipeline_config is not None:
-            diffusers_config = pipeline_config.model.diffusers_config
+            diffusers_config = pipeline_config.model.diffusers_config  # type: ignore[attr-defined] #TODO: can be removed once #5849 is merged.
             if diffusers_config is not None:
                 # Use pipeline_class from model_index.json for architecture lookup
                 arch_name = diffusers_config.pipeline_class
@@ -551,7 +554,7 @@ class PipelineRegistry:
                 f"No architecture found for {pipeline_config.model.model_path}"
             )
 
-        is_diffusers = pipeline_config.model.diffusers_config is not None
+        is_diffusers = pipeline_config.model.diffusers_config is not None  # type: ignore[attr-defined] #TODO: can be removed once #5849 is merged.
 
         # Calculate Max Length (skip for diffusers models)
         huggingface_config = (
@@ -567,10 +570,10 @@ class PipelineRegistry:
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
         if is_diffusers:
-            assert pipeline_config.model.diffusers_config is not None
+            assert pipeline_config.model.diffusers_config is not None  # type: ignore[attr-defined] #TODO: can be removed once #5849 is merged.
             subfolder_2 = (
                 "tokenizer_2"
-                if pipeline_config.model.diffusers_config.components.get(
+                if pipeline_config.model.diffusers_config.components.get(  # type: ignore[attr-defined] #TODO: can be removed once #5849 is merged.
                     "tokenizer_2"
                 )
                 else None
@@ -666,7 +669,7 @@ class PipelineRegistry:
             "tokenizer": typed_tokenizer,
         }
 
-        if pipeline_config.model.diffusers_config is not None:
+        if pipeline_config.model.diffusers_config is not None:  # type: ignore[attr-defined] #TODO: can be removed once #5849 is merged.
             factory_kwargs.pop("weight_adapters")
 
         # If using speculative decoding, add draft model-specific parameters
