@@ -451,7 +451,7 @@ def compute_discrepancy_report(
         mae_per_prompt=mae_per_prompt,
         rmse_per_prompt=rmse_per_prompt,
         kl_div_per_prompt=kl_div_per_prompt if kl_div_per_prompt else None,
-        max_kl_div=max_kl_div,
+        max_kl_div=model_max_kl_div,
         model_modality=model_modality,
     )
 
