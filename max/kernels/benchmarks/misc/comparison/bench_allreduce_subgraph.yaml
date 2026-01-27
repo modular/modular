@@ -12,7 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 name: bench_allreduce_subgraph
-file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_allreduce.py
+file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_allreduce_subgraph.py
 
 allreduce-commons: &allreduce-commons
   $backend: ["nccl", "sglang"]
