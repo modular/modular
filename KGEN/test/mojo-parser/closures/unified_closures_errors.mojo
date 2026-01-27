@@ -89,3 +89,38 @@ def nestedCaptureAll(mut aString: String):
 
         fn aChildThing(x:Int) unified {var}:
             changeIt(aString)
+
+
+# ===----------------------------------------------------------------------=== #
+# Closure type mismatch errors
+# ===----------------------------------------------------------------------=== #
+
+trait Animal:
+    fn speak(self):
+        ...
+
+
+trait Mammal(Animal):
+    pass
+
+struct Dog(Mammal):
+    fn speak(self):
+        pass
+
+# expected-note @below {{function declared here}}
+fn takeClosureMammalParam[W: Mammal, C: fn (x: W) unified -> None](impl: C):
+    pass
+
+
+fn traitConstraintMismatch[Q: Animal]():
+    fn closure(x: Q) unified {var}:
+        x.speak()
+
+    # expected-error @below {{does not conform to trait 'fn(x: W) -> None'}}
+    takeClosureMammalParam(closure)
+
+    fn closureWrongConvention(mut x: Dog) unified {var}:
+        x.speak()
+
+    # expected-error-re @below {{cannot bind type '{{.*}}' to trait 'fn(x: W) -> None'}}
+    takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)

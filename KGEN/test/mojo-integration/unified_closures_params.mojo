@@ -71,8 +71,16 @@ struct Cartesian(Coordinate, ImplicitlyCopyable):
         print("{", self.x, ",", self.y, "}")
 
 
+@fieldwise_init
+struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
+    var x: Int
+
+    fn prettyPrint(self):
+        print("{", self.x, ",", self.y, "}")
+
+
 fn useDefinesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable, C: fn () unified -> X
+    NOT_X: Coordinate & ImplicitlyCopyable, C: fn () unified -> NOT_X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
@@ -80,11 +88,37 @@ fn useDefinesCapturingParamClosure[
 
 fn definesCapturingParamClosure[
     X: Coordinate & ImplicitlyCopyable
-](something: X):
+](something: X, one: Int) raises:
     fn closureImpl() unified {var} -> X:
         return something
 
+    # COM: check that concrete types can conform to traits with aliases
+    fn closureConcreteImpl() unified {var} -> Cartesian:
+        return Cartesian(one, one)
+
     useDefinesCapturingParamClosure[X, type_of(closureImpl)](closureImpl)
+    useDefinesCapturingParamClosure[Cartesian, type_of(closureConcreteImpl)](
+        closureConcreteImpl
+    )
+
+
+fn usesParamRefClosure[
+    T: Coordinate & ImplicitlyCopyable,
+    C: fn[x: Int, Y: Coordinate] (xx: T, unused: Y) unified -> Polar[x],
+](impl: C, value: T):
+    var typed_value = rebind[C.T](value)
+    var result = impl[3, Cartesian](typed_value, Cartesian(3, 3))
+    result.prettyPrint()
+
+
+fn definesParamRefClosure[U: Coordinate & ImplicitlyCopyable](value: U):
+    fn closureImpl[
+        y: Int, YY: Coordinate
+    ](x: U, unused: YY) unified {var} -> Polar[y]:
+        _ = value
+        return Polar[y](y)
+
+    usesParamRefClosure[U, type_of(closureImpl)](closureImpl, value)
 
 
 def main():
@@ -102,5 +136,11 @@ def main():
 
     hasOrigin(closure)
 
+    # COM: Test rebinds to traits with captures.
     # CHECK: { 1 , 4 }
-    definesCapturingParamClosure(Cartesian(one, four))
+    # CHECK: { 1 , 1 }
+    definesCapturingParamClosure(Cartesian(one, four), one)
+
+    # COM: Test param ref matching: both trait and impl use param types.
+    # CHECK: { 3 , 3 }
+    definesParamRefClosure(Cartesian(one, four))
