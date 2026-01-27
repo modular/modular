@@ -638,25 +638,57 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         context_batch = flatten2d(replica_batches)
         # Create tokens
         if len(context_batch) == 0:
-            tokens = Buffer(shape=[0], dtype=DType.int64).to(device0)
+            tokens = Buffer(
+                shape=[0], dtype=DType.int64, device=device0, pinned=pinned
+            )
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
+
+            # FIXME: Buffer.zeros(...) does not support pinned flag
+            pinned_input_row_offsets = Buffer(
+                shape=[1], dtype=DType.uint32, device=device0, pinned=pinned
+            )
+            pinned_input_row_offsets.to_numpy().fill(0)
+            device_input_row_offsets = pinned_input_row_offsets.to(device0)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
-            tokens = Buffer.from_numpy(
-                np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(device0)
+            num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
+            tokens_host = Buffer(
+                shape=(num_tokens,),
+                dtype=DType.int64,
+                device=device0,
+                pinned=pinned,
+            )
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_host.to_numpy(),
+            )
+            tokens = tokens_host.to(device0)
 
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             # Get input_row_offsets: start and end position of each batch in the
             # combined total_seq_len dimension.
-            host_input_row_offsets = Buffer.from_numpy(
-                np.cumsum(
-                    [0] + [ctx.tokens.active_length for ctx in context_batch],
-                    dtype=np.uint32,
-                )
+            input_row_offsets = np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
             )
 
-        device_input_row_offsets = host_input_row_offsets.to(device0)
+            # FIXME GEX-3121: There is a bug when using pinned buffer as graph cpu input:
+            # `Expected Device(type=cpu,id=0), but was on device Device(type=gpu,id=0)`
+            # Thus we set up both a non-pinned and a pinned cpu buffer as workaround.
+            host_input_row_offsets = Buffer(
+                shape=(len(context_batch) + 1,),
+                dtype=DType.uint32,
+            )
+            host_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
+
+            pinned_input_row_offsets = Buffer(
+                shape=(len(context_batch) + 1,),
+                dtype=DType.uint32,
+                device=device0,
+                pinned=pinned,
+            )
+            pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
+            device_input_row_offsets = pinned_input_row_offsets.to(device0)
 
         data_parallel_splits = Buffer.from_numpy(
             compute_data_parallel_splits(replica_batches)
