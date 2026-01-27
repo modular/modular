@@ -162,6 +162,7 @@ modular_py_binary(
     data = glob([
         "smoke_tests/chartqa_modular/**",
     ]),
+    imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
@@ -176,6 +177,27 @@ modular_py_binary(
     srcs = ["smoke_tests/smoke_test_github_matrix.py"],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "bisect_smoke_test",
+    testonly = True,
+    srcs = ["smoke_tests/bisect_smoke_test.py"],
+    imports = ["."],
+)
+
+modular_py_test(
+    name = "test_bisect_smoke_test",
+    size = "small",
+    srcs = ["test_bisect_smoke_test.py"],
+    args = [
+        "--ignore=max/tests/integration/pipelines/python/smoke_tests",
+    ],
+    imports = ["."],
+    deps = [
+        ":bisect_smoke_test",
+        ":smoke_test",
     ],
 )
 

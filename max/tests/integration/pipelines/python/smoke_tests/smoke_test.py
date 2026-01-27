@@ -63,6 +63,9 @@ IMAGE_PROMPT = {
 TEXT_PROMPT = {"role": "user", "content": "Say: 'hello world'"}
 URL = "http://127.0.0.1:8000/v1/chat/completions"
 
+TEXT_TASK = "gsm8k_cot_llama"
+VISION_TASK = "chartqa"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -83,7 +86,7 @@ def _inside_bazel() -> bool:
 
 
 def test_single_request(model: str, task: str) -> None:
-    is_vision = task == "chartqa"
+    is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
     r = requests.post(
@@ -276,10 +279,10 @@ def build_eval_summary(
         metrics = result["results"][task]
         total_secs = float(result["total_evaluation_time_seconds"])
 
-        if "chartqa" in task:
+        if VISION_TASK in task:
             accuracy = metrics["relaxed_accuracy,none"]
             accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
-        elif task == "gsm8k_cot_llama":
+        elif task == TEXT_TASK:
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
         else:
@@ -470,9 +473,9 @@ def smoke_test(
     if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
         is_vision_model = False
 
-    tasks = ["gsm8k_cot_llama"]
+    tasks = [TEXT_TASK]
     if is_vision_model:
-        tasks = ["chartqa"] + tasks
+        tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
