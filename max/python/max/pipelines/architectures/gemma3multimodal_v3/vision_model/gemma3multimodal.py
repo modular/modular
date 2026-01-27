@@ -35,8 +35,7 @@ from max.nn.module import Module
 
 # TODO reimplement?
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
-
-# TODO reimplement?
+from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.architectures.gemma3.layers.transformer_block import (
     Gemma3TransformerBlock,
 )
@@ -48,7 +47,6 @@ from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings
 from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector
-from .rms_norm import Gemma3RMSNorm
 
 logger = logging.getLogger("max.pipelines")
 
@@ -101,6 +99,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         self.norm = Gemma3RMSNorm(
             text_config.hidden_size,
             text_config.rms_norm_eps,
+            dtype=config.dtype,
         )
 
         self.lm_head = Linear(
@@ -110,7 +109,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
 
         create_norm = functools.partial(
             Gemma3RMSNorm,
-            text_config.hidden_size,
+            DType.bfloat16,
             eps=text_config.rms_norm_eps,
         )
 
@@ -284,7 +283,8 @@ class Gemma3VisionModel(Module[[Tensor], Tensor]):
         hidden_states = self.encoder(hidden_states)
 
         # Apply post-encoder layer norm
-        hidden_states = self.post_layernorm(hidden_states)
+        hidden_states_tv = self.post_layernorm(hidden_states.__tensorvalue__())
+        hidden_states = Tensor.from_graph_value(hidden_states_tv)
 
         # Project image embeddings to language model hidden size and return
         return self.projector(hidden_states)

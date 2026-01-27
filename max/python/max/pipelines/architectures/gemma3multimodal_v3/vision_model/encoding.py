@@ -72,7 +72,9 @@ class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
         hidden_states_tv = self.layer_norm1(hidden_states.__tensorvalue__())
-        hidden_states = self.self_attn(Tensor.from_graph_value(hidden_states_tv))
+        hidden_states = self.self_attn(
+            Tensor.from_graph_value(hidden_states_tv)
+        )
         hidden_states = residual + hidden_states
 
         # MLP with residual
@@ -109,7 +111,7 @@ class Gemma3VisionEncoder(
     ) -> Tensor | Sequence[Tensor]:
         """Process hidden states through the stack of encoder layers"""
         # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
-        # TODO this is a temporary workaround while working single GPU and 
+        # TODO this is a temporary workaround while working single GPU and
         # keeping type checking happy
         if isinstance(hidden_states, Sequence):
             outputs = []
