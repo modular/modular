@@ -192,7 +192,7 @@ def call_lm_eval(
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
     )
 
-    include_path = str(Path(__file__).parent.resolve() / "chartqa_modular")
+    include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
         lm_eval_cmd = [
             "lm_eval",

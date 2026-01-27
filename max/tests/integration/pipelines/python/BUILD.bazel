@@ -160,7 +160,7 @@ modular_py_binary(
     testonly = True,
     srcs = ["smoke_tests/smoke_test.py"],
     data = glob([
-        "smoke_tests/chartqa_modular/**",
+        "smoke_tests/tasks/**",
     ]),
     imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
