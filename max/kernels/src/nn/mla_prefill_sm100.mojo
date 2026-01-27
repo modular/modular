@@ -104,7 +104,7 @@ from nn.mha_utils import (
 )
 from gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from utils.index import Index, IndexList
 from kv_cache.types import swizzle_granularity
@@ -247,7 +247,7 @@ struct SM100MLA[
     PartitionType: MHAPartitionScheme,
 ](TrivialRegisterType):
     comptime qkv_type = Self.KVLUTType.dtype
-    comptime accum_type = get_accum_type[Self.qkv_type]()
+    comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()
 
     comptime cta_group = 1  # TODO: support 2
@@ -753,7 +753,7 @@ struct SM100MLA[
         seq_info: SeqInfo,
         mask: Self.MaskType,
         num_keys: UInt32,
-        scale: Scalar[Self.accum_type],
+        scale: Float32,
         score_mod: Self.ScoreModType,
         max_seq_len: UInt32,
         ragged_tma_store: RaggedTMA3DTile[
@@ -1752,7 +1752,7 @@ fn mla_sm100_prefill[
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_type]
     comptime KVRowOffsetsNull = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[get_accum_type[q.dtype]()]
+    comptime PartitionType = NoPartition[DType.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

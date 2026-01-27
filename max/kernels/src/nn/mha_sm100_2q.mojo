@@ -1302,6 +1302,26 @@ fn add_ftz(
 
 
 @always_inline
+fn mul_ftz(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        mul.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
 fn fma_ftz(
     a: SIMD[DType.float32, 2],
     b: SIMD[DType.float32, 2],
@@ -2573,16 +2593,14 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
 
 @always_inline
 fn apply_oob_mask[
-    dtype: DType,
     ScoreModType: ScoreModTrait,
-    simd_width: Int,
     //,
     *,
     use_score_mod: Bool,
     mask_strategy: MaskStrategy,
     apply_log2e_after_mask: Bool,
 ](
-    s_arg: SIMD[dtype, simd_width],
+    s_arg: SIMD[DType.float32, 2],
     score_mod: ScoreModType,
     *,
     prompt_idx: UInt32,
@@ -2592,12 +2610,12 @@ fn apply_oob_mask[
     num_keys: Int32,
     score_row: Int32,
     score_col: Int32,
-) -> SIMD[dtype, simd_width]:
-    s: SIMD[dtype, simd_width] = s_arg
+) -> SIMD[DType.float32, 2]:
+    s: SIMD[DType.float32, 2] = s_arg
 
     @parameter
     if use_score_mod:
-        s = (
+        s = mul_ftz(
             score_mod.score_mod(
                 IndexList[4, element_type = DType.uint32](
                     Int(prompt_idx),
@@ -2607,19 +2625,19 @@ fn apply_oob_mask[
                 ),
                 s,
                 Int(max_seq_len),
-            )
-            * log2e
+            ),
+            log2e,
         )
     elif apply_log2e_after_mask:
-        s *= log2e
+        s = mul_ftz(s, log2e)
 
     @parameter
     if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
         s = (
-            iota[DType.int32, simd_width](score_col)
+            iota[DType.int32, 2](score_col)
             .lt(num_keys)
             .select(s, MASK_VALUE)
-            # .select(s, min_or_neg_inf[dtype]())
+            # .select(s, min_or_neg_inf[DType.float32]())
         )
 
     return s
@@ -2627,7 +2645,6 @@ fn apply_oob_mask[
 
 @always_inline
 fn apply_mask[
-    dtype: DType,
     BN: Int,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
@@ -2636,10 +2653,10 @@ fn apply_mask[
     use_score_mod: Bool,
     mask_strategy: MaskStrategy,
 ](
-    srow: LocalTensor[dtype, Layout.row_major(BN)],
+    srow: LocalTensor[DType.float32, Layout.row_major(BN)],
     mask: MaskType,
     score_mod: ScoreModType,
-    scale_log2e: Scalar[dtype],
+    scale_log2e: Float32,
     *,
     prompt_idx: UInt32,
     q_head_idx: UInt32,
@@ -2648,7 +2665,8 @@ fn apply_mask[
     num_keys: Int32,
     score_row: Int32,
 ):
-    comptime simd_size = simd_width_of[dtype]()
+    comptime simd_size = 2
+    comptime F32x2 = SIMD[DType.float32, simd_size]
     vs = srow.vectorize[simd_size]()
 
     @parameter
@@ -2705,31 +2723,33 @@ fn apply_mask[
             for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
                 comptime frag_col = frag_col_simd * simd_size
-                var s = vs[frag_col_simd] * scale_log2e
+                var s = mul_ftz(rebind[F32x2](vs[frag_col_simd]), scale_log2e)
 
                 @parameter
                 for i in range(simd_size):
                     comptime midx = n * simd_size + i
                     comptime flag: UInt32 = 1 << midx
                     var in_bound: Bool = (mask_bits & flag) != UInt32(0)
-                    var val: Scalar[dtype] = s[i]
+                    var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
                 var score_col: Int32 = kv_tile_start_row + frag_col
-                vs[frag_col_simd] = apply_oob_mask[
-                    use_score_mod=use_score_mod,
-                    mask_strategy=mask_strategy,
-                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
-                ](
-                    s,
-                    score_mod,
-                    prompt_idx=prompt_idx,
-                    q_head_idx=q_head_idx,
-                    kv_tile_start_row=kv_tile_start_row,
-                    max_seq_len=max_seq_len,
-                    num_keys=num_keys,
-                    score_row=score_row,
-                    score_col=score_col,
+                vs[frag_col_simd] = rebind[vs.element_type](
+                    apply_oob_mask[
+                        use_score_mod=use_score_mod,
+                        mask_strategy=mask_strategy,
+                        apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                    ](
+                        s,
+                        score_mod,
+                        prompt_idx=prompt_idx,
+                        q_head_idx=q_head_idx,
+                        kv_tile_start_row=kv_tile_start_row,
+                        max_seq_len=max_seq_len,
+                        num_keys=num_keys,
+                        score_row=score_row,
+                        score_col=score_col,
+                    )
                 )
             n_valid = max(n_valid - 32, 0)
 
@@ -2739,7 +2759,7 @@ fn apply_mask[
         @parameter
         for n in range(block_size):
             # score_col = mask_frag_col + j * 8
-            var s = vs[n] * scale_log2e
+            var s = mul_ftz(rebind[F32x2](vs[n]), scale_log2e)
             comptime frag_col = simd_size * n
             var score_col: Int32 = kv_tile_start_row + frag_col
 
@@ -2755,20 +2775,22 @@ fn apply_mask[
                     s,
                 )
 
-            vs[n] = apply_oob_mask[
-                use_score_mod=use_score_mod,
-                mask_strategy=mask_strategy,
-                apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
-            ](
-                s,
-                score_mod,
-                prompt_idx=prompt_idx,
-                q_head_idx=q_head_idx,
-                kv_tile_start_row=kv_tile_start_row,
-                max_seq_len=max_seq_len,
-                num_keys=num_keys,
-                score_row=score_row,
-                score_col=score_col,
+            vs[n] = rebind[vs.element_type](
+                apply_oob_mask[
+                    use_score_mod=use_score_mod,
+                    mask_strategy=mask_strategy,
+                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                ](
+                    s,
+                    score_mod,
+                    prompt_idx=prompt_idx,
+                    q_head_idx=q_head_idx,
+                    kv_tile_start_row=kv_tile_start_row,
+                    max_seq_len=max_seq_len,
+                    num_keys=num_keys,
+                    score_row=score_row,
+                    score_col=score_col,
+                )
             )
 
 
