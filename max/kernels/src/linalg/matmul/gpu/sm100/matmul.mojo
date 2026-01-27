@@ -59,11 +59,11 @@ from .pipeline import ProducerConsumerPipeline
 
 
 @fieldwise_init
-struct WarpRole(TrivialRegisterType):
+struct WarpRole[has_scheduler: Bool = True](TrivialRegisterType):
     var _role: Int32
 
-    comptime Mma = Self(6)
-    comptime MainLoad = Self(5)
+    comptime Mma = Self(6) if Self.has_scheduler else Self(5)
+    comptime MainLoad = Self(5) if Self.has_scheduler else Self(4)
     comptime Scheduler = Self(4)
     comptime Epilogue = Self(3)
 
@@ -101,6 +101,7 @@ struct WarpRole(TrivialRegisterType):
     @staticmethod
     @always_inline
     fn is_scheduler() -> Bool:
+        constrained[Self.has_scheduler, "Scheduler warp is not enabled"]()
         return Self.Scheduler == get_warp_id()
 
 

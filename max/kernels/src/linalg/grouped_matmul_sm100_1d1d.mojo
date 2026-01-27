@@ -98,7 +98,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from linalg.matmul.gpu.sm100.matmul import (
-    WarpRole,
+    WarpRole as _WarpRole,
     stsm_helper,
     shared_memory_epilogue_transpose,
     shared_memory_epilogue,
@@ -108,6 +108,9 @@ from linalg.matmul.gpu.sm100.matmul import (
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from internal_utils import ufloordiv
+
+# Use WarpRole without scheduler warp for grouped matmul
+comptime WarpRole = _WarpRole[has_scheduler=False]
 
 
 @always_inline
@@ -808,18 +811,6 @@ struct B200BlockScaledMatmulSmem[
         SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
-    # CLC
-    var clc_mbars_full: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages
-    ]
-    var clc_mbars_empty: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages
-    ]
-    var clc_throttle_mbars: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages * 2
-    ]
-    var clc_response: InlineArray[UInt128, Self.config.num_clc_pipeline_stages]
-
     # TMEM
     var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
     var tmem_addr: InlineArray[UInt32, 1]
@@ -1457,7 +1448,6 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # TODO: integrate with existing enums
     comptime load_warps = 1
     comptime mma_warps = 1
-    comptime scheduler_warps = 1
     comptime epilogue_warps = 4
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
@@ -1490,10 +1480,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         mnk,
         workspace,
         grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
+        # 1 TMA, 1 MMA, 4 EPILOGUE warps
+        block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
         attributes=pdl_launch_attributes(pdl_level),
@@ -1572,19 +1560,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     comptime num_output_warps = 4
 
-    comptime SCHEDULER_THREADS = WARP_SIZE
-    comptime TMA_LOAD_THREADS = WARP_SIZE
     comptime MMA_THREADS = WARP_SIZE
     comptime EPILOGUE_THREADS = num_output_warps * WARP_SIZE
-    comptime CLUSTER_SIZE = config.cluster_shape[0] * config.cluster_shape[1]
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
-        TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
-    )
-
-    comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
-
     comptime accum_pipeline_producer_arv_count = 1
     comptime accum_pipeline_consumer_arv_count = config.cta_group * EPILOGUE_THREADS
 
@@ -1664,10 +1641,6 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref sfb_smem_storage = smem_storage.sfb_smem
     ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
     ref accum_mbars_storage = smem_storage.accum_mbars
-    ref clc_mbars_full_storage = smem_storage.clc_mbars_full
-    ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
-    ref clc_response_storage = smem_storage.clc_response
-    ref clc_throttle_storage = smem_storage.clc_throttle_mbars
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
@@ -1745,21 +1718,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         accum_mbars_storage.unsafe_ptr(),
     )
 
-    # Load warp as producer and scheduler warp as consumer.
-    # No data dependence. Introduce dependence to prevent CLC goes too ahead.
-    # In the extreme case, all ctas keep querying next work simultaneously,
-    # there will be no guarantee they get balanced number of tiles.
-    var load_clc_pipeline = ProducerConsumerPipeline[
-        config.num_clc_pipeline_stages
-    ](
-        clc_throttle_storage.unsafe_ptr(),
-    )
-
     var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
-
-    clc_response = clc_response_storage.unsafe_ptr()
-    clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
-    clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
@@ -1793,17 +1752,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             accum_pipeline_producer_arv_count,
             accum_pipeline_consumer_arv_count,
         )
-        load_clc_pipeline.init_mbars(
-            clc_throttle_producer_arv_count,
-            clc_throttle_consumer_arv_count,
-        )
 
         tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
-
-        @parameter
-        for i in range(config.num_clc_pipeline_stages):
-            clc_full_mbar[i].init(clc_producer_arv_count)
-            clc_empty_mbar[i].init(clc_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
