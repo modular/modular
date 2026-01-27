@@ -15,6 +15,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -270,19 +271,72 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     return LLVM::LLVMArrayType::get(elementType, *size);
   });
 
-  // Convert struct types to LLVM literal structs.
+  // Convert struct types to LLVM literal structs, adding padding fields as
+  // needed to satisfy field alignment requirements from @align decorators.
+  //
+  // We add explicit padding when the KGEN type's alignment exceeds the LLVM
+  // type's alignment. This happens when a field has @align(N) where N is
+  // greater than the type's natural alignment.
+  //
+  // IMPORTANT: We must use KGEN's type size information consistently, not
+  // LLVM's, because LLVM struct layout may differ from KGEN's expectations
+  // (e.g., for unions that become LLVM structs with different member order).
   addConversion([this](StructType structType) -> std::optional<Type> {
     std::optional<SmallVector<Type>> elementTypes =
         structType.getElementTypes();
     if (!elementTypes)
       return {};
-    SmallVector<Type> types;
-    for (Type type : *elementTypes) {
-      types.push_back(convertType(type));
-      if (!types.back())
+
+    SmallVector<Type> llvmTypes;
+    int64_t offset = 0;
+    Type i8Type = IntegerType::get(&getContext(), 8);
+
+    for (auto [logicalIdx, kgenType] : llvm::enumerate(*elementTypes)) {
+      Type llvmType = convertType(kgenType);
+      if (!llvmType)
         return {};
+
+      // Get alignment and size from KGEN type (respects @align decorator).
+      std::optional<int64_t> kgenAlign =
+          DataLayoutInterface::getTypeABIAlign(getTarget(), kgenType);
+      std::optional<int64_t> kgenAllocSize =
+          DataLayoutInterface::getTypeAllocSize(getTarget(), kgenType);
+      if (!kgenAlign || !kgenAllocSize)
+        return {};
+
+      // Get LLVM's natural alignment for this type.
+      // We always use LLVM's actual alignment to compare against KGEN's
+      // alignment, since LLVM doesn't know about KGEN's @align decorators
+      // or alignment inheritance from fields.
+      int64_t llvmNaturalAlign = getTypeABIAlign(llvmType);
+
+      // Compute where LLVM would naturally place this field and where KGEN
+      // requires it.
+      int64_t llvmOffset = llvm::alignTo(offset, llvmNaturalAlign);
+      int64_t kgenOffset = llvm::alignTo(offset, *kgenAlign);
+
+      // Only add explicit padding if KGEN requires stricter alignment than
+      // LLVM's natural alignment.
+      if (kgenOffset > llvmOffset) {
+        int64_t paddingNeeded = kgenOffset - offset;
+        llvmTypes.push_back(LLVM::LLVMArrayType::get(i8Type, paddingNeeded));
+      }
+
+      // Cache the mapping from logical index to LLVM index.
+      auto cacheKey = std::make_pair(Type(structType), (int64_t)logicalIdx);
+      auto [it, inserted] =
+          structFieldIndexCache.try_emplace(cacheKey, llvmTypes.size());
+      // If already cached, verify consistency (type conversion is
+      // deterministic).
+      assert((inserted || it->second == (int64_t)llvmTypes.size()) &&
+             "inconsistent field index mapping for struct type");
+      llvmTypes.push_back(llvmType);
+
+      // Advance offset using KGEN alloc size.
+      offset = kgenOffset + *kgenAllocSize;
     }
-    return LLVM::LLVMStructType::getLiteral(&getContext(), types);
+
+    return LLVM::LLVMStructType::getLiteral(&getContext(), llvmTypes);
   });
 
   // Convert SIMD types to vector types.
@@ -355,6 +409,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   addConversion([](CO::CoroutineType coro) {
     return LLVM::LLVMPointerType::get(coro.getContext());
   });
+}
+
+int64_t
+POPToLLVMTypeConverter::getRemappedFieldIndex(StructType structType,
+                                              int64_t logicalIndex) const {
+  auto it = structFieldIndexCache.find({structType, logicalIndex});
+  if (it != structFieldIndexCache.end())
+    return it->second;
+  // The struct type must be converted by this type converter instance before
+  // calling getRemappedFieldIndex. The cache is populated during type
+  // conversion, so a cache miss indicates a bug in the calling code.
+  llvm_unreachable("struct type was not converted by this type converter");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1101,24 +1167,39 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   if (auto simd = dyn_cast<POP::SIMDAttr>(attr))
     return convertSIMDAttr(b, tc, simd);
 
-  // Convert array, struct, or pack constants to LLVM array or struct constants.
-  if (isa<POP::ArrayAttr, StructAttr>(attr)) {
-    Type type = tc.convertType(attr.getType());
+  // Convert array constants to LLVM array constants.
+  if (auto arrayAttr = dyn_cast<POP::ArrayAttr>(attr)) {
+    Type type = tc.convertType(arrayAttr.getType());
     if (!type)
-      return Error("cannot lower array or struct constant with unknown type");
+      return Error("cannot lower array constant with unknown type");
     Value aggregate = LLVM::UndefOp::create(b, type);
-    ArrayRef<TypedAttr> values =
-        TypeSwitch<Attribute, ArrayRef<TypedAttr>>(attr)
-            .Case<POP::ArrayAttr, StructAttr>(
-                [](auto attr) { return attr.getValues(); });
-
-    for (auto [idx, value] : llvm::enumerate(values)) {
+    for (auto [idx, value] : llvm::enumerate(arrayAttr.getValues())) {
       ErrorOr<Value> loweredValue =
           convertParameterToLLVM(b, tc, imc, scope, value);
       if (loweredValue.isError())
         return loweredValue;
       aggregate =
           LLVM::InsertValueOp::create(b, aggregate, loweredValue.get(), idx);
+    }
+    return aggregate;
+  }
+
+  // Convert struct constants to LLVM struct constants.
+  if (auto structAttr = dyn_cast<StructAttr>(attr)) {
+    auto kgenStructType = cast<StructType>(structAttr.getType());
+    Type type = tc.convertType(kgenStructType);
+    if (!type)
+      return Error("cannot lower struct constant with unknown type");
+    Value aggregate = LLVM::UndefOp::create(b, type);
+    for (auto [logicalIdx, value] : llvm::enumerate(structAttr.getValues())) {
+      ErrorOr<Value> loweredValue =
+          convertParameterToLLVM(b, tc, imc, scope, value);
+      if (loweredValue.isError())
+        return loweredValue;
+      // Use remapped field index to account for alignment padding.
+      int64_t llvmIdx = tc.getRemappedFieldIndex(kgenStructType, logicalIdx);
+      aggregate = LLVM::InsertValueOp::create(b, aggregate, loweredValue.get(),
+                                              llvmIdx);
     }
     return aggregate;
   }

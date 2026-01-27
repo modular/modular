@@ -11,6 +11,7 @@
 from sys import align_of, size_of
 from memory import UnsafePointer, alloc
 from testing import assert_equal, assert_true, TestSuite
+from collections import Optional
 
 
 # Basic aligned struct
@@ -25,13 +26,28 @@ struct CacheAligned(Movable):
         self.x = existing.x
 
 
-# @align works on single-element @register_passable structs. When @align is
+# @align works on single-element trivial register structs. When @align is
 # specified, the struct is NOT flattened to its element type during lowering,
 # preserving the alignment metadata.
 @align(32)
-@register_passable
-struct AlignedTrivial:
+struct AlignedTrivial(TrivialRegisterType):
     var value: Int
+
+    @always_inline
+    fn __init__(out self, value: Int):
+        self.value = value
+
+
+# Struct for testing compile-time constants with alignment padding.
+# Uses TrivialRegisterType so it can be used in compile-time contexts.
+struct ContainsAlignedTrivialSecond(TrivialRegisterType):
+    var first: Int
+    var second: AlignedTrivial  # @align(32) requires padding after first (8 bytes)
+
+    @always_inline
+    fn __init__(out self, first: Int, second: AlignedTrivial):
+        self.first = first
+        self.second = second
 
 
 # Large alignment
@@ -51,6 +67,17 @@ struct ContainsAligned:
     fn __init__(out self, var inner: CacheAligned, other: Int):
         self.inner = inner^
         self.other = other
+
+
+# Struct containing an aligned struct as second member (MOCO-3167 test case)
+# The aligned field should be at offset 64, not offset 8
+struct ContainsAlignedSecond:
+    var other: Int
+    var inner: CacheAligned
+
+    fn __init__(out self, other: Int, var inner: CacheAligned):
+        self.other = other
+        self.inner = inner^
 
 
 # Generic struct with alignment
@@ -267,6 +294,159 @@ fn test_inherited_stack_alignment() raises:
         (outer_addr & 63) == 0,
         "OuterSmallAlign should use max(explicit=16, inherited=64) = 64",
     )
+
+
+fn test_field_offset_alignment() raises:
+    """Test that fields within a struct are at correct offsets (MOCO-3167).
+
+    When a struct has a field with @align(N), that field should be placed at
+    an offset that satisfies its alignment requirement. Previously, LLVM would
+    use natural alignment only, placing the inner field at offset 8 instead of
+    offset 64.
+    """
+    var container = ContainsAlignedSecond(99, CacheAligned(42))
+
+    var base_ptr = UnsafePointer(to=container)
+    var inner_ptr = UnsafePointer(to=container.inner)
+
+    var base_addr = Int(base_ptr)
+    var inner_addr = Int(inner_ptr)
+    var offset = inner_addr - base_addr
+
+    # The CacheAligned field should be at offset 64, not 8
+    assert_equal(offset, 64, "CacheAligned field should be at offset 64")
+
+    # The inner field address should be 64-byte aligned
+    assert_true((inner_addr & 63) == 0, "inner field should be 64-byte aligned")
+
+    # Verify we can access the values correctly
+    assert_equal(container.other, 99, "other field should have value 99")
+    assert_equal(container.inner.x, 42, "inner.x field should have value 42")
+
+
+fn test_struct_replace_with_alignment() raises:
+    """Test that StructReplace works correctly with padding (MOCO-3167).
+
+    This exercises the ConvertKGENStructReplace pattern which must use
+    remapped field indices when the struct has alignment padding.
+    """
+    var container = ContainsAlignedSecond(99, CacheAligned(42))
+
+    # Modify the first field - exercises StructReplace at logical index 0
+    container.other = 123
+    assert_equal(container.other, 123, "other field should be updated to 123")
+
+    # Verify inner field is still correct (wasn't corrupted by the replace)
+    assert_equal(container.inner.x, 42, "inner.x should still be 42")
+
+    # Verify alignment is preserved after modification
+    var inner_ptr = UnsafePointer(to=container.inner)
+    var inner_addr = Int(inner_ptr)
+    assert_true(
+        (inner_addr & 63) == 0,
+        "inner field should still be 64-byte aligned after replace",
+    )
+
+    # Also test replacing via the inner field (logical index 1, LLVM index 2)
+    container.inner = CacheAligned(999)
+    assert_equal(container.inner.x, 999, "inner.x should be updated to 999")
+    assert_equal(container.other, 123, "other field should still be 123")
+
+
+fn _helper_with_const_default(
+    val: ContainsAlignedTrivialSecond = ContainsAlignedTrivialSecond(
+        42, AlignedTrivial(99)
+    )
+) -> ContainsAlignedTrivialSecond:
+    """Helper that uses a compile-time constant struct as default parameter.
+
+    The default parameter value exercises convertParameterToLLVM for struct
+    constants with alignment padding.
+    """
+    return val
+
+
+fn test_compile_time_struct_constant() raises:
+    """Test that compile-time struct constants work with alignment padding.
+
+    This exercises convertParameterToLLVM which handles StructAttr lowering.
+    The default parameter value is a compile-time constant that must be
+    correctly lowered with remapped field indices.
+    """
+    # Use the default parameter (compile-time constant)
+    var from_default = _helper_with_const_default()
+    assert_equal(
+        from_default.first, 42, "first field from default should be 42"
+    )
+    assert_equal(
+        from_default.second.value, 99, "second.value from default should be 99"
+    )
+
+    # Verify the constant struct has correct layout when stored
+    var ptr = UnsafePointer(to=from_default)
+    var base_addr = Int(ptr)
+    var second_ptr = UnsafePointer(to=from_default.second)
+    var second_addr = Int(second_ptr)
+    var offset = second_addr - base_addr
+
+    # AlignedTrivial has @align(32), so second should be at offset 32
+    assert_equal(offset, 32, "second field should be at offset 32")
+    assert_true(
+        (second_addr & 31) == 0, "second field should be 32-byte aligned"
+    )
+
+
+# Struct containing an Optional with an aligned type.
+# Tests that Union types (which back Optional) respect @align on variants.
+# Uses AlignedTrivial which is TrivialRegisterType and thus Copyable.
+struct ContainsOptionalAligned:
+    var other: Int
+    var opt: Optional[AlignedTrivial]
+
+    fn __init__(out self, other: Int, opt: Optional[AlignedTrivial]):
+        self.other = other
+        self.opt = opt
+
+
+fn test_optional_alignment() raises:
+    """Test that Optional[T] where T has @align(N) is properly aligned.
+
+    This exercises UnionType::getTypeAlign which must return the max alignment
+    of all variant types (AlignedTrivial has @align(32), NoneType has align 1).
+    """
+    # Verify align_of[Optional[AlignedTrivial]]() reports the correct alignment
+    assert_equal(
+        align_of[Optional[AlignedTrivial]](),
+        32,
+        "Optional[AlignedTrivial] should have 32-byte alignment",
+    )
+
+    # Create a struct containing the Optional and verify field alignment
+    var container = ContainsOptionalAligned(99, AlignedTrivial(42))
+
+    var base_ptr = UnsafePointer(to=container)
+    var opt_ptr = UnsafePointer(to=container.opt)
+
+    var base_addr = Int(base_ptr)
+    var opt_addr = Int(opt_ptr)
+    var offset = opt_addr - base_addr
+
+    # The Optional field should be at offset 32 due to AlignedTrivial's @align(32)
+    assert_equal(
+        offset, 32, "Optional[AlignedTrivial] field should be at offset 32"
+    )
+    assert_true(
+        (opt_addr & 31) == 0, "Optional field should be 32-byte aligned"
+    )
+
+    # Verify we can access the value correctly
+    assert_equal(container.other, 99, "other field should have value 99")
+    if container.opt:
+        assert_equal(
+            container.opt.value().value,
+            42,
+            "opt.value().value should be 42",
+        )
 
 
 fn main() raises:

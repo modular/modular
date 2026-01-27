@@ -2024,19 +2024,36 @@ static Value squashPointlessCasts(Value v) {
 
 /// Expand one level of structs so kgen.pack elements are passed as individual
 /// values instead of as a kgen.struct.
+///
+/// Takes both the converted LLVM values and the original KGEN types to
+/// correctly map logical field indices to LLVM field indices (which may
+/// differ due to alignment padding fields).
 static SmallVector<Value> expandOperands(ConversionPatternRewriter &rewriter,
-                                         Location loc, ValueRange args) {
+                                         Location loc, ValueRange args,
+                                         TypeRange origTypes,
+                                         const POPToLLVMTypeConverter &tc) {
   SmallVector<Value> operands;
   operands.reserve(args.size());
-  for (auto value : args) {
+  for (auto [value, origType] : llvm::zip(args, origTypes)) {
     // Squash pointless conversion casts that will get in the way of folds.
     value = squashPointlessCasts(value);
 
-    if (auto structTy = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
-      // Unpack each of the elements.
-      for (size_t i = 0, e = structTy.getBody().size(); i != e; ++i) {
-        auto elt = rewriter.createOrFold<LLVM::ExtractValueOp>(loc, value, i);
-        operands.push_back(elt);
+    // Check if the original type is a KGEN struct type.
+    if (auto kgenStructTy = dyn_cast<StructType>(origType)) {
+      // Get the element types - should be resolved at this point.
+      auto elemTypes = kgenStructTy.getElementTypes();
+      if (elemTypes) {
+        // Iterate over KGEN logical field indices and extract using remapped
+        // LLVM indices to account for any padding fields.
+        for (size_t i = 0, e = elemTypes->size(); i != e; ++i) {
+          int64_t llvmIdx = tc.getRemappedFieldIndex(kgenStructTy, i);
+          auto elt =
+              rewriter.createOrFold<LLVM::ExtractValueOp>(loc, value, llvmIdx);
+          operands.push_back(elt);
+        }
+      } else {
+        // Parametric struct - just push the value as-is.
+        operands.push_back(value);
       }
     } else {
       operands.push_back(value);
@@ -2061,7 +2078,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
 
     auto asmOp = LLVM::InlineAsmOp::create(
         rewriter, op.getLoc(), types.empty() ? Type() : types.front(),
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                       op.getOperands().getTypes(), *getTypeConverter()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
         getBoolAttrValue(adaptor.getHasSideEffectsAttr(), false),
@@ -2294,7 +2312,8 @@ struct ConvertPOPCallLLVMIntrinsic
     // Special handling for masked.load: convert alignment operand to attribute
     if (intrinsicName == "llvm.masked.load") {
       auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                         op.getOperands().getTypes(), *getTypeConverter());
       if (operands.size() != 4) {
         return op.emitError("llvm.masked.load expects 4 operands "
                             "(ptr, alignment, mask, passthrough), got ")
@@ -2328,7 +2347,8 @@ struct ConvertPOPCallLLVMIntrinsic
     // Special handling for masked.store: convert alignment operand to attribute
     if (intrinsicName == "llvm.masked.store") {
       auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                         op.getOperands().getTypes(), *getTypeConverter());
       if (operands.size() != 4) {
         return op.emitError("llvm.masked.store expects 4 operands "
                             "(value, ptr, alignment, mask), got ")
@@ -2362,7 +2382,8 @@ struct ConvertPOPCallLLVMIntrinsic
     // attribute
     if (intrinsicName == "llvm.masked.gather") {
       auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                         op.getOperands().getTypes(), *getTypeConverter());
       if (operands.size() != 4) {
         return op.emitError("llvm.masked.gather expects 4 operands "
                             "(ptr_vec, alignment, mask, passthrough), got ")
@@ -2409,7 +2430,8 @@ struct ConvertPOPCallLLVMIntrinsic
     // attribute
     if (intrinsicName == "llvm.masked.scatter") {
       auto operands =
-          expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+          expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                         op.getOperands().getTypes(), *getTypeConverter());
       if (operands.size() != 4) {
         return op.emitError("llvm.masked.scatter expects 4 operands "
                             "(value, ptr_vec, alignment, mask), got ")
@@ -2455,7 +2477,8 @@ struct ConvertPOPCallLLVMIntrinsic
     // just emit regular LLVM intrinsic call.
     rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
         op, types, cast<StringAttr>(op.getIntrin()),
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                       op.getOperands().getTypes(), *getTypeConverter()),
         convertFastmathFlags(op.getFastmathFlags(), rewriter));
     return success();
   }
@@ -2589,7 +2612,8 @@ struct ConvertPOPCallToAIRIntrinsic
       return failure();
 
     SmallVector<Value> newOperands =
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands());
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                       op.getOperands().getTypes(), *getTypeConverter());
 
     // Handle texture intrinsics with special mangling based on data type.
     // Texture intrinsics are mangled by the pixel data type only, not all args.
@@ -3286,7 +3310,8 @@ struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
 
     LLVM::CallOp call = createLLVMCall(
         rewriter, op.getLoc(), func,
-        expandOperands(rewriter, op.getLoc(), adaptor.getOperands()));
+        expandOperands(rewriter, op.getLoc(), adaptor.getOperands(),
+                       op.getOperands().getTypes(), *getTypeConverter()));
     replaceCallWithLLVMCall(rewriter, op, call);
     return success();
   }

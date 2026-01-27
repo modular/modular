@@ -174,18 +174,25 @@ std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
     std::optional<int64_t> size =
         DataLayoutInterface::getTypeAllocSize(target, type);
     if (!size)
-      return {};
+      llvm::report_fatal_error("failed to get size for union variant type");
     maxSize = std::max(maxSize, *size);
   }
   return llvm::alignTo(maxSize, *getTypeAlign(target));
 }
 
 std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
-  // The alignment of the union type is the alignment of the integer type
-  // equal to the pointer width.
-  // FIXME: This is incorrect but the LLVM lowering needs to be fixed.
-  return target.getDataLayout().getIntegerABIAlign(
-      target.getDataLayout().getPointerBitWidth());
+  // The alignment of the union type is the max alignment of all variant types.
+  // This respects @align decorators on variant types.
+  int64_t maxAlign = 1;
+  for (Type type : getTypes()) {
+    std::optional<int64_t> align =
+        DataLayoutInterface::getTypeABIAlign(target, type);
+    if (!align)
+      llvm::report_fatal_error(
+          "failed to get alignment for union variant type");
+    maxAlign = std::max(maxAlign, *align);
+  }
+  return maxAlign;
 }
 
 ErrorOrSuccess UnionType::writeTo(TypedAttr value, int64_t addr,
