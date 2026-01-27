@@ -53,7 +53,6 @@ class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):
         self.mm_soft_emb_norm = Gemma3RMSNorm(
             config.vision_config.hidden_size,
             eps=config.vision_config.layer_norm_eps,
-            dtype=vision_dtype,
         )
 
         self.patches_per_image = int(

@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Module
-from max.nn.legacy.layer import LayerList
 from max.nn.legacy.norm import LayerNorm
 from max.tensor import Tensor
 
@@ -72,14 +71,14 @@ class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
     ) -> Tensor:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
-        hidden_states = self.layer_norm1(hidden_states)
-        hidden_states = self.self_attn(hidden_states)
+        hidden_states = self.layer_norm1(hidden_states.__tensorvalue__())
+        hidden_states = self.self_attn(Tensor.from_graph_value(hidden_states))
         hidden_states = residual + hidden_states
 
         # MLP with residual
         residual = hidden_states
-        hidden_states = self.layer_norm2(hidden_states)
-        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.layer_norm2(hidden_states.__tensorvalue__())
+        hidden_states = self.mlp(Tensor.from_graph_value(hidden_states))
         hidden_states = residual + hidden_states
 
         return hidden_states
@@ -101,7 +100,7 @@ class Gemma3VisionEncoder(
             for layer_idx in range(config.vision_config.num_hidden_layers)
         ]
 
-        self.layers = LayerList(encoder_layers)
+        self.layers = encoder_layers  # FIXME trying this approach
         # self.layers = Sequential(*encoder_layers) #TODO could this be used
 
     def __call__(
