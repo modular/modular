@@ -48,12 +48,14 @@ from algorithm import vectorize
 
 @always_inline("nodebug")
 fn get_active_mask[width: Int](evl: Int) -> SIMD[DType.bool, width]:
-    """
-    Generates a mask with the first `evl` lanes active.
+    """Generates a mask with the first `evl` lanes active.
+
     Parameters:
         width: The total width of the SIMD vector.
+
     Args:
         evl: The effective vector length (number of active lanes).
+
     Returns:
         A SIMD boolean vector where the first `evl` lanes are `true` (active)
         and the remaining lanes are `false` (inactive).
