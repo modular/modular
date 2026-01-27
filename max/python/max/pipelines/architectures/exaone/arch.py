@@ -24,6 +24,7 @@ from max.pipelines.lib import (
 
 from ..llama3 import weight_adapters
 from ..llama3.model import Llama3Model
+from ..llama3.model_config import Llama3Config
 from .weight_adapters import convert_exaone_safetensor_state_dict
 
 exaone_arch = SupportedArchitecture(
@@ -50,4 +51,5 @@ exaone_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_exaone_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Llama3Config,
 )
