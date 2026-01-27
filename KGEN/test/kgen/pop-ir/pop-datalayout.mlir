@@ -79,7 +79,8 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
 
   // CHECK-NEXT: <16>
   kgen.param.constant: index = <get_sizeof(union<simd<4, f32>, i64>, #target)>
-  // CHECK-NEXT: <8>
+  // Union alignment is now the max alignment of variant types (simd<4, f32> = 16).
+  // CHECK-NEXT: <16>
   kgen.param.constant: index = <get_alignof(union<simd<4, f32>, i64>, #target)>
 
   kgen.return

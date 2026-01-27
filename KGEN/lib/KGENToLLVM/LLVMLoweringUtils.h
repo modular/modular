@@ -98,6 +98,19 @@ std::optional<Type> getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
 struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,
                                 public LLVMDataLayout {
   POPToLLVMTypeConverter(TargetInfoAttr target);
+
+  /// Get the LLVM field index for a logical KGEN struct field.
+  /// When struct types are converted to LLVM, padding fields may be inserted
+  /// to satisfy field alignment requirements (e.g., from @align decorators).
+  /// This method returns the remapped index that accounts for these padding
+  /// fields. Returns the logical index if no padding was added.
+  int64_t getRemappedFieldIndex(StructType structType,
+                                int64_t logicalIndex) const;
+
+private:
+  /// Cache mapping (StructType, logicalIndex) -> llvmIndex.
+  /// Populated during struct type conversion when padding is inserted.
+  mutable DenseMap<std::pair<Type, int64_t>, int64_t> structFieldIndexCache;
 };
 
 //===----------------------------------------------------------------------===//

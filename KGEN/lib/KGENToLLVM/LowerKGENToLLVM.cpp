@@ -855,13 +855,21 @@ struct ConvertKGENStructCreate : ConvertPOPToLLVMPattern<StructCreateOp> {
   LogicalResult
   matchAndRewrite(StructCreateOp op, StructCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    Type structType = convertType(op.getType());
-    if (!structType)
+    auto kgenStructType = cast<StructType>(op.getType());
+    Type llvmStructType = convertType(kgenStructType);
+    if (!llvmStructType)
       return rewriter.notifyMatchFailure(op.getLoc(),
                                          "failed to convert struct type");
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-    Value container =
-        materializeLLVMStruct(b, structType, adaptor.getOperands());
+    Value container = LLVM::UndefOp::create(b, llvmStructType);
+
+    // Use remapped field indices to account for padding fields.
+    for (auto [logicalIdx, element] : llvm::enumerate(adaptor.getOperands())) {
+      int64_t llvmIdx =
+          getTypeConverter()->getRemappedFieldIndex(kgenStructType, logicalIdx);
+      container = LLVM::InsertValueOp::create(b, container, element, llvmIdx);
+    }
+
     rewriter.replaceOp(op, container);
     return success();
   }
@@ -877,9 +885,11 @@ struct ConvertKGENStructReplace : ConvertPOPToLLVMPattern<StructReplaceOp> {
   LogicalResult
   matchAndRewrite(StructReplaceOp op, StructReplaceOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    auto kgenStructType = cast<StructType>(op.getContainer().getType());
+    int64_t llvmIdx = getTypeConverter()->getRemappedFieldIndex(
+        kgenStructType, op.getIndexAttr().getInt());
     rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-        op, adaptor.getContainer(), adaptor.getValue(),
-        op.getIndexAttr().getInt());
+        op, adaptor.getContainer(), adaptor.getValue(), llvmIdx);
     return success();
   }
 };
@@ -897,8 +907,11 @@ struct ConvertKGENStructGet : ConvertPOPToLLVMPattern<StructExtractOp> {
     auto indexAttr = dyn_cast<IntegerAttr>(op.getIndexAttr());
     if (!indexAttr)
       return op.emitOpError("expected constant index for LLVM lowering");
+    auto kgenStructType = cast<StructType>(op.getContainer().getType());
+    int64_t llvmIdx = getTypeConverter()->getRemappedFieldIndex(
+        kgenStructType, indexAttr.getInt());
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getContainer(), indexAttr.getInt());
+        op, adaptor.getContainer(), llvmIdx);
     return success();
   }
 };
@@ -914,14 +927,17 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
   matchAndRewrite(StructGEPOp op, StructGEPOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     PointerType ptrType = cast<PointerType>(op.getContainer().getType());
-    Type elementType = convertType(ptrType.getElementType());
+    auto kgenStructType = cast<StructType>(ptrType.getElementType());
+    Type elementType = convertType(kgenStructType);
     if (!elementType)
       return op.emitError("failed to convert result type");
     auto indexAttr = cast<IntegerAttr>(op.getIndex());
+    int64_t llvmIdx = getTypeConverter()->getRemappedFieldIndex(
+        kgenStructType, indexAttr.getInt());
     LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, opaquePtr, elementType, adaptor.getContainer(),
-        ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(indexAttr.getInt())});
+        ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(llvmIdx)});
     return success();
   }
 };
