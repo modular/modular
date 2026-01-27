@@ -31,7 +31,7 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
+from max.pipelines.lib import PipelineConfig, PipelineModel, get_kv_cache
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
@@ -169,10 +169,10 @@ class ModelWorker:
             )
 
             # Retrieve Paged Manager.
-            paged_cache = get_paged_manager(pipeline)
+            kv_cache = get_kv_cache(pipeline)
             reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
             if (
-                paged_cache is not None
+                kv_cache is not None
                 and pipeline_config.zmq_endpoint_base is not None
             ):
                 reset_prefix_cache_backend = ResetPrefixCacheBackend(
@@ -201,8 +201,8 @@ class ModelWorker:
                     reset_prefix_cache_backend is not None
                     and reset_prefix_cache_backend.should_reset_prefix_cache()
                 ):
-                    assert paged_cache is not None
-                    paged_cache.reset_prefix_cache()
+                    assert kv_cache is not None
+                    kv_cache.reset_prefix_cache()
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()

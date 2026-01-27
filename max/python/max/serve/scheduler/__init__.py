@@ -93,8 +93,8 @@ def load_scheduler(
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
-        paged_manager = pipeline.kv_manager
-        assert isinstance(paged_manager, PagedKVCacheManager)
+        kv_cache = pipeline.kv_manager
+        assert isinstance(kv_cache, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None
@@ -123,7 +123,7 @@ def load_scheduler(
             request_queue=request_queue,
             response_queue=response_queue,
             cancel_queue=cancel_queue,
-            paged_manager=paged_manager,
+            kv_cache=kv_cache,
         )
     elif pipeline_config.enable_overlap_scheduler:
         assert isinstance(pipeline, Pipeline)

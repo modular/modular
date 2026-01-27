@@ -28,7 +28,7 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import PipelineConfig, get_kv_cache
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -52,7 +52,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager | None = None,
+        kv_cache: PagedKVCacheManager | None = None,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -65,7 +65,7 @@ class TokenGenerationScheduler(Scheduler):
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_manager,
+            kv_cache=kv_cache,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
@@ -131,7 +131,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.batch_constructor.paged_cache,
+            kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
@@ -219,13 +219,13 @@ def load_text_generation_scheduler(
     )
 
     # Retrieve Paged Manager
-    paged_manager = get_paged_manager(pipeline)
+    kv_cache = get_kv_cache(pipeline)
 
     # Return Scheduler
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

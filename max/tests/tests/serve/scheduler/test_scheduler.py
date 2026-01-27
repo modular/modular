@@ -137,7 +137,7 @@ def test_try_create_ce_batch() -> None:
     batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
     assert batch[0].request_id == mock_request.request_id
-    # Cache management is now handled by the paged_manager/pipeline
+    # Cache management is now handled by the kv_cache/pipeline
     assert batch[0] is not None
 
 
@@ -154,7 +154,7 @@ def test_try_create_chunked_ce_batch() -> None:
     batch = scheduler.batch_constructor.construct_batch().flat_batch
     assert len(batch) == 1
     assert batch[0].request_id == mock_data.request_id
-    # Cache management is now handled by the paged_manager/pipeline
+    # Cache management is now handled by the kv_cache/pipeline
     assert batch[0] is not None
     assert batch[0].tokens.current_position == 20
     assert batch[0].tokens.active_length == 20

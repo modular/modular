@@ -56,7 +56,7 @@ async def test_kv_cache_multi_gpu() -> None:
             assert len(kv_tuple) == 4
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -106,7 +106,7 @@ async def test_swapping_to_host_multi_gpu(
     np.random.seed(42)
 
     # Enough blocks to hold 500 tokens
-    kv_manager = create_paged_manager(
+    kv_manager = create_kv_cache(
         num_blocks=100,
         max_batch_size=100,
         max_seq_len=512,

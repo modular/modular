@@ -39,7 +39,7 @@ from .interfaces import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    get_paged_manager,
+    get_kv_cache,
 )
 from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
@@ -120,7 +120,7 @@ __all__ = [
     "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",
-    "get_paged_manager",
+    "get_kv_cache",
     "max_tokens_to_generate",
     "parse_float8_config",
     "rejection_sampler",

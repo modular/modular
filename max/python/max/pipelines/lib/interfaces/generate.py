@@ -33,7 +33,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache.paged_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache import PagedKVCacheManager
 
 
 @runtime_checkable

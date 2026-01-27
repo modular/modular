@@ -24,7 +24,7 @@ def s2us(s: float) -> float:
     return s * 1000 * 1000
 
 
-# see: https://github.com/modularml/modular/blob/851943b46d2a38b36883009f42fa669ee7d41a2c/SDK/lib/API/python/max/nn/kv_cache/paged_cache/block_utils.py#L76
+# see: https://github.com/modularml/modular/blob/851943b46d2a38b36883009f42fa669ee7d41a2c/SDK/lib/API/python/max/nn/kv_cache/kv_cache/block_utils.py#L76
 def naive_python_hashing(tokens: np.ndarray, block_size: int) -> list[int]:
     num_elts = tokens.size
     num_hashes = num_elts // block_size

@@ -105,7 +105,7 @@ class KVCacheMixin(Protocol):
         ...
 
 
-def get_paged_manager(
+def get_kv_cache(
     pipeline: Pipeline[Any, Any],
 ) -> PagedKVCacheManager | None:
     """Get the paged KV cache manager from a pipeline, if available.
