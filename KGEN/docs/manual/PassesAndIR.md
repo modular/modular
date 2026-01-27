@@ -578,14 +578,12 @@ To see that last one, you can run this program through
 
 ```mojo
 @explicit_destroy("Can't destroy a MyTrait")
-@register_passable("trivial")
-trait MyTrait:
+trait MyTrait(TrivialRegisterType):
     fn bork(self):
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct MyStruct(MyTrait):
     fn bork(self):
         print("hello")

@@ -413,8 +413,7 @@ If for some reason we wanted to make `read_ship` not take in a reference, we
 would make its input parameter a register-passable trait like this:
 
 ```mojo
-@register_passable("trivial")
-trait AnyRegisterPassableType:
+trait AnyRegisterPassableType(TrivialRegisterType):
     pass
 
 fn read_rp_ship[T: AnyRegisterPassableType](s: T):

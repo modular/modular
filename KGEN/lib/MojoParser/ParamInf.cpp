@@ -569,7 +569,6 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // wrong but currently compiles) is:
   //
   // @fieldwise_init
-  // @register_passable("trivial")
   // struct NDBuffer[
   //     mut: Bool,
   //     //,
@@ -577,7 +576,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   //     rank: Int,
   //     origin: Origin[mut=mut],
   //     ...
-  // ](
+  // ](TrivialRegisterType):
   //   @implicit
   //   fn __init__(
   //       out self,
