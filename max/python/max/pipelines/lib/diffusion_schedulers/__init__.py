@@ -11,25 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import pytest
-from max.interfaces import (
-    PixelGenerationRequest,
-    RequestID,
+from .scheduler_factory import SchedulerFactory
+from .scheduling_flow_match_euler_discrete import (
+    FlowMatchEulerDiscreteScheduler,
 )
-
-
-def test_pixel_generation_request_init() -> None:
-    # Basic initialization.
-    _ = PixelGenerationRequest(
-        request_id=RequestID(),
-        model_name="test",
-        prompt="hello world",
-    )
-
-    # Empty prompt should raise ValueError.
-    with pytest.raises(ValueError):
-        _ = PixelGenerationRequest(
-            request_id=RequestID(),
-            model_name="test",
-            prompt="",
-        )
