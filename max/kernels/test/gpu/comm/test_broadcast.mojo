@@ -34,7 +34,7 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     rank to verify the correct source GPU was used.
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](Scalar[dtype](root + 1) + Scalar[dtype](j % 251))
+    return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
 
 # Shared test configurations - kept small to avoid CI timeouts on MI355

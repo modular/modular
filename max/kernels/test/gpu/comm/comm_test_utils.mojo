@@ -36,6 +36,4 @@ fn test_value_for_gpu_element[
         test_value_for_gpu_element[DType.float32](1, 0)
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](
-        Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)
-    )
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)

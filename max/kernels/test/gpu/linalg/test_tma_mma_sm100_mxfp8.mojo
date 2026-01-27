@@ -663,7 +663,7 @@ fn sm100_block_scaled_mxfp8[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -819,14 +819,14 @@ def test_block_scaled_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, atom_m[0] * atom_m[1]))
+        ceildiv(m.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, atom_m[0] * atom_m[1]))
+        ceildiv(n.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]

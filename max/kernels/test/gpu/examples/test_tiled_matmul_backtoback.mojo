@@ -78,7 +78,7 @@ struct BackToBackMatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
+        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
 
     fn shared_mem_usage(self, K: Int) -> Int:
         return (

@@ -138,12 +138,9 @@ fn gemv_tma_kernel[
         b_size * Int(NUM_PIPELINE_STAGES),
     )
 
-    var tma_mbar_ptr = (
-        b_smem_base + b_size * Int(NUM_PIPELINE_STAGES)
-    ).bitcast[SharedMemBarrier]()
-    var tma_mbar = UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
-    ](tma_mbar_ptr)
+    var tma_mbar = (b_smem_base + b_size * Int(NUM_PIPELINE_STAGES)).bitcast[
+        SharedMemBarrier
+    ]()
 
     # Initialize dot products for all rows before column processing.
     var dot_products = InlineArray[Scalar[accum_type], Int(ROWS_PER_WARP)](
@@ -311,7 +308,7 @@ def gemv_tma[
         UInt(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 

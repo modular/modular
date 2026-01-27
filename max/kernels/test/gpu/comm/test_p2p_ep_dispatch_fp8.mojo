@@ -640,7 +640,7 @@ fn test_dispatch[
                         slot_dispatch_wait_counter[
                             2 * (curr_local_expert * n_ranks + remote_rank)
                         ]
-                        <= Int(token_idx) + EP_DATA_READY_FLAG
+                        <= token_idx + EP_DATA_READY_FLAG
                     ):
                         remote_rank += 1
 

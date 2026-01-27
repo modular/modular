@@ -496,7 +496,7 @@ fn block_reduce(val: Float32) -> Float32:
 
     return warp_sum_reduce(
         shared.load(lane) if thread_idx.x
-        < UInt(block_dim.x // UInt(WARP_SIZE)) else 0
+        < block_dim.x // UInt(WARP_SIZE) else 0
     )
 
 

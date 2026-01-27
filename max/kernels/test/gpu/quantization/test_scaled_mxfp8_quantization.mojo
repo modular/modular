@@ -253,5 +253,5 @@ def main():
                 MXFP8_SF_DTYPE,
                 MXFP8_SF_VECTOR_SIZE,
                 M=None,
-                N = Int(N),
+                N=N,
             ](ctx, 999, N, tensor_scale=32.0)

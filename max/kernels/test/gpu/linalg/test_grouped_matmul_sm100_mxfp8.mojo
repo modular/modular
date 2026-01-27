@@ -255,16 +255,16 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(a_scale_dim0)
-        * Int(ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K))
+        a_scale_dim0
+        * ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(num_experts)
-        * Int(ceildiv(expert_shape[0], SF_MN_GROUP_SIZE))
-        * Int(ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K))
+        num_experts
+        * ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
+        * ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -399,11 +399,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     for e in range(num_experts):
         expert_slice_size = (
-            Int(b_scales_host.dim(1))
-            * Int(b_scales_host.dim(2))
-            * Int(b_scales_host.dim(3))
-            * Int(b_scales_host.dim(4))
-            * Int(b_scales_host.dim(5))
+            b_scales_host.dim(1)
+            * b_scales_host.dim(2)
+            * b_scales_host.dim(3)
+            * b_scales_host.dim(4)
+            * b_scales_host.dim(5)
         )
         comptime b_scales_5d_layout = Layout.row_major(
             b_scales_tensor.layout.shape[1].value(),
@@ -518,7 +518,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             RuntimeLayout[new_c_layout].row_major(
                 IndexList[2](
                     end - start,
-                    Int(expert_shape[0]),
+                    expert_shape[0],
                 ),
             ),
         )
@@ -529,14 +529,14 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             RuntimeLayout[new_a_layout].row_major(
                 IndexList[2](
                     end - start,
-                    Int(expert_shape[1]),
+                    expert_shape[1],
                 ),
             ),
         )
 
         comptime b_stride = b_tensor.layout.stride[0].value()
         var new_b_tensor = LayoutTensor[b_type, new_b_layout, MutAnyOrigin](
-            b_tensor.ptr + expert_id * Int(b_stride),
+            b_tensor.ptr + expert_id * b_stride,
             RuntimeLayout[new_b_layout].row_major(
                 IndexList[2](
                     b_tensor.dim(1),
@@ -549,7 +549,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         var new_b_scales_tensor = LayoutTensor[
             scales_dtype, new_b_scales_layout, MutAnyOrigin
         ](
-            b_scales_tensor.ptr + expert_id * Int(b_scales_stride),
+            b_scales_tensor.ptr + expert_id * b_scales_stride,
             RuntimeLayout[new_b_scales_layout].row_major(
                 IndexList[5](
                     b_scales_host.dim(1),
@@ -568,7 +568,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         var new_a_scales_tensor = LayoutTensor[
             scales_dtype, new_a_scales_layout, MutAnyOrigin
         ](
-            a_scales_tensor.ptr + a_scales_start * Int(a_scales_stride),
+            a_scales_tensor.ptr + a_scales_start * a_scales_stride,
             RuntimeLayout[new_a_scales_layout].row_major(
                 IndexList[5](
                     ceildiv(end - start, SF_MN_GROUP_SIZE),

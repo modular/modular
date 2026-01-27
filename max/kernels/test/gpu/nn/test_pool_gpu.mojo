@@ -119,7 +119,7 @@ fn pool[
     )
 
     var h_output_ref_ptr = UnsafePointer[Float32].alloc(
-        comptime (Int(out_layout.size()))
+        comptime (out_layout.size())
     )
     var h_output_ref = LayoutTensor[DType.float32, Layout.row_major[4]()](
         h_output_ref_ptr,

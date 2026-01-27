@@ -400,8 +400,8 @@ def execute_ragged_flash_attention(
         true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs])
         mixed_ce_cache_len = mixed_ce_cache_lens[bs]
 
-        true_ce_ragged_offset = Int(true_ce_row_offset + mixed_ce_cache_len)
-        mixed_ce_ragged_offset = Int(mixed_ce_row_offset)
+        true_ce_ragged_offset = true_ce_row_offset + mixed_ce_cache_len
+        mixed_ce_ragged_offset = mixed_ce_row_offset
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):

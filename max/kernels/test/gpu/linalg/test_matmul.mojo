@@ -293,7 +293,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[2](m, Int(n)),
+            IndexList[2](m, n),
             ctx,
         )
     ctx.synchronize()
