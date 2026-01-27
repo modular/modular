@@ -99,6 +99,6 @@ class Gemma3VisionAttention(Module[[Tensor], Tensor]):
 
         output = output.reshape([batch_size, n_patches, -1])
 
-        output = Tensor.from_graph_value(output)
+        tensor_output = Tensor.from_graph_value(output)
 
-        return self.out_proj(output)
+        return self.out_proj(tensor_output)

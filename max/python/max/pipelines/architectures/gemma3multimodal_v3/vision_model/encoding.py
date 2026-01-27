@@ -71,14 +71,14 @@ class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
     ) -> Tensor:
         """process the input hidden states through each of the sub-layers"""
         residual = hidden_states
-        hidden_states = self.layer_norm1(hidden_states.__tensorvalue__())
-        hidden_states = self.self_attn(Tensor.from_graph_value(hidden_states))
+        hidden_states_tv = self.layer_norm1(hidden_states.__tensorvalue__())
+        hidden_states = self.self_attn(Tensor.from_graph_value(hidden_states_tv))
         hidden_states = residual + hidden_states
 
         # MLP with residual
         residual = hidden_states
-        hidden_states = self.layer_norm2(hidden_states.__tensorvalue__())
-        hidden_states = self.mlp(Tensor.from_graph_value(hidden_states))
+        hidden_states_tv = self.layer_norm2(hidden_states.__tensorvalue__())
+        hidden_states = self.mlp(Tensor.from_graph_value(hidden_states_tv))
         hidden_states = residual + hidden_states
 
         return hidden_states
@@ -108,7 +108,19 @@ class Gemma3VisionEncoder(
         hidden_states: Tensor | Sequence[Tensor],
     ) -> Tensor | Sequence[Tensor]:
         """Process hidden states through the stack of encoder layers"""
-        for layer in self.layers:
-            hidden_states = layer(hidden_states)
-        # hidden_states = self.layers(hidden_states) #TODO could this be used
+        # if hidden_states is a list, we are sharding across devices.  each device has a replication of the weights
+        # TODO this is a temporary workaround while working single GPU and 
+        # keeping type checking happy
+        if isinstance(hidden_states, Sequence):
+            outputs = []
+            for device_idx, state in enumerate(hidden_states):
+                device_output = state
+                for layer in self.layers_per_device[device_idx]:
+                    device_output = layer(device_output)
+                outputs.append(device_output)
+            return outputs
+        else:
+            for layer in self.layers:
+                hidden_states = layer(hidden_states)
+            # hidden_states = self.layers(hidden_states) #TODO could this be used
         return hidden_states
