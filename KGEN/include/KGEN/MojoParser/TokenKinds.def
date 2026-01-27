@@ -165,6 +165,10 @@ TOK_KEYWORD(__struct_field_names)
 TOK_KEYWORD(__struct_field_type_at_index)
 TOK_KEYWORD(__struct_field_ref)
 
+#ifndef MODULAR_PRODUCTION
+TOK_KEYWORD(__mojo_crash) // Crashes the compiler. Not shipped to users.
+#endif // MODULAR_PRODUCTION
+
 #undef TOK_MARKER
 #undef TOK_IDENTIFIER
 #undef TOK_LITERAL

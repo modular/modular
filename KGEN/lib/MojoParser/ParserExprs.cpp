@@ -412,6 +412,9 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___struct_field_names:
   case Token::kw___struct_field_type_at_index:
   case Token::kw___struct_field_ref:
+#ifndef MODULAR_PRODUCTION
+  case Token::kw___mojo_crash:
+#endif // MODULAR_PRODUCTION
     return true;
   default:
     return false;
@@ -606,6 +609,13 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
+
+#ifndef MODULAR_PRODUCTION
+  case Token::kw___mojo_crash:
+    llvm::errs() << "__mojo_crash encountered\n";
+    std::abort();
+    break;
+#endif // MODULAR_PRODUCTION
 
   default:
     emitTokenError("unexpected token in expression");
