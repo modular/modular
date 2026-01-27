@@ -219,6 +219,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_graph_pinned",
+    srcs = [
+        "test_graph_pinned.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
     srcs = [
