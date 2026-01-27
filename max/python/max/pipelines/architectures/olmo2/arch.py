@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 from ..llama3 import weight_adapters as llama3_weight_adapters
 from . import weight_adapters
 from .model import Olmo2Model
+from .model_config import Olmo2Config
 
 olmo2_arch = SupportedArchitecture(
     name="Olmo2ForCausalLM_Legacy",
@@ -50,4 +51,5 @@ olmo2_arch = SupportedArchitecture(
         WeightsFormat.safetensors: llama3_weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Olmo2Config,
 )

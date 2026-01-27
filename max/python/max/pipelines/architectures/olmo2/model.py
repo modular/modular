@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import PagedCacheValues
 
@@ -53,21 +53,16 @@ class Olmo2Model(LlamaModelBase):
         """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
 
         device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
 
         # Retrieve config using Olmo2Config instead of Llama3Config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Olmo2Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Olmo2Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
+            return_logits=self.return_logits,
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
-            return_logits=self.return_logits,
         )
 
         # Build Graph - only single GPU for now
