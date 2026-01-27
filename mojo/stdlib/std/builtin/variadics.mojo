@@ -419,8 +419,9 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-@register_passable("trivial")
-struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
+struct VariadicList[type: __TypeOfAllTypes](
+    Iterable, Sized, TrivialRegisterType
+):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all

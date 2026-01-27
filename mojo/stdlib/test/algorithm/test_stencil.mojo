@@ -195,18 +195,18 @@ def test_stencil_avg_pool_padded():
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
     var input_stack = InlineArray[
-        Scalar[dtype], Int(input_shape_dims.flattened_length())
+        Scalar[dtype], input_shape_dims.flattened_length()
     ](uninitialized=True)
     var input = Span[Scalar[dtype]](input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = InlineArray[
-        Scalar[dtype], Int(output_shape_dims.flattened_length())
+        Scalar[dtype], output_shape_dims.flattened_length()
     ](uninitialized=True)
     var output = Span[Scalar[dtype]](output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
 
-    fill_span(input, Int(input_shape_dims.flattened_length()))
-    for i in range(Int(output_shape_dims.flattened_length())):
+    fill_span(input, input_shape_dims.flattened_length())
+    for i in range(output_shape_dims.flattened_length()):
         output.unsafe_ptr()[i] = 0
 
     @parameter

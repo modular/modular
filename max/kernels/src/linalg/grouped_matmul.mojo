@@ -173,7 +173,7 @@ fn naive_grouped_matmul_kernel[
     n = global_idx.x
     m = global_idx.y
 
-    if n >= UInt(N) or m >= UInt(M):
+    if n >= UInt(N) or m >= M:
         return
 
     comptime accum_type = get_accum_type[a_type]()
@@ -458,13 +458,13 @@ fn grouped_matmul_kernel_sm100[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(a_m_start)),
+                    (Int(k_start), Int(a_m_start)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(b_n_start)),
+                    (Int(k_start), Int(b_n_start)),
                 )
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)
@@ -681,7 +681,7 @@ fn grouped_matmul_sm100[
             num_active_experts,
         ),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -794,7 +794,7 @@ fn grouped_matmul_amd_kernel_launcher[
             var block_n = Int(block_idx.x)
 
             # Early exit if this block is completely outside the matrix bounds
-            if UInt32(block_m * BM) >= UInt32(M):
+            if UInt32(block_m * BM) >= M:
                 return
 
             comptime threads_per_block = 256
@@ -818,7 +818,7 @@ fn grouped_matmul_amd_kernel_launcher[
                     var remaining_in_tile_row = BN - tile_col
                     var actual_width = min(
                         width,
-                        min(Int(remaining_in_row), Int(remaining_in_tile_row)),
+                        min(Int(remaining_in_row), remaining_in_tile_row),
                     )
 
                     if actual_width == width and local_col + width <= N:

@@ -28,6 +28,7 @@ from builtin.format_int import _write_int
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
 from compile import get_type_name
+from format._utils import FormatStruct, Named
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -172,7 +173,6 @@ Parameters:
 """
 
 
-@register_passable("trivial")
 struct UnsafePointer[
     mut: Bool,
     //,
@@ -188,6 +188,7 @@ struct UnsafePointer[
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """`UnsafePointer` represents an indirect reference to one or more values
@@ -931,17 +932,11 @@ struct UnsafePointer[
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "UnsafePointer[mut=",
-            Self.mut,
-            ", ",
+        FormatStruct(writer, "UnsafePointer").params(
+            Named("mut", Self.mut),
             _unqualified_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            "](",
-            self,
-            ")",
-        )
+            Named("address_space", Self.address_space),
+        ).fields(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1459,7 +1454,7 @@ struct UnsafePointer[
         return self._as_legacy().bitcast[T]()
 
     comptime _OriginCastType[
-        target_mut: Bool, target_origin: Origin[mut=target_mut]
+        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
     ] = UnsafePointer[
         Self.type,
         target_origin,
@@ -1470,7 +1465,7 @@ struct UnsafePointer[
     fn mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
+        unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1491,7 +1486,7 @@ struct UnsafePointer[
     fn unsafe_mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[
-        target_mut, unsafe_origin_mutcast[Self.origin, target_mut]
+        unsafe_origin_mutcast[Self.origin, target_mut]
     ]:
         """Changes the mutability of a pointer.
 
@@ -1519,7 +1514,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn unsafe_origin_cast[
         target_origin: Origin[mut = Self.mut]
-    ](self) -> Self._OriginCastType[Self.mut, target_origin]:
+    ](self) -> Self._OriginCastType[target_origin]:
         """Changes the origin of a pointer.
 
         Parameters:
@@ -1543,7 +1538,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn as_immutable(
         self,
-    ) -> Self._OriginCastType[False, ImmutOrigin(Self.origin)]:
+    ) -> Self._OriginCastType[ImmutOrigin(Self.origin)]:
         """Changes the mutability of a pointer to immutable.
 
         Unlike `unsafe_mut_cast`, this function is always safe to use as casting

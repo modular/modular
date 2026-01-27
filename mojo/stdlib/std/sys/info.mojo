@@ -32,8 +32,9 @@ fn _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
 
-@register_passable("trivial")
-struct CompilationTarget[value: _TargetType = _current_target()]:
+struct CompilationTarget[value: _TargetType = _current_target()](
+    TrivialRegisterType
+):
     """A struct that provides information about a target architecture.
 
     This struct encapsulates various methods to query target-specific

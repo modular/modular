@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.module_v3.Sequential."""
+"""Tests for max.nn.Sequential."""
 
 from __future__ import annotations
 
 import re
 
-from max.experimental.tensor import Tensor
-from max.nn.module_v3 import Module, Sequential, module_dataclass
+from max.nn import Module, Sequential, module_dataclass
+from max.tensor import Tensor
 
 
 @module_dataclass

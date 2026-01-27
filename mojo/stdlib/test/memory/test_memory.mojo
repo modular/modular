@@ -34,8 +34,7 @@ comptime int8_pop = __mlir_type.`!pop.scalar<si8>`
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Pair:
+struct Pair(TrivialRegisterType):
     var lo: Int
     var hi: Int
 
@@ -123,8 +122,7 @@ def test_memcmp():
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SixByteStruct:
+struct SixByteStruct(TrivialRegisterType):
     var a: Int16
     var b: Int16
     var c: Int16

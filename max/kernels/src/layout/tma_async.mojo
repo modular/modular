@@ -145,8 +145,7 @@ fn _tma_desc_tile_layout[
         )
 
 
-@register_passable("trivial")
-struct SharedMemBarrier(ImplicitlyCopyable):
+struct SharedMemBarrier(TrivialRegisterType):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
 
     This struct provides a barrier mechanism optimized for coordinating thread execution
@@ -192,7 +191,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         """
         mbarrier_init(self.unsafe_ptr(), num_threads)
 
-    @always_inline
+    @always_inline("nodebug")
     fn expect_bytes[
         o: MutOrigin
     ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
@@ -312,7 +311,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         @parameter
         if ticks:
             inlined_assembly[asm, NoneType, constraints=constraints](
-                Int32(Int(self.unsafe_ptr())), phase, UInt32(ticks.value())
+                Int32(Int(self.unsafe_ptr())), phase, ticks.value()
             )
         else:
             inlined_assembly[asm, NoneType, constraints=constraints](
@@ -472,8 +471,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         return mbarrier_arrive(self.unsafe_ptr())
 
 
-@register_passable("trivial")
-struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable):
+struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a
@@ -671,9 +669,9 @@ struct TMATensorTile[
             "TMATensorTile[dtype = ",
             Self.dtype,
             ", layout = ",
-            Self.layout,
+            materialize[Self.layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             ", is_k_major = ",
             Self.is_k_major,
             "]",
@@ -729,7 +727,7 @@ struct TMATensorTile[
         self,
         dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified coordinates.
@@ -808,19 +806,19 @@ struct TMATensorTile[
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + (j * copy_dim1),
+                        coords[1] + (i * copy_dim0),
                     ),
                 )
 
-    @always_inline
+    @always_inline("nodebug")
     fn async_copy_3d(
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 3D coordinates.
@@ -892,9 +890,9 @@ struct TMATensorTile[
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + (j * copy_dim2),
+                            coords[1] + (i * copy_dim1),
+                            coords[2] + (m * copy_dim0),
                         ),
                     )
 
@@ -907,7 +905,7 @@ struct TMATensorTile[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 4D coordinates.
@@ -985,10 +983,10 @@ struct TMATensorTile[
                             ](),
                             mem_barrier.unsafe_ptr(),
                             Index(
-                                coords[0] + UInt(j * copy_dim3),
-                                coords[1] + UInt(i * copy_dim2),
-                                coords[2] + UInt(m * copy_dim1),
-                                coords[3] + UInt(n * copy_dim0),
+                                coords[0] + (j * copy_dim3),
+                                coords[1] + (i * copy_dim2),
+                                coords[2] + (m * copy_dim1),
+                                coords[3] + (n * copy_dim0),
                             ),
                         )
 
@@ -1001,7 +999,7 @@ struct TMATensorTile[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 5D coordinates.
@@ -1094,15 +1092,15 @@ struct TMATensorTile[
                                 ](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
-                                    coords[0] + UInt(j * copy_dim4),
-                                    coords[1] + UInt(i * copy_dim3),
-                                    coords[2] + UInt(m * copy_dim2),
-                                    coords[3] + UInt(n * copy_dim1),
-                                    coords[4] + UInt(o * copy_dim0),
+                                    coords[0] + (j * copy_dim4),
+                                    coords[1] + (i * copy_dim3),
+                                    coords[2] + (m * copy_dim2),
+                                    coords[3] + (n * copy_dim1),
+                                    coords[4] + (o * copy_dim0),
                                 ),
                             )
 
-    @always_inline
+    @always_inline("nodebug")
     fn async_copy[
         rank: Int, //, cta_group: Int = 1
     ](
@@ -1139,24 +1137,22 @@ struct TMATensorTile[
 
         @parameter
         if rank == 2:
-            self.async_copy(
-                dst, mem_barrier, (UInt(coords[0]), UInt(coords[1]))
-            )
+            self.async_copy(dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
         elif rank == 3:
             self.async_copy_3d(
                 dst,
                 mem_barrier,
-                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif rank == 4:
             self.async_copy_4d(
                 dst,
                 mem_barrier,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
                 ),
             )
         elif rank == 5:
@@ -1164,11 +1160,11 @@ struct TMATensorTile[
                 dst,
                 mem_barrier,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
-                    UInt(coords[4]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
                 ),
             )
 
@@ -2918,13 +2914,12 @@ def create_tma_tile_template[
     return TMATensorTile[dtype, __tile_layout, __desc_layout](TMADescriptor())
 
 
-@register_passable("trivial")
 struct TMATensorTileArray[
     num_of_tensormaps: Int,
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-](DevicePassable, ImplicitlyCopyable):
+](DevicePassable, TrivialRegisterType):
     """An array of TMA descripotr.
 
     Parameters:
@@ -2979,9 +2974,9 @@ struct TMATensorTileArray[
             ", dtype = ",
             Self.dtype,
             ", cta_tile_layout = ",
-            Self.cta_tile_layout,
+            materialize[Self.cta_tile_layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             "]",
         )
 
@@ -3026,9 +3021,7 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return UnsafePointer[UInt8, MutAnyOrigin](
-            self.tensormaps_ptr + index * self.descriptor_bytes
-        ).bitcast[
+        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
             TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
         ]()
 
@@ -3336,7 +3329,7 @@ struct RaggedTensorMap[
             layout.shape.replace_entry(idx, int_value=UNKNOWN_VALUE)
             layout.stride.replace_entry(idx, int_value=UNKNOWN_VALUE)
 
-        return layout
+        return layout^
 
     comptime device_type: AnyType = Self
     """The TensorMapDescriptorArray type."""

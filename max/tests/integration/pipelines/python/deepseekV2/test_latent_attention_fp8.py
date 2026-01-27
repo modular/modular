@@ -21,18 +21,22 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.float8_config import (
+from max.nn.legacy.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
-from max.nn.rotary_embedding import (
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -326,7 +330,7 @@ def generate_max_outputs_fp8(
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         batch.append(context)
 
     input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
@@ -340,8 +344,8 @@ def generate_max_outputs_fp8(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.alloc(ctx, 1)
-            kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+                kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -356,14 +360,14 @@ def generate_max_outputs_fp8(
             for ctx in batch:
                 ctx.update(42)
 
-            kv_manager.step(batch)
+            kv_manager.step([batch])
             torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
             all_outputs.append(torch_output[:, None, :].to("cpu"))
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.alloc(ctx, 1)
-    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+        kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)

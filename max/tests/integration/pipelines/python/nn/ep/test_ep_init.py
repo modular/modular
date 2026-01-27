@@ -17,7 +17,7 @@ import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
 

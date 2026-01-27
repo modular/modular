@@ -29,7 +29,7 @@ _IGNORED_TARGETS = {
 
 
 def _should_ignore_target(label: str) -> bool:
-    return "copied-emit-mojo-tests" in label or label in _IGNORED_TARGETS
+    return label in _IGNORED_TARGETS
 
 
 def _cquery_tests(config: str, tag: str | None) -> set[str]:

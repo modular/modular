@@ -236,3 +236,29 @@ trait Defaultable:
     fn __init__(out self):
         """Create a default instance of the value."""
         ...
+
+
+@register_passable
+trait TrivialRegisterType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
+    """A marker trait to denote the type to be register passable trivial.
+
+     The compiler treats the type that conforms to this trait with the
+     followings:
+     - The type implicitly conforms to Copyable and the compiler synthesizes
+     `__copyinit__` that does a memcpy.
+     - A trivial `__del__` member is synthesized by the compiler too,
+     so the type can’t be a linear type.
+     - All declared members are required to also conforms to this trait,
+     since you can’t memcpy or trivially destroy a container if one
+     of its stored members has a non-trivial copy constructor.
+     - You are not allowed to define a custom `__copyinit__` or `__del__`.
+
+
+     ```mojo
+    struct Foo(TrivialRegisterType):
+        ...
+     ```
+
+    """
+
+    pass

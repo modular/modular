@@ -65,7 +65,7 @@ fn normalize_index[
         return i
     else:
         var mlir_index = index(idx)._mlir_value
-        var i = UInt(mlir_value=mlir_index)
+        var i = UInt(Int(mlir_value=mlir_index))
         if Int(mlir_value=mlir_index) < 0:
             i += length
         # Checking the bounds after the normalization saves a comparison

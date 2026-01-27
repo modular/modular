@@ -18,12 +18,10 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "@mojo//:std",
+            "//max:MOGGKernelAPI",
             "//max:tensor",
-        ] + select({
-            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
+            "@mojo//:std",
+        ],
         visibility = ["//visibility:private"],
         testonly = True,
         **kwargs

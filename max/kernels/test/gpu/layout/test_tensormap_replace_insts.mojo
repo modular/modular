@@ -81,9 +81,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[Int(block_idx.x)][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -238,9 +236,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[Int(block_idx.x)][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -410,9 +406,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[Int(block_idx.x)][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()

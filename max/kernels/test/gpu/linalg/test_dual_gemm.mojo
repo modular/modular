@@ -207,8 +207,8 @@ fn test_dual_matmul[
     var mat_b0 = ManagedLayoutTensor[src_type, layout_b](ctx)
     var mat_b1 = ManagedLayoutTensor[src_type, layout_b](ctx)
 
-    rand(mat_b0.tensor().ptr, layout_b.size(), min=0.0, max=1.0)
-    rand(mat_b1.tensor().ptr, layout_b.size(), min=-1.0, max=0.0)
+    rand(mat_b0.tensor().ptr, comptime (layout_b.size()), min=0.0, max=1.0)
+    rand(mat_b1.tensor().ptr, comptime (layout_b.size()), min=-1.0, max=0.0)
     var mat_c = ManagedLayoutTensor[dst_type](layout_c, ctx)
 
     var mat_c_device_tensor = mat_c.device_tensor()

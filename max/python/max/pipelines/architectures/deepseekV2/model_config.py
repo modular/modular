@@ -14,18 +14,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
-from pydantic import model_validator
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 
-class DeepseekV2Config(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class DeepseekV2Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV2 models."""
 
     # MAX specific fields
@@ -77,8 +81,15 @@ class DeepseekV2Config(MAXModelConfigBase):
 
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
-    @model_validator(mode="after")
-    def _validate(self) -> Self:
+    @override
+    def get_kv_params(self) -> KVCacheParams:
+        return self.kv_params
+
+    @override
+    def get_max_seq_len(self) -> int:
+        return self.max_position_embeddings
+
+    def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
                 "'silu' is the only hidden_act currently supported"
@@ -101,14 +112,8 @@ class DeepseekV2Config(MAXModelConfigBase):
         if self.pad_token_id is not None:
             raise ValueError("Padding token is not supported yet")
 
-        return self
-
     @staticmethod
-    def help() -> dict[str, str]:
-        return {}
-
-    @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -137,3 +142,81 @@ class DeepseekV2Config(MAXModelConfigBase):
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.num_hidden_layers
+
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        huggingface_config = pipeline_config.model.huggingface_config
+        devices = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model.device_specs
+        ]
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        cache_dtype = quantization_encoding.cache_dtype
+        kv_params = cls.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+            graph_mode = "prefill"
+        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
+
+        max_seq_len = upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=pipeline_config.max_length,
+        )
+
+        return cls(
+            attention_bias=huggingface_config.attention_bias,
+            attention_dropout=huggingface_config.attention_dropout,
+            aux_loss_alpha=huggingface_config.aux_loss_alpha,
+            bos_token_id=huggingface_config.bos_token_id,
+            eos_token_id=huggingface_config.eos_token_id,
+            first_k_dense_replace=huggingface_config.first_k_dense_replace,
+            hidden_act=huggingface_config.hidden_act,
+            hidden_size=huggingface_config.hidden_size,
+            initializer_range=huggingface_config.initializer_range,
+            intermediate_size=huggingface_config.intermediate_size,
+            kv_lora_rank=huggingface_config.kv_lora_rank,
+            max_position_embeddings=max_seq_len,
+            moe_intermediate_size=huggingface_config.moe_intermediate_size,
+            moe_layer_freq=huggingface_config.moe_layer_freq,
+            n_group=huggingface_config.n_group,
+            n_routed_experts=huggingface_config.n_routed_experts,
+            n_shared_experts=huggingface_config.n_shared_experts,
+            norm_topk_prob=huggingface_config.norm_topk_prob,
+            num_attention_heads=huggingface_config.num_attention_heads,
+            num_experts_per_tok=huggingface_config.num_experts_per_tok,
+            num_hidden_layers=huggingface_config.num_hidden_layers,
+            num_key_value_heads=huggingface_config.num_key_value_heads,
+            pretraining_tp=huggingface_config.pretraining_tp,
+            q_lora_rank=huggingface_config.q_lora_rank,
+            qk_nope_head_dim=huggingface_config.qk_nope_head_dim,
+            qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
+            rms_norm_eps=huggingface_config.rms_norm_eps,
+            rope_scaling=huggingface_config.rope_scaling,
+            rope_theta=huggingface_config.rope_theta,
+            routed_scaling_factor=huggingface_config.routed_scaling_factor,
+            scoring_func=huggingface_config.scoring_func,
+            seq_aux=huggingface_config.seq_aux,
+            tie_word_embeddings=huggingface_config.tie_word_embeddings,
+            topk_group=huggingface_config.topk_group,
+            topk_method=huggingface_config.topk_method,
+            use_cache=huggingface_config.use_cache,
+            v_head_dim=huggingface_config.v_head_dim,
+            vocab_size=huggingface_config.vocab_size,
+            dtype=quantization_encoding.dtype,
+            kv_params=kv_params,
+            devices=devices,
+            graph_mode=graph_mode,
+        )

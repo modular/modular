@@ -64,7 +64,7 @@ struct Fnv1a(Defaultable, Hasher):
 
             @parameter
             for r in range(rounds):
-                self._value ^= (v >> (r * 64)).cast[DType.uint64]()
+                self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
     fn update[T: Hashable](mut self, value: T):

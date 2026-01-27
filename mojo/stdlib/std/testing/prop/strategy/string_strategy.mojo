@@ -174,7 +174,7 @@ struct _CodepointStrategy:
                 return Codepoint(unsafe_unchecked_codepoint=code_point)
         else:
             # ascii printable characters
-            var start: UInt32 = 32 if self.only_printable else 0
+            var start: UInt32 = UInt32(32) if self.only_printable else UInt32(0)
             var end: UInt32 = 126 + UInt32(not self.only_printable)
             return Codepoint(
                 unsafe_unchecked_codepoint=rng.rand_scalar[DType.uint32](

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv
+from math import ceildiv, align_up
 from math.constants import log2e
 from memory import (
     bitcast,
@@ -77,8 +77,7 @@ from builtin.device_passable import DevicePassable
 from utils import StaticTuple
 
 
-@register_passable("trivial")
-trait OptionalPointer(Copyable):
+trait OptionalPointer(Copyable, TrivialRegisterType):
     comptime dtype: DType
     comptime is_null: Bool
 
@@ -87,7 +86,6 @@ trait OptionalPointer(Copyable):
         ...
 
 
-@register_passable("trivial")
 struct NonNullPointer[dtype_: DType](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = False
@@ -114,7 +112,6 @@ struct NonNullPointer[dtype_: DType](OptionalPointer):
         return self.ptr
 
 
-@register_passable("trivial")
 struct NullPointer[dtype_: DType](OptionalPointer):
     comptime dtype: DType = Self.dtype_
     comptime is_null: Bool = True
@@ -128,7 +125,6 @@ struct NullPointer[dtype_: DType](OptionalPointer):
         return {}
 
 
-@register_passable("trivial")
 struct Pack[
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
@@ -138,7 +134,7 @@ struct Pack[
     KVRowOffsetsType: OptionalPointer,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-](Copyable, DevicePassable):
+](Copyable, DevicePassable, TrivialRegisterType):
     var mask: Self.MaskType
     var score_mod: Self.ScoreModType
     var scheduler: Self.SchedulerType
@@ -183,7 +179,6 @@ struct Pack[
         self.partition = partition
 
 
-@register_passable("trivial")
 struct MHAPosition[
     BM: Int,
     BN: Int,
@@ -192,7 +187,7 @@ struct MHAPosition[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == q_num_heads`.
@@ -334,7 +329,7 @@ struct MHAPosition[
                         Int(self.num_keys - 1),
                         Int(kv_tile_start_row),
                     ),
-                    Index[dtype = DType.int32](Int(1), Int(Self.BN)),
+                    Index[dtype = DType.int32](Int(1), Self.BN),
                 )
             else:
                 return TileMaskStatus.PARTIAL_MASK
@@ -344,7 +339,7 @@ struct MHAPosition[
                     Int(self.prompt_offset + self.start_pos),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype = DType.int32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -468,8 +463,7 @@ fn get_seq_info[
     return scheduler.unsafe_seq_info(tile_summary, state)
 
 
-@register_passable("trivial")
-struct PositionSummary:
+struct PositionSummary(TrivialRegisterType):
     var num_keys: UInt32
     var score_row: UInt32
 
@@ -655,14 +649,12 @@ fn _get_position[
     if _is_decoding[MaxSeqLenType]():
         # q matrix view is rows x depth
         q_col = 0
-        q_offset = Int(depth) * Int(
-            q_row * q_num_heads + seq_info.head_idx * group
-        )
+        q_offset = depth * Int(q_row * q_num_heads + seq_info.head_idx * group)
     else:  # head_idx is for q_heads
         # q matrix view is rows x (depth*q_num_heads)
         q_row += seq_info.prompt_offset
         q_col = seq_info.head_idx * depth
-        q_offset = Int(depth * q_num_heads) * Int(q_row) + Int(q_col)
+        q_offset = depth * q_num_heads * Int(q_row) + Int(q_col)
     ret = {q_row, q_col, q_offset, num_keys, start_pos, seq_info}
 
 
@@ -674,15 +666,25 @@ fn q_smem_shape[
     group: Int,
     depth: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
     __comptime_assert L in (3, 4)
+    comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
     @parameter
     if L == 3:  # prefill
-        return {BM, 1, depth}
+
+        @parameter
+        if num_qk_stages == 1:
+            return {BM, 1, depth}
+        else:
+            return {
+                BM,
+                1,
+                align_up(depth, swizzle_granularity) // num_qk_stages,
+            }
     else:
-        comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
         return {1, 1, max(group, 8), swizzle_granularity}
 
 
@@ -713,10 +715,17 @@ comptime QTMATile[
     depth: Int,
     group: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
     q_smem_shape[
-        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+        dtype,
+        swizzle_mode,
+        BM=BM,
+        group=group,
+        depth=depth,
+        decoding=decoding,
+        num_qk_stages=num_qk_stages,
     ](),
     swizzle_mode,
 ]
@@ -745,6 +754,7 @@ fn q_tma[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
+    num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype]],
@@ -756,9 +766,16 @@ fn q_tma[
     depth=depth,
     group=group,
     decoding=decoding,
+    num_qk_stages=num_qk_stages,
 ]:
     comptime smem_dim = q_smem_shape[
-        dtype, swizzle_mode, BM=BM, group=group, depth=depth, decoding=decoding
+        dtype,
+        swizzle_mode,
+        BM=BM,
+        group=group,
+        depth=depth,
+        decoding=decoding,
+        num_qk_stages=num_qk_stages,
     ]()
     comptime gmem_dim = q_gmem_shape[
         dtype,
@@ -1004,7 +1021,7 @@ fn q_coord[
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
     """
     comptime rank: Int = res.size
-    __comptime_assert rank in (3, 4, 5)
+    __comptime_assert rank in (3, 4)
 
     res = {}
 
@@ -1117,7 +1134,7 @@ fn produce[
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = (2 * q_size if persistent else q_size)
 
-    comptime q_copy_rows = max(group, 8) if decoding else Int(BM)
+    comptime q_copy_rows = max(group, 8) if decoding else BM
     comptime qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
 
     tile_state = tile_state_arg
@@ -1265,10 +1282,10 @@ fn produce[
                 q_producer(q_idx, smem_offset),
                 q_mbar,
                 (
-                    UInt(d),
-                    UInt(0),
-                    UInt(position.head_idx),
-                    UInt(position.q_row),
+                    d,
+                    0,
+                    Int(position.head_idx),
+                    Int(position.q_row),
                 ),
             )
     else:
@@ -1366,10 +1383,10 @@ fn produce[
                             q_producer(q_idx),
                             pq_mbar,
                             (
-                                d,
-                                UInt(0),
-                                UInt(position.head_idx),
-                                UInt(position.q_row),
+                                Int(d),
+                                0,
+                                Int(position.head_idx),
+                                Int(position.q_row),
                             ),
                         )
 

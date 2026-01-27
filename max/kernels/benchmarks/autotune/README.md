@@ -31,9 +31,10 @@ performance of Mojo kernels.
 
 ## Prerequisites
 
-Be sure you meet the MAX
+MAX supports both CPUs and GPUs. Be sure you meet the MAX
 [system requirements](https://docs.modular.com/max/packages#system-requirements)
-before using `kbench`.
+for your specific environment. For GPU support, see
+[GPU compatibility and software requirements](https://docs.modular.com/max/packages/#gpu-compatibility).
 
 If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
 later. You may need to run `xcodebuild -downloadComponent MetalToolchain`,

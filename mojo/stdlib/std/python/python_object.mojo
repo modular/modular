@@ -245,7 +245,7 @@ struct PythonObject(
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(mlir_value=value.cast[DType.int]()._mlir_value)
+            var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
             var val = c_ssize_t(value.cast[DType.int]()._mlir_value)
@@ -282,7 +282,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(value.as_string_slice())
+        self = Self(StringSlice(value))
 
     @implicit
     fn __init__(out self, value: String) raises:
@@ -294,7 +294,7 @@ struct PythonObject(
         Raises:
             If the string is not valid UTF-8.
         """
-        self = Self(value.as_string_slice())
+        self = Self(StringSlice(value))
 
     @implicit
     fn __init__(out self, slice: Slice):
@@ -1930,7 +1930,7 @@ __extension SIMD:
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[dtype](float_value)
         elif dtype.is_integral() and bit_width_of[dtype]() <= 64:
-            self = Int(py=py)
+            self = Scalar[dtype](Int(py=py))
         else:
             self = Scalar[dtype]()
             constrained[False, "unsupported dtype"]()

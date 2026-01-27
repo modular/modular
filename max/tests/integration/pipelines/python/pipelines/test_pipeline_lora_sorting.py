@@ -31,7 +31,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
@@ -322,7 +322,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000
@@ -350,7 +349,6 @@ def create_pipeline_with_lora(
             self._devices = [CPU()]
             self._eos_token_id = {999}
             self._tokenizer = MagicMock()
-            self._weight_adapters = {}
             self.batch_info_output_fname = None
             self.batch_infos = []
             self.vocab_size = 1000
@@ -380,8 +378,8 @@ def execute_pipeline(
 
     if pipeline_type == PipelineType.TEXT_GENERATION:
         patch_base = "max.pipelines.lib.pipeline_variants.text_generation"
-        inputs = TextGenerationInputs(
-            batches=[cast(dict[RequestID, TextContext], batch)],
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[list(cast(dict[RequestID, TextContext], batch).values())],
             num_steps=1,
         )
         with (

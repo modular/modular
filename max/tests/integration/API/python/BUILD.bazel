@@ -91,7 +91,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_cli.py",
-        "test_use_module_v3.py",
+        "test_use_legacy_module.py",
     ],
     gpu_constraints = [
         "//:has_gpu",
@@ -198,6 +198,26 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_engine_device_graph",
+    srcs = [
+        "test_engine_device_graph.py",
+    ],
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
     srcs = [
@@ -218,15 +238,23 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common:registry",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -250,15 +278,19 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
     ],
 )
 

@@ -37,7 +37,8 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
 )
-from linalg.fp4_quantization import naive_block_scaled_nvfp4_matmul
+from linalg.fp4_quantization import naive_block_scaled_matmul
+from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn test_block_scaled_nvfp4_cublaslt[
@@ -223,7 +224,8 @@ fn test_block_scaled_nvfp4_cublaslt[
     )
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
-    naive_block_scaled_nvfp4_matmul[
+    naive_block_scaled_matmul[
+        scaling_kind = UMMAKind.KIND_MXF4NVF4,
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](

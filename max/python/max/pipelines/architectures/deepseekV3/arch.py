@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
@@ -23,9 +23,10 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import DeepseekV3Model
+from .model_config import DeepseekV3Config
 
 deepseekV3_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLM",
+    name="DeepseekV3ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3",
@@ -45,4 +46,5 @@ deepseekV3_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    config=DeepseekV3Config,
 )

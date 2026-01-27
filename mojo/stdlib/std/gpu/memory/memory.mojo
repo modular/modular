@@ -40,7 +40,12 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from sys.info import (
+    CompilationTarget,
+    _is_sm_9x_or_newer,
+    _is_sm_100x_or_newer,
+    is_apple_gpu,
+)
 from sys.intrinsics import _RegisterPackType
 
 from builtin.dtype import _uint_type_of_width
@@ -65,8 +70,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CacheOperation(Equatable):
+struct CacheOperation(Equatable, TrivialRegisterType):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -189,8 +193,7 @@ struct CacheOperation(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CacheEviction(Equatable):
+struct CacheEviction(Equatable, TrivialRegisterType):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -287,8 +290,7 @@ struct CacheEviction(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Fill(Equatable):
+struct Fill(Equatable, TrivialRegisterType):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -343,8 +345,7 @@ struct Fill(Equatable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Consistency(Equatable, ImplicitlyCopyable):
+struct Consistency(Equatable, TrivialRegisterType):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -422,8 +423,7 @@ struct Consistency(Equatable, ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ReduceOp(Equatable):
+struct ReduceOp(Equatable, TrivialRegisterType):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -619,7 +619,7 @@ fn async_copy[
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
         comptime n_scalars = size // size_of[dtype]()
-        var n_src_scalars = src_size // size_of[dtype]()
+        var n_src_scalars = src_size // Int32(size_of[dtype]())
 
         @parameter
         if fill:
@@ -653,7 +653,7 @@ fn async_copy[
     comptime cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
     @parameter
-    if Bool(fill) and Bool(fill.value() == 0):
+    if Bool(fill) and fill.value() == 0:
         debug_assert(
             not predicate, "Predicate bit has to be set False for zero fill."
         )
@@ -865,6 +865,9 @@ fn external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
+    __comptime_assert (
+        not is_apple_gpu()
+    ), "external memory is not supported on Apple GPU"
     var extern_ptr_symbol = UnsafePointer[
         StaticTuple[dtype, 0], MutAnyOrigin, address_space=address_space
     ](
@@ -1182,9 +1185,9 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
-                to_i32(coords[2]),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
+                to_i32(Int32(coords[2])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )
@@ -1215,8 +1218,8 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
-                to_i32(coords[1]),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )
@@ -1245,7 +1248,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
                 to_llvm_ptr(tma_descriptor),
-                to_i32(coords[0]),
+                to_i32(Int32(coords[0])),
                 to_llvm_shared_mem_ptr(mem_bar),
                 to_i16(multicast_mask),
             )

@@ -182,7 +182,7 @@ fn grouped_matmul_sm90[
         wgmma_shape,
         cluster_shape,
         Int(config.num_pipeline_stages),
-        Int(num_threads),
+        num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-import traceback
 
 from max.interfaces import (
     MAXPullQueue,
@@ -120,7 +119,7 @@ class TokenGenerationScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
-        if len(inputs.batch) > 0:
+        if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
                 num_terminated_reqs = self._schedule(inputs)
         else:
@@ -151,16 +150,15 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        batch_request_ids = list(inputs.batch.keys())
+        batch_request_ids = [
+            context.request_id for context in inputs.flat_batch
+        ]
 
         # Execute the batch.
         try:
             responses = self.pipeline.execute(inputs)
         except Exception as exc:
-            logger.error(
-                "Exception during pipeline execution: %s",
-                traceback.format_exc(),
-            )
+            logger.exception("Exception during pipeline execution")
 
             # Send error results to ALL requests in the batch
             self.response_queue.put_nowait(

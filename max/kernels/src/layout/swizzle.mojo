@@ -305,8 +305,7 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct Swizzle(LayoutTrait, Stringable, Writable):
+struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -594,7 +593,9 @@ struct ComposedLayout[
     """The second layout to apply."""
 
     @always_inline
-    fn __init__(out self, layout_a: Self.LayoutA, layout_b: Self.LayoutB):
+    fn __init__(
+        out self, var layout_a: Self.LayoutA, var layout_b: Self.LayoutB
+    ):
         """Initialize ComposedLayout with two layouts.
 
         Args:
@@ -604,8 +605,8 @@ struct ComposedLayout[
         __comptime_assert (
             not Self.offset or Self.offset.value() >= 0
         ), "Requires non-negative offset if present"
-        self.layout_a = layout_a
-        self.layout_b = layout_b
+        self.layout_a = layout_a^
+        self.layout_b = layout_b^
 
     @always_inline
     fn __copyinit__(out self, other: Self):
@@ -614,8 +615,8 @@ struct ComposedLayout[
         Args:
             other: The ComposedLayout to copy from.
         """
-        self.layout_a = other.layout_a
-        self.layout_b = other.layout_b
+        self.layout_a = other.layout_a.copy()
+        self.layout_b = other.layout_b.copy()
 
     @always_inline
     fn __call__(self, idx: IntTuple) -> Int:
@@ -712,7 +713,7 @@ fn eval_composed[
             b_idx += Int(coord_i * UInt(st))
     # swizzle
     else:
-        b_idx = composed_layout.layout_a(b_idx)
+        b_idx = materialize[composed_layout.layout_a]()(b_idx)
 
     b_idx += Int(offset)
 

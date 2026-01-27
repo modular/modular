@@ -54,7 +54,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from linalg.structuring import ScatterGatherAmd, SMemArrayType
+from linalg.structuring import ScatterGatherAmd, SMemArray
 from utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies
@@ -179,7 +179,11 @@ fn smem_tile_layout[
     comptime base_layout = Layout.row_major(block_rows, k_tile_size)
     comptime num_repeats = block_cols // k_tile_size
     comptime tiler_layout = Layout.row_major(1, num_repeats)
-    return blocked_product(base_layout, tiler_layout, coalesce_output=True)
+    return blocked_product(
+        materialize[base_layout](),
+        materialize[tiler_layout](),
+        coalesce_output=True,
+    )
 
 
 @parameter
@@ -230,7 +234,9 @@ fn get_producer_warp_thread_layout[
         num_repeats_row,
         num_repeats_col,
     )
-    return blocked_product(base_layout, tiler_layout)
+    return blocked_product(
+        materialize[base_layout](), materialize[tiler_layout]()
+    )
 
 
 @always_inline
@@ -444,12 +450,8 @@ fn warp_specialized_matmul_kernel[
     barrier()  # Ensure that RingBuffers are initialized across warps.
 
     comptime tile_count = K // BK
-    comptime warps_processed_per_producer_a = Int(
-        m_warps_per_block // a_producer_warps
-    )
-    comptime warps_processed_per_producer_b = Int(
-        n_warps_per_block // b_producer_warps
-    )
+    comptime warps_processed_per_producer_a = m_warps_per_block // a_producer_warps
+    comptime warps_processed_per_producer_b = n_warps_per_block // b_producer_warps
 
     # Producer logic - simplified using generic function
     if role is ThreadRole.PRODUCER:
@@ -576,7 +578,7 @@ fn warp_specialized_matmul_kernel[
 
                 # Write this tile's result to global memory
                 var c_warp_tile = c_block_tile.tile[WM, WN](
-                    Int(m_warp_idx), Int(n_warp_idx)
+                    m_warp_idx, n_warp_idx
                 )
 
                 c_scatter_gather.copy(

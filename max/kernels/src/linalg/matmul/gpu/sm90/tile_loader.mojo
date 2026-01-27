@@ -31,7 +31,7 @@ from gpu.memory import (
     AddressSpace,
     async_copy,
 )
-from ....structuring import SharedMemBarrier, SMemBarrier, SMemTileType
+from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
 from gpu import thread_idx
 from sys import simd_width_of
@@ -39,8 +39,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
-@register_passable("trivial")
-trait TileLoader:
+trait TileLoader(TrivialRegisterType):
     """Base trait for tile loading mechanisms in matrix multiplication.
 
     This trait defines the interface for loading tiles from global memory
@@ -52,7 +51,7 @@ trait TileLoader:
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -66,7 +65,6 @@ trait TileLoader:
         ...
 
 
-@register_passable("trivial")
 struct TileLoaderTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
@@ -125,7 +123,7 @@ struct TileLoaderTMA[
     @always_inline
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         _coords: Tuple[UInt, UInt],
     ):
@@ -183,11 +181,10 @@ struct TileLoaderTMA[
             self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
-                coords,
+                (Int(coords[0]), Int(coords[1])),
             )
 
 
-@register_passable("trivial")
 struct TileLoaderCPAsync[
     dtype: DType,
     src_layout: Layout,
@@ -237,7 +234,7 @@ struct TileLoaderCPAsync[
 
     fn load_tile(
         self,
-        dst: SMemTileType[Self._dtype, _, alignment=128, ...],
+        dst: SMemTile[Self._dtype, _, alignment=128, ...],
         mem_barrier: SMemBarrier,
         coords: Tuple[UInt, UInt],
     ):
@@ -359,8 +356,8 @@ fn async_copy_with_bound_check[
     # Create swizzle pattern to avoid shared memory bank conflicts
     comptime swizzle = make_swizzle[
         8,
-        Int(swizzle_bytes // size_of[dst.dtype]()),
-        Int(simd_width_of[dst.dtype]()),
+        swizzle_bytes // size_of[dst.dtype](),
+        simd_width_of[dst.dtype](),
     ]()
 
     comptime num_vecs = dst_frag.layout.size()

@@ -54,11 +54,37 @@ When you modify a .cpp file in the _core/src directory, you can run
 )
 
 modular_py_library(
+    name = "tensor",
+    srcs = [
+        "_passes.py",
+        "_realization_context.py",
+        "_support.py",
+        "_tensor_repr.py",
+        "functional.py",
+        "random.py",
+        "tensor.py",
+    ],
+    # engine is used via engine.api.InferenceSession in _realization_context.py
+    ignore_extra_deps = ["//max/python/max/engine"],
+    deps = [
+        ":_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        requirement("rich"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
     name = "max",
     srcs = [],
     tags = ["no-pydeps"],  # All deps are unused
     deps = [
         ":_core",
+        ":tensor",
         "//max/python/max/_core_mojo",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -68,7 +94,6 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",

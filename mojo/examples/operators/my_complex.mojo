@@ -14,13 +14,12 @@
 from math import sqrt
 
 
-@register_passable("trivial")
 struct Complex(
     Boolable,
     Equatable,
-    ImplicitlyCopyable,
     Representable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Represents a complex value.

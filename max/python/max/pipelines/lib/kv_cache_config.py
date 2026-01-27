@@ -16,44 +16,56 @@ import enum
 from collections.abc import Mapping
 
 from max.config import ConfigFileModel
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from pydantic import Field, PrivateAttr
 
 
 class KVCacheConfig(ConfigFileModel):
     cache_strategy: KVCacheStrategy = Field(
-        default=KVCacheStrategy.MODEL_DEFAULT
+        default=KVCacheStrategy.MODEL_DEFAULT,
+        description=(
+            "The cache strategy to use. This defaults to model_default, which "
+            "selects the default strategy for the requested architecture. You "
+            "can also force a specific strategy: continuous or paged."
+        ),
     )
-    """The cache strategy to use. This defaults to :obj:`model_default`, which will set the cache
-    strategy based on the default strategy for the architecture requested.
 
-    You can also force the engine to use a specific caching strategy: :obj:`continuous` | :obj:`paged`.
-    """
+    kv_cache_page_size: int = Field(
+        default=128,
+        description="The number of tokens in a single page in the paged KVCache.",
+    )
 
-    kv_cache_page_size: int = Field(default=128)
-    """The number of tokens in a single page in the paged KVCache."""
+    enable_prefix_caching: bool = Field(
+        default=True,
+        description="Whether to enable prefix caching for the paged KVCache.",
+    )
 
-    enable_prefix_caching: bool = Field(default=True)
-    """Whether to enable prefix caching for the paged attention KVCache."""
+    enable_kvcache_swapping_to_host: bool = Field(
+        default=False,
+        description=(
+            "Whether to swap paged KVCache blocks to host memory when device "
+            "blocks are evicted."
+        ),
+    )
 
-    enable_kvcache_swapping_to_host: bool = Field(default=False)
-    """Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted."""
+    device_memory_utilization: float = Field(
+        default=0.9,
+        description=(
+            "The fraction of available device memory that the process should "
+            "consume. This informs the KVCache workspace size: "
+            "kv_cache_workspace = (total_free_memory * device_memory_utilization) "
+            "- model_weights_size."
+        ),
+    )
 
-    device_memory_utilization: float = Field(default=0.9)
-    """The fraction of available device memory that the process should consume.
-
-    This is used to inform the size of the KVCache workspace. The calculation is:
-
-    .. math::
-
-        kv\\_cache\\_workspace = (total\\_free\\_memory \\times device\\_memory\\_utilization) - model\\_weights\\_size
-    """
-
-    host_kvcache_swap_space_gb: float = Field(default=50.0)
-    """The amount of host memory to use for the host KVCache in GiB.
-
-    This space is only allocated when kvcache_swapping_to_host is enabled.
-    """
+    host_kvcache_swap_space_gb: float = Field(
+        default=50.0,
+        description=(
+            "The amount of host memory to use for the host KVCache in GiB. "
+            "This space is only allocated when kvcache_swapping_to_host is "
+            "enabled."
+        ),
+    )
 
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
@@ -69,15 +81,4 @@ class KVCacheConfig(ConfigFileModel):
         """Get the enum mapping for KVCacheConfig."""
         return {
             "KVCacheStrategy": KVCacheStrategy,
-        }
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "cache_strategy": "Force a specific cache strategy: 'paged' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
-            "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 128.",
-            "enable_prefix_caching": "Whether to enable prefix caching for the paged attention KVCache. Prefix caching is enabled by default for supported models.",
-            "enable_kvcache_swapping_to_host": "Whether to enable swapping the paged attention KVCache blocks to host memory when device blocks are evicted. This defaults to false.",
-            "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
-            "host_kvcache_swap_space_gb": "The amount of host memory to use for the host KVCache in GiB. This is only used when kvcache_swapping_to_host is enabled. Default is set to 50.0.",
         }

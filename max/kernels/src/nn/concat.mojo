@@ -109,8 +109,7 @@ fn memcpy_or_fuse[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _Span(ImplicitlyCopyable):
+struct _Span(TrivialRegisterType):
     var start: Int
     var end: Int
 
@@ -124,8 +123,7 @@ struct _Span(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _CanonicallyReshapedBuffer(ImplicitlyCopyable):
+struct _CanonicallyReshapedBuffer(TrivialRegisterType):
     var data: UnsafePointer[Int8]
     var h: Int
     var w: Int
@@ -603,14 +601,16 @@ fn concat_shape[
     """
 
     # extract hyper parameters
-    var normalized_axis = normalize_neg_index(axis, inputs_layout.rank())
+    var normalized_axis = normalize_neg_index(
+        axis, comptime (inputs_layout.rank())
+    )
 
     @parameter
     @always_inline
     fn shape_equal_ignore_axis(
         s1: IndexList[inputs_layout.rank()], s2: IndexList[inputs_layout.rank()]
     ) -> Bool:
-        for i in range(inputs_layout.rank()):
+        for i in range(comptime (inputs_layout.rank())):
             if i != axis and s1[i] != s2[i]:
                 return False
         return True
@@ -706,7 +706,7 @@ fn _concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value
+        idx, output.runtime_layout.shape.value
     )
 
     @parameter
@@ -957,7 +957,7 @@ fn _fused_concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        UInt(idx), output.runtime_layout.shape.value
+        idx, output.runtime_layout.shape.value
     )
 
     @parameter

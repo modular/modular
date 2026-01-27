@@ -12,3 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 """DeepseekV3.2 layer modules."""
+
+from .mlp import MLP
+from .rms_norm_fused import RMSNormFused
+from .transforms import HadamardTransform
+
+__all__ = ["MLP", "HadamardTransform", "RMSNormFused"]

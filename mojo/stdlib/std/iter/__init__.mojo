@@ -77,8 +77,7 @@ trait Iterable:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct StopIteration(Writable):
+struct StopIteration(TrivialRegisterType, Writable):
     """A custom error type for Iterator's that run out of elements."""
 
     fn write_to(self, mut writer: Some[Writer]):

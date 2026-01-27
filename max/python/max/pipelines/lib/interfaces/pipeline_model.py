@@ -26,8 +26,8 @@ from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.kv_cache import infer_optimal_batch_size
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -67,7 +67,7 @@ class AlwaysSignalBuffersMixin:
         Returns:
             List of signal buffer tensors, one per device.
         """
-        from max.nn import Signals
+        from max.nn.legacy.comm import Signals
 
         return [
             Buffer.zeros(
@@ -232,7 +232,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             or an empty list for single-device setups.
         """
         # Import here to avoid circular dependency
-        from max.nn import Signals
+        from max.nn.legacy.comm import Signals
 
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.

@@ -16,12 +16,12 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-@register_passable("trivial")
 struct NoneType(
     Defaultable,
     ImplicitlyCopyable,
     Representable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Represents the absence of a value."""

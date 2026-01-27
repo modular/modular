@@ -147,7 +147,15 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
             "max": [*interpreter, *MAX.split()],
         }
         cmd = commands[framework]
-    return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    cmd = cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
+    # so we need to enable penalties on the server
+    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+        cmd += ["--enable-penalties"]
+
+    return cmd
 
 
 def safe_model_name(model: str) -> str:
@@ -159,7 +167,14 @@ def call_lm_eval(
 ) -> tuple[LmEvalResults, LmEvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
-        kw in model for kw in ("academic-ds", "gpt-oss", "internvl3_5", "qwen3")
+        kw in model
+        for kw in (
+            "academic-ds",
+            "deepseek-r1",
+            "gpt-oss",
+            "internvl3_5",
+            "qwen3",
+        )
     )
     # Reasoning models needs extra tokens for .. reasoning
     if is_reasoning_model:
@@ -485,6 +500,12 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        try:
+            gracefully_stop_process(server_process)
+        except Exception:
+            logger.exception(f"Failed to shutdown {framework.upper()}")
+
+    if results:
         summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
         if output_path is not None:
@@ -492,9 +513,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-        logger.info(pformat(summary, indent=2))
-
-        gracefully_stop_process(server_process)
+            logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

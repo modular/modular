@@ -100,7 +100,7 @@ fn topk_wrapper[
     ]()
 
     # Pack the topk_vals and topk_idxs into shared memory
-    var block_offset = UInt(block_lane * block_size)
+    var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
     topk_sram[tid] = TopK_2[T, largest]()
     for i in range(tid + block_offset, num_elements, stride):
@@ -775,8 +775,8 @@ fn _topp_minp_sampling_gpu[
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals = ctx.enqueue_create_buffer[dtype](Int(batch_size))
-    var skip_sort = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
+    var max_vals = ctx.enqueue_create_buffer[dtype](batch_size)
+    var skip_sort = ctx.enqueue_create_buffer[DType.bool](batch_size)
 
     comptime K = 1
     comptime num_blocks_per_input = 1

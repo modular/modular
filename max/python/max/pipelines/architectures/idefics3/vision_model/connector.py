@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import Linear, Module
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import Idefics3VisionConfig
 

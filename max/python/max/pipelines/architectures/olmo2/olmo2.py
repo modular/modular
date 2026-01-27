@@ -18,16 +18,13 @@ from collections.abc import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Llama3RotaryEmbedding,
-    Module,
-    RMSNorm,
-    Transformer,
-)
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import Transformer
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention

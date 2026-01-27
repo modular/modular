@@ -87,8 +87,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable):
+struct WarpRole(TrivialRegisterType):
     var _role: Int32
 
     comptime Mma = Self(6)
@@ -517,7 +516,7 @@ fn kernel_8[
     num_pipeline_stages: UInt,
     num_clc_pipeline_stages: UInt,
     num_accum_pipeline_stages: UInt,
-    num_output_stages: UInt = 2,
+    num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -592,9 +591,9 @@ fn kernel_8[
 
     comptime a_smem_size = a_smem_layout.size() * Int(num_pipeline_stages)
     comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
-    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[1] * Int(
-        num_output_stages
-    )
+    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
+        1
+    ] * num_output_stages
 
     var a_smem_base = base_ptr_smem
     var b_smem_base = (a_smem_base + a_smem_size).bitcast[Scalar[b_type]]()

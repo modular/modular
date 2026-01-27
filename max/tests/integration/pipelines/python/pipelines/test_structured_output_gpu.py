@@ -107,15 +107,15 @@ def test_smollm_with_structured_output_gpu(
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_managers = pipeline.kv_managers
     for kv_manager in kv_managers:
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
 
     tokens = []
     while True:
-        inputs = TextGenerationInputs(
-            batches=[{request_id: context}], num_steps=1
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]], num_steps=1
         )
         for kv_manager in kv_managers:
-            kv_manager.alloc(context)
+            kv_manager.alloc(context, replica_idx=0, num_steps=1)
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:

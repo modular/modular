@@ -82,8 +82,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
     return (kv_cache_shape, kv_cache_strides)
 
 
-@register_passable("trivial")
-struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
+struct KVCacheStaticParams(Equatable, TrivialRegisterType):
     var num_heads: UInt
     var head_size: UInt
     var is_mla: Bool
@@ -117,8 +116,7 @@ struct KVCacheStaticParams(Equatable, ImplicitlyCopyable):
         return not (self == rhs)
 
 
-@register_passable("trivial")
-trait KVCacheT(DevicePassable, ImplicitlyCopyable):
+trait KVCacheT(DevicePassable, TrivialRegisterType):
     """Trait for different KVCache types and implementations.
 
     Represents a single (key or value) cache.
@@ -239,11 +237,10 @@ trait KVCacheT(DevicePassable, ImplicitlyCopyable):
         ...
 
 
-@register_passable("trivial")
 struct ContinuousBatchingKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
-](KVCacheT):
+](KVCacheT, TrivialRegisterType):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer
     model.
 
@@ -423,9 +420,9 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return UInt32(
-            Int(self.blocks.runtime_layout.stride.value[0])
-        ) // UInt32(self.kv_params.num_heads * self.kv_params.head_size)
+        return UInt32(self.blocks.runtime_layout.stride.value[0]) // UInt32(
+            self.kv_params.num_heads * self.kv_params.head_size
+        )
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, tok_idx: UInt32) -> UInt32:
@@ -514,12 +511,11 @@ struct ContinuousBatchingKVCache[
         return offset_ptr
 
 
-@register_passable("trivial")
 struct PagedKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
-](KVCacheT):
+](KVCacheT, TrivialRegisterType):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
 
@@ -640,7 +636,7 @@ struct PagedKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return Int(self.blocks.runtime_layout.stride.value[0]) // UInt32(
+        return self.blocks.runtime_layout.stride.value[0] // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
         )
 
@@ -663,7 +659,7 @@ struct PagedKVCache[
             " with num_blocks ",
             self.blocks.dim[0](),
         )
-        block_idx = self.lookup_table[Int(batch_idx), Int(lut_block_index)][0]
+        block_idx = self.lookup_table[Int(batch_idx), lut_block_index][0]
         # alias row_stride = Int(num_heads * head_size * Self.collection_size)
         return block_idx * self._stride() + tok_in_block_idx
 
@@ -926,7 +922,7 @@ struct ContinuousBatchingKVCacheCollection[
     @always_inline
     fn _get_cache[kv_idx: Int](self, layer_idx: Int) -> Self.CacheType:
         debug_assert(
-            kv_idx == 0 or Int(self.blocks.runtime_layout.shape.value[1]) > 1,
+            kv_idx == 0 or self.blocks.runtime_layout.shape.value[1] > 1,
             "invalid kv_idx for MLA cache",
         )
         return self.CacheType(

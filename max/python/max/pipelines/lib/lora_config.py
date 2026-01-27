@@ -25,22 +25,28 @@ logger = logging.getLogger("max.pipelines")
 
 
 class LoRAConfig(ConfigFileModel):
-    enable_lora: bool = Field(default=False)
-    """Enables LoRA on the server"""
+    enable_lora: bool = Field(
+        default=False, description="Enables LoRA on the server."
+    )
 
-    lora_paths: list[str] = Field(default_factory=list)
-    """List of statically defined LoRA paths"""
+    lora_paths: list[str] = Field(
+        default_factory=list,
+        description="List of statically defined LoRA paths.",
+    )
 
-    max_lora_rank: int = Field(default=16)
-    """Maximum rank of all possible LoRAs"""
+    max_lora_rank: int = Field(
+        default=16, description="Maximum rank of all possible LoRAs."
+    )
 
-    max_num_loras: int = Field(default=1)
-    """The maximum number of active LoRAs in a batch.
-
-    This controls how many LoRA adapters can be active simultaneously during
-    inference. Lower values reduce memory usage but limit concurrent adapter
-    usage.
-    """
+    max_num_loras: int = Field(
+        default=1,
+        description=(
+            "The maximum number of active LoRAs in a batch. This controls how "
+            "many LoRA adapters can be active simultaneously during inference. "
+            "Lower values reduce memory usage but limit concurrent adapter "
+            "usage."
+        ),
+    )
 
     _config_file_section_name: str = "lora_config"
     """The section name to use when loading this config from a MAXConfig file.
@@ -52,12 +58,3 @@ class LoRAConfig(ConfigFileModel):
         """Get the enum mapping for LoRAConfig."""
         # LoRAConfig doesn't use any enums currently
         return {}
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "enable_lora": "Enables LoRA on the server",
-            "lora_paths": "List of paths to the LoRAs.",
-            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
-            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 1.",
-        }

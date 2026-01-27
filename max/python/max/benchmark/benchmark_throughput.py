@@ -50,7 +50,7 @@ from max.interfaces import (
     SamplingParamsInput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
@@ -446,8 +446,11 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
     pipeline_config = benchmark_config.pipeline
     if benchmark_config.devices is not None:
+        devices_input: str | list[int] = benchmark_config.devices
+        if isinstance(devices_input, str):
+            devices_input = DevicesOptionType.parse_from_str(devices_input)
         pipeline_config.model.device_specs = DevicesOptionType.device_specs(
-            benchmark_config.devices
+            devices_input
         )
 
     defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()

@@ -320,19 +320,19 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
-            var k_start = UInt(k_iter) * UInt(BK)
+            var k_start = Int(k_iter) * BK
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (UInt(k_start), UInt(a_m_start)),
+                (k_start, Int(a_m_start)),
             )
 
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
-                (UInt(k_start), UInt(b_n_start)) if transpose_b else (
-                    UInt(b_n_start),
-                    UInt(k_start),
+                (k_start, Int(b_n_start)) if transpose_b else (
+                    Int(b_n_start),
+                    k_start,
                 ),
             )
 
@@ -417,7 +417,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
     comptime num_warps = num_threads // UInt(WARP_SIZE)
-    warp_id = UInt(thread_idx.x // UInt(WARP_SIZE))
+    warp_id = thread_idx.x // UInt(WARP_SIZE)
 
     comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
     comptime c_gmem_type = LayoutTensor[
@@ -660,7 +660,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
             num_active_experts,
         ),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -820,21 +820,21 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * UInt(BK)), UInt(a_gmem_slice_coord)),
+            (iter_idx * UInt(BK), a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (UInt(UInt(iter_idx) * UInt(BK)), UInt(b_gmem_slice_coord)),
+            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (UInt(work_tile_coord[0]), UInt(iter_idx)),
+            (Int(work_tile_coord[0]), Int(iter_idx)),
         )
 
 
@@ -853,7 +853,7 @@ fn multi_stage_reg_epilogue[
     mma_shape: IndexList[3],
     is_lower_frag_required: Bool,
     cta_group: Int,
-    num_output_warps: UInt,
+    num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
 ](
     c_upper_main_tile: LayoutTensor[
@@ -917,9 +917,7 @@ fn multi_stage_reg_epilogue[
 
         # Assume double-buffer for shared memory packing
         var c_smem_tile = c_iter.next(stage % 2)[]
-        comptime c_smem_tile_m = 32 if cta_group == 2 else BM // Int(
-            num_output_warps
-        )
+        comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, stageN](
             Int(warp_id), 0
         )
@@ -942,7 +940,7 @@ fn multi_stage_reg_epilogue[
             )
 
         # Guard the write to shared memory is done.
-        named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+        named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
         var lane = lane_id()
 
@@ -979,7 +977,7 @@ fn multi_stage_reg_epilogue[
             size_of[c_type]() != 2
             or UInt32(coord_m) + UInt32(TMA_BM) >= group_end_idx
         ):
-            comptime output_threads = Int(num_output_warps) * Int(WARP_SIZE)
+            comptime output_threads = num_output_warps * WARP_SIZE
             comptime c_smem_M = c_smem_tile.layout.shape[0].value()
             comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                 layout,
@@ -1001,7 +999,7 @@ fn multi_stage_reg_epilogue[
 
             @parameter
             for i in range(c_smem_M // TMA_BM):
-                var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](Int(i), 0)
+                var c_smem_split = c_smem_tile.tile[TMA_BM, stageN](i, 0)
                 comptime split_layout = c_smem_split.layout
                 var split_rt = RLayout32Bits[split_layout]()
                 comptime zipped = zipped_divide(
@@ -1014,7 +1012,7 @@ fn multi_stage_reg_epilogue[
                 for j in range(zipped.shape[1][0].value()):
                     var input_crd = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE, j), element_type = DType.uint32
-                    ](Int(thread_idx.x), Int(j))
+                    ](Int(thread_idx.x), j)
                     var linear_idx = zipped_rt(input_crd) * simd_size
                     var linear_tup = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -1050,8 +1048,8 @@ fn multi_stage_reg_epilogue[
                 c_tma_op.async_store(
                     c_smem_split,
                     (
-                        UInt(coord_n),
-                        UInt(coord_m),
+                        coord_n,
+                        coord_m,
                     ),
                 )
                 c_tma_op.commit_group()
@@ -1067,7 +1065,7 @@ fn multi_stage_reg_epilogue[
         @parameter
         if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
-            named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
 @always_inline
@@ -1088,7 +1086,7 @@ fn promote_accumulators[
     cta_group: Int,
     CLUSTER_SIZE: Int32,
     is_lower_frag_required: Bool,
-    num_output_warps: UInt,
+    num_output_warps: Int,
 ](
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     b_scales_n: Int,
@@ -1230,8 +1228,7 @@ fn promote_accumulators[
         # when MMA_N == BK == 128 we only have one scale_b per block
         b_scale_0 = rebind[Scalar[accum_type]](
             b_scales[
-                b_scale_m_offset
-                + type_of(b_scale_m_offset)(UInt(bn) // UInt(MMA_N)),
+                b_scale_m_offset + type_of(b_scale_m_offset)(bn // UInt(MMA_N)),
                 k_iter,
             ].cast[accum_type]()
         )
@@ -1499,8 +1496,8 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)
     comptime num_k_mmas = BK // config.mma_shape[2]
 
-    comptime CLUSTER_M = Int(config.cluster_shape[0])
-    comptime CLUSTER_N = Int(config.cluster_shape[1])
+    comptime CLUSTER_M: Int = config.cluster_shape[0]
+    comptime CLUSTER_N: Int = config.cluster_shape[1]
 
     comptime a_tma_load_size = a_desc_layout.size()
     comptime b_tma_load_size = b_desc_layout.size()
@@ -1530,7 +1527,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime b_smem_size = b_smem_layout.size() * Int(num_pipeline_stages)
     comptime c_smem_size = config.output_tile_shape[
         0
-    ] * config.output_tile_shape[1] * Int(config.num_output_stages)
+    ] * config.output_tile_shape[1] * config.num_output_stages
 
     comptime a_scales_smem_size = a_scales_smem_layout.size() * Int(
         num_pipeline_stages
@@ -1724,8 +1721,8 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        UInt(rank_m % UInt(config.cta_group)),
-        UInt(rank_m // UInt(config.cta_group)),
+        rank_m % UInt(config.cta_group),
+        rank_m // UInt(config.cta_group),
         rank_n,
     )  # v,m,n
 
@@ -2091,7 +2088,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 
     comptime c_smem_bytes = config.output_tile_shape[
         0
-    ] * config.output_tile_shape[1] * Int(config.num_output_stages) * size_of[
+    ] * config.output_tile_shape[1] * config.num_output_stages * size_of[
         c_type
     ]()
 
@@ -2195,7 +2192,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 
     # TODO
     var grid_dim = (
-        Int(B200.sm_count),
+        B200.sm_count,
         1,
         1,
     )

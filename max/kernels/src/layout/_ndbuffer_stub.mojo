@@ -208,11 +208,11 @@ fn _distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
         else:
             res[i] = shape.at[i]() // Int(thread_layout.shape[i])
 
-    if thread_layout.rank() == 1:
+    if comptime (thread_layout.rank() == 1):
         return DimList(res[0])
-    elif thread_layout.rank() == 2:
+    elif comptime (thread_layout.rank() == 2):
         return DimList(res[0], res[1])
-    elif thread_layout.rank() == 3:
+    elif comptime (thread_layout.rank() == 3):
         return DimList(res[0], res[1], res[2])
     return DimList()
 

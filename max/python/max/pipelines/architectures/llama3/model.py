@@ -24,8 +24,12 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -176,7 +180,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return Llama3Config.get_kv_params(
+        return Llama3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -444,7 +448,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = Llama3Config.get_kv_params(
+        kv_params = Llama3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
@@ -492,16 +496,12 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
     ) -> Graph:
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
@@ -634,7 +634,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
 
@@ -644,6 +643,24 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         sampled_tokens = next_tokens.to_numpy()
         tokens = llama3_inputs.tokens.to_numpy()
         input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
+
+        # Determine if we have full logits for all tokens or only last-token logits.
+        # Full logits are only available when return_logits is ALL or VARIABLE.
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        # If echo is requested but we don't have full logits, raise an error.
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        # Pass logits=None when we only have last-token logits.
+        # compute_log_probabilities_ragged will use next_token_logits instead.
+        logits = model_outputs.logits if has_full_logits else None
 
         return compute_log_probabilities_ragged(
             self.logprobs_device,
