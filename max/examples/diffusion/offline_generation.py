@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 from max.entrypoints.diffusion import PixelGenerator
-from max.pipelines import PipelineConfig
+from max.pipelines.lib import PixelGenerationConfig
 from PIL import Image
 
 
@@ -25,16 +25,14 @@ def main() -> None:
     parser.add_argument(
         "--model-path", type=str, default="black-forest-labs/FLUX.1-dev"
     )
-    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-path", type=str, default="output.png")
     args = parser.parse_args()
 
     model_path = args.model_path
-    pipeline_config = PipelineConfig(model_path=model_path)
+    pipeline_config = PixelGenerationConfig(model_path=model_path)
     pipe = PixelGenerator(pipeline_config)
 
     prompt = "A cat holding a sign that says hello world"
-    print(f"Prompt: {prompt}")
 
     result = pipe.generate(
         prompts=prompt,
@@ -42,6 +40,7 @@ def main() -> None:
         width=1024,
         num_inference_steps=50,
         guidance_scale=3.5,
+        model_name=model_path,
     )
 
     image: np.ndarray = result.outputs[0].pixel_data[0]

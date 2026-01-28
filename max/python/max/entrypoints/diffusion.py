@@ -20,6 +20,7 @@ import queue
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Event, Thread
+from typing import Any
 
 from max.interfaces import (
     PixelGenerationInputs,
@@ -35,18 +36,42 @@ from max.pipelines.lib.tokenizer import PixelGenerationTokenizer
 # from max.serve.scheduler.queues import SchedulerZmqConfigs
 
 
+def normalize_sequence(value: Any, length: int) -> Sequence[Any]:
+    if not isinstance(value, Sequence):
+        value = [value] * length
+    return value
+
+
 @dataclass
 class _Request:
     """Internal request for batching multiple pixel generation requests."""
 
     id: RequestID
-    prompts: Sequence[str]
-    height: list[int]
-    width: list[int]
-    num_inference_steps: list[int]
-    guidance_scale: list[float]
-    num_images_per_prompt: list[int]
-    negative_prompts: Sequence[str | None] | None = None
+    model_name: str
+    prompts: str | list[str]
+    height: list[int] | int = 1024
+    width: list[int] | int = 1024
+    num_inference_steps: list[int] | int = 50
+    guidance_scale: list[float] | float = 3.5
+    num_images_per_prompt: list[int] | int = 1
+    negative_prompts: list[str | None] | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.prompts, str):
+            self.prompts = [self.prompts]
+        length = len(self.prompts)
+        self.height = normalize_sequence(self.height, length)
+        self.width = normalize_sequence(self.width, length)
+        self.num_inference_steps = normalize_sequence(
+            self.num_inference_steps, length
+        )
+        self.guidance_scale = normalize_sequence(self.guidance_scale, length)
+        self.num_images_per_prompt = normalize_sequence(
+            self.num_images_per_prompt, length
+        )
+        self.negative_prompts = normalize_sequence(
+            self.negative_prompts, length
+        )
 
 
 @dataclass
@@ -110,8 +135,10 @@ class PixelGenerator:
 
     def generate(
         self,
+        model_name: str,
         prompts: str | Sequence[str],
         *,
+        negative_prompts: Sequence[str | None] | None = None,
         height: list[int] | None = None,
         width: list[int] | None = None,
         num_inference_steps: list[int] | None = None,
@@ -124,6 +151,7 @@ class PixelGenerator:
 
         Args:
             prompts: Single prompt string or sequence of prompts.
+            negative_prompts: Single negative prompt string or sequence of negative prompts.
             height: Image height in pixels.
             width: Image width in pixels.
             num_inference_steps: Number of denoising steps.
@@ -134,33 +162,21 @@ class PixelGenerator:
             _Response containing the generated PIL Images.
 
         """
-        # Normalize prompts to sequence
-        if isinstance(prompts, str):
-            prompts = [prompts]
-
-        if negative_prompts is None:
-            negative_prompts = [None] * len(prompts)
-        if num_images_per_prompt is None:
-            num_images_per_prompt = [1] * len(prompts)
-        if height is None:
-            height = [1024] * len(prompts)
-        if width is None:
-            width = [1024] * len(prompts)
-        if num_inference_steps is None:
-            num_inference_steps = [50] * len(prompts)
-        if guidance_scale is None:
-            guidance_scale = [3.5] * len(prompts)
+        request_dict = {
+            "id": RequestID(),
+            "model_name": model_name,
+            "prompts": prompts,
+            "negative_prompts": negative_prompts,
+            "height": height,
+            "width": width,
+            "num_inference_steps": num_inference_steps,
+            "guidance_scale": guidance_scale,
+            "num_images_per_prompt": num_images_per_prompt,
+        }
+        request_dict = {k: v for k, v in request_dict.items() if v is not None}  # type: ignore
 
         # Create internal request
-        request = _Request(
-            id=RequestID(),
-            prompts=prompts,
-            height=height,
-            width=width,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            num_images_per_prompt=num_images_per_prompt,
-        )
+        request = _Request(**request_dict)
 
         # Submit request and wait for response
         return self._submit_and_wait(request)
@@ -241,22 +257,21 @@ async def _async_worker(
             request.num_inference_steps,
             request.guidance_scale,
             request.num_images_per_prompt,
-            request.negative_prompts,
-            strict=False,
+            request.negative_prompts, strict=False,
         ):
             request_id = RequestID()
-            context: PixelContext = await tokenizer.new_context(
-                PixelGenerationRequest(
-                    request_id=request_id,
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    height=height,
-                    width=width,
-                    num_inference_steps=num_inference_steps,
-                    guidance_scale=guidance_scale,
-                    num_images_per_prompt=num_images_per_prompt,
-                )
+            request = PixelGenerationRequest(
+                request_id=request_id,
+                model_name=request.model_name,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                num_images_per_prompt=num_images_per_prompt,
             )
+            context: PixelContext = await tokenizer.new_context(request)
             batch[request_id] = context
         inputs = PixelGenerationInputs(batch=batch)
         outputs = await asyncio.to_thread(pipeline.execute, inputs)
