@@ -41,10 +41,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-f3U53KTSaTz3EPbRJY2O2p4gu0ZaBXEICkoeexWEBio=",
-    strip_prefix = "rules_mojo-9844f8a28c4a74f156fedeeec9f4740a0b403fd7",
+    integrity = "sha256-WZVye1k+Rhzb8qWSLiJf2hF3n0AABFGxA6S6ob85RuE=",
+    strip_prefix = "rules_mojo-4b4ee9bf82ac0b4a728e9838f23a25bb1a907ac8",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/9844f8a28c4a74f156fedeeec9f4740a0b403fd7.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/4b4ee9bf82ac0b4a728e9838f23a25bb1a907ac8.tar.gz",
     ],
 )
 
@@ -71,6 +71,8 @@ single_version_override(
         "//bazel/public-patches:rules_cc_allowlists.patch",
         # https://github.com/bazelbuild/rules_cc/pull/527
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/578
+        "//bazel/public-patches:rules_cc_private_api.patch",
     ],
 )
 

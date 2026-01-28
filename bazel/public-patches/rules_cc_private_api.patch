@@ -1,0 +1,30 @@
+diff --git a/cc/private/cc_common.bzl b/cc/private/cc_common.bzl
+index 69d6db11..82e9c49b 100644
+--- a/cc/private/cc_common.bzl
++++ b/cc/private/cc_common.bzl
+@@ -85,7 +85,7 @@ def _link(
+         additional_linkstamp_defines = _UNBOUND,
+         always_link = _UNBOUND,
+         link_artifact_name_suffix = _UNBOUND,
+-        main_output = _UNBOUND,
++        main_output = None,
+         use_shareable_artifact_factory = _UNBOUND,
+         build_config = _UNBOUND,
+         emit_interface_shared_library = _UNBOUND):
+@@ -103,7 +103,6 @@ def _link(
+        additional_linkstamp_defines != _UNBOUND or \
+        always_link != _UNBOUND or \
+        link_artifact_name_suffix != _UNBOUND or \
+-       main_output != _UNBOUND or \
+        use_shareable_artifact_factory != _UNBOUND or \
+        build_config != _UNBOUND or \
+        emit_interface_shared_library != _UNBOUND:
+@@ -125,8 +124,6 @@ def _link(
+         always_link = False
+     if link_artifact_name_suffix == _UNBOUND:
+         link_artifact_name_suffix = ""
+-    if main_output == _UNBOUND:
+-        main_output = None
+     if use_shareable_artifact_factory == _UNBOUND:
+         use_shareable_artifact_factory = False
+     if build_config == _UNBOUND:
