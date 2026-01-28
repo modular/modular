@@ -36,7 +36,6 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
-        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",

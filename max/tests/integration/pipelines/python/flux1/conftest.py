@@ -74,7 +74,7 @@ def attention_weights(flux_config: dict[str, Any]) -> dict[str, torch.Tensor]:
 
     # Weight statistics from the attention layer of the 3rd transformer block in FLUX.1-dev
     # Format: {weight_name: (shape_tuple, std, mean)}
-    WEIGHT_STATS: dict[str, tuple[tuple[int,...], float, float]] = {
+    WEIGHT_STATS: dict[str, tuple[tuple[int, ...], float, float]] = {
         "norm_q.weight": ((head_dim,), 0.2969, 0.8555),
         "norm_k.weight": ((head_dim,), 0.2061, 0.8047),
         "norm_added_q.weight": ((head_dim,), 0.0762, 0.6875),
@@ -99,7 +99,9 @@ def attention_weights(flux_config: dict[str, Any]) -> dict[str, torch.Tensor]:
 
     weights = {}
     for key, (shape, std, mean) in WEIGHT_STATS.items():
-        weights[key] = torch.randn(shape, dtype=torch.bfloat16).to("cuda") * std + mean
+        weights[key] = (
+            torch.randn(shape, dtype=torch.bfloat16).to("cuda") * std + mean
+        )
 
     return weights
 

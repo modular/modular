@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import Any
+
 import pytest
 import torch
 from diffusers.models.embeddings import (
@@ -29,7 +31,7 @@ from torch.utils.dlpack import from_dlpack
 
 
 @pytest.fixture
-def query_tensor(flux_config: dict) -> torch.Tensor:
+def query_tensor(flux_config: dict[str, Any]) -> torch.Tensor:
     """Generate random query tensor for rotary embedding test.
 
     Shape: [B, S, H, D] (batch, sequence, heads, head_dim)
@@ -55,7 +57,9 @@ def query_tensor(flux_config: dict) -> torch.Tensor:
 
 
 @pytest.fixture
-def rotary_emb(flux_config: dict) -> tuple[torch.Tensor, torch.Tensor]:
+def rotary_emb(
+    flux_config: dict[str, Any],
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate rotary position embeddings (cos, sin tensors).
 
     Shape: [S, D] where S is sequence length and D is head_dim

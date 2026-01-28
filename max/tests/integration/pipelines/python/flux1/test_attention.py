@@ -66,6 +66,7 @@ def weight_adapter(
             adapted_weights[key] = attention_weights[key]
     return adapted_weights
 
+
 @torch.no_grad()
 def generate_torch_outputs(
     flux_config: dict[str, Any],
@@ -121,7 +122,6 @@ def generate_max_outputs(
         flux_config["num_attention_heads"] * flux_config["attention_head_dim"]
     )
     attention_weights = weight_adapter(attention_weights)
-
 
     with F.lazy():
         # Create MAX FluxAttention layer with dual-stream support
