@@ -16,7 +16,7 @@ from max.nn import Linear, Module
 from max.tensor import Tensor
 
 
-class GELU(Module):
+class GELU(Module[[Tensor], Tensor]):
     def __init__(
         self,
         dim_in: int,

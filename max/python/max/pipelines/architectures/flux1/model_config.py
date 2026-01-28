@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.driver import Device
 from max.dtype import DType
@@ -41,7 +41,7 @@ class FluxConfig(FluxConfigBase):
 
     @staticmethod
     def generate(
-        config_dict: dict,
+        config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> FluxConfigBase:

@@ -126,7 +126,7 @@ def get_timestep_embedding(
     return emb
 
 
-class Timesteps(Module):
+class Timesteps(Module[[Tensor], Tensor]):
     def __init__(
         self,
         num_channels: int,
@@ -167,7 +167,7 @@ class Timesteps(Module):
         return t_emb
 
 
-class TimestepEmbedding(Module):
+class TimestepEmbedding(Module[[Tensor, Tensor | None] | [Tensor], Tensor]):
     def __init__(
         self,
         in_channels: int,
@@ -198,7 +198,7 @@ class TimestepEmbedding(Module):
         )
 
         if cond_proj_dim is not None:
-            self.cond_proj = Linear(
+            self.cond_proj: Linear | None = Linear(
                 cond_proj_dim,
                 in_channels,
                 bias=False,
@@ -259,7 +259,7 @@ class TimestepEmbedding(Module):
         return sample
 
 
-class PixArtAlphaTextProjection(Module):
+class PixArtAlphaTextProjection(Module[[Tensor], Tensor]):
     """Projects caption embeddings. Also handles dropout for classifier-free guidance."""
 
     def __init__(
@@ -306,7 +306,7 @@ class PixArtAlphaTextProjection(Module):
         return hidden_states
 
 
-class CombinedTimestepTextProjEmbeddings(Module):
+class CombinedTimestepTextProjEmbeddings(Module[[Tensor, Tensor], Tensor]):
     def __init__(
         self,
         embedding_dim: int,
@@ -362,7 +362,9 @@ class CombinedTimestepTextProjEmbeddings(Module):
         return conditioning
 
 
-class CombinedTimestepGuidanceTextProjEmbeddings(Module):
+class CombinedTimestepGuidanceTextProjEmbeddings(
+    Module[[Tensor, Tensor, Tensor], Tensor]
+):
     def __init__(
         self,
         embedding_dim: int,
@@ -415,12 +417,12 @@ class CombinedTimestepGuidanceTextProjEmbeddings(Module):
         """
         timesteps_proj = self.time_proj(timestep)
         timesteps_emb = self.timestep_embedder(
-            F.cast(timesteps_proj, pooled_projection.dtype)
+            F.cast(timesteps_proj, pooled_projection.dtype), None
         )
 
         guidance_proj = self.time_proj(guidance)
         guidance_emb = self.guidance_embedder(
-            F.cast(guidance_proj, pooled_projection.dtype)
+            F.cast(guidance_proj, pooled_projection.dtype), None
         )
 
         time_guidance_emb = timesteps_emb + guidance_emb

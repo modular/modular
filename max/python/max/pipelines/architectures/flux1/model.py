@@ -11,24 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
+from typing import Any
+
 from max import functional as F
 from max.driver import Device
-from max.engine import Model
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.max_model import MaxModel
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .flux1 import FluxTransformer2DModel
 from .model_config import FluxConfig
 from .weight_adapters import convert_safetensor_state_dict
 
 
-class Flux1Model(MaxModel):
+class Flux1Model(ComponentModel):
     config_name = FluxConfig.config_name
 
     def __init__(
         self,
-        config: dict,
+        config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
@@ -46,7 +48,7 @@ class Flux1Model(MaxModel):
         )
         self.load_model()
 
-    def load_model(self) -> Model:
+    def load_model(self) -> Callable:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():

@@ -14,6 +14,7 @@
 import math
 
 from max import functional as F
+from max.driver.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Linear, Module
@@ -29,7 +30,12 @@ from .embeddings import apply_rotary_emb
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 
-class FluxAttention(Module):
+class FluxAttention(
+    Module[
+        [Tensor, Tensor | None, Tensor | None, tuple[Tensor, Tensor] | None],
+        Tensor | tuple[Tensor, Tensor],
+    ]
+):
     """Flux attention mechanism with QK normalization and optional dual stream."""
 
     def __init__(
@@ -40,7 +46,7 @@ class FluxAttention(Module):
         dropout: float = 0.0,
         bias: bool = False,
         added_kv_proj_dim: int | None = None,
-        added_proj_bias: bool | None = True,
+        added_proj_bias: bool = True,
         out_bias: bool = True,
         eps: float = 1e-5,
         out_dim: int | None = None,
@@ -229,7 +235,7 @@ class FluxAttention(Module):
         return hidden_states
 
 
-class FeedForward(Module):
+class FeedForward(Module[[Tensor, ...], Tensor]):
     def __init__(
         self,
         dim: int,
@@ -293,7 +299,7 @@ class FeedForward(Module):
         return hidden_states
 
 
-class FluxPosEmbed(Module):
+class FluxPosEmbed(Module[[Tensor], tuple[Tensor, Tensor]]):
     """Flux Position Embedding module for 3D rotary position embeddings.
 
     This module computes separate rotary embeddings for each spatial dimension
@@ -318,7 +324,7 @@ class FluxPosEmbed(Module):
         self.axes_dim = list(axes_dim)
 
     def _get_1d_rotary_pos_embed(
-        self, dim: int, pos: Tensor, device: DeviceRef
+        self, dim: int, pos: Tensor, device: Device | DeviceRef
     ) -> tuple[Tensor, Tensor]:
         """Compute 1D rotary position embeddings for a single axis.
 

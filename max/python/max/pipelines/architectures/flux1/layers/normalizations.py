@@ -19,7 +19,11 @@ from max.nn.norm import LayerNorm, RMSNorm
 from max.tensor import Tensor
 
 
-class AdaLayerNormZeroSingle(Module):
+class AdaLayerNormZeroSingle(
+    Module[[Tensor, Tensor | None], tuple[Tensor, Tensor]]
+):
+    """Adaptive layer normalization zero single module."""
+
     def __init__(
         self,
         embedding_dim: int,
@@ -55,7 +59,9 @@ class AdaLayerNormZeroSingle(Module):
                 f"Unsupported `norm_type` ({norm_type}) provided. Supported ones are: 'layer_norm', 'fp32_layer_norm'."
             )
 
-    def forward(self, x: Tensor, emb: Tensor | None = None) -> Tensor:
+    def forward(
+        self, x: Tensor, emb: Tensor | None = None
+    ) -> tuple[Tensor, Tensor]:
         """Apply adaptive layer normalization.
 
         Args:
@@ -71,7 +77,12 @@ class AdaLayerNormZeroSingle(Module):
         return x, gate_msa
 
 
-class AdaLayerNormZero(Module):
+class AdaLayerNormZero(
+    Module[
+        [Tensor, Tensor | None, Tensor | None, DType | None, Tensor | None],
+        tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
+    ]
+):
     r"""Norm layer adaptive layer norm zero (adaLN-Zero).
 
     Parameters:
@@ -157,7 +168,7 @@ class AdaLayerNormZero(Module):
         return x, gate_msa, shift_mlp, scale_mlp, gate_mlp
 
 
-class AdaLayerNormContinuous(Module):
+class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
     r"""Adaptive normalization layer with a norm layer (layer_norm or rms_norm).
 
     Args:

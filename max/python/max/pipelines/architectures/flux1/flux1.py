@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_weight_registry_from_diffusers(
-    safe_tensor_folder: PathLike,
+    safe_tensor_folder: PathLike[str],
 ) -> dict[str, DLPackArray]:
     weight_files = [
         os.path.join(safe_tensor_folder, f)
@@ -53,7 +53,18 @@ def get_weight_registry_from_diffusers(
     return {name: weight.data().data for name, weight in weights.items()}
 
 
-class FluxSingleTransformerBlock(Module):
+class FluxSingleTransformerBlock(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor,
+            tuple[Tensor, Tensor] | None,
+            dict[str, Any] | None,
+        ],
+        tuple[Tensor, Tensor],
+    ]
+):
     def __init__(
         self,
         dim: int,
@@ -142,7 +153,18 @@ class FluxSingleTransformerBlock(Module):
         return encoder_hidden_states, hidden_states
 
 
-class FluxTransformerBlock(Module):
+class FluxTransformerBlock(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor,
+            tuple[Tensor, Tensor] | None,
+            dict[str, Any] | None,
+        ],
+        tuple[Tensor, Tensor],
+    ]
+):
     def __init__(
         self,
         dim: int,
@@ -285,7 +307,25 @@ class FluxTransformerBlock(Module):
         return encoder_hidden_states, hidden_states
 
 
-class FluxTransformer2DModel(Module):
+class FluxTransformer2DModel(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+            dict[str, Any] | None,
+            Any | None,
+            Any | None,
+            bool,
+            bool,
+        ],
+        tuple[Tensor],
+    ]
+):
     def __init__(
         self,
         config: FluxConfig,
@@ -425,11 +465,11 @@ class FluxTransformer2DModel(Module):
     def forward(
         self,
         hidden_states: Tensor,
-        encoder_hidden_states: Tensor | None = None,
-        pooled_projections: Tensor | None = None,
-        timestep: Tensor | None = None,
-        img_ids: Tensor | None = None,
-        txt_ids: Tensor | None = None,
+        encoder_hidden_states: Tensor,
+        pooled_projections: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
         guidance: Tensor | None = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
         controlnet_block_samples: Any | None = None,
