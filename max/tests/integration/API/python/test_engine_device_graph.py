@@ -46,8 +46,10 @@ def test_execution_trace_capture_replay() -> None:
         baseline.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
 
-    model.capture(input_tensor)
-    (captured_output,) = model.execute(input_tensor)
+    (captured_output,) = model.capture(input_tensor)
+    model.replay(input_tensor)
+
+    # (captured_output,) = model.execute(input_tensor)
     np.testing.assert_allclose(
         captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 1
     )
@@ -118,7 +120,7 @@ def test_replay_with_external_allocations() -> None:
     )
     input_buf = Buffer.from_dlpack(input_tensor)
 
-    model.capture(input_buf)
+    results = model.capture(input_buf)
 
     external_buffers = []
     for _ in range(10):
@@ -137,3 +139,6 @@ def test_replay_with_external_allocations() -> None:
     accelerator.synchronize()
 
     del external_buffers
+    accelerator.synchronize()
+    del results
+    accelerator.synchronize()

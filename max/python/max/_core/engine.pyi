@@ -212,7 +212,7 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, *inputs: Buffer) -> None:
+    def capture(self, *inputs: Buffer) -> list[Buffer]:
         """
         Capture execution into a device graph for the given inputs.
 
@@ -228,7 +228,9 @@ class Model:
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
-    def _capture(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
+    def _capture(
+        self, inputs: Sequence[max._core.driver.Buffer]
+    ) -> list[max._core.driver.Buffer]:
         """Capture execution into a device graph."""
 
     def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:

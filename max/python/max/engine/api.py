@@ -145,7 +145,7 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
-def _Model_capture(self: Model, *inputs: Buffer) -> None:
+def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
     """Capture execution into a device graph keyed by input shapes/dtypes.
 
     Capture is best-effort and model-dependent. If the model issues
@@ -154,7 +154,7 @@ def _Model_capture(self: Model, *inputs: Buffer) -> None:
     """
     if not inputs:
         raise ValueError("Model.capture requires input buffers.")
-    self._capture(list(inputs))
+    return self._capture(list(inputs))
 
 
 def _Model_replay(self: Model, *inputs: Buffer) -> None:
