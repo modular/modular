@@ -97,7 +97,7 @@ def test_array_int():
             for current_size in range(len(sizes)):
 
                 @parameter
-                for current_type in range(len(VariadicList(dts))):
+                for current_type in range(Variadic.size(dts)):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)

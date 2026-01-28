@@ -173,7 +173,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -197,7 +197,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -216,7 +216,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """Destroy the variant."""
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -427,7 +427,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     @staticmethod
     fn _check[T: AnyType]() -> Int:
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel

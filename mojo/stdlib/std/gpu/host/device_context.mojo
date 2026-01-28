@@ -2221,7 +2221,7 @@ struct DeviceFunction[
         *,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2390,7 +2390,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2498,9 +2498,10 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = len(
-            VariadicList(Self.declared_arg_types.value())
+        comptime declared_num_args = Variadic.size(
+            Self.declared_arg_types.value()
         )
+
         __comptime_assert (
             declared_num_args == num_args
         ), "Wrong number of arguments to enqueue"
@@ -2591,7 +2592,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2715,7 +2716,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = len(VariadicList(Ts))
+        comptime num_passed_args = Variadic.size(Ts)
         var num_translated_args = 0
 
         var translated_arg_offsets = InlineArray[Int, num_passed_args](
@@ -3171,7 +3172,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args

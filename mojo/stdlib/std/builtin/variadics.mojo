@@ -419,7 +419,7 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-struct VariadicList[type: __TypeOfAllTypes](
+struct VariadicList[type: TrivialRegisterType](
     Iterable, Sized, TrivialRegisterType
 ):
     """A utility class to access homogeneous variadic function arguments.
