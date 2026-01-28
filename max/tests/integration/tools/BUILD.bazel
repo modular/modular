@@ -132,6 +132,9 @@ modular_py_binary(
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        # TODO(GEX-3132): Remove this workaround.
+        # Limit memory usage to avoid OOM in Llama 4 Scout during init.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "0.90",
     },
     imports = ["."],
     main = "generate_llm_logits.py",
