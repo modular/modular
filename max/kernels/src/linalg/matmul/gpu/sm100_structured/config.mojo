@@ -696,16 +696,16 @@ struct BlockScaledMatmulConfig[
         Self.b_type,
         Self.a_type,
         Self.c_type,
-        Self.sfa_dtype,
         Self.sfb_dtype,
+        Self.sfa_dtype,
         Self.transpose_b,
     ]:
         return BlockScaledMatmulConfig[
             Self.b_type,
             Self.a_type,
             Self.c_type,
-            Self.sfa_dtype,
             Self.sfb_dtype,
+            Self.sfa_dtype,
             Self.transpose_b,
         ](
             cta_group=self.cta_group,

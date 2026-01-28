@@ -146,6 +146,10 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     Computes C = scale(A) @ scale(B) where A and B are FP8 matrices with
     per-block scaling factors following MXFP8 conventions.
 
+    When config.AB_swapped is True, internally swaps A and B operands
+    (along with their scale factors) and transposes the output for better
+    performance when M is small.
+
     Parameters:
         c_type: Output element type.
         c_layout: Output tensor layout.
@@ -176,14 +180,113 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     Raises:
         If configuration constraints are violated.
     """
+
+    @parameter
+    if config.AB_swapped:
+        # When both A and B are K-major, C = A @ B'.
+        # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
+        # So swapping + transposing the output gives the same result.
+        # The transpose is handled by transpose_c = config.AB_swapped in the
+        # kernel.
+        comptime new_config = config.swap_AB_type()
+        _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            c_type,
+            c_layout,
+            b_type,
+            b_layout,
+            a_type,
+            a_layout,
+            sfb_dtype,
+            sfb_layout,
+            sfa_dtype,
+            sfa_layout,
+            transpose_b,
+            config=new_config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+            pdl_level=pdl_level,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        ](
+            c_tensor,
+            b_tensor,
+            a_tensor,
+            b_scales_tensor,
+            a_scales_tensor,
+            ctx,
+            alpha,
+        )
+    else:
+        _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+            c_type,
+            c_layout,
+            a_type,
+            a_layout,
+            b_type,
+            b_layout,
+            sfa_dtype,
+            sfa_layout,
+            sfb_dtype,
+            sfb_layout,
+            transpose_b,
+            config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+            pdl_level=pdl_level,
+            max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
+            ctx,
+            alpha,
+        )
+
+
+fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    sfa_dtype: DType,
+    sfa_layout: Layout,
+    sfb_dtype: DType,
+    sfb_layout: Layout,
+    transpose_b: Bool,
+    *,
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ],
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    register_based_epilogue: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+](
+    c_tensor: LayoutTensor[c_type, c_layout, ...],
+    a_tensor: LayoutTensor[a_type, a_layout, ...],
+    b_tensor: LayoutTensor[b_type, b_layout, ...],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    ctx: DeviceContext,
+    alpha: Float32 = 1.0,
+) raises:
+    """Internal implementation for block-scaled FP8 matmul kernel launch.
+
+    Creates TMA descriptors for A, B, C and scaling factors (SFA, SFB),
+    then launches the warp-specialized kernel. Called by the public wrapper
+    which handles AB swap dispatch.
+    """
     # ===== Static Assertions =====
     __comptime_assert transpose_b, "Only support transposed B"
 
     __comptime_assert (
         sfa_dtype == sfb_dtype
     ), "sfa_dtype and sfb_dtype must match"
-
-    __comptime_assert not config.AB_swapped, "swap AB is not supported"
 
     __comptime_assert config.cta_group in (
         1,
@@ -271,7 +374,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ) if (MMA_M == 256 or config.cta_group == 1) else c_tma_tile_shape_mma128
 
     comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
-        1, c_tma_tile_shape[0], config.c_swizzle.bytes() // size_of[c_type]()
+        1, c_tma_tile_shape[1], config.c_swizzle.bytes() // size_of[c_type]()
     )
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape_final,
