@@ -42,7 +42,7 @@ struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
     comptime ncclSuccess = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -57,7 +57,7 @@ struct ncclRedOp_t(TrivialRegisterType):
     comptime ncclSum = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 @fieldwise_init
@@ -68,7 +68,7 @@ struct ncclDataType_t(TrivialRegisterType):
     comptime ncclBfloat16 = Self(9)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 comptime RCCL_LIBRARY_PATHS: List[Path] = [

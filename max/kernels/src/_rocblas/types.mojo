@@ -40,7 +40,7 @@ struct Operation(TrivialRegisterType):
     comptime CONJUGATE_TRANSPOSE = Self(113)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -61,7 +61,7 @@ struct Fill(TrivialRegisterType):
     comptime FULL = Self(123)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -81,7 +81,7 @@ struct Diagonal(TrivialRegisterType):
     comptime DIAGONAL_UNIT = Self(132)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -102,7 +102,7 @@ struct Side(TrivialRegisterType):
     comptime BOTH = Self(143)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -143,7 +143,7 @@ struct DataType(TrivialRegisterType):
     comptime INVALID = Self(255)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __init__(out self, dtype: DType) raises:
         if dtype == DType.float16:
@@ -180,7 +180,7 @@ struct ComputeType(TrivialRegisterType):
     comptime INVALID = Self(455)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -214,7 +214,7 @@ struct Status(Equatable, TrivialRegisterType, Writable):
     comptime ARCH_MISMATCH = Self(15)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -272,7 +272,7 @@ struct PointerMode(TrivialRegisterType):
     comptime DEVICE = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -297,7 +297,7 @@ struct Algorithm(TrivialRegisterType):
     comptime SOLUTION_INDEX = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -317,7 +317,7 @@ struct GEAMExOp(TrivialRegisterType):
     comptime PLUS_MIN = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

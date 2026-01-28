@@ -241,11 +241,11 @@ struct KernelContext[
 
         @parameter
         for i in range(Self.CLUSTER_N):
-            self.a_multicast_mask |= 1 << (i * Self.CLUSTER_M)
+            self.a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
 
         @parameter
         for i in range(Self.CLUSTER_M // Self.cta_group):
-            self.b_multicast_mask |= 1 << (i * Self.cta_group)
+            self.b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
 
         self.a_multicast_mask <<= UInt16(self.rank_m)
         self.b_multicast_mask <<= UInt16(self.peer_cta_coord[0])
@@ -336,7 +336,7 @@ fn consumer_main_loop[
             mma_op.mma(
                 a_smem_tile,
                 b_smem_tile,
-                tmem_addr,
+                UInt32(tmem_addr),
                 init_c=(iter_idx + UInt32(j) == k_start),
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
@@ -880,31 +880,33 @@ struct BlackwellMatmulSM100Kernel[
             Self.InputTilePipeline.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.config.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.config.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
             Self.Scheduler.init_throttle_barriers(
                 clc_throttle.ptr,
-                Self.clc_throttle_producer_arv_count,
-                Self.clc_throttle_consumer_arv_count,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
             tmem_dealloc.ptr[].init(
-                Self.EPILOGUE_THREADS * Self.config.cta_group
+                Int32(Self.EPILOGUE_THREADS * Self.config.cta_group)
             )
 
             # Initialize CLC barriers
             @parameter
             for i in range(Self.config.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -954,7 +956,7 @@ struct BlackwellMatmulSM100Kernel[
                 var a_tile, b_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
-                var is_first_k = (iter_idx + j) == k_start
+                var is_first_k = (iter_idx + UInt32(j)) == k_start
                 mma_op.mma(
                     a_tile, b_tile, UInt32(accum.offset()), init_c=is_first_k
                 )
@@ -1051,7 +1053,7 @@ struct BlackwellMatmulSM100Kernel[
                     b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
                 )
 
-                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
 
                 a_loader.load(a_peer_tile, barrier[0], k_coord, a_gmem_m_coord)
                 b_loader.load(b_peer_tile, barrier[0], k_coord, b_gmem_n_coord)
@@ -1125,7 +1127,7 @@ struct BlackwellMatmulSM100Kernel[
             Pointer(to=b_tma_op), ctx.b_multicast_mask
         )
 
-        var num_iters: UInt32 = ceildiv(mnk[2], Self.BK)
+        var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
             warp_role, Self.max_profiled_tiles_per_SM
@@ -1153,7 +1155,7 @@ struct BlackwellMatmulSM100Kernel[
                                         a_loader,
                                         b_loader,
                                         tiles,
-                                        i,
+                                        UInt32(i),
                                         UInt(current.m),
                                         UInt(current.n),
                                         ctx.peer_cta_coord,
@@ -1194,7 +1196,9 @@ struct BlackwellMatmulSM100Kernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        smem.accum_barriers(), tmem, ctx.mma_complete_mask
+                        smem.accum_barriers(),
+                        tmem,
+                        UInt16(ctx.mma_complete_mask),
                     ),
                     Self.TmemDealloc(smem.tmem_dealloc()),
                 )
@@ -1216,7 +1220,7 @@ struct BlackwellMatmulSM100Kernel[
                                                     input_tiles,
                                                     mma_op,
                                                     ctx.elect_one_warp,
-                                                    i,
+                                                    UInt32(i),
                                                     0,
                                                 )
 
@@ -1231,7 +1235,7 @@ struct BlackwellMatmulSM100Kernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.accum_barriers(), tmem, ctx.mma_complete_mask
+                    smem.accum_barriers(), tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -1243,7 +1247,7 @@ struct BlackwellMatmulSM100Kernel[
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
-                        with MatmulProfilerType[3](workspace, tile_idx):
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
                                 tile_writer.write(
                                     smem.c_tiles(),
@@ -1393,7 +1397,7 @@ struct BlackwellMatmulSM100Kernel[
                                         a_loader,
                                         b_loader,
                                         tiles,
-                                        i,
+                                        UInt32(i),
                                         UInt(current.m),
                                         UInt(current.n),
                                         ctx.peer_cta_coord,
@@ -1425,7 +1429,9 @@ struct BlackwellMatmulSM100Kernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        smem.accum_barriers(), tmem, ctx.mma_complete_mask
+                        smem.accum_barriers(),
+                        tmem,
+                        UInt16(ctx.mma_complete_mask),
                     ),
                     Self.TmemDealloc(smem.tmem_dealloc()),
                 )
@@ -1449,7 +1455,7 @@ struct BlackwellMatmulSM100Kernel[
                                                     input_tiles,
                                                     mma_op,
                                                     ctx.elect_one_warp,
-                                                    i,
+                                                    UInt32(i),
                                                     k_start,
                                                 )
 
@@ -1460,7 +1466,7 @@ struct BlackwellMatmulSM100Kernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.accum_barriers(), tmem, ctx.mma_complete_mask
+                    smem.accum_barriers(), tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -1472,7 +1478,7 @@ struct BlackwellMatmulSM100Kernel[
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
-                        with MatmulProfilerType[3](workspace, tile_idx):
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
                                 tile_writer.write_splitk(
                                     smem.c_tiles(),
@@ -1663,7 +1669,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         for i in range(num_iters):
             # Only one thread per CTA does the copy
             if elect_one_thread:
-                tma_mbar[0].expect_bytes(expected_bytes)
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
                 a_tma_op.async_copy(
                     a_smem_tile,
@@ -1770,7 +1776,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                         var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                         var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
-                        if m < M and n < N:
+                        if m < UInt32(M) and n < UInt32(N):
                             var c_mn = SIMD[Self.accum_type, 2](
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                             ).cast[Self.c_type]()

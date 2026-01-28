@@ -339,7 +339,9 @@ fn run_producer[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
+        Int32(
+            (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
+        )
     )
 )
 fn warp_specialized_matmul_kernel[

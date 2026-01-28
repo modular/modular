@@ -259,8 +259,8 @@ fn multistage_mma[
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt32(num_warps_n)
+    var warp_y = warp_id // UInt32(num_warps_n)
 
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
@@ -336,7 +336,9 @@ fn multistage_mma[
 
             @parameter
             if a_iter.address_space == AddressSpace.GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+                var a_smem_tile = a_smem_iter.next_unsafe(
+                    a_smem_iter.linear_uint_type(stage)
+                )[]
                 _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
                     a_smem_tile, a_iter[]
                 )
@@ -345,7 +347,9 @@ fn multistage_mma[
 
             @parameter
             if b_iter.address_space == AddressSpace.GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+                var b_smem_tile = b_smem_iter.next_unsafe(
+                    b_smem_iter.linear_uint_type(stage)
+                )[]
 
                 if num_b_rows:
                     var num_rows_bound = (
@@ -367,7 +371,7 @@ fn multistage_mma[
             async_copy_commit_group()
 
         # Guard stage 0.
-        async_copy_wait_group(num_pipeline_stages - 2)
+        async_copy_wait_group(Int32(num_pipeline_stages - 2))
         barrier()
 
     comptime mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
@@ -480,7 +484,7 @@ fn multistage_mma[
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     comptime current = k_mma % num_reg_tiles
                     comptime k_mma_next = k_mma + UInt32(k_group_size)
-                    comptime next = Int(k_mma_next % num_reg_tiles)
+                    comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
                     @parameter
                     if k_mma_next == UInt32(num_k_mmas):
@@ -495,7 +499,9 @@ fn multistage_mma[
                             if prefetch_tile_id < static_num_iters.get():
                                 var b_smem_prefetch_tile = (
                                     b_smem_iter.next_unsafe(
-                                        num_pipeline_stages - 1
+                                        b_smem_iter.linear_uint_type(
+                                            num_pipeline_stages - 1
+                                        )
                                     )[]
                                 )
 
@@ -521,7 +527,9 @@ fn multistage_mma[
                             async_copy_commit_group()
 
                             # Guard the next k tile's shared memory buffer.
-                            async_copy_wait_group(num_pipeline_stages - 2)
+                            async_copy_wait_group(
+                                Int32(num_pipeline_stages - 2)
+                            )
                             barrier()
 
                         @parameter
@@ -558,7 +566,7 @@ fn multistage_mma[
                 @parameter
                 for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                    comptime current = k_mma % num_reg_tiles
+                    comptime current = k_mma % UInt32(num_reg_tiles)
                     mma_op.mma(
                         a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                         b_reg_tiles[Int(current)],
@@ -584,7 +592,7 @@ fn multistage_mma[
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
-                comptime next = Int(k_mma_next % num_reg_tiles)
+                comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
                 @parameter
                 if k_mma_next == UInt32(num_k_mmas):
@@ -597,7 +605,9 @@ fn multistage_mma[
                         @parameter
                         if a_iter.address_space == AddressSpace.GENERIC:
                             var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                a_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[]
                             _copy_tensor_to_sram[
                                 async_copy_a_layout, swizzle_a
@@ -608,7 +618,9 @@ fn multistage_mma[
                         @parameter
                         if b_iter.address_space == AddressSpace.GENERIC:
                             var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                b_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[]
 
                             if num_b_rows:
@@ -636,7 +648,9 @@ fn multistage_mma[
                         @parameter
                         if continue_prefetch_b:
                             var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                                num_pipeline_stages - 1
+                                b_smem_iter.linear_uint_type(
+                                    num_pipeline_stages - 1
+                                )
                             )[].reshape[b_next_smem_layout]()
 
                             comptime row_size = b_next_smem_layout.stride[
@@ -676,7 +690,7 @@ fn multistage_mma[
                     async_copy_commit_group()
 
                     # Guard the next k tile's shared memory buffer.
-                    async_copy_wait_group(num_pipeline_stages - 2)
+                    async_copy_wait_group(Int32(num_pipeline_stages - 2))
                     barrier()
 
                     a_smem_iter._incr()
@@ -703,7 +717,7 @@ fn multistage_mma[
             @parameter
             for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
+                comptime current = k_mma % UInt32(num_reg_tiles)
                 mma_op.mma(
                     a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                     b_reg_tiles[Int(current)],
@@ -1038,9 +1052,10 @@ fn multistage_gemm_kernel[
                 comptime src_idx = type_of(c_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset
+                    + type_of(c_smem_frag_offset)(src_idx_base)
+                ) + type_of(c_smem_frag_offset)(src_idx_diff)
 
                 comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int

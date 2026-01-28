@@ -164,10 +164,10 @@ fn naive_grouped_matmul_kernel[
     K = b.dim[2]()
 
     a_start_row = a_offsets[Int(block_idx.z)]
-    a_by_expert = a.data + a_start_row * K
+    a_by_expert = a.data + a_start_row * UInt32(K)
 
     expert = expert_ids[Int(block_idx.z)]
-    b_by_expert = b.data + expert * N * K
+    b_by_expert = b.data + expert * Int32(N) * Int32(K)
 
     # indices in current matmul
     n = global_idx.x
@@ -197,7 +197,7 @@ fn naive_grouped_matmul_kernel[
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
-        c_by_expert = c.data + a_start_row * N
+        c_by_expert = c.data + a_start_row * UInt32(N)
         c_by_expert[m * UInt(N) + n] = accum.cast[c_type]()
 
 
@@ -252,7 +252,7 @@ fn naive_epilogue_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads)),
 )
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
@@ -302,7 +302,7 @@ fn grouped_matmul_kernel_sm100[
 
     a_start_row = a_offsets[Int(block_idx.z)]
     expert = expert_ids[Int(block_idx.z)]
-    b_start_row = expert * N
+    b_start_row = expert * Int32(N)
 
     m_start = block_idx.y * UInt(BM)
     n_start = block_idx.x * UInt(BN)
@@ -438,7 +438,7 @@ fn grouped_matmul_kernel_sm100[
     ):  # K // BK, which is K // 64 or K // 128 depending on BK
         # so only one thread per CTA does the copy
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             @parameter
             for j in range(
@@ -519,7 +519,7 @@ fn grouped_matmul_kernel_sm100[
     )
 
     var c_by_expert = c_gmem_type(
-        c.ptr + a_start_row * N, c_gmem_runtime_layout
+        c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
@@ -569,7 +569,7 @@ fn grouped_matmul_kernel_sm100[
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
-                    if m < M and n < N:
+                    if m < M and n < UInt32(N):
                         var c_mn = SIMD[accum_type, 2](
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
@@ -682,7 +682,9 @@ fn grouped_matmul_sm100[
         ),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -712,9 +714,9 @@ fn grouped_matmul_amd_kernel_launcher[
     var expert_id = expert_ids[Int(block_idx.z)]
     var a_start_row = a_offsets[Int(block_idx.z)]
 
-    var a_ptr = a_tensor.ptr + a_start_row * K
-    var b_ptr = b_tensor.ptr + expert_id * N * K
-    var c_ptr = c_tensor.ptr + a_start_row * N
+    var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
+    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
+    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
 
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
@@ -751,7 +753,9 @@ fn grouped_matmul_amd_kernel_launcher[
         @parameter
         if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_idx = IndexList[2](Int(a_start_row + idx[0]), idx[1])
+            var batch_idx = IndexList[2](
+                Int(a_start_row + UInt32(idx[0])), idx[1]
+            )
             elementwise_epilogue(batch_idx, val)
 
     # Only perform matmul if expert_id is not -1
@@ -810,18 +814,20 @@ fn grouped_matmul_amd_kernel_launcher[
             fn process_elements[width: Int](idx: Int) unified {mut}:
                 var elem_idx = thread_start + idx
                 var tile_row, tile_col = divmod(elem_idx, BN)
-                var local_row: UInt32 = block_m * BM + tile_row
-                var local_col: UInt32 = block_n * BN + tile_col
+                var local_row: UInt32 = UInt32(block_m * BM + tile_row)
+                var local_col: UInt32 = UInt32(block_n * BN + tile_col)
 
                 if local_row < M:
-                    var remaining_in_row = N - local_col
+                    var remaining_in_row = UInt32(N) - local_col
                     var remaining_in_tile_row = BN - tile_col
                     var actual_width = min(
                         width,
                         min(Int(remaining_in_row), remaining_in_tile_row),
                     )
 
-                    if actual_width == width and local_col + width <= N:
+                    if actual_width == width and local_col + UInt32(
+                        width
+                    ) <= UInt32(N):
                         var zero_vec = SIMD[c_type, width](0.0)
                         epilogue[
                             dtype=c_type,
@@ -830,10 +836,13 @@ fn grouped_matmul_amd_kernel_launcher[
                         ]((Int(local_row), Int(local_col)), zero_vec)
                     else:
                         for i in range(actual_width):
-                            if local_col + i < N:
+                            if local_col + UInt32(i) < UInt32(N):
                                 var zero_scalar = SIMD[c_type, 1](0.0)
                                 epilogue[dtype=c_type, width=1, alignment=1](
-                                    (Int(local_row), Int(local_col + i)),
+                                    (
+                                        Int(local_row),
+                                        Int(local_col + UInt32(i)),
+                                    ),
                                     zero_scalar,
                                 )
 
@@ -1210,7 +1219,7 @@ fn grouped_matmul_vendor[
         if expert_id < 0:
             # Create output slice and zero it out
             var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
-                c.data + token_start * c.dim[1](),
+                c.data + token_start * UInt32(c.dim[1]()),
                 DimList(num_tokens, c.dim[1]()),
             )
             var buff = DeviceBuffer(
@@ -1221,15 +1230,15 @@ fn grouped_matmul_vendor[
 
         # Create views into the tensors for this expert
         var a_slice = NDBuffer[a_type, 2, MutAnyOrigin](
-            a.data + token_start * a.dim[1](),
+            a.data + token_start * UInt32(a.dim[1]()),
             DimList(num_tokens, a.dim[1]()),
         )
         var b_slice = NDBuffer[b_type, 2, MutAnyOrigin](
-            b.data + expert_id * b.dim[1]() * b.dim[2](),
+            b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
             DimList(b.dim[1](), b.dim[2]()),
         )
         var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
-            c.data + token_start * c.dim[1](),
+            c.data + token_start * UInt32(c.dim[1]()),
             DimList(num_tokens, c.dim[1]()),
         )
 

@@ -168,7 +168,7 @@ fn quantize_dynamic_scaled_fp4[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
 fn quantize_dynamic_scaled_fp4_kernel[
     out_dtype: DType,
@@ -378,7 +378,7 @@ fn block_scales_interleave_fp4[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_max_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
 fn block_scales_interleave_fp4_kernel[
     scales_dtype: DType,
@@ -869,7 +869,7 @@ fn quantize_dynamic_scaled_async_kernel[
             var smem_tile = input_smem.next(iter_idx)[]
 
             if lane_id() == 0:
-                tma_mbar[iter_idx].expect_bytes(expected_bytes)
+                tma_mbar[iter_idx].expect_bytes(Int32(expected_bytes))
                 input_tma_op.async_copy(
                     smem_tile,
                     tma_mbar[iter_idx],
@@ -1142,7 +1142,9 @@ fn quantize_dynamic_scaled_fp4_async[
         ),
         block_dim=(SF_MN_GROUP_SIZE + 32),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 

@@ -804,7 +804,7 @@ struct cublasPointerMode_t(TrivialRegisterType):
     comptime CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -967,7 +967,7 @@ struct cublasMath_t(TrivialRegisterType):
     comptime CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2128,7 +2128,7 @@ struct Algorithm(TrivialRegisterType):
     comptime ALGO15_TENSOR_OP = Self(115)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2653,7 +2653,7 @@ struct cublasDiagType_t(TrivialRegisterType):
     comptime CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2689,7 +2689,7 @@ struct ComputeType(TrivialRegisterType):
     comptime COMPUTE_32I_PEDANTIC = Self(73)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -4699,7 +4699,7 @@ struct FillMode(TrivialRegisterType):
     comptime FULL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -6153,7 +6153,7 @@ struct cublasAtomicsMode_t(TrivialRegisterType):
     comptime CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -6453,7 +6453,7 @@ struct cublasSideMode_t(TrivialRegisterType):
     comptime CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -7083,7 +7083,7 @@ struct cublasOperation_t(TrivialRegisterType):
     comptime CUBLAS_OP_CONJG = cublasOperation_t(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

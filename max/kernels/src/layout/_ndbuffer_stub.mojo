@@ -251,15 +251,14 @@ fn distribute[
         comptime shape_i = Int(thread_layout.shape[i])
         comptime stride_i = Int(thread_layout.stride[i])
         var thread_coords_i = (thread_id // stride_i) % shape_i
-        thread_offset += thread_coords_i * buff.stride[i]()
+        thread_offset += Int32(thread_coords_i * buff.stride[i]())
 
     @parameter
     if swizzle:
         comptime swizzle_fn = swizzle.value()
-        thread_offset = (
-            swizzle_fn[DType.int32](thread_offset // element_size)
-            * element_size
-        )
+        thread_offset = swizzle_fn[DType.int32](
+            thread_offset // Int32(element_size)
+        ) * Int32(element_size)
 
     var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
         buff.data + Int(thread_offset),

@@ -49,7 +49,7 @@ struct Status(Equatable, TrivialRegisterType, Writable):
     comptime INVALID_ENUM = Self(10)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -103,7 +103,7 @@ struct hipDataType_t(TrivialRegisterType):
     comptime R_8F_E5M2_FNUZ = Self(1001)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -121,7 +121,7 @@ struct hipblasComputeType_t(TrivialRegisterType):
     comptime COMPUTE_32F_PEDANTIC = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -138,7 +138,7 @@ struct hipblasOperation_t(TrivialRegisterType):
     comptime OP_C = Self(113)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -158,7 +158,7 @@ struct hipblasLtOrder_t(TrivialRegisterType):
     comptime COL16_4R2 = Self(103)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -174,7 +174,7 @@ struct hipblasLtMatmulDescAttributes_t(TrivialRegisterType):
     comptime TRANSB = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -195,7 +195,7 @@ struct hipblasLtMatmulLayoutAttribute_t(TrivialRegisterType):
     comptime LD = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

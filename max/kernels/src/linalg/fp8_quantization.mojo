@@ -192,7 +192,7 @@ fn quantize_dynamic_scaled_fp8[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn quantize_fp8_kernel[
     out_type: DType,
@@ -340,7 +340,7 @@ fn batched_quantize_dynamic_scaled_fp8[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn batched_quantize_fp8_kernel[
     out_type: DType,

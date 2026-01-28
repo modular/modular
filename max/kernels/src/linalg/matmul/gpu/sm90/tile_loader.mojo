@@ -344,7 +344,9 @@ fn async_copy_with_bound_check[
     # Source matrix bounds for boundary checking
     comptime src_stride0 = src.layout.stride[0].value()
     var src_bound0 = Int32(src.runtime_layout.shape.value[0])
-    var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * dst.element_size
+    var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * Int32(
+        dst.element_size
+    )
 
     # Calculate base coordinates for this thread's destination fragment
     var dst_frag_offset = dst_frag.distance(dst.ptr)
@@ -370,7 +372,8 @@ fn async_copy_with_bound_check[
         comptime dst_idx_base = dst_idx % swizzle.size()
         comptime dst_idx_diff = dst_idx - dst_idx_base
         var dst_swizzled_idx = Int32(
-            swizzle(dst_frag_offset + dst_idx_base) + dst_idx_diff
+            swizzle(dst_frag_offset + Scalar[dst.linear_idx_type](dst_idx_base))
+            + Scalar[dst.linear_idx_type](dst_idx_diff)
         )
         var dst_ptr = dst.ptr + Int(dst_swizzled_idx)
 
@@ -378,8 +381,8 @@ fn async_copy_with_bound_check[
         # TODO: we should be able to use idx2crd for this.
         comptime dst_shifted_coord0 = dst_idx // dst_stride0
         comptime dst_shifted_coord1 = dst_idx % dst_stride0
-        var dst_coord0 = dst_shifted_coord0 + dst_frag_base_coord0
-        var dst_coord1 = dst_shifted_coord1 + dst_frag_base_coord1
+        var dst_coord0 = Int32(dst_shifted_coord0) + dst_frag_base_coord0
+        var dst_coord1 = Int32(dst_shifted_coord1) + dst_frag_base_coord1
 
         comptime size_bytes = dst.element_size * size_of[dst.dtype]()
 
@@ -387,7 +390,7 @@ fn async_copy_with_bound_check[
         var src_ptr = (
             src.ptr.address_space_cast[AddressSpace.GLOBAL]()
             + dst_coord1
-            + dst_coord0 * src_stride0
+            + dst_coord0 * Int32(src_stride0)
         )
 
         # Perform boundary check and issue appropriate async copy
@@ -397,7 +400,7 @@ fn async_copy_with_bound_check[
                 size_bytes,
                 bypass_L1_16B=False,
                 fill = Scalar[dst.dtype](0),
-            ](src_ptr, dst_ptr, src_size=size_bytes)
+            ](src_ptr, dst_ptr, src_size=Int32(size_bytes))
         else:
             # Out-of-bounds: zero-fill
             async_copy[

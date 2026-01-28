@@ -21,7 +21,7 @@ struct Property(TrivialRegisterType):
     comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -82,7 +82,7 @@ struct DataType(TrivialRegisterType):
     comptime R_4F_E2M1 = Self(33)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

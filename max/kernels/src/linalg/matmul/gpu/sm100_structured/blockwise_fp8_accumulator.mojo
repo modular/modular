@@ -239,9 +239,10 @@ struct BlockwiseFP8Accumulator[
 
             var global_bn_start = bn * UInt(Self.MMA_N)
             var begin_n = min(
-                Self.BK - Int32(global_bn_start % UInt(Self.BK)), Self.MMA_N
+                Int32(Self.BK) - Int32(global_bn_start % UInt(Self.BK)),
+                Int32(Self.MMA_N),
             )
-            var end_n = min(N - Int32(global_bn_start), Self.MMA_N)
+            var end_n = min(N - Int32(global_bn_start), Int32(Self.MMA_N))
 
             b_scale_idx0 = Int(global_bn_start // UInt(Self.BK))
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
@@ -331,7 +332,9 @@ struct BlockwiseFP8Accumulator[
 
         @parameter
         for stage in range(Self.num_stages):
-            var tmem_addr = TmemAddress(tmem_offset + (stage * Self.stageN))
+            var tmem_addr = TmemAddress(
+                tmem_offset + UInt32(stage * Self.stageN)
+            )
             var frags = Self.Fragments.load[repeat = Self.repeats](tmem_addr)
             Self.Fragments.wait_load()
 

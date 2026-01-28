@@ -695,7 +695,7 @@ fn _matmul_gpu[
 
                         @parameter
                         for M in Ms:
-                            if M <= m:
+                            if M <= Int32(m):
                                 comptime key = String(
                                     M, "_", static_N, "_", static_K
                                 )
@@ -924,7 +924,7 @@ fn multistage_gemm[
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )
 
@@ -1017,7 +1017,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    runtime_config.shared_mem_usage()
+                    UInt32(runtime_config.shared_mem_usage())
                 ),
             )
 
@@ -1085,6 +1085,6 @@ fn multistage_gemm[
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )

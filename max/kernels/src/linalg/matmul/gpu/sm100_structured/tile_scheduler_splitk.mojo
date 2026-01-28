@@ -425,8 +425,12 @@ struct TileScheduler[
             clc_empty,
             clc_throttle,
         )
-        self.total_k_tiles = ceildiv(mnk[2], Self.reduction_tile_shape[2])
-        self.k_tiles_per_split = ceildiv(self.total_k_tiles, Self.num_split_k)
+        self.total_k_tiles = ceildiv(
+            mnk[2], UInt32(Self.reduction_tile_shape[2])
+        )
+        self.k_tiles_per_split = ceildiv(
+            self.total_k_tiles, UInt32(Self.num_split_k)
+        )
         self.locks_ptr = locks_ptr.bitcast[Int32]()
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
@@ -579,7 +583,7 @@ struct TileScheduler[
     ):
         return type_of(result)(
             reduction_workspace.ptr
-            + (reduction_tile_idx * Self.BM * Self.MMA_N)
+            + (reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N))
         )
 
     @always_inline

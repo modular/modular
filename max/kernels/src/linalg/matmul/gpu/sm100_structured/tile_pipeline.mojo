@@ -123,7 +123,7 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (self.a_tiles[idx], self.b_tiles[idx])
 
     @always_inline
@@ -131,14 +131,14 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 struct BlockScaledTilePayload[
@@ -202,7 +202,7 @@ struct BlockScaledTilePayload[
         Self.ATile, Self.BTile, Self.SFATile, Self.SFBTile
     ]:
         """Get A, B, SFA, SFB tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -215,28 +215,28 @@ struct BlockScaledTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfa_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFATile:
         """Get SFA tile at the specified stage and k-group index."""
-        return self.sfa_tiles[stage * k_group_size + k_idx]
+        return self.sfa_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfb_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFBTile:
         """Get SFB tile at the specified stage and k-group index."""
-        return self.sfb_tiles[stage * k_group_size + k_idx]
+        return self.sfb_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 struct BlockwiseFP8TilePayload[
@@ -292,7 +292,7 @@ struct BlockwiseFP8TilePayload[
         Self.ATile, Self.BTile, Self.AScalesTile
     ]:
         """Get A, B, A-scales tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -304,21 +304,21 @@ struct BlockwiseFP8TilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_a_scales_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
         """Get A-scales tile at the specified stage and k-group index."""
-        return self.a_scales_tiles[stage * k_group_size + k_idx]
+        return self.a_scales_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 # ============================================================================
@@ -474,7 +474,7 @@ struct InputProducerStage[
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -836,23 +836,27 @@ struct StandardProducerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -924,18 +928,22 @@ struct StandardConsumerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn mbar(self) -> MbarPtr:

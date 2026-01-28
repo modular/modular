@@ -2189,7 +2189,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
             "TUNE_PARTITIONED_MULTICAST", False
         ]()
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            env_get_int["TUNE_SCHEDULE_TYPE", 0]()
+            Int32(env_get_int["TUNE_SCHEDULE_TYPE", 0]())
         )
 
         @parameter

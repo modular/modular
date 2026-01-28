@@ -567,7 +567,7 @@ fn gemm_kernel_amd[
         for i in range(num_mn_mmas * (num_k_tiles - 1)):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, mmas_per_smem_load, 0
+                AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
             )
 
         @parameter
@@ -578,12 +578,12 @@ fn gemm_kernel_amd[
 
             schedule_group_barrier(AMDScheduleBarrierMask.DS_WRITE, 1, 0)
             schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, mmas_this_smem_store // 2, 0
+                AMDScheduleBarrierMask.MFMA, Int32(mmas_this_smem_store // 2), 0
             )
             schedule_group_barrier(AMDScheduleBarrierMask.VMEM_READ, 1, 0)
             schedule_group_barrier(
                 AMDScheduleBarrierMask.MFMA,
-                mmas_this_smem_store - mmas_this_smem_store // 2,
+                Int32(mmas_this_smem_store - mmas_this_smem_store // 2),
                 0,
             )
 
@@ -591,7 +591,7 @@ fn gemm_kernel_amd[
         for i in range(num_mn_mmas):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
-                AMDScheduleBarrierMask.MFMA, mmas_per_smem_load, 0
+                AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
             )
 
     # GEMM Computation Pipeline

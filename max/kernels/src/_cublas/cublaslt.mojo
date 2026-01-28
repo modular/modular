@@ -182,7 +182,7 @@ struct Order(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -402,7 +402,7 @@ struct ClusterShape(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -656,7 +656,7 @@ struct MatmulAlgorithmCapability(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -744,7 +744,7 @@ struct PointerMode(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -901,7 +901,7 @@ struct Search(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -961,7 +961,7 @@ struct ReductionScheme(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -1385,7 +1385,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -1789,7 +1789,7 @@ struct Preference(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -1902,7 +1902,7 @@ struct AlgorithmConfig(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -2004,7 +2004,7 @@ fn cublasLtMatmulAlgoGetHeuristic(
         _cdesc,
         _ddesc,
         preference,
-        requested_algo_count,
+        Int16(requested_algo_count),
         heuristic_results_array,
         return_algo_count,
     )
@@ -2027,7 +2027,7 @@ struct InnerShape(TrivialRegisterType):
     comptime END = Self(5)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -2091,7 +2091,7 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterType):
     comptime MATRIX_SCALE_END = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2137,7 +2137,7 @@ struct cublasLtBatchMode_t(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2232,7 +2232,7 @@ struct LayoutAttribute(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -2409,7 +2409,7 @@ struct Stages(TrivialRegisterType):
     comptime STAGES_END = Self(38)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -2710,7 +2710,7 @@ struct Epilogue(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -2806,7 +2806,7 @@ struct PointerModeMask(TrivialRegisterType):
     """See ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -3505,7 +3505,7 @@ struct Tile(TrivialRegisterType):
     comptime TILE_END = Self(635)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value
@@ -3851,7 +3851,7 @@ struct TransformDescriptor(TrivialRegisterType):
     """
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) raises -> Bool:
         return self._value == other._value

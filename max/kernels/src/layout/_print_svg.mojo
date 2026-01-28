@@ -185,9 +185,9 @@ fn _print_svg_impl[
                     ' Segoe UI, Roboto, Arial, sans-serif" font-size="16"'
                     ' font-weight="600" x="'
                 ),
-                x + cell_size / 2,
+                Float64(x) + cell_size / 2,
                 '" y="',
-                y + cell_size / 2 + 5,
+                Float64(y) + cell_size / 2 + 5,
                 (
                     '" dominant-baseline="middle" text-anchor="middle"'
                     ' fill="#2C3E50">'
@@ -241,7 +241,7 @@ fn _print_svg_impl[
             + '<text font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'
             ' Roboto, Arial, sans-serif" font-size="16"'
             ' font-weight="700" x="',
-            x + cell_size / 2,
+            Float64(x) + cell_size / 2,
             '" y="',
             y + 15,
             (
@@ -313,7 +313,7 @@ fn _print_svg_impl[
 
     # Draw row labels with improved typography
     for i in range(comptime (tensor_base.layout[0].size())):
-        var y = start_y + i * cell_size + cell_size / 2
+        var y = Float64(start_y + i * cell_size) + cell_size / 2
         writer.write(
             '<text x="',
             margin,
@@ -331,12 +331,12 @@ fn _print_svg_impl[
 
     # Draw column labels with improved typography
     for j in range(comptime (tensor_base.layout[1].size())):
-        var x = margin + text_margin + j * cell_size + cell_size / 2
+        var x = Float64(margin + text_margin + j * cell_size) + cell_size / 2
         writer.write(
             '<text x="',
             x,
             '" y="',
-            start_y - text_margin / 2,
+            Float64(start_y) - text_margin / 2,
             (
                 '" dominant-baseline="middle" text-anchor="middle"'
                 ' font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'

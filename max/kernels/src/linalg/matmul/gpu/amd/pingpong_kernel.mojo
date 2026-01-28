@@ -321,7 +321,7 @@ fn _load_from_lds[
         # BF16 x4 = 64 bits = ds_read_b64
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<4 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -334,7 +334,7 @@ fn _load_from_lds[
         # BF16 x8 = 128 bits = ds_read_b128
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -348,7 +348,7 @@ fn _load_from_lds[
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -364,7 +364,7 @@ fn _load_from_lds[
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -381,7 +381,7 @@ fn _load_from_lds[
         # Load as two 128-bit chunks using pointer arithmetic
         var llvm_res0 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -392,7 +392,7 @@ fn _load_from_lds[
         ](shared_ptr_offset)
         var llvm_res1 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
@@ -1384,7 +1384,7 @@ struct AMDPingPongMatmul[
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Self.config.num_threads()
+            Int32(Self.config.num_threads())
         )
     )
     @staticmethod
@@ -1572,11 +1572,11 @@ struct AMDPingPongMatmul[
             mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
 
             # Wait for b[0], a[0] complete
-            s_waitcnt[lgkmcnt=lgkm_wait_a0_b0]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_a0_b0)]()
             mma_op.mma[0, 0]()  # Uses a[0], b[0] ✓
 
             # Wait for b[1] complete (a[1] still in flight)
-            s_waitcnt[lgkmcnt=lgkm_wait_b1]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_b1)]()
             mma_op.mma[0, 1]()  # Uses a[0] (done), b[1] ✓
 
             # Wait for a[1] (drain remaining)

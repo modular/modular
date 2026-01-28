@@ -141,19 +141,19 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
     @always_inline
     fn arrive():
         """Signal arrival without blocking (non-blocking arrive)."""
-        named_barrier_arrive[Self.num_threads](Self.barrier_id)
+        named_barrier_arrive[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
     @staticmethod
     @always_inline
     fn wait():
         """Block until all threads have arrived."""
-        named_barrier[Self.num_threads](Self.barrier_id)
+        named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
     @staticmethod
     @always_inline
     fn sync():
         """Full barrier: arrive and wait for all threads."""
-        named_barrier[Self.num_threads](Self.barrier_id)
+        named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))
 
 
 struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterType):

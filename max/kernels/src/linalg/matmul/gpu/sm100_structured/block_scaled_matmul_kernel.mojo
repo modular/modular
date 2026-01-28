@@ -509,7 +509,9 @@ struct BlackwellBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
                     ),
@@ -520,7 +522,9 @@ struct BlackwellBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
@@ -742,33 +746,35 @@ struct BlackwellBlockScaledMatmulKernel[
             Self.InputTilePipeline.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
             # Initialize output pipeline barriers (using static method)
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
             # Initialize throttle barriers via scheduler
             Self.Scheduler.init_throttle_barriers(
                 clc_throttle.ptr,
-                Self.clc_throttle_producer_arv_count,
-                Self.clc_throttle_consumer_arv_count,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
             smem.tmem_dealloc().ptr[].init(
-                Self.EPILOGUE_THREADS * Self.cta_group
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
             # Initialize CLC barriers
             @parameter
             for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -787,7 +793,7 @@ struct BlackwellBlockScaledMatmulKernel[
         # ctx.rank_m, ctx.rank_n, ctx.peer_cta_coord
         # ctx.a_multicast_mask, ctx.b_multicast_mask, ctx.mma_complete_mask
 
-        var num_iters: UInt32 = ceildiv(mnk[2], Self.BK)
+        var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
         var tmem_addr: UInt32 = 0
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
@@ -863,7 +869,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        accum_barriers, tmem, ctx.mma_complete_mask
+                        accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                     ),
                     Self.TmemDealloc(smem.tmem_dealloc()),
                 )
@@ -915,7 +921,7 @@ struct BlackwellBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -925,7 +931,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
-                        with MatmulProfilerType[3](workspace, tile_idx):
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
                                 Self.epilogue(
                                     c_tiles,

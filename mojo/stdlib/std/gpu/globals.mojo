@@ -78,7 +78,7 @@ fn _resolve_warp_size() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-comptime WARPGROUP_SIZE = _resolve_warpgroup_size()
+comptime WARPGROUP_SIZE: Int = _resolve_warpgroup_size()
 """The number of threads in a warpgroup on Nvidia GPUs.
 
 On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps

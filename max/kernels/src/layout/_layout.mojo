@@ -242,7 +242,11 @@ fn row_major(
                     shape[idx + 1].value() * strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](RuntimeInt[StrideType.DTYPE](stride_val))
+                    rebind[StrideType](
+                        RuntimeInt[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
                 )
 
     return Layout(shape, Coord(strides^))

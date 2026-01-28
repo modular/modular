@@ -286,10 +286,11 @@ fn stsm_helper[
         @parameter
         if transpose_c:
             offset = (
-                swizzle(stsm_lane_offset + n_offset + warp_offset) - warp_offset
+                swizzle(stsm_lane_offset + UInt32(n_offset) + warp_offset)
+                - warp_offset
             )
         else:
-            offset = swizzle(stsm_lane_offset + n_offset)
+            offset = swizzle(stsm_lane_offset + UInt32(n_offset))
         comptime stmtx_simd_width = 4 if stageN % 16 == 0 else 2
         var v = slice[i * stsmx_lane_size, 2 * stmtx_simd_width](vec).cast[
             dst.dtype
@@ -372,7 +373,7 @@ fn shared_memory_epilogue_transpose[
                     Int(warp_i),
                     iter_i,
                 )
-                var offset = simd_size * RLayout32Bits[result]()(coord)
+                var offset = UInt32(simd_size) * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
                     RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -391,7 +392,7 @@ fn shared_memory_epilogue_transpose[
                 if cta_group == 2 and MMA_M == 128:
                     # logical shared memory -> global layout Layout B:
                     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-                    local_i = cj + ci * BN
+                    local_i = cj + ci * UInt32(BN)
                     local_j = ck
                 else:
                     # logical shared memory -> global layout Layout A:
@@ -403,11 +404,11 @@ fn shared_memory_epilogue_transpose[
                 var ptr = (
                     c_smem.ptr
                     + swizzle(cj * swizzle_dim + ck)
-                    + ci * swizzle_dim * Int(stageN)
+                    + ci * swizzle_dim * UInt32(Int(stageN))
                 )
                 var global_i = local_i + UInt32(c_i)
                 var global_j = local_j + UInt32(c_j)
-                if global_i < Int(M) and global_j < Int(N):
+                if global_i < UInt32(Int(M)) and global_j < UInt32(Int(N)):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     var reg_val = compute_lambda_fn[alignment=alignment](
                         (Int(global_i), Int(global_j)),
@@ -456,7 +457,9 @@ fn shared_memory_epilogue_transpose[
                         Int(warp_i),
                         iter_i,
                     )
-                    var offset = simd_size * RLayout32Bits[result]()(coord)
+                    var offset = UInt32(simd_size) * RLayout32Bits[result]()(
+                        coord
+                    )
                     var logical_crd = idx2crd(
                         RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -472,7 +475,7 @@ fn shared_memory_epilogue_transpose[
                     var ptr = c_smem.ptr + swizzle(offset)
                     var global_i = local_i + UInt32(c_i)
                     var global_j = local_j + UInt32(c_j)
-                    if global_i < Int(M) and global_j < Int(N):
+                    if global_i < UInt32(Int(M)) and global_j < UInt32(Int(N)):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
@@ -636,13 +639,13 @@ fn shared_memory_epilogue[
                 Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_upper_col = offset_upper % Int(shared_n)
+            shared_upper_col = Int64(offset_upper % Int(shared_n))
 
             shared_lower_row = (
                 Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            shared_lower_col = offset_lower % Int(shared_n)
+            shared_lower_col = Int64(offset_lower % Int(shared_n))
 
         # now we need to add the global tile offset
         var global_upper_row = shared_upper_row + Int64(c_row)
@@ -650,14 +653,18 @@ fn shared_memory_epilogue[
         var global_lower_row = shared_lower_row + Int64(c_row)
         var global_lower_col = shared_lower_col + Int64(staged_c_col)
 
-        if global_upper_row < Int(M) and global_upper_col < Int(N):
+        if global_upper_row < Int64(Int(M)) and global_upper_col < Int64(
+            Int(N)
+        ):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_upper_row), Int(global_upper_col)),
                 c_smem_upper_frag[i, 0],
             )
             c_smem_upper_frag[i, 0] = reg_val
 
-        if global_lower_row < Int(M) and global_lower_col < Int(N):
+        if global_lower_row < Int64(Int(M)) and global_lower_col < Int64(
+            Int(N)
+        ):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_lower_row), Int(global_lower_col)),
                 c_smem_lower_frag[i, 0],
@@ -713,7 +720,7 @@ fn _compute_register_lambda_fn[
             simd_top[i] = compute_lambda_fn(
                 IndexList[2](
                     Int(top_frag_upper_coord[0]),
-                    Int(top_frag_upper_coord[1] + i),
+                    Int(top_frag_upper_coord[1] + UInt32(i)),
                 ),
                 simd_top[i],
             )
@@ -721,14 +728,14 @@ fn _compute_register_lambda_fn[
             simd_bottom[i] = compute_lambda_fn(
                 IndexList[2](
                     Int(bottom_frag_upper_coord[0]),
-                    Int(bottom_frag_upper_coord[1] + i),
+                    Int(bottom_frag_upper_coord[1] + UInt32(i)),
                 ),
                 simd_bottom[i],
             )
         else:
             simd_top[i] = compute_lambda_fn(
                 IndexList[2](
-                    Int(top_frag_upper_coord[1] + i),
+                    Int(top_frag_upper_coord[1] + UInt32(i)),
                     Int(top_frag_upper_coord[0]),
                 ),
                 simd_top[i],
@@ -736,7 +743,7 @@ fn _compute_register_lambda_fn[
 
             simd_bottom[i] = compute_lambda_fn(
                 IndexList[2](
-                    Int(bottom_frag_upper_coord[1] + i),
+                    Int(bottom_frag_upper_coord[1] + UInt32(i)),
                     Int(bottom_frag_upper_coord[0]),
                 ),
                 simd_bottom[i],

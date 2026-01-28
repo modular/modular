@@ -163,14 +163,15 @@ struct TileScheduler[
         log_cluster_dim_m: FastDiv[DType.uint32],
         log_cluster_dim_n: FastDiv[DType.uint32],
     ) -> WorkInfo:
-        var normalized_m = Int(work_info.m) / Self.log_cluster_m
-        var normalized_n = Int(work_info.n) / Self.log_cluster_n
+        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
+
+        var normalized_m = FastUInt(Int(work_info.m)) / Self.log_cluster_m
+        var normalized_n = FastUInt(Int(work_info.n)) / Self.log_cluster_n
         comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
-
         var linear_cluster_id = (
-            normalized_m * Int(cluster_dim[1]) + normalized_n
+            normalized_m * FastUInt(Int(cluster_dim[1])) + normalized_n
         )
 
         # CLC rasterize along M by default.
@@ -184,8 +185,12 @@ struct TileScheduler[
 
         @parameter
         if Self.block_swizzle_size != 0:
-            var swizzle_m_size = Int(cluster_dim[0]) / log_block_swizzle_size
-            var swizzle_n_size = Int(cluster_dim[1]) / log_block_swizzle_size
+            var swizzle_m_size = (
+                FastUInt(Int(cluster_dim[0])) / log_block_swizzle_size
+            )
+            var swizzle_n_size = (
+                FastUInt(Int(cluster_dim[1])) / log_block_swizzle_size
+            )
 
             var m_local = (new_normalized_m / log_block_swizzle_size) + (
                 (swizzle_m_size) * (new_normalized_n % log_block_swizzle_size)
@@ -196,13 +201,13 @@ struct TileScheduler[
                 (new_normalized_n / log_block_swizzle_size) % 2 == 0
             )
 
-            var m_bound = swizzle_m_size * Self.block_swizzle_size
-            var n_bound = swizzle_n_size * Self.block_swizzle_size
+            var m_bound = swizzle_m_size * FastUInt(Self.block_swizzle_size)
+            var n_bound = swizzle_n_size * FastUInt(Self.block_swizzle_size)
             if new_normalized_m < m_bound and new_normalized_n < n_bound:
-                new_m_global = is_even_subtile * m_local + (
+                new_m_global = FastUInt(is_even_subtile) * m_local + FastUInt(
                     1 - is_even_subtile
                 ) * (m_bound - m_local - 1)
-                new_n_global = n_local + (
+                new_n_global = n_local + FastUInt(
                     Int(new_normalized_n / log_block_swizzle_size)
                     * Self.block_swizzle_size
                 )
@@ -214,10 +219,14 @@ struct TileScheduler[
             new_n_global = new_normalized_n
 
         return WorkInfo(
-            m=Int(new_m_global) * Self.cluster_shape[0]
-            + Int(block_id_in_cluster.x),
-            n=Int(new_n_global) * Self.cluster_shape[1]
-            + Int(block_id_in_cluster.y),
+            m=UInt32(
+                Int(new_m_global) * Self.cluster_shape[0]
+                + Int(block_id_in_cluster.x)
+            ),
+            n=UInt32(
+                Int(new_n_global) * Self.cluster_shape[1]
+                + Int(block_id_in_cluster.y)
+            ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
         )
@@ -268,10 +277,10 @@ struct TileScheduler[
     ) -> PipelineState[Self.num_stages]:
         comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred: UInt32 = 1 if lane_id < UInt(Self.cluster_size) else 0
+        var pred = UInt32(1) if lane_id < UInt(Self.cluster_size) else UInt32(0)
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
-            size_of[UInt128](),
+            Int32(size_of[UInt128]()),
             UInt32(lane_id),
             pred,
         )

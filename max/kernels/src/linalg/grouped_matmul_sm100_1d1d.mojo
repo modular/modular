@@ -197,7 +197,7 @@ fn copy_accum_to_gmem[
 
     @parameter
     for stage in range(num_stages):
-        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         upper_frag_partial = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -302,12 +302,16 @@ fn copy_accum_to_gmem[
 
                 warp_offset = warp_i * tile_width
                 stsm_helper[swizzle, UInt(stageN), transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper, warp_offset
+                    upper_frag_casted,
+                    c_smem_warp_tile_upper,
+                    UInt32(warp_offset),
                 )
 
                 warp_offset += tile_width // 2
                 stsm_helper[swizzle, UInt(stageN), transpose_c](
-                    lower_frag_casted, c_smem_warp_tile_lower, warp_offset
+                    lower_frag_casted,
+                    c_smem_warp_tile_lower,
+                    UInt32(warp_offset),
                 )
 
                 # Guard the write to shared memory is done.
@@ -363,7 +367,9 @@ fn copy_accum_to_gmem[
                 var c_smem_warp_tile_lower = c_smem_warp_tile
                 warp_offset = Int(warp_id) * tile_width
                 stsm_helper[swizzle, UInt(stageN), transpose_c](
-                    upper_frag_casted, c_smem_warp_tile_upper, warp_offset
+                    upper_frag_casted,
+                    c_smem_warp_tile_upper,
+                    UInt32(warp_offset),
                 )
 
                 # Guard the write to shared memory is done.
@@ -565,7 +571,9 @@ fn copy_accum_to_gmem[
                             IntTuple(UNKNOWN_VALUE, j),
                             element_type = DType.uint32,
                         ](Int(thread_idx.x), j)
-                        var linear_idx = zipped_rt(input_crd) * simd_size
+                        var linear_idx = zipped_rt(input_crd) * UInt32(
+                            simd_size
+                        )
                         var linear_tup = RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
                         ](Int(linear_idx))
@@ -939,7 +947,7 @@ fn load_AB[
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
         for j in range(UInt32(k_group_size)):
             var offset = stage * UInt32(k_group_size) + j
@@ -1091,17 +1099,25 @@ fn consumer_main_loop[
     # Compose TMEM address: accum stage encoded in column field with stride in columns.
     if elect_one_sync():
         for j in range(UInt32(k_group_size)):
-            var a_smem_tile = a_smem_iter.next(stage * k_group_size + j)[]
-            var b_smem_tile = b_smem_iter.next(stage * k_group_size + j)[]
-            var sfa_smem_tile = sfa_smem_iter.next(stage * k_group_size + j)[]
-            var sfb_smem_tile = sfb_smem_iter.next(stage * k_group_size + j)[]
+            var a_smem_tile = a_smem_iter.next(
+                stage * UInt32(k_group_size) + j
+            )[]
+            var b_smem_tile = b_smem_iter.next(
+                stage * UInt32(k_group_size) + j
+            )[]
+            var sfa_smem_tile = sfa_smem_iter.next(
+                stage * UInt32(k_group_size) + j
+            )[]
+            var sfb_smem_tile = sfb_smem_iter.next(
+                stage * UInt32(k_group_size) + j
+            )[]
 
-            var sfa_tmem_offset = (
-                sfa_tmem + (stage * k_group_size + j) * SFA_NUM_COLS
-            )
-            var sfb_tmem_offset = (
-                sfb_tmem + (stage * k_group_size + j) * SFB_NUM_COLS
-            )
+            var sfa_tmem_offset = sfa_tmem + (
+                stage * UInt32(k_group_size) + j
+            ) * UInt32(SFA_NUM_COLS)
+            var sfb_tmem_offset = sfb_tmem + (
+                stage * UInt32(k_group_size) + j
+            ) * UInt32(SFB_NUM_COLS)
 
             mma_op.mma(
                 a_smem_tile,
@@ -1423,9 +1439,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         config=config,
         expert_n=expert_n,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -1440,8 +1456,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], cluster_shape[0]),
-        ceildiv(grid_dim[1], cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], cluster_shape[1])),
         1,
     )
 
@@ -1450,7 +1466,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime mma_warps = 1
     comptime epilogue_warps = 4
 
-    var mnk = StaticTuple[UInt32, 3](M, N, K)
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
@@ -1483,7 +1499,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         # 1 TMA, 1 MMA, 4 EPILOGUE warps
         block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(b200_smem)
+        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -1750,10 +1768,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         )
         mma_output_pipeline.init_mbars(
             accum_pipeline_producer_arv_count,
-            accum_pipeline_consumer_arv_count,
+            Int32(accum_pipeline_consumer_arv_count),
         )
 
-        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
+        tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * config.cta_group))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -1809,12 +1827,12 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
     @parameter
     for i in range(CLUSTER_M // config.cta_group):
-        b_multicast_mask |= 1 << (i * config.cta_group)
+        b_multicast_mask |= 1 << UInt16(i * config.cta_group)
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -1824,7 +1842,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
     var mma_complete_mask = self_mask | peer_mask
 
-    var num_iters: UInt32 = ceildiv(mnk[2], BK)
+    var num_iters: UInt32 = ceildiv(mnk[2], UInt32(BK))
 
     comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
         warp_role, max_profiled_tiles_per_SM
@@ -1846,7 +1864,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     continue
 
                 # DO TMA LOAD
-                for i in range(num_iters // config.k_group_size):
+                for i in range(num_iters // UInt32(config.k_group_size)):
                     load_AB[
                         block_tile_shape = config.block_tile_shape,
                         mma_shape = config.mma_shape,
@@ -1867,7 +1885,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         (UInt(work_info.m), UInt(work_info.n)),
                         a_multicast_mask,
                         b_multicast_mask,
-                        i * config.k_group_size,
+                        i * UInt32(config.k_group_size),
                         elect_one_cta,
                         scheduler,
                         rebind[Int32](expert_id),
@@ -1889,13 +1907,15 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_mma():
         with MatmulProfilerType[2](workspace, 0):
-            tcgen05_alloc[config.cta_group](ptr_tmem_addr, max_tmem_cols)
+            tcgen05_alloc[Int32(config.cta_group)](ptr_tmem_addr, max_tmem_cols)
             syncwarp()
             # non blocking, arrives and proceeds
-            named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+            named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
             tmem_addr = ptr_tmem_addr[0]
-            var sfa_tmem = tmem_addr + config.num_accum_pipeline_stages * MMA_N
+            var sfa_tmem = tmem_addr + UInt32(
+                config.num_accum_pipeline_stages * MMA_N
+            )
             var sfb_tmem = sfa_tmem + UInt32(
                 UInt(SFA_NUM_COLS) * UInt(config.num_pipeline_stages)
             )
@@ -1915,10 +1935,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     )
                     mma_output_pipeline.wait_consumer()
                     var tmem_offset = tmem_addr + (
-                        mma_output_mma_stage * stage_stride_cols
+                        mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
-                    for i in range(num_iters // config.k_group_size):
+                    for i in range(num_iters // UInt32(config.k_group_size)):
                         consumer_main_loop[
                             block_tile_shape = config.block_tile_shape,
                             mma_shape = config.mma_shape,
@@ -1938,7 +1958,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             load_mma_pipeline,
                             mma_op,
                             elect_one_warp,
-                            i * config.k_group_size,
+                            i * UInt32(config.k_group_size),
                             0,
                         )
                         load_mma_pipeline.consumer_step()
@@ -1958,7 +1978,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                                 mma_output_pipeline.producer_mbar(
                                     mma_output_mma_stage
                                 ),
-                                mma_complete_mask,
+                                UInt16(mma_complete_mask),
                             )
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
@@ -1969,15 +1989,15 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             if pdl_level > PDLLevel.OFF:
                 launch_dependent_grids()
 
-            tcgen05_release_allocation_lock[config.cta_group]()
+            tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
             # wait for epilogue to finish
             tmem_dealloc_mbar[].wait()
 
-            tcgen05_dealloc[config.cta_group](tmem_addr, max_tmem_cols)
+            tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
-        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         tmem_addr = ptr_tmem_addr[0]
 
         var tile_idx = 0

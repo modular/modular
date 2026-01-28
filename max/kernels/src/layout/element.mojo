@@ -53,7 +53,7 @@ fn _get_offset[
     @parameter
     if runtime_layout.layout.all_dims_known():
         comptime offset = runtime_layout.layout(i)
-        return offset
+        return Scalar[runtime_layout.linear_idx_type](offset)
     else:
         return runtime_layout(i)
 
@@ -78,7 +78,7 @@ fn _get_offset[
     @parameter
     if runtime_layout.layout.all_dims_known():
         comptime offset = runtime_layout.layout([i, j])
-        return offset
+        return Scalar[runtime_layout.linear_idx_type](offset)
     else:
         return runtime_layout(
             RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](i, j)

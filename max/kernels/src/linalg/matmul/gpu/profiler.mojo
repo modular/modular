@@ -100,7 +100,9 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @staticmethod
     @parameter
     fn _calculate_buffer_length() -> UInt32:
-        return Self.sm_count * Self.entries_per_sm * Self.total_data_points
+        return (
+            UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points
+        )
 
     @staticmethod
     @always_inline
@@ -125,7 +127,9 @@ struct BlackwellWarpProfilingWorkspaceManager[
         workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
-        comptime total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
+        comptime total_threads = UInt32(WARP_SIZE) * Self._get_warp_count[
+            warp_role
+        ]()
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 

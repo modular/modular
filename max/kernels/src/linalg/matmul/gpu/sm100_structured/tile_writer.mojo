@@ -191,10 +191,11 @@ fn store_fragment_to_smem[
         @parameter
         if transpose_c:
             offset = (
-                swizzle(stsm_lane_offset + n_offset + warp_offset) - warp_offset
+                swizzle(stsm_lane_offset + UInt32(n_offset) + warp_offset)
+                - warp_offset
             )
         else:
-            offset = swizzle(stsm_lane_offset + n_offset)
+            offset = swizzle(stsm_lane_offset + UInt32(n_offset))
 
         var v = slice[i * stsmx_lane_size, 2 * stmtx_simd_width](vec).cast[
             c_type
@@ -1030,11 +1031,11 @@ struct SMemEpilogueWriter[
 
             warp_offset = warp_i * tile_width
             store_fragment_to_smem[Self.swizzle, Self.stageN, Self.transpose_c](
-                upper_frag, c_smem_warp_tile_upper, warp_offset
+                upper_frag, c_smem_warp_tile_upper, UInt32(warp_offset)
             )
             warp_offset += tile_width // 2
             store_fragment_to_smem[Self.swizzle, Self.stageN, Self.transpose_c](
-                lower_frag, c_smem_warp_tile_lower, warp_offset
+                lower_frag, c_smem_warp_tile_lower, UInt32(warp_offset)
             )
 
             Self.OutputSyncBarrier.sync()
@@ -1080,7 +1081,7 @@ struct SMemEpilogueWriter[
             var c_smem_warp_tile_upper = c_smem_warp_tile
             warp_offset = Int(self.warp_id) * tile_width
             store_fragment_to_smem[Self.swizzle, Self.stageN, Self.transpose_c](
-                upper_frag, c_smem_warp_tile_upper, warp_offset
+                upper_frag, c_smem_warp_tile_upper, UInt32(warp_offset)
             )
 
             Self.OutputSyncBarrier.sync()
@@ -1243,7 +1244,7 @@ fn shared_memory_epilogue_transpose[
                     Int(warp_i),
                     iter_i,
                 )
-                var offset = simd_size * RLayout32Bits[result]()(coord)
+                var offset = UInt32(simd_size) * RLayout32Bits[result]()(coord)
                 var logical_crd = idx2crd(
                     RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -1262,7 +1263,7 @@ fn shared_memory_epilogue_transpose[
                 if cta_group == 2 and MMA_M == 128:
                     # logical shared memory -> global layout Layout B:
                     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-                    local_i = cj + ci * BN
+                    local_i = cj + ci * UInt32(BN)
                     local_j = ck
                 else:
                     # logical shared memory -> global layout Layout A:
@@ -1274,11 +1275,11 @@ fn shared_memory_epilogue_transpose[
                 var ptr = (
                     c_smem.ptr
                     + swizzle(cj * swizzle_dim + ck)
-                    + ci * swizzle_dim * Int(stageN)
+                    + ci * swizzle_dim * UInt32(Int(stageN))
                 )
                 var row = local_i + UInt32(gmem_col)
                 var col = local_j + UInt32(gmem_row)
-                if row < Int(M) and col < Int(N):
+                if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
                         compute_lambda_fn[alignment=alignment](
@@ -1327,7 +1328,9 @@ fn shared_memory_epilogue_transpose[
                         Int(warp_i),
                         iter_i,
                     )
-                    var offset = simd_size * RLayout32Bits[result]()(coord)
+                    var offset = UInt32(simd_size) * RLayout32Bits[result]()(
+                        coord
+                    )
                     var logical_crd = idx2crd(
                         RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
@@ -1343,7 +1346,7 @@ fn shared_memory_epilogue_transpose[
                     var ptr = c_smem.ptr + swizzle(offset)
                     var row = local_i + UInt32(gmem_col)
                     var col = local_j + UInt32(gmem_row)
-                    if row < Int(M) and col < Int(N):
+                    if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
@@ -1489,13 +1492,13 @@ fn shared_memory_epilogue[
                 Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            local_upper_col = offset_upper % Int(shared_n)
+            local_upper_col = Int64(offset_upper % Int(shared_n))
 
             local_lower_row = (
                 Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
                 / fast_div
             ).cast[DType.int64]()
-            local_lower_col = offset_lower % Int(shared_n)
+            local_lower_col = Int64(offset_lower % Int(shared_n))
 
         # Convert local SMEM coords to global memory coords
         var gmem_upper_row = local_upper_row + Int64(c_row)
@@ -1504,13 +1507,13 @@ fn shared_memory_epilogue[
         var gmem_lower_col = local_lower_col + Int64(gmem_col)
 
         # Apply epilogue if within bounds
-        if gmem_upper_row < Int(M) and gmem_upper_col < Int(N):
+        if gmem_upper_row < Int64(Int(M)) and gmem_upper_col < Int64(Int(N)):
             c_smem_upper_frag[i, 0] = compute_lambda_fn[alignment=alignment](
                 (Int(gmem_upper_row), Int(gmem_upper_col)),
                 c_smem_upper_frag[i, 0],
             )
 
-        if gmem_lower_row < Int(M) and gmem_lower_col < Int(N):
+        if gmem_lower_row < Int64(Int(M)) and gmem_lower_col < Int64(Int(N)):
             c_smem_lower_frag[i, 0] = compute_lambda_fn[alignment=alignment](
                 (Int(gmem_lower_row), Int(gmem_lower_col)),
                 c_smem_lower_frag[i, 0],

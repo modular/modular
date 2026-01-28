@@ -159,7 +159,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
         """
         self._consumer_stage += 1
 
-        if self._consumer_stage == Self.num_stages:
+        if self._consumer_stage == UInt32(Self.num_stages):
             self._consumer_stage = 0
             self._consumer_phase ^= 1
 
@@ -172,7 +172,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
         """
         self._producer_stage += 1
 
-        if self._producer_stage == Self.num_stages:
+        if self._producer_stage == UInt32(Self.num_stages):
             self._producer_stage = 0
             self._producer_phase ^= 1
 
@@ -185,7 +185,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
             The total number of bytes needed for all pipeline barriers
             (2 * num_stages barriers).
         """
-        return 2 * Self.num_stages * size_of[SharedMemBarrier]()
+        return UInt32(2 * Self.num_stages * size_of[SharedMemBarrier]())
 
     @always_inline
     fn init_mbars(

@@ -108,9 +108,9 @@ fn grouped_matmul_sm90[
     comptime K = b.shape.get[2]()
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -215,5 +215,7 @@ fn grouped_matmul_sm90[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )

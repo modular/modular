@@ -421,7 +421,10 @@ struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
         Returns:
             The swizzled scalar value.
         """
-        return offset ^ shiftr(offset & self.yyy_mask, self.shift)
+        return offset ^ shiftr(
+            offset & Scalar[offset.dtype](self.yyy_mask),
+            Scalar[offset.dtype](self.shift),
+        )
 
     @always_inline
     fn size(self) -> Int:

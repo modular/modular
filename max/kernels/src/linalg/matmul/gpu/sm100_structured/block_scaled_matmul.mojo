@@ -408,9 +408,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         transpose_b,
         config=config,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -432,8 +432,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], cluster_shape[0]),
-        ceildiv(grid_dim[1], cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], cluster_shape[1])),
         1,
     )
 
@@ -443,7 +443,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime scheduler_warps = 1
     comptime epilogue_warps = 4
 
-    var mnk = StaticTuple[UInt32, 3](M, N, K)
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # ===== Workspace for Profiling =====
     var workspace: Span[UInt64, MutAnyOrigin]
@@ -475,7 +475,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
         ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(b200_smem)
+        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 

@@ -129,7 +129,7 @@ fn arange[
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:
-        return (i * step + start) % end
+        return (Scalar[dtype](i) * step + start) % end
 
     # Use layout info for 2D tensors with simple (non-nested) shapes
     @parameter
@@ -143,7 +143,7 @@ fn arange[
         var rows = Int(tensor.runtime_layout.shape[0][0])
         var cols = Int(tensor.runtime_layout.shape[1][0])
         for m, n in product(range(rows), range(cols)):
-            tensor[m, n] = ((m * cols + n) * step + start) % end
+            tensor[m, n] = (Scalar[dtype](m * cols + n) * step + start) % end
 
 
 fn random[

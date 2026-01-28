@@ -905,7 +905,7 @@ fn _batched_matmul_gpu[
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                kernels.ampere_128x128_4.shared_mem_usage()
+                UInt32(kernels.ampere_128x128_4.shared_mem_usage())
             ),
         )
     elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
@@ -1379,7 +1379,9 @@ fn bmm_sm100_blockwise_scaled_fp8[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
