@@ -21,15 +21,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Event, Thread
 
-from max.pipelines import PixelContext, PixelGenerationPipeline
-from max.pipelines.lib.tokenizer import PixelGenerationTokenizer
 from max.interfaces import (
     PixelGenerationInputs,
     PixelGenerationOutput,
     PixelGenerationRequest,
     RequestID,
 )
+from max.pipelines import PixelContext, PixelGenerationPipeline
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib.tokenizer import PixelGenerationTokenizer
 
 # from max.serve.config import Settings
 # from max.serve.scheduler.queues import SchedulerZmqConfigs
