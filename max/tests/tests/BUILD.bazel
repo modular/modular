@@ -11,7 +11,11 @@ modular_py_test(
     name = "max_tests",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_flashinfer_cubin.py"],
+        exclude = [
+            "test_flashinfer_cubin.py",
+            "test_interpreter.py",
+            "test_interpreter_ops.py",
+        ],
     ),
     args = [
         "-n",
@@ -45,5 +49,35 @@ modular_py_test(
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
         requirement("flashinfer-cubin"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter",
+    srcs = ["test_interpreter.py"],
+    deps = [
+        "//max/python/max:interpreter",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter_ops",
+    srcs = ["test_interpreter_ops.py"],
+    ignore_extra_deps = [
+        "//max/python/max:interpreter",
+    ],
+    deps = [
+        "//max/python/max:interpreter",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )
