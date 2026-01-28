@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import CompilationTarget, align_of, simd_width_of, size_of
 
@@ -1007,7 +1007,7 @@ fn _matmul_qint4_m_1[
     group_size: Int,
     aq_type: DType,
     b_layout: Layout = Layout.row_major[2](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, ...],
     a_scale: LayoutTensor[
@@ -1094,7 +1094,7 @@ fn _matmul_qint4_m_any[
     group_size: Int,
     aq_type: DType,
     b_layout: Layout = Layout.row_major[2](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_quant: LayoutTensor[aq_type, address_space = AddressSpace.GENERIC, ...],
     a_scale: LayoutTensor[
@@ -1263,7 +1263,7 @@ fn _matmul_qint4[
     kernel: _MatmulQInt4Kernel,
     group_size: Int,
     b_layout: Layout = Layout.row_major[2](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
     b: LayoutTensor[
@@ -1312,7 +1312,7 @@ fn _matmul_qint4[
 fn matmul_qint4[
     group_size: Int,
     b_layout: Layout = Layout.row_major[2](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
     b: LayoutTensor[

@@ -28,7 +28,7 @@ from max.interfaces.lora import (
     LoRAResponse,
     LoRAStatus,
 )
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
     from .lora import LoRAManager

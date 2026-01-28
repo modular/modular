@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import inf, isnan, log, nan, sqrt
 from sys import simd_width_of
 
@@ -114,7 +114,7 @@ fn correlation[
     v: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     len: Int,
     *,
-    w: OptionalReg[UnsafePointer[u.type, MutAnyOrigin]] = None,
+    w: Optional[UnsafePointer[u.type, MutAnyOrigin]] = None,
     centered: Bool = True,
 ) raises -> Scalar[out_type]:
     """Compute the correlation distance between two 1-D arrays.

@@ -87,7 +87,7 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        requirement("torch"),
+        requirement("scipy"),
     ],
 )
 
@@ -224,6 +224,7 @@ modular_py_library(
         requirement("numpy"),
     ] + select({
         "//:nvidia_gpu": [
+            requirement("ninja"),
             requirement("vllm"),
         ],
         "//conditions:default": [],

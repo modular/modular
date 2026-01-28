@@ -35,8 +35,8 @@ from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ async def test_model_worker_propagates_exception(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
@@ -139,7 +139,7 @@ async def test_model_worker_propagates_construction_exception(
             MockInvalidTokenGenerator,
             mock_pipeline_config,
             settings=settings,
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION,
                 context_type=TextContext,
             ),
@@ -178,7 +178,7 @@ async def test_model_worker_start_timeout(
             mock_pipeline_config,
             settings=settings,
             metric_client=NoopClient(),
-            scheduler_zmq_configs=SchedulerZmqConfigs(
+            model_worker_interface=ZmqModelWorkerInterface(
                 PipelineTask.TEXT_GENERATION, context_type=TextContext
             ),
         ):

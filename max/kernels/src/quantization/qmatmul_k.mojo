@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import CompilationTarget, align_of, simd_width_of, size_of
 from sys.intrinsics import llvm_intrinsic
@@ -966,7 +966,7 @@ fn _accumulate_and_store[
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_ptr: UnsafePointer[Float32],
     N: Int,
@@ -1063,7 +1063,7 @@ fn _matmul_Q4_K_tile[
         a_ptr: UnsafePointer[Int8],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     ) capturing [_] -> None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -1141,7 +1141,7 @@ fn _matmul_Q4_K_tile[
 fn _matmul_Q4_K_columns[
     tile_n: Int,
     simd_width: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
     b_ptr: UnsafePointer[_block_Q4_K_packed[]],
@@ -1303,7 +1303,7 @@ fn _matmul_Q6_K_tile[
             DType.int32, tile_m, tile_n, simd_width
         ],
     ) capturing [_] -> None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
@@ -1392,7 +1392,7 @@ fn _matmul_Q6_K_tile[
 fn _matmul_Q6_K_columns[
     tile_n: Int,
     simd_width: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
     b_ptr: UnsafePointer[_block_Q6_K_packed[]],
@@ -1482,7 +1482,7 @@ fn _matmul_Qb_K[
     columns_fn: fn[
         tile_n: Int,
         simd_width: Int,
-        elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+        elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     ] (
         var a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
         b_ptr: UnsafePointer[b_type],
@@ -1495,7 +1495,7 @@ fn _matmul_Qb_K[
     ) capturing -> None,
     *,
     interleave_group_sums: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
@@ -1580,7 +1580,7 @@ fn _matmul_Qb_K[
 
 
 fn matmul_Q4_K[
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
     a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
@@ -1599,7 +1599,7 @@ fn matmul_Q4_K[
 
 
 fn matmul_Q6_K[
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
     a: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],

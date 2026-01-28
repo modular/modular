@@ -93,26 +93,6 @@ def _resolve_user_provided_config_file_cli_arg(
     return preliminary_args.config_file, remaining_args
 
 
-# TODO: This needs to be temporarily named this way to avoid name conflicts
-# with the PipelineConfig class. Ideally this should just be that same class,
-# but we're still in the process of migrating PipelineConfig to pydantic and all.
-class BenchmarkPipelineConfig(ConfigFileModel):
-    """Configuration class for model options."""
-
-    model: str | None = Field(default=None)
-    """Name of the model. Required when running benchmark (must be provided via CLI or config)."""
-    weight_path: str | None = Field(default=None)
-    """Override the default weights file. Must be in GGUF format."""
-    lora_paths: str | None = Field(default=None)
-    """Comma-separated list of paths to LoRA adapters."""
-    quantization_encoding: str | None = Field(default="q4_k")
-    """Quantization encoding to benchmark."""
-    max_length: int | None = Field(default=None)
-    """Maximum length of the sequence."""
-    max_batch_size: int | None = Field(default=None)
-    """Maximum batch size to execute with the model."""
-
-
 class HardwareConfig(ConfigFileModel):
     """Configuration class for hardware options."""
 
@@ -717,47 +697,6 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         parent_required_fields = super().get_default_required_fields()
         parent_required_fields.remove("dataset_name")
         return parent_required_fields.union({"workload_config"})
-
-
-# Convenience functions for loading specific configuration types
-def load_base_benchmark_config(
-    config_file: str = "configs/base_config.yaml",
-    overrides: dict[str, Any] | None = None,
-) -> BaseBenchmarkConfig:
-    """Load base benchmark configuration with optional overrides.
-
-    Args:
-        config_file: Path to configuration file
-        overrides: Optional dictionary of parameter overrides
-
-    Returns:
-        BaseBenchmarkConfig instance
-    """
-    config = BaseBenchmarkConfig.from_config_file(config_file)
-    if overrides:
-        for key, value in overrides.items():
-            setattr(config, key, value)
-    return config
-
-
-def load_serving_benchmark_config(
-    config_file: str = "configs/serving_config.yaml",
-    overrides: dict[str, Any] | None = None,
-) -> ServingBenchmarkConfig:
-    """Load serving benchmark configuration with optional overrides.
-
-    Args:
-        config_file: Path to configuration file
-        overrides: Optional dictionary of parameter overrides
-
-    Returns:
-        ServingBenchmarkConfig instance
-    """
-    config = ServingBenchmarkConfig.from_config_file(config_file)
-    if overrides:
-        for key, value in overrides.items():
-            setattr(config, key, value)
-    return config
 
 
 def _load_user_provided_config(

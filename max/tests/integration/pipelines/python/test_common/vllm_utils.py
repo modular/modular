@@ -23,6 +23,34 @@ import numpy as np
 from test_common.test_data import MockTextGenerationRequest
 
 
+def _setup_ninja_path() -> None:
+    """Add ninja binary to PATH for FlashInfer JIT compilation.
+
+    FlashInfer relies on ninja to JIT-compile kernels. In Bazel's
+    pycross_wheel_library environment, ninja.BIN_DIR can be empty, so we
+    locate the binary relative to the installed ninja package and prepend
+    it to PATH. This must run before FlashInfer is imported or initialized.
+    """
+    try:
+        import ninja  # type: ignore[import-not-found, unused-ignore]
+    except ImportError:
+        # ninja not available: let flashinfer import fail separately.
+        return
+
+    ninja_bin_dir = ninja.BIN_DIR
+    if not ninja_bin_dir:
+        # In Bazel pycross_wheel_library, bin is at ../../bin relative to
+        # the package location.
+        ninja_bin_dir = os.path.normpath(
+            os.path.join(os.path.dirname(ninja.__file__), "..", "..", "bin")
+        )
+    if ninja_bin_dir and os.path.isdir(ninja_bin_dir):
+        if ninja_bin_dir not in os.environ.get("PATH", "").split(os.pathsep):
+            os.environ["PATH"] = (
+                ninja_bin_dir + os.pathsep + os.environ.get("PATH", "")
+            )
+
+
 def run_text_generation(
     model_path: str,
     textgen_requests: Iterable[MockTextGenerationRequest],
@@ -39,10 +67,9 @@ def run_text_generation(
     CUDA initialization or multiprocessing side-effects at module-import time.
     """
 
-    # vLLM V1 defaults to `FLASHINFER`, which requires `ninja` to JIT compile
-    # kernels at runtime. We don't currently support `ninja`, so we force
-    # `FLASH_ATTN` (Flash Attention 2) which uses pre-compiled kernels.
-    os.environ["VLLM_ATTENTION_BACKEND"] = "FLASH_ATTN"
+    # Set `ninja` path since vLLM V1 defaults to `FLASHINFER`, which may
+    # require `ninja` to JIT compile kernels at runtime.
+    _setup_ninja_path()
 
     try:
         from vllm import (  # type: ignore[import-not-found, unused-ignore]

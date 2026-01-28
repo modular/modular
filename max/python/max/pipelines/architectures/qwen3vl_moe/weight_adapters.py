@@ -24,6 +24,9 @@ QWEN3_VL_MODEL_MAPPING = {
     "model.visual.": "vision_encoder.",
     "vision_encoder.pos_embed.": "vision_encoder.pos_embed.embedding.",
     "gate.weight": "gate.gate_score.weight",
+    "weight_scale_inv": "weight_scale",
+    "gate_up_proj_scale_inv": "gate_up_proj_scale",
+    "down_proj_scale_inv": "down_proj_scale",
 }
 
 
@@ -42,11 +45,10 @@ def convert_qwen3vl_model_state_dict(
     2. Strips the `language_model.model.` prefix to match Qwen3VLLanguageModel
        expectations.
     3. Excludes vision model and multimodal projection weights.
+    4. Renames FP8 scale weights from weight_scale_inv to weight_scale.
 
     Args:
         state_dict: The raw Qwen3VL checkpoint weights.
-        huggingface_config: The Qwen3VL HuggingFace configuration.
-        pipeline_config: The pipeline configuration.
 
     Returns:
         The filtered and mapped weights for Qwen3VLLanguageModel.
@@ -54,10 +56,23 @@ def convert_qwen3vl_model_state_dict(
     llm_state_dict: dict[str, WeightData] = {}
 
     for checkpoint_name, weight in state_dict.items():
-        if weight.data().dtype != DType.bfloat16:
-            weight_data = weight.data().astype(DType.bfloat16)
-        else:
-            weight_data = weight.data()
+        weight_data = weight.data()
+
+        # Normalize dtypes:
+        #   * FP8 tensors stay FP8 (we don't try to cast them on CPU).
+        #   * Quantization scales (.*_scale, .*_scale_inv) keep their original
+        #     precision.
+        #   * All other floating-point tensors → BF16.
+        if weight_data.dtype.is_float():
+            is_scale = (
+                checkpoint_name.endswith(".weight_scale")
+                or checkpoint_name.endswith(".input_scale")
+                or checkpoint_name.endswith("_scale_inv")
+            )
+
+            if not weight_data.dtype.is_float8() and not is_scale:
+                weight_data = weight_data.astype(DType.bfloat16)
+
         # Special case for lm_head. Because config.tie_word_embeddings is true
         # for some Qwen3VL models and false for others.
         if checkpoint_name.startswith("lm_head."):
@@ -66,7 +81,8 @@ def convert_qwen3vl_model_state_dict(
             )
             llm_state_dict[llm_name] = weight_data
         elif "patch_embed.proj.weight" in checkpoint_name:
-            # Convert Conv3D weight to a Linear-equivalent format. MAX uses Linear layer instead of Conv3D for patch embedding.
+            # Convert Conv3D weight to a Linear-equivalent format.
+            # MAX uses Linear layer instead of Conv3D for patch embedding.
             weight_array = Buffer.from_dlpack(weight_data.data)
             out_channels, in_channels, kernel_h, kernel_w, kernel_d = (
                 weight_array.shape

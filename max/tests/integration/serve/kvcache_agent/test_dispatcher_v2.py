@@ -19,7 +19,10 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2
-from max.serve.queue.zmq_queue import ClientIdentity, generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_queue import (
+    ClientIdentity,
+    generate_zmq_ipc_path,
+)
 
 T = TypeVar("T")
 

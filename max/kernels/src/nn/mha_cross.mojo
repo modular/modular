@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of
 
 from algorithm.functional import vectorize
@@ -40,8 +37,8 @@ fn _bmm0_bs[
     q_type: DType,
     p_type: DType,
 ](
-    p_ptr: UnsafePointer[Scalar[p_type]],
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
+    q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
     q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
     kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],
@@ -145,8 +142,8 @@ fn _bmm1_bs[
     p_type: DType,
     output_type: DType,
 ](
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    p_ptr: UnsafePointer[Scalar[p_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
     q_input_row_offsets: LayoutTensor[DType.uint32, q_layout, MutAnyOrigin],
     kv_input_row_offsets: LayoutTensor[DType.uint32, kv_layout, MutAnyOrigin],

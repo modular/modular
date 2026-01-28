@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
+from collections.optional import Optional
 from layout import LayoutTensor, Layout
 from math import fma
 from sys import align_of, prefetch
@@ -424,7 +424,7 @@ struct _Accumulator[
         mut self,
         input: UnsafePointer[Scalar[dt], ...],
         input_stride: Int,
-        partial_load_size: OptionalReg[Int] = None,
+        partial_load_size: Optional[Int] = None,
     ):
         """Load a register tile from the input buffer.
 
@@ -463,7 +463,7 @@ struct _Accumulator[
         mut self,
         output: UnsafePointer[Scalar[dt], ...],
         output_stride: Int,
-        partial_store_size: OptionalReg[Int] = None,
+        partial_store_size: Optional[Int] = None,
     ):
         """Load a register tile from the input buffer.
 
@@ -503,7 +503,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -512,7 +512,7 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Compute c += a * b with register tiling on SIMD ISAs.
 
@@ -562,7 +562,7 @@ struct _Accumulator[
         b_type: DType,
         //,
         # TODO: move the following params to accumulate function.
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -572,7 +572,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Compute c += a * b with register tiling on SIMD ISAs.
 
@@ -642,7 +642,7 @@ struct _Accumulator[
         b_type: DType,
         //,
         # TODO: move the following params to accumulate function.
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -654,7 +654,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Compute c += a * b with register tiling on SIMD ISAs.
 
@@ -758,7 +758,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -767,7 +767,7 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
@@ -823,7 +823,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -833,7 +833,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
@@ -888,7 +888,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -900,7 +900,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
@@ -994,7 +994,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -1003,7 +1003,7 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for NEON."""
         __comptime_assert CompilationTarget.has_neon()
@@ -1054,7 +1054,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -1064,7 +1064,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for NEON."""
         __comptime_assert CompilationTarget.has_neon()
@@ -1116,7 +1116,7 @@ struct _Accumulator[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -1128,7 +1128,7 @@ struct _Accumulator[
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for NEON."""
         __comptime_assert CompilationTarget.has_neon()
@@ -1182,7 +1182,7 @@ fn _simd_load_maybe_partial[
 ](
     ptr: UnsafePointer[Scalar[dt], ...],
     offset: Int,
-    partial_load_size: OptionalReg[Int] = None,
+    partial_load_size: Optional[Int] = None,
 ) -> SIMD[dt, simd_width]:
     """Load a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial load, we
@@ -1210,7 +1210,7 @@ fn _simd_store_maybe_partial[
     ptr: UnsafePointer[Scalar[dt], ...],
     offset: Int,
     vec: SIMD[dt, simd_width],
-    partial_store_size: OptionalReg[Int] = None,
+    partial_store_size: Optional[Int] = None,
 ):
     """Store a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial_store, we

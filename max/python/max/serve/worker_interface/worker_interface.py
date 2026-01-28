@@ -22,10 +22,8 @@ from typing import Any, Generic
 
 import zmq
 from max.interfaces import (
-    BaseContext,
     BaseContextType,
     EmbeddingsContext,
-    PipelineOutput,
     PipelineOutputType,
     PipelineTask,
     RequestID,
@@ -33,26 +31,35 @@ from max.interfaces import (
     TextGenerationContext,
 )
 from max.interfaces.queue import MAXPullQueue, MAXPushQueue
-from max.serve.queue.zmq_queue import ZmqConfig
-from max.serve.scheduler.base import sleep_with_backoff
 
 logger = logging.getLogger("max.serve")
 
+from abc import ABC, abstractmethod
 
-class SchedulerZmqConfigs:
+
+async def sleep_with_backoff(count_no_progress: int) -> None:
+    """A basic strategy to avoid busy waiting.
+
+    This function sleeps with a linear backoff.
+    The first sleep of 0 enables other async threads to run but otherwise does not sleep.
+    The step size is 1ms because of limitations around asyncio to sleep with finer granularity.
+    The maximum sleep is 10ms because it resolves CPU usage overhead while maintaining minimal waiting.
+    """
+
+    ms_to_sleep = min(max(0, count_no_progress), 10)
+    await asyncio.sleep(ms_to_sleep * 0.001)
+
+
+class ModelWorkerInterface(ABC):
+    @abstractmethod
     def __init__(
         self,
         pipeline_task: PipelineTask,
         context_type: type[TextGenerationContext] | type[EmbeddingsContext],
     ) -> None:
-        response_type = pipeline_task.output_type
+        pass
 
-        self.request_queue_config = ZmqConfig[BaseContext](context_type)
-        self.response_queue_config = ZmqConfig[
-            dict[RequestID, SchedulerResult[PipelineOutput]]
-        ](response_type)
-        self.cancel_queue_config = ZmqConfig[list[RequestID]](list[RequestID])
-
+    @abstractmethod
     def api_worker_queues(
         self,
     ) -> tuple[
@@ -60,12 +67,9 @@ class SchedulerZmqConfigs:
         MAXPullQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPushQueue[list[RequestID]],
     ]:
-        return (
-            self.request_queue_config.push(),
-            self.response_queue_config.pull(),
-            self.cancel_queue_config.push(),
-        )
+        pass
 
+    @abstractmethod
     def model_worker_queues(
         self,
     ) -> tuple[
@@ -73,11 +77,7 @@ class SchedulerZmqConfigs:
         MAXPushQueue[dict[RequestID, SchedulerResult[Any]]],
         MAXPullQueue[list[RequestID]],
     ]:
-        return (
-            self.request_queue_config.pull(),
-            self.response_queue_config.push(),
-            self.cancel_queue_config.pull(),
-        )
+        pass
 
 
 class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
@@ -90,11 +90,11 @@ class EngineQueue(Generic[BaseContextType, PipelineOutputType]):
 
     def __init__(
         self,
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
     ) -> None:
         # Create Queues
         self.request_queue, self.response_queue, self.cancel_queue = (
-            scheduler_zmq_configs.api_worker_queues()
+            model_worker_interface.api_worker_queues()
         )
 
         self.pending_out_queues: dict[

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,22 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from __future__ import annotations
 
-from .block_utils import InsufficientBlocksError
-from .cache_manager import PagedKVCacheManager
-from .transfer_engine import (
-    KVTransferEngine,
-    KVTransferEngineMetadata,
-    TransferReqData,
-    available_port,
-)
+from builtin.globals import global_constant
 
-__all__ = [
-    "InsufficientBlocksError",
-    "KVTransferEngine",
-    "KVTransferEngineMetadata",
-    "PagedKVCacheManager",
-    "TransferReqData",
-    "available_port",
-]
+
+fn use_lookup(idx: Int) -> Int64:
+    comptime numbers = InlineArray[Int64, 10](
+        1, 3, 14, 34, 63, 101, 148, 204, 269, 343
+    )
+    ref lookup_table = global_constant[numbers]()
+    if idx < len(lookup_table):
+        return lookup_table[idx]
+    else:
+        return 0
+
+
+def main():
+    print(use_lookup(3))

@@ -98,7 +98,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from linalg.matmul.gpu.sm100.matmul import (
-    WarpRole,
+    WarpRole as _WarpRole,
     stsm_helper,
     shared_memory_epilogue_transpose,
     shared_memory_epilogue,
@@ -108,6 +108,9 @@ from linalg.matmul.gpu.sm100.matmul import (
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from internal_utils import ufloordiv
+
+# Use WarpRole without scheduler warp for grouped matmul
+comptime WarpRole = _WarpRole[has_scheduler=False]
 
 
 @always_inline
@@ -149,6 +152,7 @@ fn copy_accum_to_gmem[
     tmem_offset: UInt32,
     c_coord: Tuple[UInt32, UInt32],
     c_shape: Tuple[UInt32, UInt32],
+    expert_scale: Float32,
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -170,6 +174,7 @@ fn copy_accum_to_gmem[
     var lower_frag_partial = SIMD[accum_type, rep_frag_size]()
     var upper_frag_casted: SIMD[epilogue_dtype, rep_frag_size]
     var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
+    var scale = expert_scale.cast[accum_type]()
 
     comptime is_lower_frag_required = not (cta_group == 1 and BM == 64)
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
@@ -201,6 +206,7 @@ fn copy_accum_to_gmem[
             pack=False,
             width=rep_frag_size,
         ](stage_tmem_addr)
+        upper_frag_partial = upper_frag_partial * scale
 
         @parameter
         if is_lower_frag_required:
@@ -212,6 +218,7 @@ fn copy_accum_to_gmem[
                 pack=False,
                 width=rep_frag_size,
             ](stage_tmem_addr + (16 << 16))
+            lower_frag_partial = lower_frag_partial * scale
 
         tcgen05_load_wait()
 
@@ -658,6 +665,7 @@ fn multi_stage_store_C[
     tmem_addr: UInt32,
     work_tile_coord: Tuple[UInt32, UInt32],
     elect_one_warp: Bool,
+    expert_scale: Float32,
     M: UInt32,
     N: UInt32,
 ):
@@ -715,13 +723,6 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = mma_output_stage * UInt32(stage_stride_cols) + tmem_addr
 
-    comptime fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
-    comptime rep_frag_size = rep * fragment_size
-    var upper_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
-    var lower_frag_casted = SIMD[epilogue_dtype, rep_frag_size]()
-
-    comptime is_lower_frag_required = not (cta_group == 1 and BM == 64)
-
     copy_accum_to_gmem[
         repeat=rep,
         accum_type=accum_type,
@@ -744,6 +745,7 @@ fn multi_stage_store_C[
         tmem_offset,
         work_tile_coord,
         (M, N),
+        expert_scale,
     )
 
 
@@ -809,18 +811,6 @@ struct B200BlockScaledMatmulSmem[
         SharedMemBarrier, Self.config.num_accum_pipeline_stages * 2
     ]
 
-    # CLC
-    var clc_mbars_full: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages
-    ]
-    var clc_mbars_empty: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages
-    ]
-    var clc_throttle_mbars: InlineArray[
-        SharedMemBarrier, Self.config.num_clc_pipeline_stages * 2
-    ]
-    var clc_response: InlineArray[UInt128, Self.config.num_clc_pipeline_stages]
-
     # TMEM
     var tmem_dealloc_mbar: InlineArray[SharedMemBarrier, 1]
     var tmem_addr: InlineArray[UInt32, 1]
@@ -845,7 +835,6 @@ fn load_AB[
     sfa_smem_layout: Layout,
     sfb_smem_layout: Layout,
     num_pipeline_stages: Int,
-    expert_ids_layout: Layout,
     a_scale_offsets_layout: Layout,
     /,
     *,
@@ -895,7 +884,7 @@ fn load_AB[
     iter_idx: UInt32,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_id: Int32,
     a_scale_offsets: LayoutTensor[
         DType.uint32, a_scale_offsets_layout, MutAnyOrigin
     ],
@@ -933,7 +922,6 @@ fn load_AB[
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
-    var expert_id = expert_ids[Int(scheduler.current_group_idx)]
     var b_offset_vec = expert_id * scheduler.static_MN
     var b_gmem_slice_coord_vec = (
         type_of(expert_id)(
@@ -1144,6 +1132,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     sfa_layout: Layout,
     sfb_dtype: DType,
     _sfb_layout: Layout,
+    expert_scale_layout: Layout,
     transpose_b: Bool,
     *,
     config: BlockScaledMatmulConfig[
@@ -1166,6 +1155,9 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, *_, **_],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     _b_scales: LayoutTensor[sfb_dtype, _sfb_layout, MutAnyOrigin],
+    expert_scales: LayoutTensor[
+        DType.float32, expert_scale_layout, MutAnyOrigin
+    ],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1426,6 +1418,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_offsets.layout,
         a_scale_offsets.layout,
         expert_ids.layout,
+        expert_scales.layout,
         transpose_b,
         config=config,
         expert_n=expert_n,
@@ -1455,7 +1448,6 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # TODO: integrate with existing enums
     comptime load_warps = 1
     comptime mma_warps = 1
-    comptime scheduler_warps = 1
     comptime epilogue_warps = 4
 
     var mnk = StaticTuple[UInt32, 3](M, N, K)
@@ -1483,14 +1475,13 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_offsets,
         a_scale_offsets,
         expert_ids,
+        expert_scales,
         cluster_dim,
         mnk,
         workspace,
         grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
+        # 1 TMA, 1 MMA, 4 EPILOGUE warps
+        block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
         attributes=pdl_launch_attributes(pdl_level),
@@ -1530,6 +1521,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_offsets_layout: Layout,
     a_scale_offsets_layout: Layout,
     expert_ids_layout: Layout,
+    expert_scales_layout: Layout,
     transpose_b: Bool,
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
@@ -1556,6 +1548,9 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         DType.uint32, a_scale_offsets_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_scales: LayoutTensor[
+        DType.float32, expert_scales_layout, MutAnyOrigin
+    ],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
@@ -1565,19 +1560,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     comptime num_output_warps = 4
 
-    comptime SCHEDULER_THREADS = WARP_SIZE
-    comptime TMA_LOAD_THREADS = WARP_SIZE
     comptime MMA_THREADS = WARP_SIZE
     comptime EPILOGUE_THREADS = num_output_warps * WARP_SIZE
-    comptime CLUSTER_SIZE = config.cluster_shape[0] * config.cluster_shape[1]
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = SCHEDULER_THREADS + CLUSTER_SIZE * (
-        TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
-    )
-
-    comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
-
     comptime accum_pipeline_producer_arv_count = 1
     comptime accum_pipeline_consumer_arv_count = config.cta_group * EPILOGUE_THREADS
 
@@ -1657,10 +1641,6 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ref sfb_smem_storage = smem_storage.sfb_smem
     ref tma_mma_mbars_storage = smem_storage.tma_mma_mbars
     ref accum_mbars_storage = smem_storage.accum_mbars
-    ref clc_mbars_full_storage = smem_storage.clc_mbars_full
-    ref clc_mbars_empty_storage = smem_storage.clc_mbars_empty
-    ref clc_response_storage = smem_storage.clc_response
-    ref clc_throttle_storage = smem_storage.clc_throttle_mbars
     ref tmem_addr_storage = smem_storage.tmem_addr
     ref tmem_dealloc_mbar_storage = smem_storage.tmem_dealloc_mbar
 
@@ -1738,21 +1718,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         accum_mbars_storage.unsafe_ptr(),
     )
 
-    # Load warp as producer and scheduler warp as consumer.
-    # No data dependence. Introduce dependence to prevent CLC goes too ahead.
-    # In the extreme case, all ctas keep querying next work simultaneously,
-    # there will be no guarantee they get balanced number of tiles.
-    var load_clc_pipeline = ProducerConsumerPipeline[
-        config.num_clc_pipeline_stages
-    ](
-        clc_throttle_storage.unsafe_ptr(),
-    )
-
     var ptr_tmem_addr = tmem_addr_storage.unsafe_ptr()
-
-    clc_response = clc_response_storage.unsafe_ptr()
-    clc_full_mbar = clc_mbars_full_storage.unsafe_ptr()
-    clc_empty_mbar = clc_mbars_empty_storage.unsafe_ptr()
 
     tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
@@ -1786,17 +1752,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             accum_pipeline_producer_arv_count,
             accum_pipeline_consumer_arv_count,
         )
-        load_clc_pipeline.init_mbars(
-            clc_throttle_producer_arv_count,
-            clc_throttle_consumer_arv_count,
-        )
 
         tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
-
-        @parameter
-        for i in range(config.num_clc_pipeline_stages):
-            clc_full_mbar[i].init(clc_producer_arv_count)
-            clc_empty_mbar[i].init(clc_consumer_arv_count)
 
     fence_mbarrier_init()
     cluster_sync()
@@ -1872,6 +1829,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
         warp_role, max_profiled_tiles_per_SM
     ]
+    var expert_id = expert_ids[Int(scheduler.current_group_idx)]
 
     if WarpRole.is_main_load():
         with MatmulProfilerType[0](workspace, 0):
@@ -1881,11 +1839,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 wait_on_dependent_grids()
 
             while not work_info.is_done():
-                if (
-                    not work_info.is_valid()
-                    or expert_ids[Int(scheduler.current_group_idx)] < 0
-                ):
+                if not work_info.is_valid() or expert_id < 0:
                     work_info = scheduler.fetch_next_work()
+                    if not work_info.is_done():
+                        expert_id = expert_ids[Int(scheduler.current_group_idx)]
                     continue
 
                 # DO TMA LOAD
@@ -1913,7 +1870,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         i * config.k_group_size,
                         elect_one_cta,
                         scheduler,
-                        expert_ids,
+                        rebind[Int32](expert_id),
                         a_scale_offsets,
                     )
                     load_mma_pipeline.producer_step()
@@ -1921,6 +1878,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 syncwarp()
                 var next_work_info = scheduler.fetch_next_work()
                 work_info = next_work_info
+                if not work_info.is_done():
+                    expert_id = expert_ids[Int(scheduler.current_group_idx)]
 
             # Prevent CTA to exit when a peer CTA is still working on mma.
             @parameter
@@ -1942,11 +1901,10 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             )
 
             while not work_info.is_done():
-                if (
-                    not work_info.is_valid()
-                    or expert_ids[Int(scheduler.current_group_idx)] < 0
-                ):
+                if not work_info.is_valid() or expert_id < 0:
                     work_info = scheduler.fetch_next_work()
+                    if not work_info.is_done():
+                        expert_id = expert_ids[Int(scheduler.current_group_idx)]
                     continue
                 # scheduler fetch next work
                 next_work_info = scheduler.fetch_next_work()
@@ -2004,6 +1962,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             )
                     mma_output_pipeline.producer_step()
                 work_info = next_work_info
+                if not work_info.is_done():
+                    expert_id = expert_ids[Int(scheduler.current_group_idx)]
 
             @parameter
             if pdl_level > PDLLevel.OFF:
@@ -2023,13 +1983,13 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         var tile_idx = 0
 
         while not work_info.is_done():
-            if (
-                not work_info.is_valid()
-                or expert_ids[Int(scheduler.current_group_idx)] < 0
-            ):
+            if not work_info.is_valid() or expert_id < 0:
                 work_info = scheduler.fetch_next_work()
+                if not work_info.is_done():
+                    expert_id = expert_ids[Int(scheduler.current_group_idx)]
                 continue
             with MatmulProfilerType[3](workspace, tile_idx):
+                var expert_scale = expert_scales[Int(expert_id)]
                 # WAIT FOR MMA TO FINISH AND STORE RESULT
                 # scheduler fetch next work
                 multi_stage_store_C[
@@ -2053,7 +2013,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     tmem_addr,
                     work_tile_coord=(work_info.m, work_info.n),
                     elect_one_warp=elect_one_warp,
-                    M=rebind[Scalar[DType.uint32]](
+                    expert_scale=rebind[Float32](expert_scale),
+                    M=rebind[UInt32](
                         scheduler.group_offsets[
                             Int(scheduler.current_group_idx + 1)
                         ]
@@ -2064,6 +2025,8 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
                 next_work_info = scheduler.fetch_next_work()
                 work_info = next_work_info
+                if not work_info.is_done():
+                    expert_id = expert_ids[Int(scheduler.current_group_idx)]
 
             tile_idx += 1
 
@@ -2071,3 +2034,138 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         if config.cta_group == 2:
             _ = tmem_dealloc_mbar[].arrive_cluster(block_rank_in_cluster() ^ 1)
         _ = tmem_dealloc_mbar[].arrive()
+
+
+fn grouped_matmul_dynamic_scaled_nvfp4[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    b_type: DType,
+    b_layout: Layout,
+    scales_type: DType,
+    a_scales_layout: Layout,
+    b_scales_layout: Layout,
+    a_offsets_layout: Layout,
+    a_scale_offsets_layout: Layout,
+    expert_ids_layout: Layout,
+    expert_scales_layout: Layout,
+    //,
+    transpose_b: Bool = True,
+    target: StaticString = "cpu",
+](
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    a_scales: LayoutTensor[scales_type, a_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[scales_type, b_scales_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
+    a_scale_offsets: LayoutTensor[
+        DType.uint32, a_scale_offsets_layout, MutAnyOrigin
+    ],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_scales: LayoutTensor[
+        DType.float32, expert_scales_layout, MutAnyOrigin
+    ],
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Performs grouped matrix multiplication with NVFP4 quantization.
+
+    Computes C = A @ B^T for multiple expert groups in a Mixture of Experts
+    (MoE) layer. Inputs A and B are NVFP4 quantized (4-bit floating point),
+    packed as uint8 (2 values per byte), with float8_e4m3fn scale factors.
+    Each group of 16 elements along the K dimension shares a single scale
+    factor (1D block scaling).
+
+    Parameters:
+        c_type: The data type of the output tensor C.
+        c_layout: The memory layout of the output tensor C.
+        a_type: The data type of input tensor A. Constraints: Must be `uint8`.
+        a_layout: The memory layout of input tensor A.
+        b_type: The data type of input tensor B. Constraints: Must be `uint8`.
+        b_layout: The memory layout of input tensor B.
+        scales_type: The data type of scale factors.
+            Constraints: Must be `float8_e4m3fn`.
+        a_scales_layout: The memory layout of A's scale factors.
+        b_scales_layout: The memory layout of B's scale factors.
+        a_offsets_layout: The memory layout of the token offset indices.
+        a_scale_offsets_layout: The memory layout of A's scale offset indices.
+        expert_ids_layout: The memory layout of the expert ID tensor.
+        expert_scales_layout: The memory layout of the per-expert scale tensor.
+        transpose_b: Whether B is transposed. Constraints: Must be `True`.
+        target: The target device.
+
+    Args:
+        c: The output tensor of shape (total_tokens, N).
+        a: The input tensor of shape (total_tokens, K // 2), packed NVFP4.
+        b: The weight tensor of shape (num_experts, N, K // 2), packed NVFP4.
+        a_scales: The scale factors for A in tcgen05 5D layout.
+        b_scales: The scale factors for B in tcgen05 6D layout.
+        a_offsets: The starting token index for each expert group.
+        a_scale_offsets: The starting scale index for each expert group.
+        expert_ids: The expert ID for each group.
+        expert_scales: The per-expert scaling factors applied in the epilogue.
+        num_active_experts: The number of active experts in this batch.
+        ctx: The device context for GPU execution.
+
+    Constraints:
+        - The target device must be SM100 (B200).
+    """
+    __comptime_assert (
+        ctx.default_device_info == B200
+    ), "Only support SM100 for grouped NVFP4 matmul"
+    __comptime_assert transpose_b, "Only support transpose_b = True"
+    __comptime_assert (
+        a_type == b_type == DType.uint8
+    ), "input A and B dtype should be uint8 for NVFP4"
+    __comptime_assert (
+        scales_type == NVFP4_SF_DTYPE
+    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+    if num_active_experts == 0:
+        return
+
+    var c_tensor = c
+    var a_tensor = a
+    var b_tensor = b
+    var a_offsets_tensor = a_offsets
+    var a_scale_offsets_tensor = a_scale_offsets
+    var expert_ids_tensor = expert_ids
+    var a_scales_tensor = a_scales
+    var b_scales_tensor = b_scales
+    var expert_scales_tensor = expert_scales
+
+    comptime MMA_K = 32
+    comptime bm = 128
+    comptime bn = 128
+    comptime mma_shape = Index(bm, bn, MMA_K)
+
+    comptime matmul_config = BlockScaledMatmulConfig[
+        a_type, b_type, c_type, scales_type, scales_type, transpose_b
+    ](
+        scaling_kind=UMMAKind.KIND_MXF4NVF4,
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=mma_shape,
+        block_swizzle_size=8,
+        cta_group=1,
+        AB_swapped=False,
+        k_group_size=1,
+        num_accum_pipeline_stages=2,
+    )
+
+    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=matmul_config,
+    ](
+        c_tensor,
+        a_tensor,
+        a_offsets_tensor,
+        a_scale_offsets_tensor,
+        b_tensor,
+        expert_ids_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
+        expert_scales_tensor,
+        num_active_experts,
+        ctx,
+    )

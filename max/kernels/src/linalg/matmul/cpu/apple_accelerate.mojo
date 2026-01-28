@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import fma
 from memory import alloc
 from os import abort
@@ -246,7 +246,7 @@ fn apple_gemv[
     *,
     b_packed: Bool,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
     a: NDBuffer[_, 2, _, _],
@@ -350,7 +350,7 @@ fn apple_gemv[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     cblas_gemm_fn: cblas_gemm_type,
     c: NDBuffer[mut=True, ...],
@@ -424,7 +424,7 @@ fn apple_matmul[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
     @parameter
     if a.type == b.type == c.type == DType.float32:
@@ -448,7 +448,7 @@ fn apple_matmul[
 fn apple_batched_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: OptionalReg[
+    elementwise_epilogue_fn: Optional[
         batched_matmul_elementwise_epilogue_type
     ] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
@@ -493,7 +493,7 @@ fn apple_batched_matmul[
 
         apple_matmul[
             transpose_b=transpose_b,
-            elementwise_lambda_fn = OptionalReg[
-                matmul_elementwise_epilogue_type
-            ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
+            elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
+                elementwise_lambda_2d
+            ) if elementwise_epilogue_fn else None,
         ](cblas_gemm, c2, a2, b2)

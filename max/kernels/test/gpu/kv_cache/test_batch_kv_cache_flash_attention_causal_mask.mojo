@@ -313,9 +313,9 @@ def execute_flash_attention[
             var ref_out_tensor = LayoutTensor[dtype, output_static_layout](
                 ref_out_host, output_runtime_layout
             )
-            for bs in range(Int(batch_size)):
+            for bs in range(batch_size):
                 for s in range(Int(valid_length[bs])):
-                    for h in range(Int(num_q_heads)):
+                    for h in range(num_q_heads):
                         for hd in range(kv_params.head_size):
                             assert_almost_equal(
                                 ref_out_tensor[bs, s, h, Int(hd)],

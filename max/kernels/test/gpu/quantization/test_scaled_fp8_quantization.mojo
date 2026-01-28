@@ -203,7 +203,7 @@ fn test_dynamic_fp8_quant[
             for j in range(group_size):
                 group_max = max(
                     group_max,
-                    abs(in_host[i, j + group_idx * Int(group_size)][0]),
+                    abs(in_host[i, j + group_idx * group_size][0]),
                 )
 
             var scale_factor: Scalar[scales_dtype]
@@ -228,8 +228,8 @@ fn test_dynamic_fp8_quant[
             )
 
             for j in range(group_size):
-                var in_val = in_host[i, j + group_idx * Int(group_size)]
-                var out_val = out_host[i, j + group_idx * Int(group_size)]
+                var in_val = in_host[i, j + group_idx * group_size]
+                var out_val = out_host[i, j + group_idx * group_size]
                 assert_equal(
                     out_val.cast[DType.float32](),
                     (in_val.cast[accum_dtype]() * scale_factor_recip)
@@ -238,7 +238,7 @@ fn test_dynamic_fp8_quant[
                     msg="At ["
                     + String(i)
                     + ", "
-                    + String(j + group_idx * Int(group_size))
+                    + String(j + group_idx * group_size)
                     + "]",
                 )
 
@@ -352,9 +352,7 @@ fn test_batched_dynamic_fp8_quant[
                     group_max = max(
                         group_max,
                         abs(
-                            in_host[
-                                batch_idx, i, j + group_idx * Int(group_size)
-                            ][0]
+                            in_host[batch_idx, i, j + group_idx * group_size][0]
                         ),
                     )
 
@@ -371,10 +369,10 @@ fn test_batched_dynamic_fp8_quant[
 
                 for j in range(group_size):
                     var in_val = in_host[
-                        batch_idx, i, j + group_idx * Int(group_size)
+                        batch_idx, i, j + group_idx * group_size
                     ]
                     var out_val = out_host[
-                        batch_idx, i, j + group_idx * Int(group_size)
+                        batch_idx, i, j + group_idx * group_size
                     ]
 
                     assert_equal(
@@ -385,7 +383,7 @@ fn test_batched_dynamic_fp8_quant[
                         msg="At ["
                         + String(i)
                         + ", "
-                        + String(j + group_idx * Int(group_size))
+                        + String(j + group_idx * group_size)
                         + "]",
                     )
 

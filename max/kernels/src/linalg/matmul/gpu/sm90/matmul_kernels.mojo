@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -187,8 +187,8 @@ struct HopperMatmulSM90Kernel[
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
     pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     hilbert_swizzle: Bool = False,
@@ -517,7 +517,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_output[
-        custom_elementwise_lambda_fn: OptionalReg[
+        custom_elementwise_lambda_fn: Optional[
             elementwise_epilogue_type
         ] = Self.elementwise_lambda_fn
     ](
@@ -1205,7 +1205,7 @@ struct HopperMatmulSM90Kernel[
                     elementwise_epilogue(batch_idx, val)
 
             Self.consumer_output[
-                OptionalReg[elementwise_epilogue_type](
+                Optional[elementwise_epilogue_type](
                     elementwise_epilogue_fn_wrapper
                 ) if Self.elementwise_lambda_fn else None
             ](

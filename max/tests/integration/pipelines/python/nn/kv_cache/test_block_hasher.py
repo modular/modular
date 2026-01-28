@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.kv_cache.paged_cache.block_utils import hash_request_tokens
+from max.kv_cache.paged_kv_cache.block_utils import hash_request_tokens
 
 
 @pytest.mark.asyncio

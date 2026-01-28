@@ -29,6 +29,7 @@ from max.graph import (
 )
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear
@@ -55,6 +56,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         config: Qwen3VLConfig,
         dtype: DType,
         layer_idx: int,
+        float8_config: Float8Config | None = None,
     ):
         super().__init__()
         # Create Multi-head Latent Attention layer.
@@ -74,6 +76,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
             has_bias=False,
             rms_norm_eps=config.llm_config.rms_norm_eps,
             scale=head_dim**-0.5,
+            float8_config=float8_config,
         )
 
         self.self_attn = Qwen3VLMoEDecoderAttentionWithRope(**mla_kwargs)
@@ -83,12 +86,14 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         self.self_attn_shards = self.self_attn.shard(config.devices)
 
         # Create a shardable MLP or MoE layer
-        self.mlp = self._get_mlp(config, layer_idx)
+        self.mlp = self._get_mlp(config, layer_idx, float8_config)
         self.mlp_shards = self.mlp.shard(config.devices)
+
+        norm_dtype = config.llm_config.norm_dtype or config.dtype
 
         self.input_layernorm = RMSNorm(
             dim=config.llm_config.hidden_size,
-            dtype=dtype,
+            dtype=norm_dtype,
             eps=config.llm_config.rms_norm_eps,
             multiply_before_cast=False,
         )
@@ -100,7 +105,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
 
         self.post_attention_layernorm = RMSNorm(
             dim=config.llm_config.hidden_size,
-            dtype=dtype,
+            dtype=norm_dtype,
             eps=config.llm_config.rms_norm_eps,
             multiply_before_cast=False,
         )
@@ -170,7 +175,10 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         return hs
 
     def _get_mlp(
-        self, config: Qwen3VLConfig, layer_idx: int
+        self,
+        config: Qwen3VLConfig,
+        layer_idx: int,
+        float8_config: Float8Config | None,
     ) -> MLP | Qwen3VLMoE:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
@@ -178,6 +186,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         Args:
             config: Configuration object containing model parameters
             layer_idx: Layer index
+            float8_config: Configuration for FP8 quantization.
 
         Returns:
             List of MLP shards or MoE modules depending on the layer index and config
@@ -194,6 +203,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 moe_dim=config.moe_intermediate_size,
                 mlp_only_layers=config.mlp_only_layers,
                 dtype=config.dtype,
+                float8_config=float8_config,
             )
             moe = Qwen3VLMoE(**moe_kwargs)
             moe.sharding_strategy = ShardingStrategy.tensor_parallel(
@@ -209,6 +219,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 has_bias=False,
                 activation_function="silu",
                 devices=config.devices,
+                float8_config=float8_config,
             )
             mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
                 len(config.devices)
@@ -233,7 +244,7 @@ class Qwen3VLMoEDecoder(Module):
             n_heads=config.llm_config.num_attention_heads,
             theta=config.llm_config.rope_theta,
             max_seq_len=config.llm_config.max_seq_len,
-            dtype=config.dtype,
+            dtype=DType.bfloat16,
             mrope_section=config.mrope_section,
             head_dim=config.llm_config.kv_params.head_dim,
             interleaved=config.llm_config.interleaved_rope_weights,
@@ -259,6 +270,9 @@ class Qwen3VLMoEDecoder(Module):
                 f"Unsupported norm method: {config.llm_config.norm_method}"
             )
 
+        # Extract float8_config from the nested llm_config
+        float8_config = config.llm_config.float8_config
+
         # Create decoder layers
         layers = [
             Qwen3VLMoeTextDecoderLayer(
@@ -266,14 +280,24 @@ class Qwen3VLMoEDecoder(Module):
                 config=config,
                 dtype=config.dtype,
                 layer_idx=i,
+                float8_config=float8_config,
             )
             for i in range(config.llm_config.num_hidden_layers)
         ]
 
+        embedding_output_dtype = config.dtype
+        if (
+            config.llm_config.float8_config
+            and config.llm_config.float8_config.embedding_output_dtype
+        ):
+            embedding_output_dtype = (
+                config.llm_config.float8_config.embedding_output_dtype
+            )
+
         embedding_layer = VocabParallelEmbedding(
             config.llm_config.vocab_size,
             config.llm_config.hidden_size,
-            config.dtype,
+            embedding_output_dtype,
             config.devices,
             quantization_encoding=None,
         )
@@ -281,7 +305,7 @@ class Qwen3VLMoEDecoder(Module):
         output = ColumnParallelLinear(
             config.llm_config.hidden_size,
             config.llm_config.vocab_size,
-            config.dtype,
+            embedding_output_dtype,
             config.devices,
             quantization_encoding=None,
             tied_weight=(
