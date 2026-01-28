@@ -155,8 +155,8 @@ def _single_gpu_baseline(
     # Reserve 1 request
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
-    kv_manager.claim(ctx.request_id)
-    kv_manager.alloc(ctx)
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -178,7 +178,7 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, 1)
+            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
         kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
         tok = (
             Buffer.from_numpy(
@@ -190,7 +190,7 @@ def _single_gpu_baseline(
         out = compiled.execute(tok, row_off.to(device0), *kv_inputs)
 
         ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]
@@ -384,7 +384,7 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, 1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
         batch.append(ctx)
     batches_by_replica = [[ctx] for ctx in batch]
 
@@ -416,7 +416,7 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, 1)
+            kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
         fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
@@ -437,7 +437,7 @@ def _run_distributed_dp(
         # Advance contexts
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step(batches_by_replica)
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]

@@ -591,7 +591,7 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, use_fa4=True](
+        flare_mla_prefill[rank = q.rank](
             output_device,
             q_device,
             k_device,
@@ -784,6 +784,7 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
+                    # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
                         rhs,
@@ -999,7 +1000,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](1179, 1179, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,
@@ -1027,6 +1028,24 @@ fn test_mla_prefill[
         cache_num_heads=1,
         batch_size=batch_size,
     ](12, 12, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](350, 700, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](120, 240, ctx)
 
 
 def main():
@@ -1046,5 +1065,6 @@ def main():
 
         # test mla prefill
         test_mla_prefill[2](ctx)
+        test_mla_prefill[4](ctx)
         # Test with zero batch size
         test_mla_prefill[0](ctx)

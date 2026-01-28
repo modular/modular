@@ -144,7 +144,7 @@ fn assert_equal[
 #   compared, then drop this overload.
 @always_inline
 fn assert_equal[
-    O1: Origin, O2: Origin
+    O1: ImmutOrigin, O2: ImmutOrigin
 ](
     lhs: List[StringSlice[O1]],
     rhs: List[StringSlice[O2]],

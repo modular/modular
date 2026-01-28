@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from io.io import _printf
 from math import ceildiv
 from os import abort
@@ -52,13 +52,12 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-@register_passable("trivial")
 struct BackToBackMatmulConfig[
     dst_type: DType,
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-]:
+](TrivialRegisterType):
     # A is MxK
     # B is KxL
     # C is LxN
@@ -79,7 +78,7 @@ struct BackToBackMatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE))
+        return self.num_warps_m() * self.num_warps_n() * UInt(WARP_SIZE)
 
     fn shared_mem_usage(self, K: Int) -> Int:
         return (
@@ -150,7 +149,7 @@ fn b2b_gemm[
     transpose_b: Bool,
     transpose_c: Bool,
     config: BackToBackMatmulConfig[d_type, in_type, transpose_b, transpose_c],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor[d_type, d_layout, MutAnyOrigin],
     A: LayoutTensor[in_type, a_layout, MutAnyOrigin],
@@ -584,7 +583,7 @@ fn multistage_b2b_gemm[
     config: BackToBackMatmulConfig[
         dst_type, src_type, transpose_b, transpose_c
     ],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor,
     A: LayoutTensor,

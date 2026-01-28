@@ -79,8 +79,8 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in uint32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.uint32]()):
+    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
+    if layout.cosize() <= Int(max_finite[DType.int32]()):
         return DType.int32
 
     return DType.int64
@@ -269,8 +269,9 @@ that are not known at compile time or have not been specified.
 """
 
 
-@register_passable("trivial")
-struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](
+    Iterable, Iterator, TrivialRegisterType
+):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[

@@ -34,8 +34,7 @@ comptime check_blackwell_constraint = constrained[
 """Compile-time constraint ensuring Blackwell hardware is targeted."""
 
 
-@register_passable("trivial")
-struct TensorMemory:
+struct TensorMemory(TrivialRegisterType):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[

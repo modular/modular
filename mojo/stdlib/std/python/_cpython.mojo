@@ -85,8 +85,7 @@ comptime METH_STATIC = 0x20
 
 # GIL
 @fieldwise_init
-@register_passable("trivial")
-struct PyGILState_STATE:
+struct PyGILState_STATE(TrivialRegisterType):
     """Represents the state of the Python Global Interpreter Lock (GIL).
 
     This struct is used to store and manage the state of the GIL, which is
@@ -122,7 +121,6 @@ struct PyThreadState:
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct PyObjectPtr(
     Boolable,
     Defaultable,
@@ -130,6 +128,7 @@ struct PyObjectPtr(
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Equivalent to `PyObject*` in C.
@@ -355,7 +354,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func[PyCFunction]
         )
 
-        var flags = (
+        var flags = c_int(
             METH_VARARGS
             | (METH_STATIC if static_method else 0)
             | (METH_KEYWORDS if with_kwargs else 0)
@@ -391,8 +390,7 @@ struct PyTypeObject:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PyType_Spec:
+struct PyType_Spec(TrivialRegisterType):
     """Structure defining a type's behavior.
 
     References:
@@ -434,8 +432,7 @@ comptime Typed_newfunc = fn (
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PyType_Slot(ImplicitlyCopyable):
+struct PyType_Slot(TrivialRegisterType):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 

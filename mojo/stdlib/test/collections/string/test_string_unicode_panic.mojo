@@ -15,6 +15,7 @@
 # RUN not %t 2 2>&1 | FileCheck --check-prefix CHECK_2 %s
 # RUN %t 3 2>&1 | FileCheck --check-prefix CHECK_3 %s
 # RUN not %t 4 2>&1 | FileCheck --check-prefix CHECK_4 %s
+# RUN not %t 5 2>&1 | FileCheck --check-prefix CHECK_5 %s
 
 from sys.arg import argv
 
@@ -35,6 +36,7 @@ def main():
         var s = String("😀😃")
         s.resize(4)
         s.resize(4)
+        s.resize(5, 127)
         var s2 = String("😀😃")
         s2.resize(unsafe_uninit_length=4)
         s2.resize(unsafe_uninit_length=4)
@@ -44,3 +46,7 @@ def main():
         var s = String("😀😃")
         s.resize(7)
         # CHECK_4: does not lie on a codepoint boundary.
+    elif test == "5":
+        var s = String()
+        s.resize(10, 128)
+        # CHECK_5: Fill byte is the start of a multi-byte character.

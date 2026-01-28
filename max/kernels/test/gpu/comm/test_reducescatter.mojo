@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ from itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections.optional import OptionalReg
+from collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.reducescatter import reducescatter, elementwise_epilogue_type
 from internal_utils import human_readable_size
@@ -162,7 +162,7 @@ fn reducescatter_test[
     for i in range(ngpus):
         reducescatter[
             ngpus=ngpus,
-            output_lambda = OptionalReg[elementwise_epilogue_type](
+            output_lambda = Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])

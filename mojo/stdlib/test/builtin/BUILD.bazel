@@ -27,7 +27,6 @@ _FILECHECK_TESTS = [
     "test_debug_assert_mode_none.mojo",
     "test_debug_assert_warning.mojo",
     "test_range_out_of_bounds.mojo",
-    "test_range_uint_reverse_range_bad.mojo",
 ]
 
 _LIT_TESTS = [
@@ -35,6 +34,7 @@ _LIT_TESTS = [
     "test_default_hashable_compile_fail.mojo",
     "test_format_compile_fail.mojo",
     "test_format_float_lut_optimization.mojo",
+    "test_global_constant_compile_fail.mojo",
     "test_issue_3908.mojo",
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
@@ -60,7 +60,6 @@ _DISABLED_ASSERTIONS = [
 _EXPECT_CRASH = [
     "test_range_out_of_bounds.mojo",
     "test_debug_assert_default_error.mojo",
-    "test_range_uint_reverse_range_bad.mojo",
     "test_debug_assert_mode_all_error.mojo",
 ]
 

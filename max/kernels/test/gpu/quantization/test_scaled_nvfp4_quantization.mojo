@@ -14,9 +14,7 @@
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from layout._fillers import random
-from linalg.fp4_quantization import (
-    quantize_dynamic_scaled_fp4,
-)
+from linalg.fp4_quantization import quantize_dynamic_scaled_fp4
 from testing import assert_equal, assert_almost_equal
 from math import ceildiv, recip
 from utils.numerics import max_finite, min_finite
