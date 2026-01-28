@@ -17,7 +17,7 @@ from testing import assert_equal, TestSuite
 
 
 fn vec_func[
-    op: fn (Float32, Float32) capturing [_] -> Float32
+    op: fn(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],

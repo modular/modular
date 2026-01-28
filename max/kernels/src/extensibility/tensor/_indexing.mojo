@@ -27,7 +27,7 @@ fn _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 
 @always_inline
 fn _slice_to_tuple[
-    func: fn (Slice) capturing [_] -> Int, rank: Int
+    func: fn(Slice) capturing[_] -> Int, rank: Int
 ](slices: InlineArray[Slice, rank]) -> IndexList[rank]:
     """Takes a tuple of `Slice`s and returns a tuple of Ints.
     `func` is used to extract the appropriate field (i.e. start, stop or end)

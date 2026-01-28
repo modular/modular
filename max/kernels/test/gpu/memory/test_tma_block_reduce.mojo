@@ -86,7 +86,7 @@ fn global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int, _rank: Int] (
+    input_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):

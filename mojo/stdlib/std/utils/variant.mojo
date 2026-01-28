@@ -463,7 +463,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         return Self._check[T]() != Self._sentinel
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    fn destroy_with[T: AnyType](deinit self, destroy_func: fn (var T)):
+    fn destroy_with[T: AnyType](deinit self, destroy_func: fn(var T)):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 

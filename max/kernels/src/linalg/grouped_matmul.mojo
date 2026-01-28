@@ -850,7 +850,7 @@ fn dispatch_amd_matmul_by_block_shape[
     K: Int,
     launcher_fn: fn[
         config: MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] () raises capturing -> None,
+    ]() raises capturing -> None,
     default_block_tile_shape: IndexList[3],
     use_heuristic: Bool = False,
 ](M: Int, ctx: DeviceContext) raises:

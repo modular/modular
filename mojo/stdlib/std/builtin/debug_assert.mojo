@@ -60,7 +60,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 @always_inline
 fn debug_assert[
-    cond: fn () capturing [_] -> Bool,
+    cond: fn() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,

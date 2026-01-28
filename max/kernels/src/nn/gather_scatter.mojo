@@ -110,7 +110,7 @@ fn gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](
@@ -495,7 +495,7 @@ fn gather_guards(
         raise Error("gather: axis must be less than input rank")
 
 
-comptime error_index_fn_type = fn (Int) capturing -> None
+comptime error_index_fn_type = fn(Int) capturing -> None
 
 
 @always_inline
@@ -503,20 +503,20 @@ fn gather_elementwise_fn_wrapper[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     error_index_fn: OptionalReg[error_index_fn_type] = None,
 ](
@@ -608,19 +608,19 @@ fn gather[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -721,19 +721,19 @@ fn gather[
     *,
     dtype: DType,
     indices_type: DType,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    indices_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: fn[width: Int, rank: Int] (
+    output_fn: fn[width: Int, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
-        ] (IndexList[input_rank], IndexList[indices_rank]) capturing -> None
+        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
@@ -862,7 +862,7 @@ fn scatter_nd_generator[
     reduce_fn: OptionalReg[
         fn[
             dtype: DType, width: Int
-        ] (SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
+        ](SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
             dtype, width
         ]
     ] = None,
@@ -1265,7 +1265,7 @@ fn gather_shape[
 
 @always_inline
 fn scatter_elements[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     rank: Int,

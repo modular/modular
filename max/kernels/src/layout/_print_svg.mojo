@@ -41,7 +41,7 @@ fn print_svg[
             masked=masked,
         ]
     ],
-    color_map: Optional[fn (Int, Int) -> String] = None,
+    color_map: Optional[fn(Int, Int) -> String] = None,
     file_path: Optional[Path] = None,
 ) raises:
     var s = String()
@@ -78,7 +78,7 @@ fn _print_svg_impl[
         ]
     ],
     mut writer: W,
-    color_map: Optional[fn (Int, Int) -> String] = None,
+    color_map: Optional[fn(Int, Int) -> String] = None,
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint

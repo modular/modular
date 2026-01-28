@@ -106,7 +106,7 @@ fn cudnnGetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionMathType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnMathType_t],
         ) -> cudnnStatus_t,
@@ -123,7 +123,7 @@ fn cudnnIm2Col(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnIm2Col",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             OpaquePointer,
@@ -156,7 +156,7 @@ fn cudnnConvolutionBiasActivationForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBiasActivationForward",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnTensorStruct],
@@ -221,7 +221,7 @@ fn cudnnSetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolution2dDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             Int16,
@@ -250,7 +250,7 @@ fn cudnnCreateConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateConvolutionDescriptor",
-        fn (
+        fn(
             UnsafePointer[UnsafePointer[cudnnConvolutionStruct]],
         ) -> cudnnStatus_t,
     ]()(conv_desc)
@@ -261,7 +261,7 @@ fn cudnnSetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionGroupCount",
-        fn (UnsafePointer[cudnnConvolutionStruct], Int16) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnConvolutionStruct], Int16) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
 
 
@@ -293,7 +293,7 @@ fn cudnnGetConvolutionForwardWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardWorkspaceSize",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -318,7 +318,7 @@ fn cudnnGetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[Int16],
             UnsafePointer[Int16],
@@ -494,7 +494,7 @@ fn cudnnSetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionReorderType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], cudnnReorderType_t
         ) -> cudnnStatus_t,
     ]()(conv_desc, reorder_type)
@@ -551,7 +551,7 @@ fn cudnnGetConvolution2dForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dForwardOutputDim",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -575,7 +575,7 @@ fn cudnnFindConvolutionForwardAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithm",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -614,7 +614,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithm_v7",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -695,7 +695,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithmMaxCount",
-        fn (UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
     ]()(handle, count)
 
 
@@ -704,7 +704,7 @@ fn cudnnDestroyConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyConvolutionDescriptor",
-        fn (UnsafePointer[cudnnConvolutionStruct]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnConvolutionStruct]) -> cudnnStatus_t,
     ]()(conv_desc)
 
 
@@ -770,7 +770,7 @@ fn cudnnConvolutionForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionForward",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnTensorStruct],
@@ -808,7 +808,7 @@ fn cudnnGetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionReorderType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnReorderType_t],
         ) -> cudnnStatus_t,
@@ -942,7 +942,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithm_v7",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -970,7 +970,7 @@ fn cudnnGetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionGroupCount",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], UnsafePointer[Int16]
         ) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
@@ -988,7 +988,7 @@ fn cudnnGetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             UnsafePointer[Int16],
@@ -1021,7 +1021,7 @@ fn cudnnGetConvolutionBackwardDataWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataWorkspaceSize",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -1045,7 +1045,7 @@ fn cudnnReorderFilterAndBias(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnReorderFilterAndBias",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             cudnnReorderType_t,
@@ -1079,7 +1079,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithm",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -1118,7 +1118,7 @@ fn cudnnConvolutionBackwardData(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBackwardData",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnFilterStruct],
@@ -1161,7 +1161,7 @@ fn cudnnSetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionNdDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             OpaquePointer,
@@ -1183,7 +1183,7 @@ fn cudnnSetConvolutionNdDescriptor(
 
 fn cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnCnnInferVersionCheck", fn () -> cudnnStatus_t
+        "cudnnCnnInferVersionCheck", fn() -> cudnnStatus_t
     ]()()
 
 
@@ -1192,7 +1192,7 @@ fn cudnnSetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionMathType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], cudnnMathType_t
         ) -> cudnnStatus_t,
     ]()(conv_desc, math_type)
@@ -1215,7 +1215,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithmEx",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             OpaquePointer,
@@ -1264,7 +1264,7 @@ fn cudnnFindConvolutionForwardAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithmEx",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             OpaquePointer,
@@ -1305,7 +1305,7 @@ fn cudnnGetConvolutionNdForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdForwardOutputDim",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -1320,7 +1320,7 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithmMaxCount",
-        fn (UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
     ]()(handle, count)
 
 
@@ -1379,7 +1379,7 @@ fn cudnnGetFoldedConvBackwardDataDescriptors(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFoldedConvBackwardDataDescriptors",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],

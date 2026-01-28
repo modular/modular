@@ -109,7 +109,7 @@ fn cublasLtMatmulAlgoConfigSetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoConfigSetAttribute",
-        fn (
+        fn(
             UnsafePointer[MatmulAlgorithm],
             AlgorithmConfig,
             OpaquePointer,
@@ -123,7 +123,7 @@ fn cublasLtCreate(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtCreate",
-        fn (UnsafePointer[UnsafePointer[Context]]) -> Result,
+        fn(UnsafePointer[UnsafePointer[Context]]) -> Result,
     ]()(light_handle)
 
 
@@ -138,7 +138,7 @@ fn cublasLtMatrixTransformDescCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescCreate",
-        fn (
+        fn(
             UnsafePointer[UnsafePointer[Transform]],
             DataType,
         ) -> Result,
@@ -227,7 +227,7 @@ fn cublasLtMatrixLayoutSetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutSetAttribute",
-        fn (
+        fn(
             UnsafePointer[MatrixLayout],
             LayoutAttribute,
             OpaquePointer,
@@ -524,7 +524,7 @@ struct ClusterShape(TrivialRegisterType):
 
 fn cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
     return _get_dylib_function[
-        "cublasLtHeuristicsCacheSetCapacity", fn (Int) -> Result
+        "cublasLtHeuristicsCacheSetCapacity", fn(Int) -> Result
     ]()(capacity)
 
 
@@ -716,7 +716,7 @@ struct MatmulAlgorithmCapability(TrivialRegisterType):
 
 fn cublasLtGetStatusString(status: Result) raises -> UnsafePointer[Int8]:
     return _get_dylib_function[
-        "cublasLtGetStatusString", fn (Result) raises -> UnsafePointer[Int8]
+        "cublasLtGetStatusString", fn(Result) raises -> UnsafePointer[Int8]
     ]()(status)
 
 
@@ -793,7 +793,7 @@ fn cublasLtMatmulDescGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescGetAttribute",
-        fn (
+        fn(
             UnsafePointer[Descriptor],
             cublasLtMatmulDescAttributes_t,
             OpaquePointer,
@@ -841,7 +841,7 @@ fn cublasLtMatmulAlgoCheck(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoCheck",
-        fn (
+        fn(
             UnsafePointer[Context],
             UnsafePointer[Descriptor],
             UnsafePointer[MatrixLayout],
@@ -988,7 +988,7 @@ struct ReductionScheme(TrivialRegisterType):
 
 
 fn cublasLtLoggerSetCallback(
-    callback: fn (Int16, UnsafePointer[Int8], OpaquePointer) raises -> None
+    callback: fn(Int16, UnsafePointer[Int8], OpaquePointer) raises -> None
 ) raises -> Result:
     """Experimental: Logger callback setter.
 
@@ -998,8 +998,8 @@ fn cublasLtLoggerSetCallback(
     ."""
     return _get_dylib_function[
         "cublasLtLoggerSetCallback",
-        fn (
-            fn (Int16, UnsafePointer[Int8], OpaquePointer) raises -> None
+        fn(
+            fn(Int16, UnsafePointer[Int8], OpaquePointer) raises -> None
         ) -> Result,
     ]()(callback)
 
@@ -1009,12 +1009,12 @@ fn cublasLtGetProperty(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtGetProperty",
-        fn (Property, UnsafePointer[Int16]) -> Result,
+        fn(Property, UnsafePointer[Int16]) -> Result,
     ]()(type, value)
 
 
 fn cublasLtGetVersion() raises -> Int:
-    return _get_dylib_function["cublasLtGetVersion", fn () -> Int]()()
+    return _get_dylib_function["cublasLtGetVersion", fn() -> Int]()()
 
 
 fn cublasLtMatrixLayoutGetAttribute(
@@ -1040,7 +1040,7 @@ fn cublasLtMatrixLayoutGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutGetAttribute",
-        fn (
+        fn(
             UnsafePointer[MatrixLayout],
             LayoutAttribute,
             OpaquePointer,
@@ -1482,7 +1482,7 @@ fn cublasLtMatrixTransformDescInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescInit_internal",
-        fn (UnsafePointer[Transform], Int, DataType) -> Result,
+        fn(UnsafePointer[Transform], Int, DataType) -> Result,
     ]()(transform_desc, size, scale_type)
 
 
@@ -1495,7 +1495,7 @@ fn cublasLtMatrixLayoutDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutDestroy",
-        fn (UnsafePointer[MatrixLayout]) -> Result,
+        fn(UnsafePointer[MatrixLayout]) -> Result,
     ]()(mat_layout)
 
 
@@ -1540,7 +1540,7 @@ fn cublasLtMatmul(
     ."""
     return _get_dylib_function[
         "cublasLtMatmul",
-        fn (
+        fn(
             UnsafePointer[Context],
             UnsafePointer[Descriptor],
             OpaquePointer,
@@ -1587,7 +1587,7 @@ fn cublasLtMatrixTransformDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescDestroy",
-        fn (UnsafePointer[Transform]) -> Result,
+        fn(UnsafePointer[Transform]) -> Result,
     ]()(transform_desc)
 
 
@@ -1621,7 +1621,7 @@ fn cublasLtMatmulAlgoCapGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoCapGetAttribute",
-        fn (
+        fn(
             UnsafePointer[MatmulAlgorithm],
             MatmulAlgorithmCapability,
             OpaquePointer,
@@ -1650,7 +1650,7 @@ fn cublasLtMatmulDescSetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescSetAttribute",
-        fn (
+        fn(
             UnsafePointer[Descriptor],
             cublasLtMatmulDescAttributes_t,
             OpaquePointer,
@@ -1678,7 +1678,7 @@ fn cublasLtMatmulPreferenceSetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceSetAttribute",
-        fn (
+        fn(
             UnsafePointer[PreferenceOpaque],
             Preference,
             OpaquePointer,
@@ -1689,7 +1689,7 @@ fn cublasLtMatmulPreferenceSetAttribute(
 
 # Experimental: Logger callback type.
 # .
-comptime cublasLtLoggerCallback_t = fn (
+comptime cublasLtLoggerCallback_t = fn(
     Int32, UnsafePointer[Int8], UnsafePointer[Int8]
 ) -> None
 
@@ -1706,7 +1706,7 @@ fn cublasLtMatrixLayoutInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutInit_internal",
-        fn (
+        fn(
             UnsafePointer[MatrixLayout],
             Int,
             DataType,
@@ -1945,7 +1945,7 @@ fn cublasLtMatmulPreferenceDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceDestroy",
-        fn (UnsafePointer[PreferenceOpaque]) -> Result,
+        fn(UnsafePointer[PreferenceOpaque]) -> Result,
     ]()(pref)
 
 
@@ -1984,7 +1984,7 @@ fn cublasLtMatmulAlgoGetHeuristic(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoGetHeuristic",
-        fn (
+        fn(
             UnsafePointer[Context],
             UnsafePointer[Descriptor],
             UnsafePointer[MatrixLayout],
@@ -2268,12 +2268,12 @@ struct LayoutAttribute(TrivialRegisterType):
 
 fn cublasLtDestroy(light_handle: UnsafePointer[Context]) raises -> Result:
     return _get_dylib_function[
-        "cublasLtDestroy", fn (UnsafePointer[Context]) -> Result
+        "cublasLtDestroy", fn(UnsafePointer[Context]) -> Result
     ]()(light_handle)
 
 
 fn cublasLtGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cublasLtGetCudartVersion", fn () -> Int]()()
+    return _get_dylib_function["cublasLtGetCudartVersion", fn() -> Int]()()
 
 
 fn cublasLtMatmulAlgoConfigGetAttribute(
@@ -2299,7 +2299,7 @@ fn cublasLtMatmulAlgoConfigGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoConfigGetAttribute",
-        fn (
+        fn(
             UnsafePointer[MatmulAlgorithm],
             AlgorithmConfig,
             OpaquePointer,
@@ -2314,9 +2314,7 @@ fn cublasLtLoggerForceDisable() raises -> Result:
 
     \retval     CUBLAS_STATUS_SUCCESS        if disabled logging
     ."""
-    return _get_dylib_function[
-        "cublasLtLoggerForceDisable", fn () -> Result
-    ]()()
+    return _get_dylib_function["cublasLtLoggerForceDisable", fn() -> Result]()()
 
 
 fn cublasLtHeuristicsCacheGetCapacity(
@@ -2324,7 +2322,7 @@ fn cublasLtHeuristicsCacheGetCapacity(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtHeuristicsCacheGetCapacity",
-        fn (UnsafePointer[Int]) -> Result,
+        fn(UnsafePointer[Int]) -> Result,
     ]()(capacity)
 
 
@@ -2340,7 +2338,7 @@ fn cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
     The function takes precedence over the environment variable CUBLASLT_DISABLE_CPU_INSTRUCTIONS_MASK.
     ."""
     return _get_dylib_function[
-        "cublasLtDisableCpuInstructionsSetMask", fn (Int16) raises -> Int16
+        "cublasLtDisableCpuInstructionsSetMask", fn(Int16) raises -> Int16
     ]()(mask)
 
 
@@ -2359,9 +2357,9 @@ fn cublasLtLoggerSetLevel(level: Int16) raises -> Result:
 
     \retval     CUBLAS_STATUS_SUCCESS        if log level was set successfully
     ."""
-    return _get_dylib_function[
-        "cublasLtLoggerSetLevel", fn (Int16) -> Result
-    ]()(level)
+    return _get_dylib_function["cublasLtLoggerSetLevel", fn(Int16) -> Result]()(
+        level
+    )
 
 
 @fieldwise_init
@@ -2510,7 +2508,7 @@ fn cublasLtMatmulDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescDestroy",
-        fn (UnsafePointer[Descriptor]) -> Result,
+        fn(UnsafePointer[Descriptor]) -> Result,
     ]()(matmul_desc)
 
 
@@ -2533,7 +2531,7 @@ fn cublasLtMatrixTransformDescSetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescSetAttribute",
-        fn (
+        fn(
             UnsafePointer[Transform],
             TransformDescriptor,
             OpaquePointer,
@@ -2565,7 +2563,7 @@ fn cublasLtMatmulPreferenceGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceGetAttribute",
-        fn (
+        fn(
             UnsafePointer[PreferenceOpaque],
             Preference,
             OpaquePointer,
@@ -2594,7 +2592,7 @@ fn cublasLtMatmulAlgoInit(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulAlgoInit",
-        fn (
+        fn(
             UnsafePointer[Context],
             ComputeType,
             DataType,
@@ -2781,7 +2779,7 @@ fn cublasLtMatrixLayoutCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutCreate",
-        fn (
+        fn(
             UnsafePointer[UnsafePointer[MatrixLayout]],
             DataType,
             UInt64,
@@ -2852,7 +2850,7 @@ fn cublasLtMatmulDescCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescCreate",
-        fn (
+        fn(
             UnsafePointer[UnsafePointer[Descriptor]],
             ComputeType,
             DataType,
@@ -3599,7 +3597,7 @@ struct Tile(TrivialRegisterType):
 
 fn cublasLtGetStatusName(status: Result) raises -> UnsafePointer[Int8]:
     return _get_dylib_function[
-        "cublasLtGetStatusName", fn (Result) raises -> UnsafePointer[Int8]
+        "cublasLtGetStatusName", fn(Result) raises -> UnsafePointer[Int8]
     ]()(status)
 
 
@@ -3613,7 +3611,7 @@ fn cublasLtMatmulPreferenceCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceCreate",
-        fn (UnsafePointer[UnsafePointer[PreferenceOpaque]],) -> Result,
+        fn(UnsafePointer[UnsafePointer[PreferenceOpaque]],) -> Result,
     ]()(pref)
 
 
@@ -3659,7 +3657,7 @@ fn cublasLtLoggerSetFile(file: OpaquePointer) raises -> Result:
     \retval     CUBLAS_STATUS_SUCCESS        if log file was set successfully
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerSetFile", fn (OpaquePointer) -> Result
+        "cublasLtLoggerSetFile", fn(OpaquePointer) -> Result
     ]()(file)
 
 
@@ -3671,7 +3669,7 @@ fn cublasLtLoggerOpenFile(log_file: UnsafePointer[Int8]) raises -> Result:
     \retval     CUBLAS_STATUS_SUCCESS        if log file was created successfully
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerOpenFile", fn (UnsafePointer[Int8]) -> Result
+        "cublasLtLoggerOpenFile", fn(UnsafePointer[Int8]) -> Result
     ]()(log_file)
 
 
@@ -3703,7 +3701,7 @@ fn cublasLtMatrixTransform(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransform",
-        fn (
+        fn(
             UnsafePointer[Context],
             UnsafePointer[Transform],
             OpaquePointer,
@@ -3744,7 +3742,7 @@ fn cublasLtLoggerSetMask(mask: Int16) raises -> Result:
 
     \retval     CUBLAS_STATUS_SUCCESS        if log mask was set successfully
     ."""
-    return _get_dylib_function["cublasLtLoggerSetMask", fn (Int16) -> Result]()(
+    return _get_dylib_function["cublasLtLoggerSetMask", fn(Int16) -> Result]()(
         mask
     )
 
@@ -3777,7 +3775,7 @@ fn cublasLtMatrixTransformDescGetAttribute(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescGetAttribute",
-        fn (
+        fn(
             UnsafePointer[Transform],
             TransformDescriptor,
             OpaquePointer,
@@ -3797,7 +3795,7 @@ fn cublasLtMatmulDescInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescInit_internal",
-        fn (
+        fn(
             UnsafePointer[Descriptor],
             Int,
             ComputeType,
@@ -3813,7 +3811,7 @@ fn cublasLtMatmulPreferenceInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceInit_internal",
-        fn (UnsafePointer[PreferenceOpaque], Int) -> Result,
+        fn(UnsafePointer[PreferenceOpaque], Int) -> Result,
     ]()(pref, size)
 
 

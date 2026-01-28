@@ -42,9 +42,9 @@ fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 fn run_reduce[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,

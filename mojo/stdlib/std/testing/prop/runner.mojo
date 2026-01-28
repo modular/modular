@@ -59,7 +59,7 @@ struct PropTest(Movable):
     fn test[
         StrategyType: Strategy,
         //,
-        f: fn (var StrategyType.Value) capturing raises,
+        f: fn(var StrategyType.Value) capturing raises,
     ](self, var strategy: StrategyType) raises:
         """Run a property test with the given strategy.
 

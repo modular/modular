@@ -1422,7 +1422,7 @@ fn conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: fn[dtype: DType, rank: Int, width: Int] (
+    elementwise_lambda: fn[dtype: DType, rank: Int, width: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](

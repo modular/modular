@@ -143,7 +143,7 @@ from .device_query import get_sm_version, _dispatch_max_num_blocks
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 fn _naive_reduce_kernel[

@@ -25,7 +25,7 @@ comptime length = 8192
 
 
 def run_elementwise[
-    dtype: DType, math_fn: fn (x: SIMD) -> type_of(x)
+    dtype: DType, math_fn: fn(x: SIMD) -> type_of(x)
 ](ctx: DeviceContext, in_device: DeviceBuffer[dtype],):
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
 

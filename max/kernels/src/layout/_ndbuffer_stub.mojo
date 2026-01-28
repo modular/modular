@@ -23,7 +23,7 @@ from layout.layout import make_layout
 
 from utils import IndexList, StaticTuple
 
-comptime _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
+comptime _swizzle_signature = fn[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
 
 
 # TileMask holds information collected by composed tile operations to

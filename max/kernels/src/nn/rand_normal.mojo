@@ -23,9 +23,9 @@ fn random_normal[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: fn[width: Int, _rank: Int] (
+    output_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing [_],
+    ) capturing[_],
     target: StaticString,
 ](
     shape: IndexList[rank],

@@ -660,10 +660,10 @@ fn lane_group_reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int] (
+    shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int] (
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     num_lanes: Int,
@@ -721,10 +721,10 @@ fn reduce[
     val_type: DType,
     simd_width: Int,
     //,
-    shuffle: fn[dtype: DType, simd_width: Int] (
+    shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int] (
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:

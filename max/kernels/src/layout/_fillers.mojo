@@ -35,7 +35,7 @@ fn _filler_impl[
     dtype: DType,
     layout: Layout,
     //,
-    filler: fn (i: Int) capturing [_] -> Scalar[dtype],
+    filler: fn(i: Int) capturing[_] -> Scalar[dtype],
     use_runtime_layout: Bool = (
         not layout.all_dims_known() or layout.size() > BATCH_SIZE
     ),

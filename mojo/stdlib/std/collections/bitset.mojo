@@ -263,7 +263,7 @@ struct BitSet[size: Int](
     @always_inline
     @staticmethod
     fn _vectorize_apply[
-        func: fn[simd_width: Int] (
+        func: fn[simd_width: Int](
             SIMD[DType.int64, simd_width],
             SIMD[DType.int64, simd_width],
         ) capturing -> SIMD[DType.int64, simd_width],

@@ -204,7 +204,7 @@ fn assert_equal[
 fn assert_with_measure[
     dtype: DType,
     //,
-    measure: fn[dtype: DType] (
+    measure: fn[dtype: DType](
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,

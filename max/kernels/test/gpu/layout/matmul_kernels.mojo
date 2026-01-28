@@ -35,7 +35,7 @@ comptime NRUN = 1
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline

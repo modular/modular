@@ -3393,7 +3393,7 @@ fn kv_cache_store_ragged[
     input_row_offsets_layout: Layout,
     //,
     target: StaticString,
-    input_fn: fn[width: Int, alignment: Int] (
+    input_fn: fn[width: Int, alignment: Int](
         idx: IndexList[3]
     ) capturing -> SIMD[cache_t.dtype, width],
 ](

@@ -445,7 +445,7 @@ fn pretty_print(
 fn bench[
     func: fn[
         rank: Int, recursive: Int, size: Int, verify: Bool = False
-    ] () raises -> None,
+    ]() raises -> None,
     rank: Int,
     size: Int,
     name: String,

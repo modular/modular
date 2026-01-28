@@ -144,7 +144,7 @@ struct _TypeErasedWriter(Writer):
     var _writer: OpaquePointer[MutAnyOrigin]
     """Opaque pointer to the concrete writer instance."""
 
-    var _write_fn: fn (OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
+    var _write_fn: fn(OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
     """Function pointer specialized for the concrete writer type that calls the
     writer's `write_string` method."""
 
@@ -244,7 +244,7 @@ struct _TypeErasedError(Copyable, Writable):
     var _error: Self._ErrorArcPointer
     """Type-erased `ArcPointer[T]` holding the actual error data."""
 
-    var _vtable: fn (
+    var _vtable: fn(
         _VTableErrorOp,
         Self._VTableInput,
         Self._VTableOutput,

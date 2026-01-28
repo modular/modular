@@ -40,7 +40,7 @@ fn _ensure_current_or_global_runtime_init():
 
 
 fn __wrap_and_execute_main[
-    main_func: fn () -> None
+    main_func: fn() -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -75,7 +75,7 @@ fn __wrap_and_execute_main[
 
 
 fn __wrap_and_execute_raising_main[
-    main_func: fn () raises -> None
+    main_func: fn() raises -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],

@@ -79,7 +79,7 @@ comptime elementwise_epilogue_type = fn[
     rank: Int,
     *,
     alignment: Int = 1,
-] (
+](
     IndexList[rank],
     SIMD[c_type, width],
 ) capturing -> None

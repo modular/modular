@@ -32,7 +32,7 @@ comptime alignment = 64
 
 @parameter
 fn bench_run[
-    func: fn () raises capturing [_] -> None
+    func: fn() raises capturing[_] -> None
 ]() raises -> benchmark.Report:
     return benchmark.run[func](2, 1_000_000, 1, 3)
 

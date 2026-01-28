@@ -267,7 +267,7 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-comptime embed_fn_type = fn[dtype: DType, width: Int] (
+comptime embed_fn_type = fn[dtype: DType, width: Int](
     IndexList[4], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 

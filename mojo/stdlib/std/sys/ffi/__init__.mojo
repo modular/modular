@@ -682,9 +682,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterType):
 
         debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
-        return self.get_function[fn (type_of(v)) -> return_type](String(name))(
-            v
-        )
+        return self.get_function[fn(type_of(v)) -> return_type](String(name))(v)
 
 
 @always_inline
@@ -792,7 +790,7 @@ fn _find_dylib[
 
 
 fn _find_dylib[
-    msg: fn () -> String, abort_on_failure: Bool = True
+    msg: fn() -> String, abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
@@ -844,8 +842,8 @@ struct _Global[
     StorageType: Movable,
     //,
     name: StaticString,
-    init_fn: fn () -> StorageType,
-    on_error_msg: Optional[fn () -> Error] = None,
+    init_fn: fn() -> StorageType,
+    on_error_msg: Optional[fn() -> Error] = None,
 ](Defaultable):
     comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
@@ -915,8 +913,8 @@ struct _Global[
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn () -> OpaquePointer[MutExternalOrigin],
-    destroy_fn: fn (OpaquePointer[MutExternalOrigin]) -> None,
+    init_fn: fn() -> OpaquePointer[MutExternalOrigin],
+    destroy_fn: fn(OpaquePointer[MutExternalOrigin]) -> None,
 ]() -> OpaquePointer[MutExternalOrigin]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer[MutExternalOrigin]

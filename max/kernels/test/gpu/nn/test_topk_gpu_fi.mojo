@@ -441,9 +441,9 @@ fn extract_topk_from_masked[
 
 fn test_case_batched[
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     """Test topk_mask_logits kernel by comparing with CPU reference."""
@@ -658,7 +658,7 @@ fn test_case_batched[
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline

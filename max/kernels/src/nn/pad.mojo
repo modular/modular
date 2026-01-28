@@ -321,14 +321,14 @@ fn _do_pad[
     input_layout: Layout,
     dtype: DType,
     paddings_type: DType,
-    pad_impl_fn: fn (
+    pad_impl_fn: fn(
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[dtype], address_space = AddressSpace.GENERIC, ...],
         UnsafePointer[Scalar[paddings_type]],
         IndexList[output_layout.rank()],
         UnsafePointer[Scalar[DType.int]],
         UnsafePointer[Scalar[DType.int]],
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     output: LayoutTensor[
         mut=True,

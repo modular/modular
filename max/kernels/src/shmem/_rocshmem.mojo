@@ -301,7 +301,7 @@ fn _dtype_to_rocshmem_type[
 fn _rocshmem_init() raises:
     _get_rocshmem_function[
         "rocshmem_init",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -333,7 +333,7 @@ fn rocshmem_init_attr(
 ) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_init_attr",
-        fn (UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
+        fn(UInt32, UnsafePointer[ROCSHMEMInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
@@ -342,14 +342,14 @@ fn rocshmem_get_uniqueid(
 ) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_get_uniqueid",
-        fn (UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
+        fn(UnsafePointer[ROCSHMEMUniqueID, MutAnyOrigin]) -> c_int,
     ]()(uid)
 
 
 fn rocshmem_finalize():
     _get_rocshmem_function[
         "rocshmem_finalize",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -371,7 +371,7 @@ fn rocshmemx_hipmodule_init[T: AnyType](module: T) -> c_int:
     """
     return _get_rocshmem_function[
         "rocshmemx_hipmodule_init",
-        fn (T) -> c_int,
+        fn(T) -> c_int,
     ]()(module)
 
 
@@ -382,7 +382,7 @@ fn rocshmem_my_pe() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_my_pe",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -395,7 +395,7 @@ fn rocshmem_n_pes() -> c_int:
     else:
         return _get_rocshmem_function[
             "rocshmem_n_pes",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -409,7 +409,7 @@ fn rocshmem_malloc[
 ](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        fn(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -422,7 +422,7 @@ fn rocshmem_calloc[
 ]:
     var ptr = _get_rocshmem_function[
         "rocshmem_calloc",
-        fn (
+        fn(
             c_size_t, c_size_t
         ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
@@ -457,7 +457,7 @@ fn rocshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_rocshmem_function[
         "rocshmem_free",
-        fn (type_of(ptr)) -> NoneType,
+        fn(type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -469,7 +469,7 @@ fn rocshmem_free[
 fn rocshmem_team_my_pe(team: c_int) -> c_int:
     return _get_rocshmem_function[
         "rocshmem_team_my_pe",
-        fn (c_int) -> c_int,
+        fn(c_int) -> c_int,
     ]()(team)
 
 
@@ -495,7 +495,7 @@ fn rocshmem_put[
     else:
         _get_rocshmem_function[
             symbol,
-            fn (
+            fn(
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
                 c_size_t,
@@ -532,7 +532,7 @@ fn rocshmem_p[
     else:
         _get_rocshmem_function[
             symbol,
-            fn (
+            fn(
                 UnsafePointer[Scalar[dtype], MutAnyOrigin],
                 Scalar[dtype],
                 c_int,
@@ -605,7 +605,7 @@ fn rocshmem_put_signal_nbi[
 fn rocshmem_sync_all():
     _get_rocshmem_function[
         "rocshmem_sync_all",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -616,14 +616,14 @@ fn rocshmem_barrier_all():
     else:
         _get_rocshmem_function[
             "rocshmem_barrier_all",
-            fn () -> NoneType,
+            fn() -> NoneType,
         ]()()
 
 
 fn rocshmem_barrier_all_wave(stream: hipStream_t):
     _get_rocshmem_function[
         "rocshmem_barrier_all_wave",
-        fn (hipStream_t) -> NoneType,
+        fn(hipStream_t) -> NoneType,
     ]()(stream)
 
 

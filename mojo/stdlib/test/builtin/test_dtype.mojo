@@ -85,7 +85,7 @@ fn test_representable() raises:
 
 fn test_is_xxx() raises:
     fn _is_category[
-        test: fn (DType) -> Bool,
+        test: fn(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
         @parameter

@@ -236,7 +236,7 @@ fn non_max_suppression_shape_func[
 
 fn non_max_suppression[
     dtype: DType,
-    func: fn (Int64, Int64, Int64) capturing [_] -> None,
+    func: fn(Int64, Int64, Int64) capturing[_] -> None,
 ](
     boxes: LayoutTensor[dtype, ...],
     scores: LayoutTensor[dtype, ...],

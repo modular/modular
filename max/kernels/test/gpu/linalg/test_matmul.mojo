@@ -43,7 +43,7 @@ comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
+](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
     dtype, width
 ]
 

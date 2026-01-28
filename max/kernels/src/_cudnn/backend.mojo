@@ -82,7 +82,7 @@ fn _get_dylib_function[
 
 fn cudnnBackendInitialize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendInitialize", fn (OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendInitialize", fn(OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -581,7 +581,7 @@ fn cudnnBackendSetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
-        fn (
+        fn(
             OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
@@ -845,7 +845,7 @@ fn cudnnBackendCreateDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
-        fn (
+        fn(
             cudnnBackendDescriptorType_t, UnsafePointer[OpaquePointer]
         ) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
@@ -1012,7 +1012,7 @@ struct cudnnRngDistribution_t(
 
 fn cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn (OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendFinalize", fn(OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -1983,7 +1983,7 @@ fn cudnnBackendDestroyDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn (OpaquePointer) -> cudnnStatus_t,
+        fn(OpaquePointer) -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -1994,7 +1994,7 @@ fn cudnnBackendExecute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             OpaquePointer,
@@ -2064,7 +2064,7 @@ fn cudnnBackendGetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
-        fn (
+        fn(
             OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,

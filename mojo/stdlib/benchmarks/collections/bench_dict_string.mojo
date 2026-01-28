@@ -442,7 +442,7 @@ struct StringDict[
     fn upsert(
         mut self,
         key: StringSlice,
-        update: fn (value: Optional[Self.V]) -> Self.V,
+        update: fn(value: Optional[Self.V]) -> Self.V,
     ):
         var key_index = self._find_key_index(key)
         if key_index == 0:

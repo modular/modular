@@ -22,7 +22,7 @@ from testing import assert_true
 fn test_argsort[
     *,
     ascending: Bool,
-    filler: fn (Int, Int) -> Float32,
+    filler: fn(Int, Int) -> Float32,
 ]() raises:
     print("== test_argsort")
 

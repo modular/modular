@@ -673,7 +673,7 @@ struct Bench(Stringable, Writable):
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -709,7 +709,7 @@ struct Bench(Stringable, Writable):
 
     fn bench_with_input[
         T: __TypeOfAllTypes,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -745,7 +745,7 @@ struct Bench(Stringable, Writable):
 
     @always_inline
     fn bench_multicontext[
-        bench_fn: fn (mut Bencher, DeviceContext, Int) raises capturing [
+        bench_fn: fn(mut Bencher, DeviceContext, Int) raises capturing[
             _
         ] -> None,
     ](
@@ -815,7 +815,7 @@ struct Bench(Stringable, Writable):
 
     @always_inline
     fn bench_function[
-        bench_fn: fn () raises capturing [_] -> None,
+        bench_fn: fn() raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -854,7 +854,7 @@ struct Bench(Stringable, Writable):
     # TODO: add a variant of the following function for with DeviceContext
     @always_inline
     fn bench_function[
-        bench_fn: fn () capturing [_] -> None,
+        bench_fn: fn() capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -888,7 +888,7 @@ struct Bench(Stringable, Writable):
         self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
-        bench_fn: fn (mut Bencher) raises capturing [_] -> None
+        bench_fn: fn(mut Bencher) raises capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -932,7 +932,7 @@ struct Bench(Stringable, Writable):
         elif self.mode == Mode.Test:
             self._test[bench_with_abort_on_err]()
 
-    fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
+    fn _test[bench_fn: fn(mut Bencher) capturing[_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
 
         Parameters:
@@ -943,7 +943,7 @@ struct Bench(Stringable, Writable):
         bench_fn(b)
 
     fn _bench[
-        user_bench_fn: fn (mut Bencher) capturing [_] -> None
+        user_bench_fn: fn(mut Bencher) capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -1310,7 +1310,7 @@ struct Bencher:
         self.num_iters = num_iters
         self.elapsed = 0
 
-    fn iter[iter_fn: fn () capturing [_] -> None](mut self):
+    fn iter[iter_fn: fn() capturing[_] -> None](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -1324,7 +1324,7 @@ struct Bencher:
 
         self.iter(unified_closure)
 
-    fn iter[IterFn: fn () unified](mut self, f: IterFn):
+    fn iter[IterFn: fn() unified](mut self, f: IterFn):
         """Returns the total elapsed time by running a target closure a
         particular number of times.
 
@@ -1342,8 +1342,8 @@ struct Bencher:
         self.elapsed = Int(stop - start)
 
     fn iter_preproc[
-        iter_fn: fn () capturing [_] -> None,
-        preproc_fn: fn () capturing [_] -> None,
+        iter_fn: fn() capturing[_] -> None,
+        preproc_fn: fn() capturing[_] -> None,
     ](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -1360,7 +1360,7 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_custom[iter_fn: fn (Int) raises capturing [_] -> Int](mut self):
+    fn iter_custom[iter_fn: fn(Int) raises capturing[_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
@@ -1373,7 +1373,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
+        kernel_launch_fn: fn(DeviceContext) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1389,7 +1389,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
+        kernel_launch_fn: fn(DeviceContext, Int) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1407,7 +1407,7 @@ struct Bencher:
             abort(String(e))
 
     fn iter_custom_multicontext[
-        kernel_launch_fn: fn () raises capturing [_] -> None
+        kernel_launch_fn: fn() raises capturing[_] -> None
     ](mut self, ctxs: List[DeviceContext]):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1428,7 +1428,7 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
+    fn iter[iter_fn: fn() capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
 

@@ -35,7 +35,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 fn apply[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -47,7 +47,7 @@ fn apply[
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -57,7 +57,7 @@ def bench_unary[
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     dtype: DType,

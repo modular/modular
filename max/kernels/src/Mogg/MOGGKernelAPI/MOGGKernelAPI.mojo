@@ -7522,7 +7522,7 @@ struct Struct_moe_router_group_limited:
             scores_input_fn = OptionalReg[
                 fn[
                     width: Int
-                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),

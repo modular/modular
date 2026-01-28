@@ -34,7 +34,7 @@ fn reverse_filler(i: Int, n: Int) -> Float32:
 fn test_argsort[
     dtype: DType = DType.float32,
     *,
-    filler: fn (Int, Int) -> Float32,
+    filler: fn(Int, Int) -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
@@ -115,7 +115,7 @@ fn test_argsort[
 fn test_argsort_helper[
     *,
     dtype: DType,
-    filler: fn (Int, Int) -> Float32,
+    filler: fn(Int, Int) -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)

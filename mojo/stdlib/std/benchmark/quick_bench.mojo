@@ -51,7 +51,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes
     ](
         mut self,
-        func: fn () -> T_out,
+        func: fn() -> T_out,
         *,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = {},
@@ -89,7 +89,7 @@ struct QuickBench:
         T0: __TypeOfAllTypes, /, T_out: __TypeOfAllTypes
     ](
         mut self,
-        func: fn (T0) -> T_out,
+        func: fn(T0) -> T_out,
         x0: T0,
         *,
         bench_id: BenchId,
@@ -133,7 +133,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1) -> T_out,
+        func: fn(T0, T1) -> T_out,
         x0: T0,
         x1: T1,
         *,
@@ -181,7 +181,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2) -> T_out,
+        func: fn(T0, T1, T2) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -233,7 +233,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3) -> T_out,
+        func: fn(T0, T1, T2, T3) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -289,7 +289,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4) -> T_out,
+        func: fn(T0, T1, T2, T3, T4) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -349,7 +349,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4, T5) -> T_out,
+        func: fn(T0, T1, T2, T3, T4, T5) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -413,7 +413,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4, T5, T6) -> T_out,
+        func: fn(T0, T1, T2, T3, T4, T5, T6) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -481,7 +481,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
+        func: fn(T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -553,7 +553,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
+        func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,
@@ -629,7 +629,7 @@ struct QuickBench:
         T_out: __TypeOfAllTypes,
     ](
         mut self,
-        func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,
+        func: fn(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,
         x0: T0,
         x1: T1,
         x2: T2,

@@ -39,14 +39,14 @@ from .utils import _get_dylib_function
 fn rocblas_create_handle(handle: UnsafePointer[Handle]) raises -> Status:
     return _get_dylib_function[
         "rocblas_create_handle",
-        fn (UnsafePointer[Handle]) -> Status,
+        fn(UnsafePointer[Handle]) -> Status,
     ]()(handle)
 
 
 fn rocblas_destroy_handle(handle: Handle) raises -> Status:
     return _get_dylib_function[
         "rocblas_destroy_handle",
-        fn (Handle) -> Status,
+        fn(Handle) -> Status,
     ]()(handle)
 
 
@@ -62,7 +62,7 @@ fn rocblas_ctpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -92,7 +92,7 @@ fn rocblas_ctbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -200,7 +200,7 @@ fn rocblas_sdgmm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -251,7 +251,7 @@ fn rocblas_dtbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -372,7 +372,7 @@ fn rocblas_chbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -402,7 +402,7 @@ fn rocblas_ctpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -431,7 +431,7 @@ fn rocblas_ctrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -521,7 +521,7 @@ fn rocblas_cher_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -546,7 +546,7 @@ fn rocblas_bfdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[BFloat16],
@@ -575,7 +575,7 @@ fn rocblas_tstgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -640,7 +640,7 @@ fn rocblas_sdot(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -670,7 +670,7 @@ fn rocblas_zgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -732,7 +732,7 @@ fn rocblas_sscal_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -814,7 +814,7 @@ fn rocblas_srotm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -860,7 +860,7 @@ fn rocblas_csyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -905,7 +905,7 @@ fn rocblas_scopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -930,7 +930,7 @@ fn rocblas_dsyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -961,7 +961,7 @@ fn rocblas_stbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -1011,7 +1011,7 @@ fn rocblas_dsyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -1057,7 +1057,7 @@ fn rocblas_ssyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -1081,7 +1081,7 @@ fn rocblas_zdotu(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -1157,7 +1157,7 @@ fn rocblas_nrm2_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -1196,7 +1196,7 @@ fn rocblas_cdgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -1227,7 +1227,7 @@ fn rocblas_dotc_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -1276,7 +1276,7 @@ fn rocblas_csyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -1330,7 +1330,7 @@ fn rocblas_hdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float16],
@@ -1358,7 +1358,7 @@ fn rocblas_zrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -1383,7 +1383,7 @@ fn rocblas_srotmg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -1411,7 +1411,7 @@ fn rocblas_strsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -1438,7 +1438,7 @@ fn rocblas_dzasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -1484,7 +1484,7 @@ fn rocblas_snrm2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float32], Int32, UnsafePointer[Float32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -1508,7 +1508,7 @@ fn rocblas_dsyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -1559,7 +1559,7 @@ fn rocblas_dtrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -1602,7 +1602,7 @@ fn rocblas_zscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -1626,7 +1626,7 @@ fn rocblas_cher_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -1650,7 +1650,7 @@ fn rocblas_cdotu(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -1700,7 +1700,7 @@ fn rocblas_sasum_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -1724,7 +1724,7 @@ fn rocblas_dtpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -1755,7 +1755,7 @@ fn rocblas_dtbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -1863,7 +1863,7 @@ fn rocblas_sspr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -1893,7 +1893,7 @@ fn rocblas_ztbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2006,7 +2006,7 @@ fn rocblas_cher2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -2055,7 +2055,7 @@ fn rocblas_srot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -2088,7 +2088,7 @@ fn rocblas_ctrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -2152,7 +2152,7 @@ fn rocblas_sscal(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float32], UnsafePointer[Float32], Int32
         ) -> Status,
     ]()(handle, n, alpha, x, incx)
@@ -2175,7 +2175,7 @@ fn rocblas_ztbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2220,7 +2220,7 @@ fn rocblas_dswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -2249,7 +2249,7 @@ fn rocblas_dsymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -2274,7 +2274,7 @@ fn rocblas_dnrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float64], Int64, UnsafePointer[Float64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -2366,7 +2366,7 @@ fn rocblas_ssyrk(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2446,7 +2446,7 @@ fn rocblas_strtri_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -2488,7 +2488,7 @@ fn rocblas_chpr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -2514,7 +2514,7 @@ fn rocblas_izamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -2539,7 +2539,7 @@ fn rocblas_ztpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2573,7 +2573,7 @@ fn rocblas_zhbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -2622,7 +2622,7 @@ fn rocblas_dspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -2646,7 +2646,7 @@ fn rocblas_zspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -2749,7 +2749,7 @@ fn rocblas_ssyrk_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2782,7 +2782,7 @@ fn rocblas_zherk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2811,7 +2811,7 @@ fn rocblas_dspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -2839,7 +2839,7 @@ fn rocblas_dtbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -2864,7 +2864,7 @@ fn rocblas_dzasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -2884,7 +2884,7 @@ fn rocblas_crotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -2914,7 +2914,7 @@ fn rocblas_cgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -2965,7 +2965,7 @@ fn rocblas_ztbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3056,7 +3056,7 @@ fn rocblas_srotmg_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             Int64,
@@ -3097,7 +3097,7 @@ fn rocblas_zaxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -3123,7 +3123,7 @@ fn rocblas_ctrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3156,7 +3156,7 @@ fn rocblas_zgeru_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -3207,7 +3207,7 @@ fn rocblas_rot_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -3257,7 +3257,7 @@ fn rocblas_zsyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3355,7 +3355,7 @@ fn rocblas_sdgmm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -3443,7 +3443,7 @@ fn rocblas_chemv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -3474,7 +3474,7 @@ fn rocblas_ztbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3502,7 +3502,7 @@ fn rocblas_ztrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3531,7 +3531,7 @@ fn rocblas_zsymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -3560,7 +3560,7 @@ fn rocblas_dtrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3589,7 +3589,7 @@ fn rocblas_zdgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -3670,7 +3670,7 @@ fn rocblas_stpmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -3695,7 +3695,7 @@ fn rocblas_icamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -3725,7 +3725,7 @@ fn rocblas_dgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -3771,7 +3771,7 @@ fn rocblas_zsyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -3798,7 +3798,7 @@ fn rocblas_cdotc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -3824,7 +3824,7 @@ fn rocblas_dzasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -3851,7 +3851,7 @@ fn rocblas_cher_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -3893,7 +3893,7 @@ fn rocblas_zhpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -3924,7 +3924,7 @@ fn rocblas_zhbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -4023,7 +4023,7 @@ fn rocblas_rot_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -4072,7 +4072,7 @@ fn rocblas_zgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -4123,7 +4123,7 @@ fn rocblas_ctbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -4255,7 +4255,7 @@ fn rocblas_cher2k_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -4306,7 +4306,7 @@ fn rocblas_sscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -4336,7 +4336,7 @@ fn rocblas_zherk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -4432,7 +4432,7 @@ fn rocblas_scal_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -4461,7 +4461,7 @@ fn rocblas_dtrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -4518,7 +4518,7 @@ fn rocblas_isamax_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -4542,7 +4542,7 @@ fn rocblas_caxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -4572,7 +4572,7 @@ fn rocblas_dgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -4605,7 +4605,7 @@ fn rocblas_zhpr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -4638,7 +4638,7 @@ fn rocblas_hgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -4780,7 +4780,7 @@ fn rocblas_strsm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -4873,7 +4873,7 @@ fn rocblas_stpsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -4917,7 +4917,7 @@ fn rocblas_dtrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -4960,7 +4960,7 @@ fn rocblas_zcopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -4988,7 +4988,7 @@ fn rocblas_crotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat32],
             Int64,
@@ -5022,7 +5022,7 @@ fn rocblas_zgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -5071,7 +5071,7 @@ fn rocblas_dcopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -5094,7 +5094,7 @@ fn rocblas_zrotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat64],
             UnsafePointer[ComplexFloat64],
@@ -5116,7 +5116,7 @@ fn rocblas_cdotu_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -5140,7 +5140,7 @@ fn rocblas_saxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -5238,7 +5238,7 @@ fn rocblas_chpmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -5310,7 +5310,7 @@ fn rocblas_srotmg_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -5338,7 +5338,7 @@ fn rocblas_ssymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -5365,7 +5365,7 @@ fn rocblas_drotmg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             UnsafePointer[Float64],
@@ -5390,7 +5390,7 @@ fn rocblas_daxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -5419,7 +5419,7 @@ fn rocblas_scal_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -5463,7 +5463,7 @@ fn rocblas_dotc_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -5508,7 +5508,7 @@ fn rocblas_caxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -5542,7 +5542,7 @@ fn rocblas_dgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -5598,7 +5598,7 @@ fn rocblas_cdotu_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -5626,7 +5626,7 @@ fn rocblas_ctpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -5658,7 +5658,7 @@ fn rocblas_zherkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -5731,7 +5731,7 @@ fn rocblas_haxpy(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float16],
@@ -5757,7 +5757,7 @@ fn rocblas_dsyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -5784,7 +5784,7 @@ fn rocblas_dtpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -5810,7 +5810,7 @@ fn rocblas_nrm2_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -5848,7 +5848,7 @@ fn rocblas_zdotc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -5878,7 +5878,7 @@ fn rocblas_ssyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -5907,7 +5907,7 @@ fn rocblas_idamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -5937,7 +5937,7 @@ fn rocblas_ztrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -5989,7 +5989,7 @@ fn rocblas_csyrk_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -6035,7 +6035,7 @@ fn rocblas_csrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -6065,7 +6065,7 @@ fn rocblas_dtrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -6109,7 +6109,7 @@ fn rocblas_hdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -6183,7 +6183,7 @@ fn rocblas_ssbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -6211,7 +6211,7 @@ fn rocblas_drotm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -6239,7 +6239,7 @@ fn rocblas_chemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -6274,7 +6274,7 @@ fn rocblas_zgerc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -6324,7 +6324,7 @@ fn rocblas_strmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -6368,7 +6368,7 @@ fn rocblas_cspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -6399,7 +6399,7 @@ fn rocblas_sgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -6426,7 +6426,7 @@ fn rocblas_csscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -6457,7 +6457,7 @@ fn rocblas_dsbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -6552,7 +6552,7 @@ fn rocblas_sdgmm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdgmm",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -6584,7 +6584,7 @@ fn rocblas_dtbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -6628,7 +6628,7 @@ fn rocblas_chpr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -6659,7 +6659,7 @@ fn rocblas_cgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -6690,7 +6690,7 @@ fn rocblas_cdotu_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -6760,7 +6760,7 @@ fn rocblas_srotm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -6790,7 +6790,7 @@ fn rocblas_zgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -6821,7 +6821,7 @@ fn rocblas_ctrsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -6855,7 +6855,7 @@ fn rocblas_zgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -6910,7 +6910,7 @@ fn rocblas_zhbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -6946,7 +6946,7 @@ fn rocblas_zgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -6992,7 +6992,7 @@ fn rocblas_cspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -7021,7 +7021,7 @@ fn rocblas_zhemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -7054,7 +7054,7 @@ fn rocblas_cgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -7087,7 +7087,7 @@ fn rocblas_dtrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -7133,7 +7133,7 @@ fn rocblas_drotmg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             Int64,
@@ -7178,7 +7178,7 @@ fn rocblas_zgeru_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -7208,7 +7208,7 @@ fn rocblas_daxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -7235,7 +7235,7 @@ fn rocblas_crot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -7261,7 +7261,7 @@ fn rocblas_zhpr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -7284,7 +7284,7 @@ fn rocblas_initialize() raises:
     device specific kernel setup. Otherwise this function is automatically called
     on the first function call that requires these initializations (mainly GEMM).
     """
-    _get_dylib_function["rocblas_initialize", fn () -> NoneType]()()
+    _get_dylib_function["rocblas_initialize", fn() -> NoneType]()()
 
 
 fn rocblas_drotm_strided_batched(
@@ -7302,7 +7302,7 @@ fn rocblas_drotm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -7428,7 +7428,7 @@ fn rocblas_sgemmt_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -7483,7 +7483,7 @@ fn rocblas_dtpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -7506,7 +7506,7 @@ fn rocblas_dasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float64], Int32, UnsafePointer[Float64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -7524,7 +7524,7 @@ fn rocblas_csyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -7547,7 +7547,7 @@ fn rocblas_dasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -7571,7 +7571,7 @@ fn rocblas_sswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -7602,7 +7602,7 @@ fn rocblas_zherkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -7635,7 +7635,7 @@ fn rocblas_cgeru_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -7664,7 +7664,7 @@ fn rocblas_strmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -7719,7 +7719,7 @@ fn rocblas_haxpy_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float16],
@@ -7742,7 +7742,7 @@ fn rocblas_idamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -7773,7 +7773,7 @@ fn rocblas_tssgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -7909,7 +7909,7 @@ fn rocblas_chpmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -7960,7 +7960,7 @@ fn rocblas_zsyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -8143,7 +8143,7 @@ fn rocblas_gemm_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -8219,7 +8219,7 @@ fn rocblas_ztrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -8245,7 +8245,7 @@ fn rocblas_ctrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -8273,7 +8273,7 @@ fn rocblas_dtrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -8306,7 +8306,7 @@ fn rocblas_sger_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -8353,7 +8353,7 @@ fn rocblas_dtpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -8379,7 +8379,7 @@ fn rocblas_sdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -8402,7 +8402,7 @@ fn rocblas_dznrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -8428,7 +8428,7 @@ fn rocblas_ddgmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -8458,7 +8458,7 @@ fn rocblas_srotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             Int64,
@@ -8491,7 +8491,7 @@ fn rocblas_dgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -8520,7 +8520,7 @@ fn rocblas_sasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -8549,7 +8549,7 @@ fn rocblas_dspmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -8603,7 +8603,7 @@ fn rocblas_chbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -8652,7 +8652,7 @@ fn rocblas_zswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -8746,7 +8746,7 @@ fn rocblas_sgemv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -8797,7 +8797,7 @@ fn rocblas_csrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -8821,7 +8821,7 @@ fn rocblas_idamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -8842,7 +8842,7 @@ fn rocblas_zswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -8925,7 +8925,7 @@ fn rocblas_strsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -8956,7 +8956,7 @@ fn rocblas_zhbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -8988,7 +8988,7 @@ fn rocblas_zrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -9019,7 +9019,7 @@ fn rocblas_zher_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -9061,7 +9061,7 @@ fn rocblas_ztrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -9089,7 +9089,7 @@ fn rocblas_dtrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -9112,7 +9112,7 @@ fn rocblas_crotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat32],
             UnsafePointer[ComplexFloat32],
@@ -9137,7 +9137,7 @@ fn rocblas_dtbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -9164,7 +9164,7 @@ fn rocblas_cswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -9191,7 +9191,7 @@ fn rocblas_zsyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -9221,7 +9221,7 @@ fn rocblas_caxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -9246,7 +9246,7 @@ fn rocblas_izamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -9270,7 +9270,7 @@ fn rocblas_dtpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -9299,7 +9299,7 @@ fn rocblas_ssyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -9326,7 +9326,7 @@ fn rocblas_cdotc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -9350,7 +9350,7 @@ fn rocblas_sspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -9378,7 +9378,7 @@ fn rocblas_csrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -9409,7 +9409,7 @@ fn rocblas_zher2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -9436,7 +9436,7 @@ fn rocblas_zcopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -9464,7 +9464,7 @@ fn rocblas_zsymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -9492,7 +9492,7 @@ fn rocblas_sasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -9513,7 +9513,7 @@ fn rocblas_isamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float32], Int64, UnsafePointer[Int64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -9531,7 +9531,7 @@ fn rocblas_dsyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -9610,7 +9610,7 @@ fn rocblas_sgemv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -9643,7 +9643,7 @@ fn rocblas_ctpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -9663,7 +9663,7 @@ fn rocblas_device_malloc_ptr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_ptr",
-        fn (
+        fn(
             UnsafePointer[MallocBase],
             UnsafePointer[OpaquePointer],
         ) -> Status,
@@ -9745,7 +9745,7 @@ fn rocblas_sger_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -9790,7 +9790,7 @@ fn rocblas_daxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -9812,7 +9812,7 @@ fn rocblas_icamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -9894,7 +9894,7 @@ fn rocblas_ssyr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -9948,7 +9948,7 @@ fn rocblas_hssgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -10001,7 +10001,7 @@ fn rocblas_cgeru_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -10033,7 +10033,7 @@ fn rocblas_ctrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -10077,7 +10077,7 @@ fn rocblas_chpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -10108,7 +10108,7 @@ fn rocblas_dotc_batched_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -10159,7 +10159,7 @@ fn rocblas_dgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -10221,7 +10221,7 @@ fn rocblas_dgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -10323,7 +10323,7 @@ fn rocblas_ssymv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -10359,7 +10359,7 @@ fn rocblas_ssbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -10456,7 +10456,7 @@ fn rocblas_sger_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -10482,7 +10482,7 @@ fn rocblas_izamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -10515,7 +10515,7 @@ fn rocblas_cgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -10568,7 +10568,7 @@ fn rocblas_csscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -10595,7 +10595,7 @@ fn rocblas_cgerc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -10624,7 +10624,7 @@ fn rocblas_dspr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -10652,7 +10652,7 @@ fn rocblas_zspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -10678,7 +10678,7 @@ fn rocblas_scnrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -10709,7 +10709,7 @@ fn rocblas_zgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -10766,7 +10766,7 @@ fn rocblas_csymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -10819,7 +10819,7 @@ fn rocblas_csyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -10849,7 +10849,7 @@ fn rocblas_zsyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -10936,7 +10936,7 @@ fn rocblas_sgeam(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -10965,7 +10965,7 @@ fn rocblas_dznrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -10992,7 +10992,7 @@ fn rocblas_zhpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -11027,7 +11027,7 @@ fn rocblas_strsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -11078,7 +11078,7 @@ fn rocblas_ztbsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -11109,7 +11109,7 @@ fn rocblas_csyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -11196,7 +11196,7 @@ fn rocblas_axpy_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -11234,7 +11234,7 @@ fn rocblas_zrotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -11262,7 +11262,7 @@ fn rocblas_get_version_string(
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string", fn (UnsafePointer[Int8], Int) -> Status
+        "rocblas_get_version_string", fn(UnsafePointer[Int8], Int) -> Status
     ]()(buf, len)
 
 
@@ -11284,7 +11284,7 @@ fn rocblas_csyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -11333,7 +11333,7 @@ fn rocblas_dsyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -11459,7 +11459,7 @@ fn rocblas_ssymm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -11510,7 +11510,7 @@ fn rocblas_idamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -11541,7 +11541,7 @@ fn rocblas_rot_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -11588,7 +11588,7 @@ fn rocblas_sswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -11617,7 +11617,7 @@ fn rocblas_chbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -11686,7 +11686,7 @@ fn rocblas_sdot_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -11718,7 +11718,7 @@ fn rocblas_dtrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -11794,7 +11794,7 @@ fn rocblas_isamin_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -11827,7 +11827,7 @@ fn rocblas_cgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -11878,7 +11878,7 @@ fn rocblas_ccopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -11908,7 +11908,7 @@ fn rocblas_sgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -11932,7 +11932,7 @@ fn rocblas_device_malloc_success(
 ) raises -> Bool:
     return _get_dylib_function[
         "rocblas_device_malloc_success",
-        fn (UnsafePointer[MallocBase]) -> Bool,
+        fn(UnsafePointer[MallocBase]) -> Bool,
     ]()(ptr)
 
 
@@ -11947,7 +11947,7 @@ fn rocblas_chpr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -12021,7 +12021,7 @@ fn rocblas_stpsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12055,7 +12055,7 @@ fn rocblas_csyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12113,7 +12113,7 @@ fn rocblas_dger_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -12163,7 +12163,7 @@ fn rocblas_ctrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12208,7 +12208,7 @@ fn rocblas_zrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -12246,7 +12246,7 @@ fn rocblas_hgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_kernel_name",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -12301,7 +12301,7 @@ fn rocblas_scopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -12326,7 +12326,7 @@ fn rocblas_icamax_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -12352,7 +12352,7 @@ fn rocblas_zhpr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -12383,7 +12383,7 @@ fn rocblas_ztrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -12415,7 +12415,7 @@ fn rocblas_stpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12456,7 +12456,7 @@ fn rocblas_csyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -12482,7 +12482,7 @@ fn rocblas_ctpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12641,7 +12641,7 @@ fn rocblas_strmm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -12693,7 +12693,7 @@ fn rocblas_ztrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -12728,7 +12728,7 @@ fn rocblas_zdgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -12771,7 +12771,7 @@ fn rocblas_icamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -12798,7 +12798,7 @@ fn rocblas_dsyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -12826,7 +12826,7 @@ fn rocblas_zrotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -12859,7 +12859,7 @@ fn rocblas_dtrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -12914,7 +12914,7 @@ fn rocblas_drot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -12948,7 +12948,7 @@ fn rocblas_zgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -12999,7 +12999,7 @@ fn rocblas_dtrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -13030,7 +13030,7 @@ fn rocblas_cgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -13132,7 +13132,7 @@ fn rocblas_strmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -13171,7 +13171,7 @@ fn rocblas_dznrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -13192,7 +13192,7 @@ fn rocblas_zdscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -13216,7 +13216,7 @@ fn rocblas_daxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -13305,7 +13305,7 @@ fn rocblas_chpr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -13331,7 +13331,7 @@ fn rocblas_dcopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -13358,7 +13358,7 @@ fn rocblas_zcopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -13470,7 +13470,7 @@ fn rocblas_ssyr2k(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -13499,7 +13499,7 @@ fn rocblas_dswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -13553,7 +13553,7 @@ fn rocblas_scopy_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -13574,7 +13574,7 @@ fn rocblas_izamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -13598,7 +13598,7 @@ fn rocblas_sspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -13624,7 +13624,7 @@ fn rocblas_dzasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -13645,7 +13645,7 @@ fn rocblas_icamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -13670,7 +13670,7 @@ fn rocblas_dsyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -13783,7 +13783,7 @@ fn rocblas_strsm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -13833,7 +13833,7 @@ fn rocblas_zhpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -13878,7 +13878,7 @@ fn rocblas_dspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -14008,7 +14008,7 @@ fn rocblas_ssyr2k_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14060,7 +14060,7 @@ fn rocblas_stpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14083,7 +14083,7 @@ fn rocblas_scasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -14109,7 +14109,7 @@ fn rocblas_ztpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14147,7 +14147,7 @@ fn rocblas_zswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -14167,7 +14167,7 @@ fn rocblas_scnrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -14193,7 +14193,7 @@ fn rocblas_strsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14233,7 +14233,7 @@ fn rocblas_dcopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -14256,7 +14256,7 @@ fn rocblas_zdotu_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -14281,7 +14281,7 @@ fn rocblas_bfdot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -14308,7 +14308,7 @@ fn rocblas_stbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14335,7 +14335,7 @@ fn rocblas_saxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -14361,7 +14361,7 @@ fn rocblas_zher_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -14385,7 +14385,7 @@ fn rocblas_icamin_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -14409,7 +14409,7 @@ fn rocblas_ztrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14519,7 +14519,7 @@ fn rocblas_cher2k(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14548,7 +14548,7 @@ fn rocblas_zspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -14574,7 +14574,7 @@ fn rocblas_cgeru_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -14603,7 +14603,7 @@ fn rocblas_zhpr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -14630,7 +14630,7 @@ fn rocblas_caxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -14660,7 +14660,7 @@ fn rocblas_zsyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14692,7 +14692,7 @@ fn rocblas_ddgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -14726,7 +14726,7 @@ fn rocblas_cgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14815,7 +14815,7 @@ fn rocblas_sspmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -14847,7 +14847,7 @@ fn rocblas_ctbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -14992,7 +14992,7 @@ fn rocblas_chemm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -15046,7 +15046,7 @@ fn rocblas_dtbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15075,7 +15075,7 @@ fn rocblas_ztbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15174,7 +15174,7 @@ fn rocblas_chemv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -15227,7 +15227,7 @@ fn rocblas_zgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -15265,7 +15265,7 @@ fn rocblas_zgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15308,7 +15308,7 @@ fn rocblas_idamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float64], Int32, UnsafePointer[Int32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -15325,7 +15325,7 @@ fn rocblas_drotm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -15348,7 +15348,7 @@ fn rocblas_cscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -15375,7 +15375,7 @@ fn rocblas_zsyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15404,7 +15404,7 @@ fn rocblas_dspr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -15429,7 +15429,7 @@ fn rocblas_icamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -15455,7 +15455,7 @@ fn rocblas_dsyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -15484,7 +15484,7 @@ fn rocblas_cgerc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -15520,7 +15520,7 @@ fn rocblas_zsyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15582,7 +15582,7 @@ fn rocblas_cgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15640,7 +15640,7 @@ fn rocblas_dtrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15689,7 +15689,7 @@ fn rocblas_cgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -15738,7 +15738,7 @@ fn rocblas_sspr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -15766,7 +15766,7 @@ fn rocblas_zher2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -15797,7 +15797,7 @@ fn rocblas_dsymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -15912,7 +15912,7 @@ fn rocblas_cher2k_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -15959,7 +15959,7 @@ fn rocblas_ztrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -15988,7 +15988,7 @@ fn rocblas_ztpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -16034,7 +16034,7 @@ fn rocblas_zsyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -16082,7 +16082,7 @@ fn rocblas_zsyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -16102,7 +16102,7 @@ fn rocblas_device_malloc_free(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_free",
-        fn (UnsafePointer[MallocBase]) -> Status,
+        fn(UnsafePointer[MallocBase]) -> Status,
     ]()(ptr)
 
 
@@ -16123,7 +16123,7 @@ fn rocblas_zhpr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -16166,7 +16166,7 @@ fn rocblas_icamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -16187,7 +16187,7 @@ fn rocblas_idamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float64], Int32, UnsafePointer[Int32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -16207,7 +16207,7 @@ fn rocblas_ctrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -16236,7 +16236,7 @@ fn rocblas_zaxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -16269,7 +16269,7 @@ fn rocblas_cgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -16312,7 +16312,7 @@ fn rocblas_crotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat32],
             UnsafePointer[ComplexFloat32],
@@ -16375,7 +16375,7 @@ fn rocblas_srot_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -16432,7 +16432,7 @@ fn rocblas_srot(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -16459,7 +16459,7 @@ fn rocblas_zdotc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -16548,7 +16548,7 @@ fn rocblas_scal_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -16585,7 +16585,7 @@ fn rocblas_cscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -16614,7 +16614,7 @@ fn rocblas_dspr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -16656,7 +16656,7 @@ fn rocblas_dnrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -16679,7 +16679,7 @@ fn rocblas_ddot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -16701,7 +16701,7 @@ fn rocblas_idamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float64], Int64, UnsafePointer[Int64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -16725,7 +16725,7 @@ fn rocblas_csyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -16773,7 +16773,7 @@ fn rocblas_cdotu_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -16810,7 +16810,7 @@ fn rocblas_hgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -16943,7 +16943,7 @@ fn rocblas_dot_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -17061,7 +17061,7 @@ fn rocblas_ssbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -17116,7 +17116,7 @@ fn rocblas_zsymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -17149,7 +17149,7 @@ fn rocblas_dtpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -17187,7 +17187,7 @@ fn rocblas_zdscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -17208,7 +17208,7 @@ fn rocblas_izamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -17236,7 +17236,7 @@ fn rocblas_tssgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -17274,7 +17274,7 @@ fn rocblas_cgerc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -17328,7 +17328,7 @@ fn rocblas_dgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -17384,7 +17384,7 @@ fn rocblas_dgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -17427,7 +17427,7 @@ fn rocblas_zscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -17449,7 +17449,7 @@ fn rocblas_csyr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -17481,7 +17481,7 @@ fn rocblas_ztrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -17533,7 +17533,7 @@ fn rocblas_dsbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -17564,7 +17564,7 @@ fn rocblas_dger_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -17675,7 +17675,7 @@ fn rocblas_ssymm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -17720,7 +17720,7 @@ fn rocblas_cdotc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -17747,7 +17747,7 @@ fn rocblas_stbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -17775,7 +17775,7 @@ fn rocblas_start_device_memory_size_query(handle: Handle) raises -> Status:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_start_device_memory_size_query", fn (Handle) -> Status
+        "rocblas_start_device_memory_size_query", fn(Handle) -> Status
     ]()(handle)
 
 
@@ -17793,7 +17793,7 @@ fn rocblas_zher2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -17818,7 +17818,7 @@ fn rocblas_dswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -17844,7 +17844,7 @@ fn rocblas_dsyrk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -17875,7 +17875,7 @@ fn rocblas_csrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -17901,7 +17901,7 @@ fn rocblas_sswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sswap_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -17926,7 +17926,7 @@ fn rocblas_saxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -17982,7 +17982,7 @@ fn rocblas_sswap_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -18008,7 +18008,7 @@ fn rocblas_ctbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -18039,7 +18039,7 @@ fn rocblas_stop_device_memory_size_query(
     """
     return _get_dylib_function[
         "rocblas_stop_device_memory_size_query",
-        fn (Handle, UnsafePointer[Int]) -> Status,
+        fn(Handle, UnsafePointer[Int]) -> Status,
     ]()(handle, size)
 
 
@@ -18058,7 +18058,7 @@ fn rocblas_zgerc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -18086,7 +18086,7 @@ fn rocblas_daxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -18109,7 +18109,7 @@ fn rocblas_dswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -18217,7 +18217,7 @@ fn rocblas_chemm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -18266,7 +18266,7 @@ fn rocblas_stpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -18309,7 +18309,7 @@ fn rocblas_ztrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrtri_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -18349,7 +18349,7 @@ fn rocblas_dspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -18371,7 +18371,7 @@ fn rocblas_idamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float64], Int64, UnsafePointer[Int64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -18389,7 +18389,7 @@ fn rocblas_scal_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -18416,7 +18416,7 @@ fn rocblas_ztbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -18519,7 +18519,7 @@ fn rocblas_axpy_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -18564,7 +18564,7 @@ fn rocblas_cspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -18589,7 +18589,7 @@ fn rocblas_ztrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -18621,7 +18621,7 @@ fn rocblas_chpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -18750,7 +18750,7 @@ fn rocblas_chpr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -18798,7 +18798,7 @@ fn rocblas_dsbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -18825,7 +18825,7 @@ fn rocblas_dasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -18845,7 +18845,7 @@ fn rocblas_zscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -18867,7 +18867,7 @@ fn rocblas_ztpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -18963,7 +18963,7 @@ fn rocblas_chpr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -18993,7 +18993,7 @@ fn rocblas_csyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -19022,7 +19022,7 @@ fn rocblas_ctrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19056,7 +19056,7 @@ fn rocblas_zhbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -19111,7 +19111,7 @@ fn rocblas_csyr2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19140,7 +19140,7 @@ fn rocblas_izamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -19168,7 +19168,7 @@ fn rocblas_ctrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19211,7 +19211,7 @@ fn rocblas_ssyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -19239,7 +19239,7 @@ fn rocblas_zsyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -19268,7 +19268,7 @@ fn rocblas_dtbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19369,7 +19369,7 @@ fn rocblas_sgbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -19400,7 +19400,7 @@ fn rocblas_ctrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -19423,7 +19423,7 @@ fn rocblas_scnrm2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -19453,7 +19453,7 @@ fn rocblas_sgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -19504,7 +19504,7 @@ fn rocblas_stbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19529,7 +19529,7 @@ fn rocblas_cscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -19552,7 +19552,7 @@ fn rocblas_cswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -19584,7 +19584,7 @@ fn rocblas_cher2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -19694,7 +19694,7 @@ fn rocblas_axpy_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_axpy_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -19740,7 +19740,7 @@ fn rocblas_ztrmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19783,7 +19783,7 @@ fn rocblas_ztpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -19812,7 +19812,7 @@ fn rocblas_dspmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -19970,7 +19970,7 @@ fn rocblas_strmm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -20014,7 +20014,7 @@ fn rocblas_isamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -20042,7 +20042,7 @@ fn rocblas_hshgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -20071,7 +20071,7 @@ fn rocblas_scasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -20097,7 +20097,7 @@ fn rocblas_dsyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -20215,7 +20215,7 @@ fn rocblas_ssyrk_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -20260,7 +20260,7 @@ fn rocblas_dscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -20291,7 +20291,7 @@ fn rocblas_dsymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -20344,7 +20344,7 @@ fn rocblas_dgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -20378,7 +20378,7 @@ fn rocblas_crotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat32],
             Int64,
@@ -20541,7 +20541,7 @@ fn rocblas_trsm_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_batched_ex",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -20592,7 +20592,7 @@ fn rocblas_dswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -20618,7 +20618,7 @@ fn rocblas_zrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -20640,7 +20640,7 @@ fn rocblas_scnrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -20662,7 +20662,7 @@ fn rocblas_zdotc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -20684,7 +20684,7 @@ fn rocblas_csscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -20731,7 +20731,7 @@ fn rocblas_sswap(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -20754,7 +20754,7 @@ fn rocblas_dtpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -20776,7 +20776,7 @@ fn rocblas_icamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -20803,7 +20803,7 @@ fn rocblas_sgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -20882,7 +20882,7 @@ fn rocblas_sdot_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sdot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -20915,7 +20915,7 @@ fn rocblas_dgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -21010,7 +21010,7 @@ fn rocblas_stpmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -21057,7 +21057,7 @@ fn rocblas_dsymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -21109,7 +21109,7 @@ fn rocblas_dotc_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -21153,7 +21153,7 @@ fn rocblas_cdgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -21180,7 +21180,7 @@ fn rocblas_haxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float16],
@@ -21215,7 +21215,7 @@ fn rocblas_dgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -21270,7 +21270,7 @@ fn rocblas_zsyr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -21295,7 +21295,7 @@ fn rocblas_sdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -21393,7 +21393,7 @@ fn rocblas_rot_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -21445,7 +21445,7 @@ fn rocblas_tstgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -21498,7 +21498,7 @@ fn rocblas_srotm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -21537,7 +21537,7 @@ fn rocblas_zswap_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -21566,7 +21566,7 @@ fn rocblas_dsyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -21597,7 +21597,7 @@ fn rocblas_zswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -21629,7 +21629,7 @@ fn rocblas_axpy_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -21681,7 +21681,7 @@ fn rocblas_cgeru_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -21729,7 +21729,7 @@ fn rocblas_zdgmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdgmm",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -21850,7 +21850,7 @@ fn rocblas_ssyrkx_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -21952,7 +21952,7 @@ fn rocblas_chemv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -21984,7 +21984,7 @@ fn rocblas_ztrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22112,7 +22112,7 @@ fn rocblas_ssyr2k_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22155,7 +22155,7 @@ fn rocblas_srotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             UnsafePointer[Float32],
@@ -22176,7 +22176,7 @@ fn rocblas_snrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -22227,7 +22227,7 @@ fn rocblas_snrm2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -22252,7 +22252,7 @@ fn rocblas_zhpr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -22281,7 +22281,7 @@ fn rocblas_caxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -22349,7 +22349,7 @@ fn rocblas_srotm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotm",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -22380,7 +22380,7 @@ fn rocblas_dgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -22430,7 +22430,7 @@ fn rocblas_ddot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -22461,7 +22461,7 @@ fn rocblas_zhemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -22492,7 +22492,7 @@ fn rocblas_dger(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -22521,7 +22521,7 @@ fn rocblas_chpr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -22548,7 +22548,7 @@ fn rocblas_zaxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -22575,7 +22575,7 @@ fn rocblas_ztrmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22599,7 +22599,7 @@ fn rocblas_sscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float32], UnsafePointer[Float32], Int64
         ) -> Status,
     ]()(handle, n, alpha, x, incx)
@@ -22623,7 +22623,7 @@ fn rocblas_zgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -22671,7 +22671,7 @@ fn rocblas_ctrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22702,7 +22702,7 @@ fn rocblas_csyrk_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22733,7 +22733,7 @@ fn rocblas_zhpr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -22760,7 +22760,7 @@ fn rocblas_saxpy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -22838,7 +22838,7 @@ fn rocblas_ssymv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -22872,7 +22872,7 @@ fn rocblas_dtbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -22920,7 +22920,7 @@ fn rocblas_dgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -23018,7 +23018,7 @@ fn rocblas_chpmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -23050,7 +23050,7 @@ fn rocblas_dgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgeam",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -23083,7 +23083,7 @@ fn rocblas_zhemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -23116,7 +23116,7 @@ fn rocblas_sspr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -23158,7 +23158,7 @@ fn rocblas_srotmg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             UnsafePointer[Float32],
@@ -23187,7 +23187,7 @@ fn rocblas_zsyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -23239,7 +23239,7 @@ fn rocblas_zgerc_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -23284,7 +23284,7 @@ fn rocblas_izamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -23307,7 +23307,7 @@ fn rocblas_bfdot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[BFloat16],
@@ -23329,7 +23329,7 @@ fn rocblas_drotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -23461,7 +23461,7 @@ fn rocblas_ssyrkx_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -23576,7 +23576,7 @@ fn rocblas_stpmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -23603,7 +23603,7 @@ fn rocblas_cgeru(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -23637,7 +23637,7 @@ fn rocblas_dtrsm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -23685,7 +23685,7 @@ fn rocblas_ddot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -23710,7 +23710,7 @@ fn rocblas_zdrot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -23738,7 +23738,7 @@ fn rocblas_ztpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -23777,7 +23777,7 @@ fn rocblas_cspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -23805,7 +23805,7 @@ fn rocblas_dtrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsm_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -23842,7 +23842,7 @@ fn rocblas_dgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -23889,7 +23889,7 @@ fn rocblas_izamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -23994,7 +23994,7 @@ fn rocblas_sspr2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -24038,7 +24038,7 @@ fn rocblas_zdrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -24060,7 +24060,7 @@ fn rocblas_zdscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -24151,7 +24151,7 @@ fn rocblas_sgemm_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -24283,7 +24283,7 @@ fn rocblas_stbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24314,7 +24314,7 @@ fn rocblas_csyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -24353,7 +24353,7 @@ fn rocblas_dsyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24405,7 +24405,7 @@ fn rocblas_dtpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24440,7 +24440,7 @@ fn rocblas_dgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24497,7 +24497,7 @@ fn rocblas_dtpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24543,7 +24543,7 @@ fn rocblas_sspmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -24593,7 +24593,7 @@ fn rocblas_dgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -24628,7 +24628,7 @@ fn rocblas_zher2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -24729,7 +24729,7 @@ fn rocblas_strsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24757,7 +24757,7 @@ fn rocblas_hdot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float16],
@@ -24787,7 +24787,7 @@ fn rocblas_ctpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24826,7 +24826,7 @@ fn rocblas_daxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_daxpy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -24848,7 +24848,7 @@ fn rocblas_dcopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -24870,7 +24870,7 @@ fn rocblas_ccopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -24896,7 +24896,7 @@ fn rocblas_zrotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat64],
             Int64,
@@ -24921,7 +24921,7 @@ fn rocblas_dznrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -24942,7 +24942,7 @@ fn rocblas_dzasum_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -24966,7 +24966,7 @@ fn rocblas_ztpsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -24994,7 +24994,7 @@ fn rocblas_sspmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -25031,7 +25031,7 @@ fn rocblas_dgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_kernel_name",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -25090,7 +25090,7 @@ fn rocblas_tssgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -25204,7 +25204,7 @@ fn rocblas_rot_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_rot_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -25258,7 +25258,7 @@ fn rocblas_csyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -25309,7 +25309,7 @@ fn rocblas_zhemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -25342,7 +25342,7 @@ fn rocblas_csyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -25379,7 +25379,7 @@ fn rocblas_zsymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -25507,7 +25507,7 @@ fn rocblas_stbsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -25606,7 +25606,7 @@ fn rocblas_stpsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stpsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -25631,7 +25631,7 @@ fn rocblas_dasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -25747,7 +25747,7 @@ fn rocblas_sgbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -25801,7 +25801,7 @@ fn rocblas_cdotc_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -25827,7 +25827,7 @@ fn rocblas_chpr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -25854,7 +25854,7 @@ fn rocblas_drot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -25883,7 +25883,7 @@ fn rocblas_dtpsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -25965,7 +25965,7 @@ fn rocblas_strtri(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -26061,7 +26061,7 @@ fn rocblas_dot_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -26103,7 +26103,7 @@ fn rocblas_get_version_string_size(len: UnsafePointer[Int]) raises -> Status:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_get_version_string_size", fn (UnsafePointer[Int]) -> Status
+        "rocblas_get_version_string_size", fn(UnsafePointer[Int]) -> Status
     ]()(len)
 
 
@@ -26116,7 +26116,7 @@ fn rocblas_dnrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float64], Int32, UnsafePointer[Float64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -26131,7 +26131,7 @@ fn rocblas_dscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float64], UnsafePointer[Float64], Int64
         ) -> Status,
     ]()(handle, n, alpha, x, incx)
@@ -26150,7 +26150,7 @@ fn rocblas_ctpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -26174,7 +26174,7 @@ fn rocblas_isamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -26199,7 +26199,7 @@ fn rocblas_csyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -26227,7 +26227,7 @@ fn rocblas_zdrot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -26256,7 +26256,7 @@ fn rocblas_dot_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -26298,7 +26298,7 @@ fn rocblas_cgerc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -26333,7 +26333,7 @@ fn rocblas_tstgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -26389,7 +26389,7 @@ fn rocblas_dspmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -26438,7 +26438,7 @@ fn rocblas_drotm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -26482,7 +26482,7 @@ fn rocblas_ztrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -26593,7 +26593,7 @@ fn rocblas_ssymv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -26644,7 +26644,7 @@ fn rocblas_axpy_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -26682,7 +26682,7 @@ fn rocblas_drotmg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             UnsafePointer[Float64],
@@ -26708,7 +26708,7 @@ fn rocblas_csyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -26744,7 +26744,7 @@ fn rocblas_dsyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -26797,7 +26797,7 @@ fn rocblas_zhemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -26850,7 +26850,7 @@ fn rocblas_ctrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -26896,7 +26896,7 @@ fn rocblas_dtrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -26922,7 +26922,7 @@ fn rocblas_hdot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float16],
@@ -26979,7 +26979,7 @@ fn rocblas_srot_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -27011,7 +27011,7 @@ fn rocblas_zher2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -27061,7 +27061,7 @@ fn rocblas_zsymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -27095,7 +27095,7 @@ fn rocblas_dsbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -27133,7 +27133,7 @@ fn rocblas_sgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -27207,7 +27207,7 @@ fn rocblas_scopy(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -27231,7 +27231,7 @@ fn rocblas_ctrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -27256,7 +27256,7 @@ fn rocblas_zdotc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -27280,7 +27280,7 @@ fn rocblas_drot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -27315,7 +27315,7 @@ fn rocblas_zgemmt_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemmt_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -27372,7 +27372,7 @@ fn rocblas_drot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -27453,7 +27453,7 @@ fn rocblas_cher2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -27482,7 +27482,7 @@ fn rocblas_ctbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -27514,7 +27514,7 @@ fn rocblas_dspr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -27559,7 +27559,7 @@ fn rocblas_cswap_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -27592,7 +27592,7 @@ fn rocblas_chemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -27643,7 +27643,7 @@ fn rocblas_zgerc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -27680,7 +27680,7 @@ fn rocblas_zsyr2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -27732,7 +27732,7 @@ fn rocblas_zher_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -27754,7 +27754,7 @@ fn rocblas_icamin(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamin",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -27797,7 +27797,7 @@ fn rocblas_sasum(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float32], Int32, UnsafePointer[Float32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -27821,7 +27821,7 @@ fn rocblas_dgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -27891,7 +27891,7 @@ fn rocblas_isamin_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -27918,7 +27918,7 @@ fn rocblas_drotmg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             Int64,
@@ -27967,7 +27967,7 @@ fn rocblas_ztrsm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -28014,7 +28014,7 @@ fn rocblas_dasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -28046,7 +28046,7 @@ fn rocblas_hshgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -28099,7 +28099,7 @@ fn rocblas_zher2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -28127,7 +28127,7 @@ fn rocblas_srot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -28160,7 +28160,7 @@ fn rocblas_hshgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -28212,7 +28212,7 @@ fn rocblas_ddot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -28238,7 +28238,7 @@ fn rocblas_izamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -28265,7 +28265,7 @@ fn rocblas_crot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -28294,7 +28294,7 @@ fn rocblas_ztpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -28320,7 +28320,7 @@ fn rocblas_dsyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -28393,7 +28393,7 @@ fn rocblas_sspmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -28458,7 +28458,7 @@ fn rocblas_ssyr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -28480,7 +28480,7 @@ fn rocblas_drotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             UnsafePointer[Float64],
@@ -28497,7 +28497,7 @@ fn rocblas_device_malloc_alloc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_alloc",
-        fn (
+        fn(
             Handle,
             UnsafePointer[UnsafePointer[MallocBase]],
             Int,
@@ -28519,7 +28519,7 @@ fn rocblas_ztrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -28548,7 +28548,7 @@ fn rocblas_zgerc_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -28580,7 +28580,7 @@ fn rocblas_csymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -28614,7 +28614,7 @@ fn rocblas_rot_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_rot_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -28645,7 +28645,7 @@ fn rocblas_rot_ex_64(
 
 
 fn rocblas_abort() raises:
-    _get_dylib_function["rocblas_abort", fn () -> NoneType]()()
+    _get_dylib_function["rocblas_abort", fn() -> NoneType]()()
 
 
 fn rocblas_dtrmv(
@@ -28661,7 +28661,7 @@ fn rocblas_dtrmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -28695,7 +28695,7 @@ fn rocblas_hssgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -28836,7 +28836,7 @@ fn rocblas_cherkx_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -28884,7 +28884,7 @@ fn rocblas_cdotc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -28952,7 +28952,7 @@ fn rocblas_sswap_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sswap_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -28987,7 +28987,7 @@ fn rocblas_dsymm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -29038,7 +29038,7 @@ fn rocblas_scasum_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -29102,7 +29102,7 @@ fn rocblas_ssyr_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -29131,7 +29131,7 @@ fn rocblas_dtbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -29169,7 +29169,7 @@ fn rocblas_ctrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -29223,7 +29223,7 @@ fn rocblas_cdotc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotc_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -29257,7 +29257,7 @@ fn rocblas_zgeam_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeam_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -29310,7 +29310,7 @@ fn rocblas_ccopy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -29340,7 +29340,7 @@ fn rocblas_ztrmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -29385,7 +29385,7 @@ fn rocblas_dtrtri_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -29538,7 +29538,7 @@ fn rocblas_geam_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_geam_ex",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -29602,7 +29602,7 @@ fn rocblas_ctbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -29626,7 +29626,7 @@ fn rocblas_is_user_managing_device_memory(handle: Handle) raises -> Bool:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_is_user_managing_device_memory", fn (Handle) -> Bool
+        "rocblas_is_user_managing_device_memory", fn(Handle) -> Bool
     ]()(handle)
 
 
@@ -29644,7 +29644,7 @@ fn rocblas_dtrsv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -29670,7 +29670,7 @@ fn rocblas_cswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -29693,7 +29693,7 @@ fn rocblas_dnrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -29721,7 +29721,7 @@ fn rocblas_axpy_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_axpy_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -29770,7 +29770,7 @@ fn rocblas_csymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -29824,7 +29824,7 @@ fn rocblas_dtrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -29942,7 +29942,7 @@ fn rocblas_chpr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -29971,7 +29971,7 @@ fn rocblas_strmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -30002,7 +30002,7 @@ fn rocblas_csymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -30111,7 +30111,7 @@ fn rocblas_chemm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chemm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -30138,7 +30138,7 @@ fn rocblas_izamin_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -30165,7 +30165,7 @@ fn rocblas_chpr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -30212,7 +30212,7 @@ fn rocblas_ctpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -30288,7 +30288,7 @@ fn rocblas_srotg(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             UnsafePointer[Float32],
@@ -30403,7 +30403,7 @@ fn rocblas_strsm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -30461,7 +30461,7 @@ fn rocblas_sgemm_kernel_name(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgemm_kernel_name",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -30524,7 +30524,7 @@ fn rocblas_zherkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -30574,7 +30574,7 @@ fn rocblas_ccopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -30603,7 +30603,7 @@ fn rocblas_cgerc_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -30720,7 +30720,7 @@ fn rocblas_sspr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -30748,7 +30748,7 @@ fn rocblas_ccopy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -30777,7 +30777,7 @@ fn rocblas_zherk(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zherk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -30956,7 +30956,7 @@ fn rocblas_strmm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -31016,7 +31016,7 @@ fn rocblas_ssyr2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -31064,7 +31064,7 @@ fn rocblas_zaxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -31098,7 +31098,7 @@ fn rocblas_dtrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -31152,7 +31152,7 @@ fn rocblas_zgbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -31315,7 +31315,7 @@ fn rocblas_gemm_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_batched_ex",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -31383,7 +31383,7 @@ fn rocblas_bfdot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -31410,7 +31410,7 @@ fn rocblas_sdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sdot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -31435,7 +31435,7 @@ fn rocblas_cscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -31500,7 +31500,7 @@ fn rocblas_strtri_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strtri_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -31526,7 +31526,7 @@ fn rocblas_zher(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -31556,7 +31556,7 @@ fn rocblas_zher2k(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -31591,7 +31591,7 @@ fn rocblas_hssgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -31756,7 +31756,7 @@ fn rocblas_trsm_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_ex",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -31807,7 +31807,7 @@ fn rocblas_zgeru_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -31833,7 +31833,7 @@ fn rocblas_snrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -31859,7 +31859,7 @@ fn rocblas_chemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chemv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -31891,7 +31891,7 @@ fn rocblas_ctrsm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -31921,7 +31921,7 @@ fn rocblas_zsyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -31953,7 +31953,7 @@ fn rocblas_cgbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -32069,7 +32069,7 @@ fn rocblas_cherkx(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -32098,7 +32098,7 @@ fn rocblas_zdotu_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -32125,7 +32125,7 @@ fn rocblas_zsyr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -32158,7 +32158,7 @@ fn rocblas_dger_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -32188,7 +32188,7 @@ fn rocblas_csyr2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -32223,7 +32223,7 @@ fn rocblas_dsbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -32278,7 +32278,7 @@ fn rocblas_zhbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -32306,7 +32306,7 @@ fn rocblas_zscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -32327,7 +32327,7 @@ fn rocblas_icamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -32349,7 +32349,7 @@ fn rocblas_idamin_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -32379,7 +32379,7 @@ fn rocblas_zsyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -32462,7 +32462,7 @@ fn rocblas_haxpy_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_haxpy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float16],
@@ -32490,7 +32490,7 @@ fn rocblas_zdrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -32590,7 +32590,7 @@ fn rocblas_sgemmt_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -32637,7 +32637,7 @@ fn rocblas_scasum_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -32671,7 +32671,7 @@ fn rocblas_cgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -32723,7 +32723,7 @@ fn rocblas_dscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -32753,7 +32753,7 @@ fn rocblas_dgbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgbmv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -32870,7 +32870,7 @@ fn rocblas_strsv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -32917,7 +32917,7 @@ fn rocblas_ztbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -32968,7 +32968,7 @@ fn rocblas_cgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -33018,7 +33018,7 @@ fn rocblas_sspr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -33052,7 +33052,7 @@ fn rocblas_zhemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -33125,7 +33125,7 @@ fn rocblas_sscal_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -33180,7 +33180,7 @@ fn rocblas_sasum_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sasum_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -33206,7 +33206,7 @@ fn rocblas_dtbmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -33235,7 +33235,7 @@ fn rocblas_ctbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -33261,7 +33261,7 @@ fn rocblas_dznrm2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -33288,7 +33288,7 @@ fn rocblas_chpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -33360,7 +33360,7 @@ fn rocblas_ssyr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -33387,7 +33387,7 @@ fn rocblas_zsyr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -33419,7 +33419,7 @@ fn rocblas_ctrsm_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -33561,7 +33561,7 @@ fn rocblas_sgeam_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -33623,7 +33623,7 @@ fn rocblas_ztrmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -33670,7 +33670,7 @@ fn rocblas_set_optimal_device_memory_size_impl(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_set_optimal_device_memory_size_impl",
-        fn (Handle, Int) -> Status,
+        fn(Handle, Int) -> Status,
     ]()(handle, count)
 
 
@@ -33685,7 +33685,7 @@ fn rocblas_zdotc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -33710,7 +33710,7 @@ fn rocblas_dsyr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -33739,7 +33739,7 @@ fn rocblas_ctbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -33773,7 +33773,7 @@ fn rocblas_dotc_strided_batched_ex(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -33817,7 +33817,7 @@ fn rocblas_cswap(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -33904,7 +33904,7 @@ fn rocblas_dot_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_dot_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -33944,7 +33944,7 @@ fn rocblas_cspr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -33968,7 +33968,7 @@ fn rocblas_dswap_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dswap_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -33992,7 +33992,7 @@ fn rocblas_crot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -34041,7 +34041,7 @@ fn rocblas_isamax_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -34061,7 +34061,7 @@ fn rocblas_drotg_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             UnsafePointer[Float64],
@@ -34083,7 +34083,7 @@ fn rocblas_zaxpy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -34113,7 +34113,7 @@ fn rocblas_cgeam(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -34146,7 +34146,7 @@ fn rocblas_ztbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34180,7 +34180,7 @@ fn rocblas_dot_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -34305,7 +34305,7 @@ fn rocblas_stbmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34341,7 +34341,7 @@ fn rocblas_set_workspace(
     """
     return _get_dylib_function[
         "rocblas_set_workspace",
-        fn (Handle, OpaquePointer, Int) -> Status,
+        fn(Handle, OpaquePointer, Int) -> Status,
     ]()(handle, addr, size)
 
 
@@ -34356,7 +34356,7 @@ fn rocblas_dscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -34386,7 +34386,7 @@ fn rocblas_dsyr2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34490,7 +34490,7 @@ fn rocblas_cher_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -34536,7 +34536,7 @@ fn rocblas_zsymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -34579,7 +34579,7 @@ fn rocblas_dasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dasum_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float64], Int64, UnsafePointer[Float64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -34655,7 +34655,7 @@ fn rocblas_strmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34685,7 +34685,7 @@ fn rocblas_ssymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -34715,7 +34715,7 @@ fn rocblas_zgerc(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgerc",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -34744,7 +34744,7 @@ fn rocblas_drotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             Int64,
@@ -34776,7 +34776,7 @@ fn rocblas_stbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34826,7 +34826,7 @@ fn rocblas_zsyrkx_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyrkx_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34872,7 +34872,7 @@ fn rocblas_dtpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -34901,7 +34901,7 @@ fn rocblas_zgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -35002,7 +35002,7 @@ fn rocblas_sspr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -35028,7 +35028,7 @@ fn rocblas_zscal_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -35054,7 +35054,7 @@ fn rocblas_dtbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -35080,7 +35080,7 @@ fn rocblas_drotmg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -35102,7 +35102,7 @@ fn rocblas_icamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_icamax_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -35127,7 +35127,7 @@ fn rocblas_sger_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -35151,7 +35151,7 @@ fn rocblas_izamax(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamax",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -35172,7 +35172,7 @@ fn rocblas_zhpr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -35202,7 +35202,7 @@ fn rocblas_dsymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -35252,7 +35252,7 @@ fn rocblas_cgemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -35282,7 +35282,7 @@ fn rocblas_zrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -35373,7 +35373,7 @@ fn rocblas_sgemm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -35423,7 +35423,7 @@ fn rocblas_dot_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dot_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -35466,7 +35466,7 @@ fn rocblas_strsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -35494,7 +35494,7 @@ fn rocblas_dspr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -35518,7 +35518,7 @@ fn rocblas_dzasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dzasum_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -35539,7 +35539,7 @@ fn rocblas_ddot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -35565,7 +35565,7 @@ fn rocblas_cher2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -35591,7 +35591,7 @@ fn rocblas_csscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -35618,7 +35618,7 @@ fn rocblas_cgerc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgerc_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -35651,7 +35651,7 @@ fn rocblas_tstgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tstgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -35682,7 +35682,7 @@ fn rocblas_hdot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float16],
@@ -35773,7 +35773,7 @@ fn rocblas_sgeam_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgeam_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -35817,7 +35817,7 @@ fn rocblas_zdscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -35842,7 +35842,7 @@ fn rocblas_ctrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -35956,7 +35956,7 @@ fn rocblas_cherk_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -36008,7 +36008,7 @@ fn rocblas_hgemm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hgemm",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -36051,7 +36051,7 @@ fn rocblas_zrotg(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat64],
             UnsafePointer[ComplexFloat64],
@@ -36075,7 +36075,7 @@ fn rocblas_cspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cspr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -36103,7 +36103,7 @@ fn rocblas_stpsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -36128,7 +36128,7 @@ fn rocblas_ddot_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddot_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -36150,7 +36150,7 @@ fn rocblas_idamax_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -36176,7 +36176,7 @@ fn rocblas_dotc_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dotc_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -36222,7 +36222,7 @@ fn rocblas_dger_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -36269,7 +36269,7 @@ fn rocblas_ztrmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -36301,7 +36301,7 @@ fn rocblas_ctrmm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -36414,7 +36414,7 @@ fn rocblas_chpr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -36438,7 +36438,7 @@ fn rocblas_zcopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -36504,7 +36504,7 @@ fn rocblas_scopy_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scopy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -36527,7 +36527,7 @@ fn rocblas_sasum_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sasum_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float32], Int64, UnsafePointer[Float32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -36553,7 +36553,7 @@ fn rocblas_cgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -36613,7 +36613,7 @@ fn rocblas_zgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -36703,7 +36703,7 @@ fn rocblas_srotmg(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotmg",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             UnsafePointer[Float32],
@@ -36735,7 +36735,7 @@ fn rocblas_zher2k_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -36847,7 +36847,7 @@ fn rocblas_sspr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -36878,7 +36878,7 @@ fn rocblas_zgbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -36924,7 +36924,7 @@ fn rocblas_idamax_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamax_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -36950,7 +36950,7 @@ fn rocblas_zhemv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -36981,7 +36981,7 @@ fn rocblas_csymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -37008,7 +37008,7 @@ fn rocblas_dcopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -37029,7 +37029,7 @@ fn rocblas_snrm2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_snrm2_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float32], Int64, UnsafePointer[Float32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -37044,7 +37044,7 @@ fn rocblas_zdscal_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -37071,7 +37071,7 @@ fn rocblas_hssgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hssgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -37101,7 +37101,7 @@ fn rocblas_zscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -37124,7 +37124,7 @@ fn rocblas_zhpr_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -37148,7 +37148,7 @@ fn rocblas_dcopy_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dcopy_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -37239,7 +37239,7 @@ fn rocblas_sgemmt(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemmt",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -37287,7 +37287,7 @@ fn rocblas_zhpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -37313,7 +37313,7 @@ fn rocblas_drotmg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotmg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -37342,7 +37342,7 @@ fn rocblas_ctbsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -37392,7 +37392,7 @@ fn rocblas_zgeru_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -37443,7 +37443,7 @@ fn rocblas_strsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsm_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -37486,7 +37486,7 @@ fn rocblas_zdscal_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdscal_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -37581,7 +37581,7 @@ fn rocblas_cherk(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -37615,7 +37615,7 @@ fn rocblas_dsyr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -37664,7 +37664,7 @@ fn rocblas_dtbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtbsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -37702,7 +37702,7 @@ fn rocblas_cgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -37837,7 +37837,7 @@ fn rocblas_chbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -37869,7 +37869,7 @@ fn rocblas_dspmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -37901,7 +37901,7 @@ fn rocblas_ztrsm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched_64",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -37978,7 +37978,7 @@ fn rocblas_snrm2_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_snrm2_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -38071,7 +38071,7 @@ fn rocblas_stbsv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -38097,7 +38097,7 @@ fn rocblas_ccopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ccopy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -38123,7 +38123,7 @@ fn rocblas_sger_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sger_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -38151,7 +38151,7 @@ fn rocblas_ctpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -38179,7 +38179,7 @@ fn rocblas_drot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -38210,7 +38210,7 @@ fn rocblas_cher2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -38235,7 +38235,7 @@ fn rocblas_isamax_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_64",
-        fn (
+        fn(
             Handle, Int64, UnsafePointer[Float32], Int64, UnsafePointer[Int64]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -38256,7 +38256,7 @@ fn rocblas_zsyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -38291,7 +38291,7 @@ fn rocblas_cgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -38321,7 +38321,7 @@ fn rocblas_scasum_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -38347,7 +38347,7 @@ fn rocblas_dsyr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -38423,7 +38423,7 @@ fn rocblas_ssyr_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -38533,7 +38533,7 @@ fn rocblas_sgbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgbmv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -38581,7 +38581,7 @@ fn rocblas_ztpsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -38605,7 +38605,7 @@ fn rocblas_zspr(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -38678,7 +38678,7 @@ fn rocblas_sgemv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemv",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -38708,7 +38708,7 @@ fn rocblas_dtrsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -38733,7 +38733,7 @@ fn rocblas_zcopy_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -38764,7 +38764,7 @@ fn rocblas_ssymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssymv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -38817,7 +38817,7 @@ fn rocblas_dsbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -38850,7 +38850,7 @@ fn rocblas_ztpmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -38897,7 +38897,7 @@ fn rocblas_dgemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemm_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -38942,7 +38942,7 @@ fn rocblas_cscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -39070,7 +39070,7 @@ fn rocblas_cherkx_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -39122,7 +39122,7 @@ fn rocblas_drotm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -39157,7 +39157,7 @@ fn rocblas_zgbmv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -39209,7 +39209,7 @@ fn rocblas_csscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -39233,7 +39233,7 @@ fn rocblas_crot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -39262,7 +39262,7 @@ fn rocblas_dsyr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -39298,7 +39298,7 @@ fn rocblas_csymm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -39346,7 +39346,7 @@ fn rocblas_zspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -39375,7 +39375,7 @@ fn rocblas_ztbsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -39422,7 +39422,7 @@ fn rocblas_isamin(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamin",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float32], Int32, UnsafePointer[Int32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -39440,7 +39440,7 @@ fn rocblas_dtrtri(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrtri",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -39511,7 +39511,7 @@ fn rocblas_cher(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -39542,7 +39542,7 @@ fn rocblas_zhpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -39587,7 +39587,7 @@ fn rocblas_srotm_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -39608,7 +39608,7 @@ fn rocblas_dscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float64], UnsafePointer[Float64], Int32
         ) -> Status,
     ]()(handle, n, alpha, x, incx)
@@ -39626,7 +39626,7 @@ fn rocblas_zhpr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -39658,7 +39658,7 @@ fn rocblas_csymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -39706,7 +39706,7 @@ fn rocblas_ctpsv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -39768,7 +39768,7 @@ fn rocblas_srotg_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             Int64,
@@ -39799,7 +39799,7 @@ fn rocblas_ssbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -39826,7 +39826,7 @@ fn rocblas_sscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -39911,7 +39911,7 @@ fn rocblas_stbsv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbsv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -39944,7 +39944,7 @@ fn rocblas_ddgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ddgmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -39992,7 +39992,7 @@ fn rocblas_dspmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -40022,7 +40022,7 @@ fn rocblas_sspmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -40056,7 +40056,7 @@ fn rocblas_zher2k_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher2k_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -40107,7 +40107,7 @@ fn rocblas_csyrkx(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csyrkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -40188,7 +40188,7 @@ fn rocblas_strmv(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -40215,7 +40215,7 @@ fn rocblas_zher_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -40242,7 +40242,7 @@ fn rocblas_csrot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -40274,7 +40274,7 @@ fn rocblas_cgeru_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeru_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -40326,7 +40326,7 @@ fn rocblas_zhemm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -40374,7 +40374,7 @@ fn rocblas_nrm2_strided_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_strided_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -40409,7 +40409,7 @@ fn rocblas_is_managing_device_memory(handle: Handle) raises -> Bool:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_is_managing_device_memory", fn (Handle) -> Bool
+        "rocblas_is_managing_device_memory", fn(Handle) -> Bool
     ]()(handle)
 
 
@@ -40430,7 +40430,7 @@ fn rocblas_set_device_memory_size(handle: Handle, size: Int) raises -> Status:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_set_device_memory_size", fn (Handle, Int) -> Status
+        "rocblas_set_device_memory_size", fn(Handle, Int) -> Status
     ]()(handle, size)
 
 
@@ -40452,7 +40452,7 @@ fn rocblas_cdgmm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdgmm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Int32,
@@ -40558,7 +40558,7 @@ fn rocblas_chpr(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chpr",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -40674,7 +40674,7 @@ fn rocblas_stbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_stbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -40721,7 +40721,7 @@ fn rocblas_crot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -40749,7 +40749,7 @@ fn rocblas_ztpmv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -40926,7 +40926,7 @@ fn rocblas_trsm_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_trsm_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -40985,7 +40985,7 @@ fn rocblas_ctbsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41015,7 +41015,7 @@ fn rocblas_dspr2_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -41049,7 +41049,7 @@ fn rocblas_zsymv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -41101,7 +41101,7 @@ fn rocblas_dsymv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -41129,7 +41129,7 @@ fn rocblas_isamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamin_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -41153,7 +41153,7 @@ fn rocblas_zdotc_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotc_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -41180,7 +41180,7 @@ fn rocblas_ssyr2_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssyr2_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -41211,7 +41211,7 @@ fn rocblas_dtrsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41253,7 +41253,7 @@ fn rocblas_drotm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotm_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -41288,7 +41288,7 @@ fn rocblas_sgbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sgbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -41342,7 +41342,7 @@ fn rocblas_hdot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hdot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -41371,7 +41371,7 @@ fn rocblas_chbmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_chbmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -41398,7 +41398,7 @@ fn rocblas_srotg_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotg_batched_64",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -41422,7 +41422,7 @@ fn rocblas_stpmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41447,7 +41447,7 @@ fn rocblas_cdotu_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cdotu_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -41473,7 +41473,7 @@ fn rocblas_dspr_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -41499,7 +41499,7 @@ fn rocblas_scnrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -41523,7 +41523,7 @@ fn rocblas_csrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csrot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -41555,7 +41555,7 @@ fn rocblas_dgemmt_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dgemmt_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41593,7 +41593,7 @@ fn rocblas_dgemmt_batched(
 
 fn rocblas_device_malloc_set_default_memory_size(size: Int) raises:
     _get_dylib_function[
-        "rocblas_device_malloc_set_default_memory_size", fn (Int) -> NoneType
+        "rocblas_device_malloc_set_default_memory_size", fn(Int) -> NoneType
     ]()(size)
 
 
@@ -41610,7 +41610,7 @@ fn rocblas_zswap_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zswap_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -41641,7 +41641,7 @@ fn rocblas_hshgemv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_hshgemv_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -41678,7 +41678,7 @@ fn rocblas_ssbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ssbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -41711,7 +41711,7 @@ fn rocblas_ztbmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41741,7 +41741,7 @@ fn rocblas_zgeru_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -41771,7 +41771,7 @@ fn rocblas_ctpmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41810,7 +41810,7 @@ fn rocblas_caxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_caxpy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -41838,7 +41838,7 @@ fn rocblas_zgemv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -41865,7 +41865,7 @@ fn rocblas_drotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -41893,7 +41893,7 @@ fn rocblas_ztrsm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -41943,7 +41943,7 @@ fn rocblas_cgemmt(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemmt",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -41987,7 +41987,7 @@ fn rocblas_izamin_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_izamin_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -42012,7 +42012,7 @@ fn rocblas_status_to_string(status: Status) raises -> UnsafePointer[Int8]:
     ****************************************************************************.
     """
     return _get_dylib_function[
-        "rocblas_status_to_string", fn (Status) -> UnsafePointer[Int8]
+        "rocblas_status_to_string", fn(Status) -> UnsafePointer[Int8]
     ]()(status)
 
 
@@ -42027,7 +42027,7 @@ fn rocblas_saxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -42108,7 +42108,7 @@ fn rocblas_cher2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cher2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -42136,7 +42136,7 @@ fn rocblas_ztpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -42225,7 +42225,7 @@ fn rocblas_sspmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -42271,7 +42271,7 @@ fn rocblas_drot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -42299,7 +42299,7 @@ fn rocblas_zsymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -42324,7 +42324,7 @@ fn rocblas_csscal(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csscal",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -42346,7 +42346,7 @@ fn rocblas_zrot(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrot",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -42381,7 +42381,7 @@ fn rocblas_zgemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -42438,7 +42438,7 @@ fn rocblas_zdrot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -42470,7 +42470,7 @@ fn rocblas_ctrsm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -42503,7 +42503,7 @@ fn rocblas_ctrsv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrsv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -42565,7 +42565,7 @@ fn rocblas_isamax(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_isamax",
-        fn (
+        fn(
             Handle, Int32, UnsafePointer[Float32], Int32, UnsafePointer[Int32]
         ) -> Status,
     ]()(handle, n, x, incx, result)
@@ -42585,7 +42585,7 @@ fn rocblas_ztrsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -42691,7 +42691,7 @@ fn rocblas_ssymm(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssymm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -42724,7 +42724,7 @@ fn rocblas_dspmv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspmv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -42794,7 +42794,7 @@ fn rocblas_sger(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sger",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -42819,7 +42819,7 @@ fn rocblas_crotg_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crotg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -42846,7 +42846,7 @@ fn rocblas_srotmg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotmg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float32],
             Int64,
@@ -42883,7 +42883,7 @@ fn rocblas_device_malloc_get(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_device_malloc_get",
-        fn (
+        fn(
             UnsafePointer[MallocBase],
             Int,
             UnsafePointer[OpaquePointer],
@@ -42978,7 +42978,7 @@ fn rocblas_cherk_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_cherk_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -43008,7 +43008,7 @@ fn rocblas_crot_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_crot_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -43033,7 +43033,7 @@ fn rocblas_zaxpy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zaxpy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -43056,7 +43056,7 @@ fn rocblas_dnrm2_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -43127,7 +43127,7 @@ fn rocblas_ssyr2_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyr2_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -43213,7 +43213,7 @@ fn rocblas_nrm2_strided_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_strided_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -43249,7 +43249,7 @@ fn rocblas_cswap_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cswap_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -43276,7 +43276,7 @@ fn rocblas_csymv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -43305,7 +43305,7 @@ fn rocblas_nrm2_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_nrm2_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -43384,7 +43384,7 @@ fn rocblas_scal_batched_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_scal_batched_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -43422,7 +43422,7 @@ fn rocblas_zdotu_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -43447,7 +43447,7 @@ fn rocblas_scopy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scopy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -43469,7 +43469,7 @@ fn rocblas_idamin_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_idamin_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float64],
@@ -43492,7 +43492,7 @@ fn rocblas_haxpy_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float16],
@@ -43564,7 +43564,7 @@ fn rocblas_nrm2_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_nrm2_ex",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -43596,7 +43596,7 @@ fn rocblas_ztrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztrmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -43643,7 +43643,7 @@ fn rocblas_sspr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_sspr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -43666,7 +43666,7 @@ fn rocblas_zhpr_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -43693,7 +43693,7 @@ fn rocblas_dsymv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -43727,7 +43727,7 @@ fn rocblas_cgeam_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgeam_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -43840,7 +43840,7 @@ fn rocblas_sspr2(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sspr2",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -43869,7 +43869,7 @@ fn rocblas_zsyr2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsyr2_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -43898,7 +43898,7 @@ fn rocblas_ctrtri_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrtri_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Diagonal,
@@ -43925,7 +43925,7 @@ fn rocblas_cher_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cher_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -43954,7 +43954,7 @@ fn rocblas_get_device_memory_size(
     """
     return _get_dylib_function[
         "rocblas_get_device_memory_size",
-        fn (Handle, UnsafePointer[Int]) -> Status,
+        fn(Handle, UnsafePointer[Int]) -> Status,
     ]()(handle, size)
 
 
@@ -43973,7 +43973,7 @@ fn rocblas_dger_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dger_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             Int64,
@@ -44006,7 +44006,7 @@ fn rocblas_zhpr2_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpr2_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -44050,7 +44050,7 @@ fn rocblas_zspr_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zspr_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -44078,7 +44078,7 @@ fn rocblas_csymv(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_csymv",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -44104,7 +44104,7 @@ fn rocblas_dscal_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dscal_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float64],
@@ -44135,7 +44135,7 @@ fn rocblas_cgemv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cgemv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Operation,
             Int64,
@@ -44187,7 +44187,7 @@ fn rocblas_stbsv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stbsv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -44223,7 +44223,7 @@ fn rocblas_zhemm_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -44273,7 +44273,7 @@ fn rocblas_dnrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dnrm2_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -44298,7 +44298,7 @@ fn rocblas_zgeru(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgeru",
-        fn (
+        fn(
             Handle,
             Int32,
             Int32,
@@ -44323,7 +44323,7 @@ fn rocblas_zcopy(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zcopy",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -44435,7 +44435,7 @@ fn rocblas_ssyrkx(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssyrkx",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -44465,7 +44465,7 @@ fn rocblas_zdotu_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             OpaquePointer,
@@ -44493,7 +44493,7 @@ fn rocblas_ctpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctpsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -44536,7 +44536,7 @@ fn rocblas_zher_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zher_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -44576,7 +44576,7 @@ fn rocblas_srotm_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srotm_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -44609,7 +44609,7 @@ fn rocblas_tssgemv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_tssgemv_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -44658,7 +44658,7 @@ fn rocblas_isamax_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_isamax_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float32],
@@ -44684,7 +44684,7 @@ fn rocblas_drotg_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_drotg_strided_batched_64",
-        fn (
+        fn(
             Handle,
             UnsafePointer[Float64],
             Int64,
@@ -44709,7 +44709,7 @@ fn rocblas_scnrm2_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scnrm2_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -44735,7 +44735,7 @@ fn rocblas_zdrot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdrot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat64],
@@ -44766,7 +44766,7 @@ fn rocblas_ctbmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -44796,7 +44796,7 @@ fn rocblas_bfdot_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[BFloat16],
@@ -44828,7 +44828,7 @@ fn rocblas_zgemv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zgemv_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Int32,
@@ -44860,7 +44860,7 @@ fn rocblas_stpmv_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_stpmv_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -44907,7 +44907,7 @@ fn rocblas_srotg_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_srotg_batched",
-        fn (
+        fn(
             Handle,
             OpaquePointer,
             OpaquePointer,
@@ -44927,7 +44927,7 @@ fn rocblas_dznrm2(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dznrm2",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -44954,7 +44954,7 @@ fn rocblas_ctbmv_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctbmv_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45003,7 +45003,7 @@ fn rocblas_ztbsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ztbsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45050,7 +45050,7 @@ fn rocblas_zhpmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zhpmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -45080,7 +45080,7 @@ fn rocblas_dtrmv_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtrmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45110,7 +45110,7 @@ fn rocblas_dtpsv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dtpsv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45157,7 +45157,7 @@ fn rocblas_zsymv_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zsymv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -45207,7 +45207,7 @@ fn rocblas_strsv_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_strsv_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45243,7 +45243,7 @@ fn rocblas_dsyrkx_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsyrkx_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Operation,
@@ -45297,7 +45297,7 @@ fn rocblas_haxpy_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_haxpy_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[Float16],
@@ -45326,7 +45326,7 @@ fn rocblas_zrotg_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zrotg_strided_batched",
-        fn (
+        fn(
             Handle,
             UnsafePointer[ComplexFloat64],
             Int64,
@@ -45354,7 +45354,7 @@ fn rocblas_srot_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_srot_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -45370,7 +45370,7 @@ fn rocblas_srot_batched_64(
 
 fn rocblas_is_device_memory_size_query(handle: Handle) raises -> Bool:
     return _get_dylib_function[
-        "rocblas_is_device_memory_size_query", fn (Handle) -> Bool
+        "rocblas_is_device_memory_size_query", fn(Handle) -> Bool
     ]()(handle)
 
 
@@ -45467,7 +45467,7 @@ fn rocblas_sgemm_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_sgemm_strided_batched",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -45523,7 +45523,7 @@ fn rocblas_saxpy_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_saxpy_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[Float32],
@@ -45643,7 +45643,7 @@ fn rocblas_chbmv_strided_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_chbmv_strided_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -45695,7 +45695,7 @@ fn rocblas_dspr_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dspr_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Fill,
             Int64,
@@ -45719,7 +45719,7 @@ fn rocblas_scasum(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scasum",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat32],
@@ -45797,7 +45797,7 @@ fn rocblas_ssbmv_batched(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_ssbmv_batched",
-        fn (
+        fn(
             Handle,
             Fill,
             Int32,
@@ -45829,7 +45829,7 @@ fn rocblas_bfdot_strided_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_bfdot_strided_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[BFloat16],
@@ -45858,7 +45858,7 @@ fn rocblas_zdotu_strided_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_zdotu_strided_batched",
-        fn (
+        fn(
             Handle,
             Int32,
             UnsafePointer[ComplexFloat64],
@@ -45892,7 +45892,7 @@ fn rocblas_ctrmm_batched(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_ctrmm_batched",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -45941,7 +45941,7 @@ fn rocblas_scal_batched_ex_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_scal_batched_ex_64",
-        fn (
+        fn(
             Handle,
             Int64,
             OpaquePointer,
@@ -45982,7 +45982,7 @@ fn rocblas_dsymm(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_dsymm",
-        fn (
+        fn(
             Handle,
             Side,
             Fill,
@@ -46010,7 +46010,7 @@ fn rocblas_cscal_batched_64(
 ) raises -> Status:
     return _get_dylib_function[
         "rocblas_cscal_batched_64",
-        fn (
+        fn(
             Handle,
             Int64,
             UnsafePointer[ComplexFloat32],
@@ -46167,7 +46167,7 @@ fn rocblas_gemm_ex(
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_gemm_ex",
-        fn (
+        fn(
             Handle,
             Operation,
             Operation,
@@ -46223,5 +46223,5 @@ fn rocblas_gemm_ex(
 
 fn rocblas_set_stream(handle: Handle, stream: hipStream_t) raises -> Status:
     return _get_dylib_function[
-        "rocblas_set_stream", fn (Handle, hipStream_t) -> Status
+        "rocblas_set_stream", fn(Handle, hipStream_t) -> Status
     ]()(handle, stream)

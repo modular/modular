@@ -639,7 +639,7 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
+comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
     mask: mask_t, score_mod: score_mod_t
 ) raises capturing -> None
 
@@ -717,7 +717,7 @@ fn dispatch_materialized_mask_and_score_mod[
 @always_inline
 fn _dispatch_score_mod[
     score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait] (
+    callback_fn: fn[score_mod_t: ScoreModTrait](
         score_mod: score_mod_t
     ) raises capturing -> None,
     num_heads: Int = -1,

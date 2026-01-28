@@ -96,7 +96,7 @@ struct MatmulTileWriter[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
-    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], mut SIMD[dtype, width]
     ) capturing -> None
 

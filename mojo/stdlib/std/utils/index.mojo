@@ -56,7 +56,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 fn _int_tuple_binary_apply[
-    binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -90,7 +90,7 @@ fn _int_tuple_binary_apply[
 
 @always_inline
 fn _int_tuple_compare[
-    comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -126,7 +126,7 @@ fn _int_tuple_compare[
 
 @always_inline
 fn _bool_tuple_reduce[
-    reduce_fn: fn (Bool, Bool) -> Bool,
+    reduce_fn: fn(Bool, Bool) -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.

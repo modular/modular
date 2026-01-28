@@ -314,7 +314,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
+    func: fn(mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -339,7 +339,7 @@ fn bench[
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (mut Matrix, Matrix, Matrix) -> None
+    func: fn(mut Matrix, Matrix, Matrix) -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.

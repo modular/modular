@@ -77,8 +77,8 @@ fn outer_product_acc(
 @always_inline
 fn _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int] () -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int] (
+    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):

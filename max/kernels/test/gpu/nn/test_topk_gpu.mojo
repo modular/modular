@@ -34,7 +34,7 @@ comptime PRINT_OUTPUT = False
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -55,7 +55,7 @@ fn time_kernel[
 
 fn test_case_batched[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
+    fill_fn: fn[dtype: DType](LayoutTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     out_idx_type: DType = DType.int,
@@ -373,7 +373,7 @@ fn test_case_batched[
 
 fn test_case_multi_rank[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
+    fill_fn: fn[dtype: DType](LayoutTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     rank: Int,

@@ -45,7 +45,7 @@ fn _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
         dtype
     ],
     broadcast: Bool = False,
@@ -112,7 +112,7 @@ fn _block_reduce[
     dtype: DType,
     //,
     block_size: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
         dtype
     ],
     broadcast: Bool = False,

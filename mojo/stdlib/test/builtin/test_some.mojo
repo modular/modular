@@ -59,7 +59,7 @@ def test_closure():
     fn some_closure(x: Some[Intable]) -> Int:
         return x.__int__() * 2
 
-    fn takes_some_closure[func: fn (Some[Intable]) -> Int]() raises:
+    fn takes_some_closure[func: fn(Some[Intable]) -> Int]() raises:
         assert_equal(func(Int(4)), 8)
 
     takes_some_closure[some_closure]()

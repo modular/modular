@@ -29,7 +29,7 @@ from utils import IndexList
 
 comptime epilogue_func_type = fn[
     type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
+](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 

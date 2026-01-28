@@ -34,7 +34,7 @@ fn _insertion_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     """Sort the array[start:end] slice"""
     var array = span.unsafe_ptr().as_any_origin()
@@ -60,7 +60,7 @@ fn _quicksort_partition_right[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
 
@@ -89,7 +89,7 @@ fn _quicksort_partition_left[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
 
@@ -115,7 +115,7 @@ fn _heap_sort_fix_down[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin], idx: Int):
     var size = len(span)
     var i = idx
@@ -138,7 +138,7 @@ fn _heap_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     var size = len(span)
     # heapify
@@ -167,7 +167,7 @@ fn _delegate_small_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     var size = len(span)
     if size == 2:
@@ -198,7 +198,7 @@ fn _quicksort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
     *,
     do_smallsort: Bool = False,
 ](span: Span[T, origin]):
@@ -267,7 +267,7 @@ fn _merge[
     span_origin: MutOrigin,
     result_origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](
     span1: Span[T, span_origin],
     span2: Span[T, span_origin],
@@ -328,7 +328,7 @@ fn _stable_sort_impl[
     span_life: MutOrigin,
     tmp_life: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, span_life], temp_buff: Span[T, tmp_life]):
     var size = len(span)
     if size <= 1:
@@ -363,7 +363,7 @@ fn _stable_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     var temp_buff = alloc[T](len(span))
     var temp_buff_span = Span(ptr=temp_buff, length=len(span))
@@ -381,7 +381,7 @@ fn _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]) -> Int:
     var size = len(span)
     if size <= 1:
@@ -413,7 +413,7 @@ fn _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](var span: Span[T, origin], var k: Int):
     while True:
         var pivot = _partition[cmp_fn](span)
@@ -431,7 +431,7 @@ fn partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin], k: Int):
     """Partition the input buffer inplace such that first k elements are the
     largest (or smallest if cmp_fn is < operator) elements.
@@ -460,7 +460,7 @@ fn _sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
     *,
     stable: Bool = False,
     do_smallsort: Bool = False,
@@ -490,7 +490,7 @@ fn sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
     *,
     stable: Bool = False,
     __disambiguate: NoneType = None,
@@ -517,7 +517,7 @@ fn sort[
     dtype: DType,
     origin: MutOrigin,
     //,
-    cmp_fn: fn (Scalar[dtype], Scalar[dtype]) capturing [_] -> Bool,
+    cmp_fn: fn(Scalar[dtype], Scalar[dtype]) capturing[_] -> Bool,
     *,
     stable: Bool = False,
 ](span: Span[Scalar[dtype], origin]):
@@ -539,7 +539,7 @@ fn sort[
 fn sort[
     origin: MutOrigin,
     //,
-    cmp_fn: fn (Int, Int) capturing [_] -> Bool,
+    cmp_fn: fn(Int, Int) capturing[_] -> Bool,
     *,
     stable: Bool = False,
 ](span: Span[Int, origin]):
@@ -617,7 +617,7 @@ fn _sort2[
     origin: MutOrigin,
     //,
     T: Copyable,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int,):
     if not cmp_fn(span.unsafe_get(offset0), span.unsafe_get(offset1)):
         span.unsafe_swap_elements(offset0, offset1)
@@ -628,7 +628,7 @@ fn _sort3[
     origin: MutOrigin,
     //,
     T: Copyable,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int,):
     _sort2[T, cmp_fn](span, offset0, offset1)
     _sort2[T, cmp_fn](span, offset1, offset2)
@@ -640,7 +640,7 @@ fn _sort_partial_3[
     origin: MutOrigin,
     //,
     T: Copyable,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int):
     """Sorts [a, b, c] assuming [b, c] is already sorted."""
     if cmp_fn(span.unsafe_get(offset0), span.unsafe_get(offset1)):
@@ -657,7 +657,7 @@ fn _small_sort[
     //,
     n: Int,
     T: Copyable,
-    cmp_fn: fn (T, T) capturing [_] -> Bool,
+    cmp_fn: fn(T, T) capturing[_] -> Bool,
 ](span: Span[T, origin]):
     @parameter
     if n == 2:

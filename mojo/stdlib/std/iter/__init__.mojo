@@ -679,7 +679,7 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: fn (var InnerIteratorType.Element) -> OutputType,
+    function: fn(var InnerIteratorType.Element) -> OutputType,
 ](Copyable, Iterable, Iterator):
     comptime Element = Self.OutputType
     comptime IteratorType[
@@ -715,7 +715,7 @@ fn map[
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: fn (var IterableType.IteratorType[origin].Element) -> ResultType,
+    function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
 ](ref [origin]iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function
 ]:

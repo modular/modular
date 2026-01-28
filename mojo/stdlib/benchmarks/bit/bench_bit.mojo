@@ -107,7 +107,7 @@ comptime width = bit_width_of[Int]()
 
 
 @parameter
-fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
+fn bench_next_power_of_two_int[func: fn(Int) -> Int](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
@@ -122,7 +122,7 @@ fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
 
 
 @parameter
-fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
+fn bench_next_power_of_two_uint[func: fn(UInt) -> UInt](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline

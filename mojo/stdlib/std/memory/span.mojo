@@ -715,7 +715,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
 
@@ -748,9 +748,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -787,7 +787,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     fn count[
         dtype: DType,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype]]) -> UInt:
         """Count the amount of times the function returns `True`.
 
@@ -863,7 +863,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         return Optional(cursor) if value == needle else None
 
     fn binary_search_by[
-        func: fn (Self.T) -> Int,
+        func: fn(Self.T) -> Int,
     ](self: Span[Self.T, Self.origin]) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 

@@ -366,7 +366,7 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int](
+struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
     TrivialRegisterType
 ):
     var num_warmup_iters: Int
@@ -397,7 +397,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int](
 
 @always_inline
 fn run[
-    *, func1: fn () raises -> None
+    *, func1: fn() raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -452,7 +452,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func2: fn () -> None
+    *, func2: fn() -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -498,7 +498,7 @@ fn run[
 
 @always_inline
 fn run[
-    func3: fn () raises capturing [_] -> None
+    func3: fn() raises capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -553,7 +553,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func4: fn () capturing [_] -> None
+    *, func4: fn() capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -692,7 +692,7 @@ fn _is_significant_measurement(
 
 @always_inline
 fn _run_impl_fixed[
-    timing_fn: fn (num_iters: Int) raises capturing [_] -> Int
+    timing_fn: fn(num_iters: Int) raises capturing[_] -> Int
 ](fixed_iterations: Int) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.
     var report = Report()

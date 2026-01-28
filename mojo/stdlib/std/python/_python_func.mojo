@@ -52,15 +52,15 @@ struct PyObjectFunction[
     # 0 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _0er = fn () raises -> PO
-    comptime _0r = fn () -> PO
-    comptime _0e = fn () raises
-    comptime _0 = fn ()
+    comptime _0er = fn() raises -> PO
+    comptime _0r = fn() -> PO
+    comptime _0e = fn() raises
+    comptime _0 = fn()
 
-    comptime _0er_kwargs = fn (OwnedKwargsDict[PO]) raises -> PO
-    comptime _0r_kwargs = fn (OwnedKwargsDict[PO]) -> PO
-    comptime _0e_kwargs = fn (OwnedKwargsDict[PO]) raises
-    comptime _0_kwargs = fn (OwnedKwargsDict[PO])
+    comptime _0er_kwargs = fn(OwnedKwargsDict[PO]) raises -> PO
+    comptime _0r_kwargs = fn(OwnedKwargsDict[PO]) -> PO
+    comptime _0e_kwargs = fn(OwnedKwargsDict[PO]) raises
+    comptime _0_kwargs = fn(OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -118,15 +118,15 @@ struct PyObjectFunction[
     # 1 argument
     # ===-------------------------------------------------------------------===#
 
-    comptime _1er = fn (PO) raises -> PO
-    comptime _1r = fn (PO) -> PO
-    comptime _1e = fn (PO) raises
-    comptime _1 = fn (PO)
+    comptime _1er = fn(PO) raises -> PO
+    comptime _1r = fn(PO) -> PO
+    comptime _1e = fn(PO) raises
+    comptime _1 = fn(PO)
 
-    comptime _1er_kwargs = fn (PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _1r_kwargs = fn (PO, OwnedKwargsDict[PO]) -> PO
-    comptime _1e_kwargs = fn (PO, OwnedKwargsDict[PO]) raises
-    comptime _1_kwargs = fn (PO, OwnedKwargsDict[PO])
+    comptime _1er_kwargs = fn(PO, OwnedKwargsDict[PO]) raises -> PO
+    comptime _1r_kwargs = fn(PO, OwnedKwargsDict[PO]) -> PO
+    comptime _1e_kwargs = fn(PO, OwnedKwargsDict[PO]) raises
+    comptime _1_kwargs = fn(PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -200,23 +200,23 @@ struct PyObjectFunction[
     # 1 argument (typed self methods - 0 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _1er_self = fn (
+    comptime _1er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin]
     ) raises -> PO
-    comptime _1r_self = fn (UnsafePointer[Self.self_type, MutAnyOrigin]) -> PO
-    comptime _1e_self = fn (UnsafePointer[Self.self_type, MutAnyOrigin]) raises
-    comptime _1_self = fn (UnsafePointer[Self.self_type, MutAnyOrigin])
+    comptime _1r_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin]) -> PO
+    comptime _1e_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin]) raises
+    comptime _1_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin])
 
-    comptime _1er_self_kwargs = fn (
+    comptime _1er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
     ) raises -> PO
-    comptime _1r_self_kwargs = fn (
+    comptime _1r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
     ) -> PO
-    comptime _1e_self_kwargs = fn (
+    comptime _1e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
     ) raises
-    comptime _1_self_kwargs = fn (
+    comptime _1_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
     )
 
@@ -296,27 +296,27 @@ struct PyObjectFunction[
     # 2 arguments (typed self methods - 1 additional argument)
     # ===-------------------------------------------------------------------===#
 
-    comptime _2er_self = fn (
+    comptime _2er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
     ) raises -> PO
-    comptime _2r_self = fn (
+    comptime _2r_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
     ) -> PO
-    comptime _2e_self = fn (
+    comptime _2e_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
     ) raises
-    comptime _2_self = fn (UnsafePointer[Self.self_type, MutAnyOrigin], PO)
+    comptime _2_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin], PO)
 
-    comptime _2er_self_kwargs = fn (
+    comptime _2er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
     ) raises -> PO
-    comptime _2r_self_kwargs = fn (
+    comptime _2r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
     ) -> PO
-    comptime _2e_self_kwargs = fn (
+    comptime _2e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
     ) raises
-    comptime _2_self_kwargs = fn (
+    comptime _2_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
     )
 
@@ -396,27 +396,27 @@ struct PyObjectFunction[
     # 3 arguments (typed self methods - 2 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _3er_self = fn (
+    comptime _3er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
     ) raises -> PO
-    comptime _3r_self = fn (
+    comptime _3r_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
     ) -> PO
-    comptime _3e_self = fn (
+    comptime _3e_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
     ) raises
-    comptime _3_self = fn (UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO)
+    comptime _3_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO)
 
-    comptime _3er_self_kwargs = fn (
+    comptime _3er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
     ) raises -> PO
-    comptime _3r_self_kwargs = fn (
+    comptime _3r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
     ) -> PO
-    comptime _3e_self_kwargs = fn (
+    comptime _3e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
     ) raises
-    comptime _3_self_kwargs = fn (
+    comptime _3_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
     )
 
@@ -496,41 +496,41 @@ struct PyObjectFunction[
     # 4 arguments (typed self methods - 3 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _4er_self = fn (
+    comptime _4er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) raises -> PO
-    comptime _4r_self = fn (
+    comptime _4r_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) -> PO
-    comptime _4e_self = fn (
+    comptime _4e_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     ) raises
-    comptime _4_self = fn (
+    comptime _4_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
     )
 
-    comptime _4er_self_kwargs = fn (
+    comptime _4er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
     ) raises -> PO
-    comptime _4r_self_kwargs = fn (
+    comptime _4r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
     ) -> PO
-    comptime _4e_self_kwargs = fn (
+    comptime _4e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
     ) raises
-    comptime _4_self_kwargs = fn (
+    comptime _4_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -614,15 +614,15 @@ struct PyObjectFunction[
     # 2 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _2er = fn (PO, PO) raises -> PO
-    comptime _2r = fn (PO, PO) -> PO
-    comptime _2e = fn (PO, PO) raises
-    comptime _2 = fn (PO, PO)
+    comptime _2er = fn(PO, PO) raises -> PO
+    comptime _2r = fn(PO, PO) -> PO
+    comptime _2e = fn(PO, PO) raises
+    comptime _2 = fn(PO, PO)
 
-    comptime _2er_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _2r_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _2e_kwargs = fn (PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _2_kwargs = fn (PO, PO, OwnedKwargsDict[PO])
+    comptime _2er_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    comptime _2r_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) -> PO
+    comptime _2e_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) raises
+    comptime _2_kwargs = fn(PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -696,15 +696,15 @@ struct PyObjectFunction[
     # 3 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _3er = fn (PO, PO, PO) raises -> PO
-    comptime _3r = fn (PO, PO, PO) -> PO
-    comptime _3e = fn (PO, PO, PO) raises
-    comptime _3 = fn (PO, PO, PO)
+    comptime _3er = fn(PO, PO, PO) raises -> PO
+    comptime _3r = fn(PO, PO, PO) -> PO
+    comptime _3e = fn(PO, PO, PO) raises
+    comptime _3 = fn(PO, PO, PO)
 
-    comptime _3er_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _3r_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _3e_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _3_kwargs = fn (PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _3er_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    comptime _3r_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    comptime _3e_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) raises
+    comptime _3_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -778,15 +778,15 @@ struct PyObjectFunction[
     # 4 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _4er = fn (PO, PO, PO, PO) raises -> PO
-    comptime _4r = fn (PO, PO, PO, PO) -> PO
-    comptime _4e = fn (PO, PO, PO, PO) raises
-    comptime _4 = fn (PO, PO, PO, PO)
+    comptime _4er = fn(PO, PO, PO, PO) raises -> PO
+    comptime _4r = fn(PO, PO, PO, PO) -> PO
+    comptime _4e = fn(PO, PO, PO, PO) raises
+    comptime _4 = fn(PO, PO, PO, PO)
 
-    comptime _4er_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _4r_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _4e_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _4_kwargs = fn (PO, PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _4er_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
+    comptime _4r_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    comptime _4e_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    comptime _4_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -860,20 +860,20 @@ struct PyObjectFunction[
     # 5 arguments (typed self methods - 4 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _5er_self = fn (
+    comptime _5er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) raises -> PO
-    comptime _5r_self = fn (
+    comptime _5r_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) -> PO
-    comptime _5e_self = fn (
+    comptime _5e_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     ) raises
-    comptime _5_self = fn (
+    comptime _5_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
     )
 
-    comptime _5er_self_kwargs = fn (
+    comptime _5er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -881,7 +881,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) raises -> PO
-    comptime _5r_self_kwargs = fn (
+    comptime _5r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -889,7 +889,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) -> PO
-    comptime _5e_self_kwargs = fn (
+    comptime _5e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -897,7 +897,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) raises
-    comptime _5_self_kwargs = fn (
+    comptime _5_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -982,17 +982,17 @@ struct PyObjectFunction[
     # 5 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _5er = fn (PO, PO, PO, PO, PO) raises -> PO
-    comptime _5r = fn (PO, PO, PO, PO, PO) -> PO
-    comptime _5e = fn (PO, PO, PO, PO, PO) raises
-    comptime _5 = fn (PO, PO, PO, PO, PO)
+    comptime _5er = fn(PO, PO, PO, PO, PO) raises -> PO
+    comptime _5r = fn(PO, PO, PO, PO, PO) -> PO
+    comptime _5e = fn(PO, PO, PO, PO, PO) raises
+    comptime _5 = fn(PO, PO, PO, PO, PO)
 
-    comptime _5er_kwargs = fn (
+    comptime _5er_kwargs = fn(
         PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
     ) raises -> PO
-    comptime _5r_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _5e_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _5_kwargs = fn (PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _5r_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    comptime _5e_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    comptime _5_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit
@@ -1066,20 +1066,20 @@ struct PyObjectFunction[
     # 6 arguments (typed self methods - 5 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _6er_self = fn (
+    comptime _6er_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) raises -> PO
-    comptime _6r_self = fn (
+    comptime _6r_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) -> PO
-    comptime _6e_self = fn (
+    comptime _6e_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     ) raises
-    comptime _6_self = fn (
+    comptime _6_self = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
     )
 
-    comptime _6er_self_kwargs = fn (
+    comptime _6er_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1088,7 +1088,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) raises -> PO
-    comptime _6r_self_kwargs = fn (
+    comptime _6r_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1097,7 +1097,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) -> PO
-    comptime _6e_self_kwargs = fn (
+    comptime _6e_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1106,7 +1106,7 @@ struct PyObjectFunction[
         PO,
         OwnedKwargsDict[PO],
     ) raises
-    comptime _6_self_kwargs = fn (
+    comptime _6_self_kwargs = fn(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1192,19 +1192,17 @@ struct PyObjectFunction[
     # 6 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _6er = fn (PO, PO, PO, PO, PO, PO) raises -> PO
-    comptime _6r = fn (PO, PO, PO, PO, PO, PO) -> PO
-    comptime _6e = fn (PO, PO, PO, PO, PO, PO) raises
-    comptime _6 = fn (PO, PO, PO, PO, PO, PO)
+    comptime _6er = fn(PO, PO, PO, PO, PO, PO) raises -> PO
+    comptime _6r = fn(PO, PO, PO, PO, PO, PO) -> PO
+    comptime _6e = fn(PO, PO, PO, PO, PO, PO) raises
+    comptime _6 = fn(PO, PO, PO, PO, PO, PO)
 
-    comptime _6er_kwargs = fn (
+    comptime _6er_kwargs = fn(
         PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
     ) raises -> PO
-    comptime _6r_kwargs = fn (PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _6e_kwargs = fn (
-        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises
-    comptime _6_kwargs = fn (PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _6r_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
+    comptime _6e_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
+    comptime _6_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
 
     @doc_private
     @implicit

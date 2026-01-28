@@ -264,8 +264,8 @@ fn create_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -297,8 +297,8 @@ fn create_python_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):

@@ -457,7 +457,7 @@ fn multistage_dual_mma[
                 )
 
 
-comptime binary_fn_type = fn[type: DType, width: Int] (
+comptime binary_fn_type = fn[type: DType, width: Int](
     SIMD[type, width], SIMD[type, width]
 ) -> SIMD[type, width]
 
