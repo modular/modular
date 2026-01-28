@@ -17,7 +17,7 @@ Creates TMA descriptors for A, B, C and scaling factors (SFA, SFB),
 then launches the warp-specialized kernel.
 """
 
-from collections import OptionalReg
+from collections import Optional
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -126,7 +126,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -139,6 +139,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
+    alpha: Float32 = 1.0,
 ) raises:
     """Launch block-scaled FP8 matmul kernel on SM100.
 
@@ -170,6 +171,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_scales_tensor: A scaling factors.
         b_scales_tensor: B scaling factors.
         ctx: Device context for kernel launch.
+        alpha: Tensor scale factor (scalar).
 
     Raises:
         If configuration constraints are violated.
@@ -463,6 +465,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_tma_op,
         sfa_tma_op,
         sfb_tma_op,
+        alpha,
         cluster_dim,
         mnk,
         workspace,

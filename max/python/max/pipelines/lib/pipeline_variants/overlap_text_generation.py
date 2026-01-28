@@ -321,7 +321,7 @@ class OverlapTextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(flat_batch)
+        self._pipeline_model.kv_manager.step(inputs.batches)
 
         return res
 

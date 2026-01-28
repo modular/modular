@@ -647,5 +647,5 @@ class SpeculativeDecodingPipelineBase(
         doesn't know about.
         """
         # Release draft model KV cache (scheduler doesn't manage this)
-        self._draft_model.kv_manager.release(request_id)
+        self._draft_model.kv_manager.release(request_id, replica_idx=0)
         # Target model KV cache is released by scheduler via batch_constructor

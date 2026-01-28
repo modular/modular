@@ -30,9 +30,7 @@ from max.interfaces import (
 from max.nn.legacy.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
 from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_config import (
-    SpeculativeMethod,
-)
+from max.pipelines.lib.speculative_config import SpeculativeMethod
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -115,10 +113,10 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     context_batch = [context1, context2]
 
     target_kv_manager = pipeline.kv_managers[-1]
-    target_kv_manager.claim(req_id1)
-    target_kv_manager.claim(req_id2)
-    target_kv_manager.alloc(context1, num_steps=num_steps)
-    target_kv_manager.alloc(context2, num_steps=num_steps)
+    target_kv_manager.claim(req_id1, replica_idx=0)
+    target_kv_manager.claim(req_id2, replica_idx=0)
+    target_kv_manager.alloc(context1, replica_idx=0, num_steps=num_steps)
+    target_kv_manager.alloc(context2, replica_idx=0, num_steps=num_steps)
 
     return SpeculativeDecodingSetup(
         model_name=model_name,
@@ -420,7 +418,7 @@ def test_kv_cache_claiming_protocol() -> None:
         tuple[str, RequestID] | tuple[str, list[RequestID], int]
     ] = []
 
-    def track_claim(request_id: RequestID) -> None:
+    def track_claim(request_id: RequestID, replica_idx: int) -> None:
         call_order.append(("claim", request_id))
 
     def track_get_runtime_inputs(
@@ -470,4 +468,6 @@ def test_kv_cache_claiming_protocol() -> None:
             )
 
             # Verify contains was called to check if request was already claimed
-            mock_kv_manager.contains.assert_called_with(context.request_id)
+            mock_kv_manager.contains.assert_called_with(
+                context.request_id, replica_idx=0
+            )

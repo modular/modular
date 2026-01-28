@@ -60,6 +60,22 @@ def _extract_unit(col_name: str) -> str:
     return ""
 
 
+def _to_hashable(val: Any) -> Any:
+    """Convert unhashable types (like lists) to hashable equivalents for comparison."""
+    if isinstance(val, list):
+        return tuple(val)
+    return val
+
+
+def _count_unique(series: pd.Series) -> int:
+    """Count unique values in a series, handling unhashable types like lists."""
+    try:
+        return int(series.nunique())
+    except TypeError:
+        # Handle unhashable types by converting to hashable equivalents
+        return int(series.apply(_to_hashable).nunique())
+
+
 def get_display_df(
     merged_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, str], list[str], list[str]]:
@@ -72,7 +88,7 @@ def get_display_df(
 
     # Partition columns into pivots (vary) vs fixed (constant), excluding 'name'
     cols = [c for c in spec_df.columns if c != "name"]
-    pivot_cols = [c for c in cols if spec_df[c].nunique() > 1]
+    pivot_cols = [c for c in cols if _count_unique(spec_df[c]) > 1]
     fixed_params = {
         c: str(spec_df[c].iloc[0]) for c in cols if c not in pivot_cols
     }
@@ -149,7 +165,9 @@ def render_bars(
             )
 
     if group_col:
-        for group_val, group_df in display_df.groupby(group_col):
+        # Convert unhashable types for groupby
+        groupby_col = display_df[group_col].apply(_to_hashable)
+        for group_val, group_df in display_df.groupby(groupby_col):
             console.print(f"[bold]{group_col}={group_val}:[/bold]")
             render_group(group_df)
             console.print()
@@ -212,8 +230,10 @@ def render_summary(
         )
         return
 
+    # Convert unhashable types for groupby
+    groupby_col = display_df[group_col].apply(_to_hashable)
     summary = (
-        display_df.groupby(group_col)["time_ms"].agg(["mean"]).reset_index()
+        display_df.groupby(groupby_col)["time_ms"].agg(["mean"]).reset_index()
     )
     baseline = summary["mean"].iloc[0]
 

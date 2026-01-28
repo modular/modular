@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import asdict
 
 import numpy as np
 from max.driver import Buffer
@@ -149,8 +150,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if base_key in state_dict and nextn_key in state_dict:
             del state_dict[base_key]
 
-        # Convert base_config to NextNConfig - both are Pydantic models
-        return DeepseekV3NextNConfig(**base_config.model_dump())
+        return DeepseekV3NextNConfig(**asdict(base_config))
 
     @override
     def load_model(self, session: InferenceSession) -> Model:

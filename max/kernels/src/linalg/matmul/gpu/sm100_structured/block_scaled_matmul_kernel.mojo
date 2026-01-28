@@ -38,7 +38,7 @@ Key structured patterns:
 - Automatic wait/step in context manager __enter__/__exit__
 """
 
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from memory import LegacyUnsafePointer, Pointer
 
@@ -147,7 +147,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -612,6 +612,7 @@ struct BlackwellBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        alpha: Float32,
     ):
         """Execute epilogue to store accumulated results to global memory.
 
@@ -631,6 +632,7 @@ struct BlackwellBlockScaledMatmulKernel[
             work_tile_coord: (m, n, k_start) coordinates.
             M: Problem M dimension.
             N: Problem N dimension.
+            alpha: Tensor scale factor (scalar).
         """
         # Use BlockScaledTileWriter for structured epilogue
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
@@ -639,6 +641,7 @@ struct BlackwellBlockScaledMatmulKernel[
             stage,
             work_tile_coord,
             (M, N),
+            alpha,
         )
 
     # ========== Compile-Time Validation ==========
@@ -680,6 +683,7 @@ struct BlackwellBlockScaledMatmulKernel[
         sfb_tma_op: TMATensorTile[
             Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
         ],
+        alpha: Float32,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -702,8 +706,8 @@ struct BlackwellBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays from SMEM accessors
-        var input_barriers = smem.tma_mma_mbars()
-        var accum_barriers = smem.accum_mbars()
+        var input_barriers = smem.input_barriers()
+        var accum_barriers = smem.accum_barriers()
         var clc_full = smem.clc_mbars_full()
         var clc_empty = smem.clc_mbars_empty()
         var clc_throttle = smem.clc_throttle_mbars()
@@ -934,6 +938,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                     ),
                                     M=mnk[0],
                                     N=mnk[1],
+                                    alpha=alpha,
                                 )
 
                     tile_idx += 1

@@ -37,8 +37,7 @@ from ..tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -70,7 +69,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
         )
 
 
-@register_passable("trivial")
 struct TileScheduler[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
@@ -78,7 +76,7 @@ struct TileScheduler[
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-]:
+](TrivialRegisterType):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]

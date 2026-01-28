@@ -154,14 +154,14 @@ struct Pipe:
     fn set_input_only(mut self):
         """Close the output descriptor/ channel for this side of the pipe."""
         if self.fd_out:
-            _ = close(rebind[Int](self.fd_out.value()))
+            _ = close(Int32(rebind[Int](self.fd_out.value())))
             self.fd_out = None
 
     @always_inline
     fn set_output_only(mut self):
         """Close the input descriptor/ channel for this side of the pipe."""
         if self.fd_in:
-            _ = close(rebind[Int](self.fd_in.value()))
+            _ = close(Int32(rebind[Int](self.fd_in.value())))
             self.fd_in = None
 
     @always_inline
@@ -246,7 +246,7 @@ struct Process:
             return False
 
         # `kill` returns 0 on success and -1 on failure
-        return kill(self.child_pid, signal) > -1
+        return kill(Int32(self.child_pid), Int32(signal)) > -1
 
     fn _check_status(self, pid: c_pid_t, status: c_int) raises -> ProcessStatus:
         """Helper to decode the result of a waitpid call.

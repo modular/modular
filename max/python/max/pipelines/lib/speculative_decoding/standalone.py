@@ -65,12 +65,14 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             # For draft model: claim if not already claimed (target model is claimed by scheduler)
             # For target model: scheduler handles claiming, so skip here
             if is_draft:
-                if not model.kv_manager.contains(context.request_id):
-                    model.kv_manager.claim(context.request_id)
+                if not model.kv_manager.contains(
+                    context.request_id, replica_idx=0
+                ):
+                    model.kv_manager.claim(context.request_id, replica_idx=0)
             # For target model, scheduler handles claiming via batch_constructor
 
         for ctx in batch:
-            model.kv_manager.alloc(ctx, num_steps=num_steps)
+            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
         kv_cache_inputs = model.kv_manager.get_runtime_inputs(
             [batch], num_steps
         )
@@ -320,7 +322,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step(context_batch)
-        self._draft_model.kv_manager.step(context_batch)
+        self._target_model.kv_manager.step([context_batch])
+        self._draft_model.kv_manager.step([context_batch])
 
         return res

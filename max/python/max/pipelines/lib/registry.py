@@ -284,6 +284,9 @@ class PipelineRegistry:
             tuple[str, PipelineTask], SupportedArchitecture
         ] = {}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
+        self._cached_diffusers_configs: dict[
+            HuggingFaceRepo, dict[str, Any] | None
+        ] = {}
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
@@ -449,6 +452,49 @@ class PipelineRegistry:
             )
 
         return self._cached_huggingface_configs[huggingface_repo]
+
+    def get_active_diffusers_config(
+        self, huggingface_repo: HuggingFaceRepo
+    ) -> dict[str, Any] | None:
+        """Retrieves or creates a cached diffusers config for the given repository.
+
+        This method checks if the repository is a diffusion pipeline by looking for
+        model_index.json. If found, it downloads and caches the config. If not found,
+        returns None.
+
+        Args:
+            huggingface_repo: The HuggingFaceRepo containing the model.
+
+        Returns:
+            dict | None: The diffusers config dict if this is a diffusion pipeline, None otherwise.
+        """
+        if huggingface_repo not in self._cached_diffusers_configs:
+            try:
+                # Check if model_index.json exists to identify diffusion pipelines
+                import json
+
+                from huggingface_hub import hf_hub_download
+
+                # Try to download model_index.json
+                config_path = hf_hub_download(
+                    repo_id=huggingface_repo.repo_id,
+                    filename="model_index.json",
+                    revision=huggingface_repo.revision,
+                )
+
+                # Load the config
+                with open(config_path) as f:
+                    config = json.load(f)
+
+                self._cached_diffusers_configs[huggingface_repo] = config
+            except Exception as e:
+                # If model_index.json doesn't exist, this is not a diffusion pipeline
+                logger.debug(
+                    f"No diffusers config found for {huggingface_repo.repo_id}: {e}"
+                )
+                self._cached_diffusers_configs[huggingface_repo] = None
+
+        return self._cached_diffusers_configs[huggingface_repo]
 
     def get_active_tokenizer(
         self, huggingface_repo: HuggingFaceRepo

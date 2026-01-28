@@ -338,10 +338,10 @@ fn blockscaled_pair_cta_mxfp8[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = UInt(
-                peer_cta_coord[2] * UInt(a_tma_rows) + block_idx.x * UInt(BM)
-            )
-            var b_gmem_slice_coord = UInt(
+            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+                a_tma_rows
+            ) + block_idx.x * UInt(BM)
+            var b_gmem_slice_coord = (
                 peer_cta_coord[1] * UInt(b_tma_rows)
                 + peer_cta_coord[0] * UInt(BN)
                 + block_idx.y * UInt(MMA_N)
@@ -904,14 +904,14 @@ def test_blockscaled_pair_cta_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]

@@ -14,7 +14,7 @@
 """
 
 from collections import InlineArray
-from collections.optional import Optional, OptionalReg
+from collections.optional import Optional
 
 from buffer import NDBuffer
 from gpu import (
@@ -111,14 +111,13 @@ fn _load_reduce[
         return accum.cast[dtype]()
 
 
-@register_passable("trivial")
 struct ReduceScatterConfig[
     dtype: DType,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
-](ImplicitlyCopyable, Movable):
+](TrivialRegisterType):
     var stride: Int
     var largest_part: Int
     var part: Int
@@ -277,8 +276,8 @@ fn _reducescatter_kernel[
     _reduce_scatter_impl[
         ngpus, output_lambda=output_lambda, use_multimem=use_multimem
     ](ptrs, out_buf, my_rank, reduce_scatter_config)
-    # Compared w/ usage in allreduce, a second `_multi_gpu_barrier` has been removed
-    # here, as it shouldn't be necessary
+
+    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -377,7 +376,7 @@ fn reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,

@@ -77,7 +77,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Reserve KV cache blocks for the batch.
         for kv_manager in self.kv_managers:
             for context in batch.values():
-                kv_manager.alloc(context, num_steps=num_steps)
+                kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
 
         # Prepare the batch.
         model_inputs, num_steps, bitmask, context_batch = self.prepare_batch(
@@ -191,7 +191,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(context_batch)
+        self._pipeline_model.kv_manager.step([context_batch])
         tracer.pop()  # pops kv_manager.step
 
         return res

@@ -13,9 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv, recip
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 
@@ -303,8 +300,8 @@ struct KVBufferImpl[
         num_b_rows: OptionalReg[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         # __comptime_assert
@@ -566,8 +563,8 @@ struct VBufferTransposeLoads[
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         __comptime_assert Self.depth in (
@@ -973,7 +970,9 @@ struct PRegisterBuffer[
     fn __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED, ...
+            Scalar[Self.dtype],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()

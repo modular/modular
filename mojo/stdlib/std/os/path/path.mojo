@@ -526,7 +526,7 @@ fn _split_extension(
         # skip all leading dots
         var file_start = head_end + 1
         while file_start < file_end:
-            if path[byte=file_start].as_string_slice() != extension_sep:
+            if StringSlice(path[byte=file_start]) != extension_sep:
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
@@ -658,18 +658,18 @@ fn _parse_variable_name[
     Returns:
         The environment variable name and the byte count required to extract it.
     """
-    if bytes[0] == ord("{"):
+    if bytes[0] == UInt8(ord("{")):
         if (
             len(bytes) > 2
             and _is_shell_special_variable(bytes[1])
-            and bytes[2] == ord("}")
+            and bytes[2] == UInt8(ord("}"))
         ):
             return StringSlice(unsafe_from_utf8=bytes[1:2]), 3
 
         # Scan until the closing brace or the end of the bytes.
         var i = 1
         while i < len(bytes):
-            if bytes[i] == ord("}"):
+            if bytes[i] == UInt8(ord("}")):
                 return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
         return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
@@ -705,7 +705,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     i = 0
     j = 0
     while j < len(bytes):
-        if bytes[j] == ord("$") and j + 1 < len(bytes):
+        if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
             buf.write_string(path_str[i:j])

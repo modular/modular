@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import DeepseekV3NextNModel
+from .model_config import DeepseekV3NextNConfig
 
 deepseekV3_nextn_arch = SupportedArchitecture(
     name="DeepseekV3ForCausalLMNextN_Legacy",
@@ -45,4 +46,5 @@ deepseekV3_nextn_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    config=DeepseekV3NextNConfig,
 )

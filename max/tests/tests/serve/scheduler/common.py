@@ -64,7 +64,7 @@ def create_text_context(
     )
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -93,7 +93,7 @@ def create_paged_manager(
     session = InferenceSession(devices=[device])
 
     # CPU swap space is 100x the device cache memory
-    num_blocks = num_blocks * dp
+    num_blocks = num_blocks
     num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
@@ -103,7 +103,10 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks * dp
+    assert all(
+        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        for replica_idx in range(dp)
+    )
     return kv_manager
 
 
@@ -127,7 +130,7 @@ def create_paged_scheduler(
     MAXPushQueue[TextContext],
 ]:
     # Create a paged manager that has one slot
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=num_blocks,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -150,7 +153,7 @@ def create_paged_scheduler(
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )
-    token_pipeline = FakeTokenGeneratorPipeline(paged_manager, max_seq_len)
+    token_pipeline = FakeTokenGeneratorPipeline(kv_cache, max_seq_len)
     request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -159,7 +162,7 @@ def create_paged_scheduler(
     scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
@@ -197,14 +200,18 @@ class FakeTokenGeneratorPipeline(
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
             for context in batch:
-                if not self.kv_manager.contains(context.request_id):
+                if not self.kv_manager.contains(
+                    context.request_id, replica_idx=replica_idx
+                ):
                     self.kv_manager.claim(
                         context.request_id, replica_idx=replica_idx
                     )
 
-        for batch in inputs.batches:
+        for replica_idx, batch in enumerate(inputs.batches):
             for ctx in batch:
-                self.kv_manager.alloc(ctx, num_steps=num_steps)
+                self.kv_manager.alloc(
+                    ctx, replica_idx=replica_idx, num_steps=num_steps
+                )
         self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses
@@ -224,7 +231,7 @@ class FakeTokenGeneratorPipeline(
             responses[req_id] = context.to_generation_output()
 
         # Step the kv cache manager
-        self.kv_manager.step(inputs.flat_batch)
+        self.kv_manager.step(inputs.batches)
 
         return responses
 
