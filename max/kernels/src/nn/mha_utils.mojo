@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from sys import (
     CompilationTarget,
@@ -247,11 +247,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
         out self,
         num_heads: UInt,
         depth: UInt,
-        num_queries_per_block: OptionalReg[UInt] = None,
-        num_keys_per_block: OptionalReg[UInt] = None,
-        BK: OptionalReg[UInt] = None,
-        WM: OptionalReg[UInt] = None,
-        WN: OptionalReg[UInt] = None,
+        num_queries_per_block: Optional[UInt] = None,
+        num_keys_per_block: Optional[UInt] = None,
+        BK: Optional[UInt] = None,
+        WM: Optional[UInt] = None,
+        WN: Optional[UInt] = None,
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),

@@ -6099,8 +6099,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6130,8 +6130,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],

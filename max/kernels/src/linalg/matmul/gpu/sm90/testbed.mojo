@@ -54,7 +54,7 @@ fn test_matmul_sm90[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    measure_threshold: OptionalReg[Float64] = None,
+    measure_threshold: Optional[Float64] = None,
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:

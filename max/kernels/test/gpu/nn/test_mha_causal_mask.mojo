@@ -14,7 +14,7 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import isclose
 from random import rand
 from sys import argv, size_of, has_amd_gpu_accelerator
@@ -177,7 +177,7 @@ fn test[
     comptime config = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
-        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
+        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=UInt(4) if (
             ctx.default_device_info == H100 or ctx.default_device_info == B200
         ) else 2,
@@ -229,7 +229,7 @@ fn test[
     comptime config_baseline = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
-        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
+        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )

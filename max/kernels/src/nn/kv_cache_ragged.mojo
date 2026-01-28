@@ -138,8 +138,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
     dtype: DType,
     weight_dtype: DType,
     target: StaticString = "cpu",
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -220,8 +220,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     dtype: DType,
     weight_dtype: DType,
     target: StaticString = "cpu",
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -429,8 +429,8 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -495,8 +495,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_bias[
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -658,8 +658,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     //,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -788,8 +788,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     //,
     *,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...

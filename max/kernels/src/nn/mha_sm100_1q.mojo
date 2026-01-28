@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
 
@@ -1310,9 +1310,9 @@ fn mha_sm100_dispatch[
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
-        num_queries_per_block=OptionalReg[UInt](64),
-        num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
-        BK=OptionalReg[UInt](config.BK),
+        num_queries_per_block=Optional[UInt](64),
+        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
+        BK=Optional[UInt](config.BK),
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
