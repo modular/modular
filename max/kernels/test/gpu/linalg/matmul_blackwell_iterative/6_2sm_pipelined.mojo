@@ -76,8 +76,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable):
+struct WarpRole(TrivialRegisterType):
     var _role: Int32
 
     comptime MainLoad = Self(4)
@@ -211,14 +210,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
+        (iter_idx * UInt(BK), a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+        (iter_idx * UInt(BK), b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -564,7 +563,7 @@ fn store_C[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
+        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
@@ -762,7 +761,7 @@ fn kernel_6[
     var peer_cta_coord = (
         rank_m % UInt(cta_group),
         rank_m // UInt(cta_group),
-        UInt(rank_n),
+        rank_n,
     )  # v,m,n
 
     var a_multicast_mask: UInt16 = 0x0
@@ -801,7 +800,7 @@ fn kernel_6[
                     tma_mbar,
                     producer_phase,
                     peer_cta_coord,
-                    (UInt(block_idx.x), UInt(block_idx.y)),
+                    (block_idx.x, block_idx.y),
                     a_multicast_mask,
                     b_multicast_mask,
                     UInt(i),

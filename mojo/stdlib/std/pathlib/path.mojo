@@ -230,17 +230,6 @@ struct Path(
         """
         return StringSlice(self.path) == other
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the path string value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self.path)
-
     fn stat(self) raises -> stat_result:
         """Returns the stat information on the path.
 

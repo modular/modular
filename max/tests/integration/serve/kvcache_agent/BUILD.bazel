@@ -16,7 +16,7 @@ modular_py_test(
     deps = [
         "//max/python/max/serve/kvcache_agent",
         "//max/python/max/serve/kvcache_agent:kvcache_agent_proto_srcs",
-        "//max/python/max/serve/queue",
+        "//max/python/max/serve/worker_interface",
         requirement("grpcio"),
     ],
 )
@@ -26,6 +26,6 @@ modular_py_test(
     srcs = ["test_dispatcher_v2.py"],
     deps = [
         "//max/python/max/serve/kvcache_agent",
-        "//max/python/max/serve/queue",
+        "//max/python/max/serve/worker_interface",
     ],
 )

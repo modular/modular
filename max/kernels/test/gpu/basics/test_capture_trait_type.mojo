@@ -17,15 +17,13 @@ from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from utils import IndexList
 
 
-@register_passable("trivial")
-trait BaseT:
+trait BaseT(TrivialRegisterType):
     fn get_val(self, idx: Int) -> Float32:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ImplT(BaseT, ImplicitlyCopyable):
+struct ImplT(BaseT):
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
@@ -43,7 +41,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     @__copy_capture(thing)
     fn kernel_fn():
         var idx = Int(thread_idx.x)
-        print(Float32(thing.get_val(idx)) * 2)
+        print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn
     ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))

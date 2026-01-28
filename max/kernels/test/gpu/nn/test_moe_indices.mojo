@@ -131,7 +131,7 @@ fn check_restore_token_order(
     for i in range(num_tokens):
         assert_equal(
             i,
-            Int(token_expert_order[Int(restore_token_order[Int(i)])]),
+            Int(token_expert_order[Int(restore_token_order[i])]),
             "restore token order is incorrect",
         )
 

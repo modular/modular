@@ -15,7 +15,7 @@
 from .arch_config import ArchConfig, ArchConfigWithAttentionKVCache
 from .component_model import ComponentModel
 from .generate import GenerateMixin
-from .kv_cache import KVCacheMixin, get_paged_manager
+from .kv_cache import KVCacheMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
@@ -33,5 +33,4 @@ __all__ = [
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
-    "get_paged_manager",
 ]

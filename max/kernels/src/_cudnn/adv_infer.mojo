@@ -83,8 +83,7 @@ comptime cudnnPersistentRNNPlan = NoneType
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnRNNInputMode_t:
+struct cudnnRNNInputMode_t(TrivialRegisterType):
     var _value: Int32
 
     comptime LINEAR_INPUT = Self(0)
@@ -94,8 +93,7 @@ struct cudnnRNNInputMode_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnDirectionMode_t:
+struct cudnnDirectionMode_t(TrivialRegisterType):
     var _value: Int32
 
     comptime UNIDIRECTIONAL = Self(0)
@@ -105,8 +103,7 @@ struct cudnnDirectionMode_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnRNNClipMode_t:
+struct cudnnRNNClipMode_t(TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -116,8 +113,7 @@ struct cudnnRNNClipMode_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnRNNMode_t:
+struct cudnnRNNMode_t(TrivialRegisterType):
     var _value: Int32
     comptime RNN_RELU = Self(0)
     """Basic RNN cell type with ReLu activation."""
@@ -130,8 +126,7 @@ struct cudnnRNNMode_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnMultiHeadAttnWeightKind_t:
+struct cudnnMultiHeadAttnWeightKind_t(TrivialRegisterType):
     var _value: Int32
 
     comptime ATTN_Q_WEIGHTS = Self(0)
@@ -160,8 +155,7 @@ struct cudnnMultiHeadAttnWeightKind_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnRNNBiasMode_t:
+struct cudnnRNNBiasMode_t(TrivialRegisterType):
     var _value: Int32
 
     comptime NO_BIAS = Self(0)
@@ -175,8 +169,7 @@ struct cudnnRNNBiasMode_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnRNNDataLayout_t:
+struct cudnnRNNDataLayout_t(TrivialRegisterType):
     var _value: Int32
     comptime SEQ_MAJOR_UNPACKED = Self(0)
     """Padded, outer stride from one time-step to the next."""
@@ -227,8 +220,9 @@ fn cudnnGetRNNDescriptor_v6(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnForwardMode_t(Equatable, Identifiable, Writable):
+struct cudnnForwardMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_FWD_MODE_INFERENCE = Self(0)
     comptime CUDNN_FWD_MODE_TRAINING = Self(1)
@@ -781,8 +775,9 @@ fn cudnnGetRNNDescriptor_v8(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnSeqDataAxis_t(Equatable, Identifiable, Writable):
+struct cudnnSeqDataAxis_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_SEQDATA_TIME_DIM = Self(0)
     comptime CUDNN_SEQDATA_BATCH_DIM = Self(1)

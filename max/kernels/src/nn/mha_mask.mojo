@@ -65,12 +65,11 @@ struct MaskName(Stringable):
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct TileMaskStatus(
     Equatable,
     Identifiable,
-    ImplicitlyCopyable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A tile's masking status."""
@@ -119,8 +118,7 @@ struct TileMaskStatus(
         writer.write("unknown mask")
 
 
-@register_passable("trivial")
-struct MaskStrategy(ImplicitlyCopyable):
+struct MaskStrategy(TrivialRegisterType):
     var _value: Int32
     var _upper_triangular_window_size: Int32
     comptime NO_MASK = Self(0)
@@ -180,8 +178,7 @@ struct MaskStrategy(ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-trait MHAMask(Copyable, DevicePassable):
+trait MHAMask(Copyable, DevicePassable, TrivialRegisterType):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
@@ -327,8 +324,7 @@ comptime MASK_VALUE = -10_000
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CausalMask(ImplicitlyCopyable, MHAMask):
+struct CausalMask(MHAMask, TrivialRegisterType):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -495,8 +491,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NullMask(ImplicitlyCopyable, MHAMask):
+struct NullMask(MHAMask, TrivialRegisterType):
     """Mask that's effectively a noop."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -595,8 +590,7 @@ struct NullMask(ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
+struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterType):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -783,8 +777,7 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
+struct SlidingWindowCausalMask[window_size: Int](MHAMask, TrivialRegisterType):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:
@@ -1088,9 +1081,8 @@ fn naively_get_first_nonempty_mask_col[
     return kv_row
 
 
-@register_passable("trivial")
 struct MaterializedMask[dtype_: DType, layout_: Layout](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's backed by a materialized tensor."""
 
@@ -1269,9 +1261,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's the AND of two masks."""
 
@@ -1379,9 +1370,8 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's the OR of two masks."""
 

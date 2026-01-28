@@ -50,7 +50,7 @@ async def test_step() -> None:
     batch = []
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         batch.append(context)
 
     # Assert that each cache_length is initialized appropriately as 0
@@ -60,7 +60,7 @@ async def test_step() -> None:
     # Update these values a few times
     for j in range(3):
         for ctx in batch:
-            kv_manager.alloc(ctx, num_steps=1)
+            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
         kv_manager.get_runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
@@ -95,46 +95,46 @@ async def test_claim_and_release() -> None:
         devices=[DeviceRef.CPU()],
     )
 
-    dp_kv_manager = PagedKVCacheManager(
+    kv_manager = PagedKVCacheManager(
         params=params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
     )
     # This test requires PagedKVCacheManager to access internal _replica_managers
-    assert isinstance(dp_kv_manager, PagedKVCacheManager), (
+    assert isinstance(kv_manager, PagedKVCacheManager), (
         "test_claim_and_release requires PagedKVCacheManager"
     )
-    kv_manager = dp_kv_manager._replica_managers[0]
+    replica_manager = kv_manager._replica_managers[0]
 
     contexts = []
     prompt_lens = [2, 3, 4, 5, 6]
     for i in range(5):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         contexts.append(context)
 
     # Claim 5 ids
     assert len(contexts) == 5
-    assert len(kv_manager._claimed_requests) == 5
+    assert len(replica_manager._claimed_requests) == 5
 
     # Claim another 3 ids
     contexts_2 = []
     prompt_lens_2 = [7, 8, 9]
     for i in range(3):
         context = create_text_context(np.empty(prompt_lens_2[i]))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         contexts_2.append(context)
 
-    assert len(kv_manager._claimed_requests) == 5 + 3
+    assert len(replica_manager._claimed_requests) == 5 + 3
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
-        kv_manager.release(RequestID("fake-request-id"))
+        kv_manager.release(RequestID("fake-request-id"), replica_idx=0)
 
     # Release all ids
     for i, context in enumerate(contexts + contexts_2):
-        kv_manager.release(context.request_id)
-        assert len(kv_manager._claimed_requests) == 5 + 3 - i - 1
+        kv_manager.release(context.request_id, replica_idx=0)
+        assert len(replica_manager._claimed_requests) == 5 + 3 - i - 1
 
 
 @pytest.mark.asyncio
@@ -161,12 +161,12 @@ async def test_fetch_paged() -> None:
     contexts = []
     for _ in range(5):
         context = create_text_context(np.empty(1))
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         contexts.append(context)
 
     # Fetch 3 of the 5 contexts created above
     for ctx in contexts[:3]:
-        kv_manager.alloc(ctx, 1)
+        kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     kv_collection = kv_manager.get_runtime_inputs([contexts[:3]])[0]
 
     assert kv_collection is not None

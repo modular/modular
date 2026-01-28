@@ -39,7 +39,6 @@ from .interfaces import (
     ModelInputs,
     ModelOutputs,
     PipelineModel,
-    get_paged_manager,
 )
 from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
@@ -48,6 +47,7 @@ from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
 from .pipeline_variants.text_generation import TextGenerationPipeline
+from .pixel_tokenizer import PixelGenerationTokenizer
 from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
@@ -97,6 +97,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",
+    "PixelGenerationTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
     "RepoType",
@@ -118,7 +119,6 @@ __all__ = [
     "float32_to_bfloat16_as_uint16",
     "generate_local_model_path",
     "get_default_max_config_file_section_name",
-    "get_paged_manager",
     "max_tokens_to_generate",
     "parse_float8_config",
     "rejection_sampler",

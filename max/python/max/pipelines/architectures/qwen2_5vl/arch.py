@@ -20,6 +20,7 @@ from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel
+from .model_config import Qwen2_5VLConfig
 from .tokenizer import Qwen2_5VLTokenizer
 from .weight_adapters import convert_qwen2_5vl_model_state_dict
 
@@ -93,4 +94,5 @@ qwen2_5_vl_arch = SupportedArchitecture(
     context_validators=[
         validate_qwen2_5vl_required_args,
     ],
+    config=Qwen2_5VLConfig,
 )

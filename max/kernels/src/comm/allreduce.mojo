@@ -124,7 +124,7 @@ from gpu.memory import CacheOperation
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from collections.optional import OptionalReg
+from collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
@@ -749,7 +749,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
@@ -726,7 +726,7 @@ fn multistage_gemm_kernel[
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[
         c_type,
@@ -1133,7 +1133,7 @@ fn multistage_gemm_split_k_kernel[
     workspace_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],

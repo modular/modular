@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Install mojo import hook
 import mojo.importer  # noqa: F401
 import mojo_module  # type: ignore[import-not-found]
 

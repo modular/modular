@@ -287,7 +287,7 @@ fn _shuffle_idx_amd[
     # But it's also masking out the upper two bits. Why?
     # The lane should not be > 64 so the upper 2 bits should always be zero.
     # Use -64 for now.
-    var t0 = lane & -WARP_SIZE
+    var t0 = lane & Int32(-WARP_SIZE)
     var dst_lane = t0 | offset.cast[DType.int32]()
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
@@ -333,7 +333,7 @@ fn shuffle_idx[
     if is_nvidia_gpu():
         return _shuffle[
             "idx",
-            WIDTH_MASK=_WIDTH_MASK,
+            WIDTH_MASK = Int32(_WIDTH_MASK),
         ](mask, val, offset)
     elif is_amd_gpu():
         return _shuffle_idx_amd(mask, val, offset)
@@ -391,7 +391,7 @@ fn _shuffle_up_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = Int32(lane_id())
     var t0 = lane - offset.cast[DType.int32]()
-    var t1 = lane & -WARP_SIZE
+    var t1 = lane & Int32(-WARP_SIZE)
     var dst_lane = t0.lt(t1).select(lane, t0)
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
@@ -489,7 +489,9 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = UInt32(lane_id())
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset).le(_WIDTH_MASK).select(offset, 0) + lane
+    var dst_lane = (lane + offset).le(UInt32(_WIDTH_MASK)).select(
+        offset, 0
+    ) + lane
     return _shuffle_amd_helper(dst_lane, val)
 
 
@@ -529,7 +531,9 @@ fn shuffle_down[
 
     @parameter
     if is_nvidia_gpu():
-        return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+        return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
+            mask, val, offset
+        )
     elif is_amd_gpu():
         return _shuffle_down_amd(mask, val, offset)
     elif is_apple_gpu():
@@ -582,9 +586,9 @@ fn _shuffle_xor_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = UInt32(lane_id())
     var t0 = lane ^ offset
-    var t1 = lane & -WARP_SIZE
+    var t1 = lane & UInt32(-WARP_SIZE)
     # This needs to be "add nsw" = add no sign wrap
-    var t2 = t1 + WARP_SIZE
+    var t2 = t1 + UInt32(WARP_SIZE)
     var dst_lane = t0.lt(t2).select(t0, lane)
     return _shuffle_amd_helper(dst_lane, val)
 
@@ -630,7 +634,9 @@ fn shuffle_xor[
 
     @parameter
     if is_nvidia_gpu():
-        return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+        return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
+            mask, val, offset
+        )
     elif is_amd_gpu():
         return _shuffle_xor_amd(mask, val, offset)
     elif is_apple_gpu():
@@ -705,7 +711,7 @@ fn lane_group_reduce[
     @parameter
     for i in reversed(range(limit)):
         comptime offset = 1 << i
-        res = func(res, shuffle(res, offset * stride))
+        res = func(res, shuffle(res, UInt32(offset * stride)))
 
     return res
 
@@ -922,7 +928,7 @@ fn prefix_sum[
     @parameter
     for i in range(log2_floor(WARP_SIZE)):
         comptime offset = 1 << i
-        var n = shuffle_up(res, offset)
+        var n = shuffle_up(res, UInt32(offset))
         if lane >= UInt(offset):
             res += n
 
