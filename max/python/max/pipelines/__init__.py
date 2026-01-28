@@ -39,6 +39,7 @@ from .lib.kv_cache_config import KVCacheConfig
 from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
 from .lib.model_config import MAXModelConfig
+from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .lib.pipeline_variants.text_generation import TextGenerationPipeline
 from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
@@ -72,6 +73,7 @@ __all__ = [
     "PipelineModel",
     "PipelineRole",
     "PixelContext",
+    "PixelGenerationPipeline",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
