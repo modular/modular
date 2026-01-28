@@ -741,6 +741,7 @@ class Buffer:
         shape: Sequence[int],
         dtype: max._core.dtype.DType,
         device: Device | None = None,
+        pinned: bool = False,
     ) -> Buffer:
         """
         Allocates a buffer with all elements initialized to zero.
@@ -750,6 +751,8 @@ class Buffer:
             dtype (DType): The data type of the buffer.
             device (Device, optional): The device to allocate the buffer on.
                 Defaults to None (CPU).
+            pinned (bool, optional): If True, allocate pinned host memory for
+                non-CPU devices. Defaults to False.
 
         Returns:
             Buffer: A new buffer filled with zeros.

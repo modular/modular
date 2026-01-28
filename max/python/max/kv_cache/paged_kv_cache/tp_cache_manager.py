@@ -286,7 +286,7 @@ class _TPPagedKVCacheManager:
         lut_table_np = lut_table.to_numpy()
         lut_table_np.fill(self.total_num_pages)
 
-        # Allocate cache length buffer. It is zero-initialized.
+        # Allocate cache length buffer.
         cache_lengths = Buffer(
             shape=(batch_size,),
             dtype=DType.uint32,
@@ -294,7 +294,6 @@ class _TPPagedKVCacheManager:
             pinned=pinned,
         )
         cache_lengths_np = cache_lengths.to_numpy()
-        cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
