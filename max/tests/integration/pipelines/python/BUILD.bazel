@@ -102,12 +102,13 @@ modular_py_binary(
         ),
     },
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:distance_metrics",
+        "//max/tests/integration/pipelines/python/test_common:evaluate",
+        "//max/tests/integration/pipelines/python/test_common:numpy_encoder",
+        "//max/tests/integration/pipelines/python/test_common:verify_utils",
         requirement("click"),
         requirement("numpy"),
-        requirement("rich"),
     ],
 )
 
@@ -116,7 +117,7 @@ modular_py_binary(
     testonly = True,
     srcs = ["verify_pipelines.py"],
     data = [
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
         "@nvshmem_prebuilt//:host",
     ],
     env = {
@@ -130,11 +131,15 @@ modular_py_binary(
         # Limit memory usage to avoid OOM in Llama 4 Scout during init.
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "0.90",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":verify",
+        "//max/python/max/entrypoints",
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
+        "//max/tests/integration/pipelines/python/test_common:evaluate",
+        "//max/tests/integration/pipelines/python/test_common:numpy_encoder",
+        "//max/tests/integration/pipelines/python/test_common:process_isolation",
+        "//max/tests/integration/pipelines/python/test_common:storage",
         "@rules_python//python/runfiles",
     ],
 )
