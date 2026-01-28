@@ -183,6 +183,7 @@ class PixelGenerationTokenizer(
         self._use_guidance_embeds = transformer_config.get(
             "guidance_embeds", False
         )
+        guidance: npt.NDArray[np.float32] | None = None
 
         # Create scheduler
         scheduler_component = components.get("scheduler", {})
@@ -515,7 +516,6 @@ class PixelGenerationTokenizer(
             request.seed,
         )
 
-        guidance: npt.NDArray[np.float32] | None = None
         if self._use_guidance_embeds:
             guidance = np.array([request.guidance_scale], dtype=np.float32)
 
