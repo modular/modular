@@ -51,6 +51,21 @@ class FluxAttentionWrapper(MaxFluxAttention):
         )
 
 
+def weight_adapter(
+    attention_weights: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    """Adapts the attention weights to the MAX FluxAttention layer."""
+    adapted_weights = {}
+    keys = list(attention_weights.keys())
+    for key in keys:
+        if key == "to_out.0.weight":
+            adapted_weights["to_out.weight"] = attention_weights[key]
+        elif key == "to_out.0.bias":
+            adapted_weights["to_out.bias"] = attention_weights[key]
+        else:
+            adapted_weights[key] = attention_weights[key]
+    return adapted_weights
+
 @torch.no_grad()
 def generate_torch_outputs(
     flux_config: dict[str, Any],
@@ -79,11 +94,8 @@ def generate_torch_outputs(
         .to(torch.bfloat16)
         .to("cuda")
     )
-
-    # Load weights into the layer
     layer.load_state_dict(attention_weights)
 
-    # Run forward pass with dual-stream attention
     output = layer(
         hidden_states=input_tensor,
         encoder_hidden_states=encoder_hidden_states,
@@ -104,11 +116,12 @@ def generate_max_outputs(
     image_rotary_emb: tuple[torch.Tensor, torch.Tensor],
 ) -> torch.Tensor:
     """Generates the outputs of the MAX FluxAttention layer."""
+    device_ref = Accelerator()
     query_dim = (
         flux_config["num_attention_heads"] * flux_config["attention_head_dim"]
     )
+    attention_weights = weight_adapter(attention_weights)
 
-    device_ref = Accelerator()
 
     with F.lazy():
         # Create MAX FluxAttention layer with dual-stream support
@@ -123,7 +136,6 @@ def generate_max_outputs(
             out_bias=True,  # Output projections have bias
             dtype=DType.bfloat16,
         )
-        attention.load_state_dict(attention_weights)
         attention.to(device_ref)
 
     # Define input types for the graph
@@ -152,7 +164,7 @@ def generate_max_outputs(
     )
 
     # Compile with correct input types
-    attention.compile(
+    compiled_attention = attention.compile(
         hidden_states_type,
         encoder_hidden_states_type,
         cos_type,
@@ -161,7 +173,7 @@ def generate_max_outputs(
     )
 
     # Execute with dual-stream inputs
-    output = attention(
+    output = compiled_attention(
         Tensor.from_dlpack(input_tensor.cuda()),
         Tensor.from_dlpack(encoder_hidden_states.cuda()),
         Tensor.from_dlpack(image_rotary_emb[0].cuda()),
@@ -170,7 +182,7 @@ def generate_max_outputs(
 
     # For dual-stream, output is a tuple: (hidden_states, encoder_hidden_states)
     # Return only the image hidden states
-    return output[0] if isinstance(output, tuple) else output
+    return output[0] if isinstance(output, (tuple, list)) else output
 
 
 def test_flux_attention(

@@ -101,12 +101,10 @@ class FluxAttention(Module):
         )
 
         if not self.pre_only:
-            self.to_out = Sequential(
-                Linear(
-                    self.inner_dim,
-                    self.out_dim,
-                    bias=out_bias,
-                )
+            self.to_out = Linear(
+                self.inner_dim,
+                self.out_dim,
+                bias=out_bias,
             )
 
         if added_kv_proj_dim is not None:
@@ -149,7 +147,8 @@ class FluxAttention(Module):
             image_rotary_emb: Optional rotary embeddings for position encoding.
 
         Returns:
-            Output hidden states after attention, or tuple of (hidden_states, encoder_hidden_states) if encoder states provided.
+            Output hidden states after attention, or tuple of (hidden_states, encoder_hidden_states)
+            if encoder states provided.
         """
         batch_size = hidden_states.shape[0]
 
