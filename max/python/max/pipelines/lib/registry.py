@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceRepo
+from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
@@ -357,10 +357,27 @@ class PipelineRegistry:
             The matching SupportedArchitecture or None if no match found.
         """
         # Retrieve model architecture names
-        hf_config = self.get_active_huggingface_config(
-            huggingface_repo=huggingface_repo
-        )
-        architecture_names = getattr(hf_config, "architectures", [])
+        if not is_diffusion_pipeline(huggingface_repo):
+            hf_config = self.get_active_huggingface_config(
+                huggingface_repo=huggingface_repo
+            )
+            architecture_names = getattr(hf_config, "architectures", [])
+        else:
+            diffusers_config = self.get_active_diffusers_config(
+                huggingface_repo=huggingface_repo
+            )
+            if diffusers_config is None:
+                logger.debug(
+                    f"No diffusers_config found for {huggingface_repo.repo_id}"
+                )
+                return None
+            if diffusers_arch := diffusers_config.get("_class_name"):
+                architecture_names = [diffusers_arch]
+            else:
+                logger.debug(
+                    f"No `_class_name` found in diffusers_config for {huggingface_repo.repo_id}"
+                )
+                return None
 
         if not architecture_names:
             logger.debug(

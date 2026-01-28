@@ -452,16 +452,24 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def huggingface_config(self) -> AutoConfig:
+    def huggingface_config(self) -> AutoConfig | None:
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
         # before pickling. Each worker process will reload the config fresh,
         # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo
+            try:
+                self._huggingface_config = (
+                    PIPELINE_REGISTRY.get_active_huggingface_config(
+                        huggingface_repo=self.huggingface_model_repo
+                    )
                 )
-            )
+            except Exception as e:
+                # Not a transformers-style model (e.g., diffusers model)
+                logger.debug(
+                    f"Could not load HuggingFace config for "
+                    f"{self.model_path}: {e}"
+                )
+                return None
         return self._huggingface_config
 
     @computed_field  # type: ignore[prop-decorator]

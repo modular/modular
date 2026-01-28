@@ -38,6 +38,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from .config_enums import PipelineRole
+from .hf_utils import is_diffusion_pipeline
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
@@ -1028,6 +1029,11 @@ class PipelineConfig(ConfigFileModel):
         # Resolve final pipeline-specific changes to the config before doing
         # memory estimations.
         arch.pipeline_model.finalize_pipeline_config(self)
+
+        if is_diffusion_pipeline(model_config.huggingface_model_repo):
+            # Skip memory estimation for diffusion pipelines,
+            # since they don't use KV cache.
+            return
 
         MemoryEstimator.estimate_memory_footprint(
             self,
