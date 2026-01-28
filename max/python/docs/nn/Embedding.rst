@@ -10,4 +10,4 @@
    :undoc-members:
 
 .. note::
-   For the legacy graph-based embedding layer, see :doc:`legacy/embedding`.
+   For the legacy graph-based embedding layer, see [legacy/embedding](/max/api/python/nn/legacy/embedding).
