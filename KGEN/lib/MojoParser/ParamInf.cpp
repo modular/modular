@@ -510,9 +510,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
 
   // If the argument types exactly match, then they are good.
   ASTType argType = argVal.getRValueType();
-  if (argType.isEqualCanon(expectedType) ||
-      // If this is a wildcard type, we can match any operand.
-      sugarIsa<NameLookupArgWildcardType>(argType))
+  if (argType.isEqualCanon(expectedType))
     return success();
 
   // We're speculatively trying different options.  If we have errors on one
@@ -522,12 +520,21 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // If the expected type has unresolved bindings, try to infer them from the
   // argument first, before trying implicit conversions etc.
   if (paramFinder.hasReferences(expectedType)) {
-    if (succeeded(matcher.matchTypes(argType, expectedType))) {
+    // TODO: make sure that we can always match `NameLookupArgWildcardType`. It
+    // works with trait bound that __MLIRType conforms to at the moment.
+    // We need to call matchType in order to not generating "can not infer
+    // parameter" error at the end.
+    if (succeeded(matcher.matchTypes(argType, expectedType)))
       return success(); // Types were equal after matching.
-    }
+
     savedFailureReason = matcher.failureReason;
     matcher.resetError();
   } else {
+    // We have a non-parametric expected type, and a wildcard type, we can
+    // match any operand.
+    if (sugarIsa<NameLookupArgWildcardType>(argType))
+      return success();
+
     // Zero cost conversions don't count as implicit conversions. We attempt
     // this after trying to match the types to try to infer values first.
     if (IREmitter::canZeroCostConvert(argType, expectedType, getShared()))
