@@ -167,7 +167,7 @@ class Timesteps(Module[[Tensor], Tensor]):
         return t_emb
 
 
-class TimestepEmbedding(Module[[Tensor, Tensor | None] | [Tensor], Tensor]):
+class TimestepEmbedding(Module[[Tensor, Tensor | None] , Tensor]):
     def __init__(
         self,
         in_channels: int,

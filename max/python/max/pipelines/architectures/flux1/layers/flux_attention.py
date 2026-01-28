@@ -21,7 +21,7 @@ from max.nn import Linear, Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.norm import RMSNorm
-from max.nn.sequential import Sequential
+from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
 from .activations import GELU
@@ -274,7 +274,7 @@ class FeedForward(Module[[Tensor, ...], Tensor]):
                 f"Activation function {activation_fn} is not implemented"
             )
 
-        self.net = Sequential(
+        self.net = ModuleList(
             act_fn,
             Linear(
                 inner_dim,
