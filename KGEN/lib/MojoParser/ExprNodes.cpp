@@ -2184,12 +2184,19 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
                      baseDecl.getParamValues())) {
         // If this binding is for this parameter propagate the bound
         // parameter.
-        if (name.getName() == paramRef.getName())
+        if (name.getName() == paramRef.getName()) {
+          if (isa<UnboundAttr>(value)) {
+            // Detect if we are accessing a unbound parameter.
+            emitter.emitError(getLoc(), "'")
+                << spelling << "' refers to an unbound parameter in "
+                << baseRVType;
+            return {};
+          }
           return emitter.emitResult(value, this, dest);
+        }
       }
     }
   }
-
   // Reference to some non-function/struct member of the type.
   emitter.emitError(getLoc(), "reference to unknown member '")
       << spelling << "'" << getRange();

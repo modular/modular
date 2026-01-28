@@ -1170,6 +1170,7 @@ struct S[param: Int]: #expected-note {{previous definition here}}
 struct MyParam[p: Int]:
   pass
 
+
 #expected-note @below {{previous definition here}}
 struct MyStruct[p: Int, m1: MyParam[_], m2: MyParam[_]]:
   fn method[p: Int](self): # expected-error {{invalid redefinition of 'p'}}
@@ -1221,3 +1222,6 @@ fn foo(s: SIMD):
 @export
 fn bar[n: Int]():
     pass
+
+
+comptime _ = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
