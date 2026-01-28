@@ -14,12 +14,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import types
 from collections.abc import Generator, Mapping, Sequence
 from typing import Annotated, Any, overload
 
 import max._core.dtype
 import numpy
-import typing_extensions
 from numpy.typing import NDArray
 
 class Device:
@@ -760,7 +760,7 @@ class Buffer:
 
     def __dlpack__(
         self, *, stream: int | None = None, **kwargs
-    ) -> typing_extensions.CapsuleType:
+    ) -> types.CapsuleType:
         """Implements part of the dlpack contract."""
 
     def __dlpack_device__(self) -> tuple:
@@ -786,7 +786,7 @@ class Buffer:
     @overload
     @staticmethod
     def _from_dlpack(
-        arg0: typing_extensions.CapsuleType, arg1: Device, arg2: int, /
+        arg0: types.CapsuleType, arg1: Device, arg2: int, /
     ) -> Buffer: ...
     def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(

@@ -195,7 +195,7 @@ single_version_override(
     version = "1.67.1",
 )
 
-DEFAULT_PYTHON_VERSION = "3.12"
+DEFAULT_PYTHON_VERSION = "3.13"
 
 PYTHON_VERSIONS = [
     "3_10",

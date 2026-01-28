@@ -3,6 +3,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
+import types
 from collections.abc import Callable, Iterator, Sequence
 from typing import TypeVar, overload
 
@@ -2425,7 +2426,7 @@ class InferTypeOpInterface:
         self,
         operands: list | None = None,
         attributes: Attribute | None = None,
-        properties: typing_extensions.CapsuleType | None = None,
+        properties: types.CapsuleType | None = None,
         regions: Sequence[Region] | None = None,
         context: Context | None = None,
         loc: Location | None = None,
@@ -2496,7 +2497,7 @@ class InferShapedTypeOpInterface:
         self,
         operands: list | None = None,
         attributes: Attribute | None = None,
-        regions: typing_extensions.CapsuleType | None = None,
+        regions: types.CapsuleType | None = None,
         properties: Sequence[Region] | None = None,
         context: Context | None = None,
         loc: Location | None = None,

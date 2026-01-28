@@ -16,12 +16,12 @@
 import enum
 import inspect
 import os
+import types
 from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-import typing_extensions
 from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
@@ -260,7 +260,7 @@ class InferenceSession:
     ) -> Model: ...
     def compile_from_object(
         self,
-        model: typing_extensions.CapsuleType,
+        model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
     ) -> Model: ...
