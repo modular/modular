@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import pytest
+import gc
+
 import torch
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer
@@ -106,7 +107,9 @@ def generate_max_outputs(
     return from_dlpack(max_output[0]).to(torch.bfloat16)
 
 
-@pytest.mark.skip("MODELS-958: Flaky")
+# Flagged as flaky with "no room left in memory manager" in MODELS-958.
+# Optimistically re-enabled with larger gpu-memory requirement and explicit
+# garbage collection on 20250128.
 def test_scaled_word_embedding(
     text_config: Gemma3TextConfig,
     input_indices: torch.Tensor,
@@ -115,6 +118,9 @@ def test_scaled_word_embedding(
     """Test ScaledWordEmbedding with default scale (1.0)."""
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
+
+    # Garbage collection to migitate MODELS-958
+    gc.collect()
 
     torch_output = generate_torch_outputs(
         text_config, input_indices, embedding_weights
@@ -133,8 +139,13 @@ def test_scaled_word_embedding(
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
 
+    # Garbage collection to migitate MODELS-958
+    gc.collect()
 
-@pytest.mark.skip("MODELS-958: Flaky")
+
+# Flagged as flaky with "no room left in memory manager" in MODELS-958.
+# Optimistically re-enabled with larger gpu-memory requirement and explicit
+# garbage collection on 20250128.
 def test_scaled_word_embedding_with_scale(
     text_config: Gemma3TextConfig,
     input_indices: torch.Tensor,
@@ -143,6 +154,9 @@ def test_scaled_word_embedding_with_scale(
     """Test `ScaledWordEmbedding` with a non-default scale factor."""
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
+
+    # Garbage collection to migitate MODELS-958
+    gc.collect()
 
     embed_scale = 0.5
     torch_output = generate_torch_outputs(
@@ -161,3 +175,6 @@ def test_scaled_word_embedding_with_scale(
 
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
+
+    # Garbage collection to migitate MODELS-958
+    gc.collect()
