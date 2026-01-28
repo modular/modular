@@ -453,7 +453,7 @@ fn bench_prefill[
                 ),
             )
 
-            flare_mla_prefill[rank = q_device.rank, use_fa4=True](
+            flare_mla_prefill[rank = q_device.rank](
                 output_device,
                 q_device,
                 k_device,
