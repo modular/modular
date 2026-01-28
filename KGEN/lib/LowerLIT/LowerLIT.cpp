@@ -6,6 +6,7 @@
 
 #include "LowerLITTypes.h"
 
+#include "ConcreteBindings.h"
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -990,42 +991,24 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
 template <typename GenKind>
 static GenKind removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
                                      GenKind signature) {
-  llvm::SmallVector<TypedAttr> paramsToBind;
-  size_t numRemoved = 0;
+  SmallVector<TypedAttr> paramsToBind;
+  bool hasRemovals = false;
 
-  ParameterEvaluator evaluator;
-  for (auto [idx, paramType] :
-       llvm::enumerate(signature.getInputParamTypes())) {
-    Type adjParamType = evaluator.getReboundType(paramType);
-
-    // If this is a parameter we are supposed to keep, leave it unbound.
+  for (Type paramType : signature.getInputParamTypes()) {
     if (singletonTypeHelper.isSingletonType(paramType)) {
-      // Bind the parameter to the expected singleton value of the right
-      // type. 'getSpecializedSignature' strips off a level of indexes from
-      // the type, so we need to adapt the type to cooperate.
-      TypedAttr singletonValue =
-          singletonTypeHelper.getSingletonValue(adjParamType);
-      paramsToBind.push_back(singletonValue);
-      evaluator.appendIndexBinding(paramsToBind.back());
-      ++numRemoved;
+      // Bind singleton parameters to their canonical value.
+      paramsToBind.push_back(singletonTypeHelper.getSingletonValue(paramType));
+      hasRemovals = true;
     } else {
-      // Any uses of this parameter in later replaced lifetimes needs to refer
-      // to the appropriate index of the resultant parameter number, e.g. the
-      // bool in a origin may shift to a new index.
-      auto idxValue =
-          ParamIndexRefAttr::get(/*depth*/ -1, idx - numRemoved, adjParamType);
-      evaluator.appendIndexBinding(idxValue);
-
-      // We tell getSpecializedSignature not to touch this though.
-      paramsToBind.push_back(UnboundAttr::get(adjParamType));
+      // Keep non-singleton parameters unbound.
+      paramsToBind.push_back(UnboundAttr::get(paramType));
     }
   }
 
   // Update the signature type if we dropped anything.
-  if (numRemoved) {
-    signature = signature.getSpecializedGenerator(
-        paramsToBind, /*evaluationContext=*/nullptr);
-    assert(signature && "didn't replace lifetimes correctly");
+  if (hasRemovals) {
+    signature = getSpecializedWithConcreteBindings(signature, paramsToBind);
+    assert(signature && "didn't replace singletons correctly");
   }
   return signature;
 }
