@@ -99,7 +99,9 @@ fn copy_local_to_dram2[
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
+        dst.linear_idx_type
+    ](offset)
 
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
@@ -117,7 +119,7 @@ fn copy_local_to_dram2[
 
             @parameter
             if dst_fragments.layout.all_dims_known():
-                dst_idx += dst_static_idx
+                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
@@ -143,7 +145,10 @@ fn copy_local_to_dram2[
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
-                        Int32(dst_idx + element_offset),
+                        Int32(
+                            dst_idx
+                            + Scalar[dst.linear_idx_type](element_offset)
+                        ),
                         src,
                     )
 
@@ -663,13 +668,15 @@ fn copy_dram_to_sram_lds[
         ](
             desc_ptr_llvm,
             shared_ptr3,
-            to_i32(num_bytes_per_lane),
-            to_i32(vector_offset_bytes),
-            to_i32(scalar_offset_bytes),
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(Int32(vector_offset_bytes)),
+            to_i32(Int32(scalar_offset_bytes)),
             to_i32(0),
             to_i32(aux),
         )
-        comptime num_bytes_per_warp = thread_layout.size() * num_bytes_per_lane
+        comptime num_bytes_per_warp = UInt32(
+            thread_layout.size() * num_bytes_per_lane
+        )
         lds_ptr += num_bytes_per_warp
 
 
@@ -692,7 +699,9 @@ fn load_b_[
 
     @parameter
     if swizzle:
-        offset = swizzle.value()(offset // simd_width) * simd_width
+        offset = swizzle.value()(
+            offset // Scalar[src.linear_idx_type](simd_width)
+        ) * Scalar[src.linear_idx_type](simd_width)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`

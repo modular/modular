@@ -331,7 +331,7 @@ struct KVBufferImpl[
                 self.load_tile_id
             ].vectorize[1, Self.simd_width](),
             self.global_iterator,
-            self.bounds,
+            UInt32(self.bounds),
         )
         self.global_iterator._incr()
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
@@ -808,7 +808,7 @@ struct QRegisterBuffer[
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var bounds = max(
             min(Int32(Self.WM), Int32(tensor.dim[0]() - Self.WM * warp_row))
-            * tensor.stride[0](),
+            * Int32(tensor.stride[0]()),
             0,
         )
         var gmem_warp_iter = tensor.tiled_iterator[Self.WM, Self.BK, axis=1](
@@ -825,7 +825,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(bounds)),
+                UInt32(Int(readfirstlane(bounds))),
             )
             gmem_warp_iter._incr()
 

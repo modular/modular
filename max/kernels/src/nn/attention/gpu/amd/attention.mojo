@@ -168,14 +168,14 @@ fn _mask_apply[
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # Coordinates in mask for current mma tile.
-            var mask_frag_row = mask_warp_row + m_mma * mma_shape[0]
+            var mask_frag_row = mask_warp_row + UInt32(m_mma * mma_shape[0])
             var mask_frag_col = (
                 mask_warp_col
-                + n_mma * mma_shape[1]
+                + UInt32(n_mma * mma_shape[1])
                 + (kv_tile_start_row if token_gen else 0)
             )
-            mask_frag_row += lane_row
-            mask_frag_col += lane_col
+            mask_frag_row += UInt32(lane_row)
+            mask_frag_col += UInt32(lane_col)
             # The row in score matrix of shape seq_len x num_keys.
             # Mask col is score col since we don't partition in col.
             var score_row = (
@@ -259,7 +259,7 @@ fn _mask_apply[
                                 Int(score_row_with_start_pos),
                                 Int(
                                     score_col_with_cache_start_pos
-                                    + fragment_col
+                                    + UInt32(fragment_col)
                                 ),
                             ),
                             p_reg_vectorized[mma_id, 0][j],
@@ -286,7 +286,7 @@ fn _mask_apply[
                     p_reg_vectorized[mma_id, 0][j] = _kernel_mask(
                         IndexList[2, element_type = DType.uint32](
                             Int(score_row),
-                            Int(score_col + fragment_col),
+                            Int(score_col + UInt32(fragment_col)),
                         ),
                         IndexList[2, element_type = DType.uint32](
                             Int(bound_x), Int(bound_y)
@@ -387,10 +387,10 @@ struct Attention[
         UInt32(Self.BK),
         UInt32(Self.depth),
         UInt32(Self.num_heads),
-        Self.group,
+        UInt32(Self.group),
         Self.token_gen,
-        Self.q_depth,
-        Self.output_depth,
+        UInt32(Self.q_depth),
+        UInt32(Self.output_depth),
     ]
 
     comptime SharedMemoryManagerType = SharedMemoryManager[
@@ -582,8 +582,8 @@ struct Attention[
             # Prefill or decoding without mask checking: check full tile
             return self.mask.status(
                 Index[dtype = DType.uint32](
-                    Int(self.mask_block_row + self.start_pos),
-                    Int(kv_tile_start_row + self.cache_start_pos),
+                    Int(self.mask_block_row + UInt32(self.start_pos)),
+                    Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
                 Index[dtype = DType.uint32](Int(Self.BM), Int(Self.BN)),
             )
@@ -641,17 +641,17 @@ struct Attention[
                 masked,
                 kv_tile_start_row,
                 kv_tile_num_rows,
-                self.start_pos,
-                self.seq_len,
-                self.num_keys,
-                Int(self.mask_block_row),
-                Int(self.mask_warp_row),
+                UInt32(self.start_pos),
+                UInt32(self.seq_len),
+                UInt32(self.num_keys),
+                UInt32(Int(self.mask_block_row)),
+                UInt32(Int(self.mask_warp_row)),
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
                 self.p_reg_buffer.vectorize[stage](),
                 not_last_iter,
-                self.cache_start_pos,
+                UInt32(self.cache_start_pos),
             )
 
         # self.scale_p_reg[stage]()
@@ -722,8 +722,8 @@ struct Attention[
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = warp_row * Int(Self.WM)
-        self.mask_warp_col = warp_col * Int(Self.WN)
+        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
+        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
 
         self.batch_idx = batch_idx
 

@@ -173,11 +173,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         # warp scratch has layout row_major(num_warps, num_rows). The
@@ -197,11 +197,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         @parameter
@@ -299,11 +299,11 @@ struct Softmax[
                     for row in range(Self.frag_num_rows):
                         # Each thread handle two rows in the mma output.
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         warp_scratch[
@@ -323,11 +323,11 @@ struct Softmax[
                     @parameter
                     for row in range(Self.frag_num_rows):
                         var score_row_idx = (
-                            col_tile
+                            UInt32(col_tile)
                             * Self.num_colwise_lanes
-                            * Self.frag_num_rows
-                            + lane_row * Self.frag_num_rows
-                            + row
+                            * UInt32(Self.frag_num_rows)
+                            + UInt32(lane_row * Self.frag_num_rows)
+                            + UInt32(row)
                         )
 
                         self.score_frag_rowsum[col_tile, row] = 0
