@@ -48,9 +48,6 @@ struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
         else:
             writer.write("rasterM")
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        hasher.update(self._value)
-
 
 @fieldwise_init
 struct WorkInfo(Stringable, TrivialRegisterType, Writable):

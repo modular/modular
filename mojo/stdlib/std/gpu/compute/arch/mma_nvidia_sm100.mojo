@@ -124,18 +124,6 @@ struct UMMAKind(Hashable, Stringable, TrivialRegisterType, Writable):
         else:
             writer.write("kind::unknown")
 
-    @always_inline
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying UMMAKind value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self._value)
-
 
 @always_inline
 fn _constrained_mma_m[
