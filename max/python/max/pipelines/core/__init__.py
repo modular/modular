@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import (
+    PixelContext,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -28,6 +29,7 @@ from .context_validators import (
 )
 
 __all__ = [
+    "PixelContext",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",

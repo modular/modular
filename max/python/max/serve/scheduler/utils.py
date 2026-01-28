@@ -75,7 +75,7 @@ class BatchMetrics:
         cls,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -98,10 +98,10 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
-        if paged_cache is not None:
+        if kv_cache is not None:
             cache_hit_tokens = sum(
-                paged_cache.get_metrics(replica_idx).cache_tokens
-                for replica_idx in range(paged_cache.num_replicas)
+                kv_cache.get_metrics(replica_idx).cache_tokens
+                for replica_idx in range(kv_cache.num_replicas)
             )
             all_tokens = cache_hit_tokens + cache_miss_tokens
             cache_hit_rate = 0.0
@@ -111,26 +111,26 @@ class BatchMetrics:
                 # calculation takes chunked prefill into account.
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
-            if paged_cache.enable_kvcache_swapping_to_host:
+            if kv_cache.enable_kvcache_swapping_to_host:
                 total_host_kv_blocks = sum(
-                    paged_cache.get_num_host_pages(replica_idx)
-                    for replica_idx in range(paged_cache.num_replicas)
+                    kv_cache.get_num_host_pages(replica_idx)
+                    for replica_idx in range(kv_cache.num_replicas)
                 )
                 used_host_kv_blocks = sum(
-                    paged_cache.get_num_used_host_pages(replica_idx)
-                    for replica_idx in range(paged_cache.num_replicas)
+                    kv_cache.get_num_used_host_pages(replica_idx)
+                    for replica_idx in range(kv_cache.num_replicas)
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
                 h2d_blocks_copied = sum(
-                    paged_cache.get_metrics(replica_idx).h2d_blocks_copied
-                    for replica_idx in range(paged_cache.num_replicas)
+                    kv_cache.get_metrics(replica_idx).h2d_blocks_copied
+                    for replica_idx in range(kv_cache.num_replicas)
                 )
                 d2h_blocks_copied = sum(
-                    paged_cache.get_metrics(replica_idx).d2h_blocks_copied
-                    for replica_idx in range(paged_cache.num_replicas)
+                    kv_cache.get_metrics(replica_idx).d2h_blocks_copied
+                    for replica_idx in range(kv_cache.num_replicas)
                 )
 
-                paged_cache.reset_metrics()
+                kv_cache.reset_metrics()
 
         return cls(
             batch_type=inputs.batch_type,
@@ -238,7 +238,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -250,7 +250,7 @@ class SchedulerLogger:
         Args:
             sch_config: The scheduler configuration.
             inputs: The pipeline input / batch.
-            paged_cache: The PagedKVCacheManager, if any.
+            kv_cache: The PagedKVCacheManager, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
@@ -263,7 +263,7 @@ class SchedulerLogger:
         metrics = BatchMetrics.create(
             sch_config,
             inputs,
-            paged_cache,
+            kv_cache,
             batch_creation_time_s,
             batch_execution_time_s,
             num_pending_reqs,

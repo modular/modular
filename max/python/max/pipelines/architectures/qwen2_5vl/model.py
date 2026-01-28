@@ -271,15 +271,15 @@ class Qwen2_5VLModel(
                 )
 
         # Generate Qwen2.5VL config from HuggingFace config
-        qwen2_5vl_config = Qwen2_5VLConfig.generate(
+        qwen2_5vl_config = Qwen2_5VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+        )
+        qwen2_5vl_config.finalize(
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             llm_state_dict=llm_state_dict,
             vision_state_dict=vision_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.model_config = qwen2_5vl_config

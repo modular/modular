@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for swapAB matmul optimization comparing normal vs swapAB execution."""
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of
 
 from gpu.host import DeviceContext
@@ -397,7 +397,7 @@ def main():
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn = OptionalReg[
+            elementwise_compute_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,
@@ -423,7 +423,7 @@ def main():
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn = OptionalReg[
+            elementwise_compute_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,

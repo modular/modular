@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
@@ -1965,7 +1965,7 @@ struct EPCombineKernel[
         router_weights_wrapper: OptionalReg[
             fn (Int, Int) capturing -> Float32
         ] = None,
-        elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+        elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
         output_tokens: LayoutTensor[
             output_type, output_tokens_layout, MutAnyOrigin
@@ -2236,7 +2236,7 @@ fn combine_wait_kernel[
     router_weights_wrapper: OptionalReg[
         fn (Int, Int) capturing -> Float32
     ] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,
 ](
     output_tokens: LayoutTensor[
@@ -2506,7 +2506,7 @@ fn combine_kernel[
         fn (Int, Int) capturing -> Float32
     ] = None,
     fused_shared_expert: Bool = False,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    epilogue_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,
 ](
     input_tokens: LayoutTensor[input_type, input_tokens_layout, MutAnyOrigin],

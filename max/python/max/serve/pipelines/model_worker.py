@@ -31,7 +31,8 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
+from max.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
@@ -39,11 +40,14 @@ from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessManager, subprocess_manager
 from max.serve.scheduler import load_scheduler
-from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
+from max.serve.worker_interface.worker_interface import (
+    ModelWorkerInterface,
+    sleep_with_backoff,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -73,6 +77,27 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
         shape=(bytes,), dtype=DType.int8, device=device, pinned=True
     )
     del pinned
+
+
+def get_reset_prefix_cache_backend(
+    pipeline: Pipeline[Any, Any],
+    zmq_endpoint_base: str,
+) -> tuple[ResetPrefixCacheBackend | None, PagedKVCacheManager | None]:
+    """Get the paged KV cache manager from a pipeline, if available.
+
+    Args:
+        pipeline: The pipeline to extract the KV cache manager from.
+
+    Returns:
+        The paged KV cache manager if available, None otherwise.
+    """
+    if hasattr(pipeline, "kv_managers"):
+        kv_manager = pipeline.kv_managers[-1]
+        if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
+            kv_manager, DummyKVCache
+        ):
+            return ResetPrefixCacheBackend(zmq_endpoint_base), kv_manager
+    return None, None
 
 
 def get_pipeline_model(
@@ -128,7 +153,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
     ) -> None:
         """Runs a model worker process.
 
@@ -165,19 +190,15 @@ class ModelWorker:
                 pipeline,
                 pipeline_config,
                 settings,
-                scheduler_zmq_configs,
+                model_worker_interface,
             )
 
-            # Retrieve Paged Manager.
-            paged_cache = get_paged_manager(pipeline)
-            reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
-            if (
-                paged_cache is not None
-                and pipeline_config.zmq_endpoint_base is not None
-            ):
-                reset_prefix_cache_backend = ResetPrefixCacheBackend(
-                    pipeline_config.zmq_endpoint_base
+            # Get the reset prefix cache backend.
+            reset_prefix_cache_backend, kv_cache = (
+                get_reset_prefix_cache_backend(
+                    pipeline, pipeline_config.zmq_endpoint_base
                 )
+            )
 
             # Maybe retrieve LoRA manager.
             lora_manager = None
@@ -201,8 +222,8 @@ class ModelWorker:
                     reset_prefix_cache_backend is not None
                     and reset_prefix_cache_backend.should_reset_prefix_cache()
                 ):
-                    assert paged_cache is not None
-                    paged_cache.reset_prefix_cache()
+                    assert kv_cache is not None
+                    kv_cache.reset_prefix_cache()
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()
@@ -224,7 +245,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -247,7 +268,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
-                    scheduler_zmq_configs,
+                    model_worker_interface,
                 )
             )
         except KeyboardInterrupt:
@@ -263,7 +284,7 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    scheduler_zmq_configs: SchedulerZmqConfigs,
+    model_worker_interface: ModelWorkerInterface,
 ) -> AsyncGenerator[ProcessManager]:
     """Starts a model worker and associated process.
 
@@ -292,7 +313,7 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
-            scheduler_zmq_configs,
+            model_worker_interface,
         )
 
         await proc.ready(alive, timeout=settings.mw_timeout_s)

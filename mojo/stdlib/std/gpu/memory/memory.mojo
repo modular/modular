@@ -980,6 +980,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     /,
     *,
     cta_group: Int = 1,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst_mem: UnsafePointer[
         mut=True, dst_type, address_space = AddressSpace.SHARED
@@ -1001,6 +1002,8 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         mbr_type: The data type of the memory barrier.
         rank: The dimensionality of the tensor (1, 2, or 3).
         cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
+        eviction_policy: Optional cache eviction policy that controls how the data is handled
+                        in the cache hierarchy. Defaults to EVICT_NORMAL.
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1027,79 +1030,158 @@ fn cp_async_bulk_tensor_shared_cluster_global[
 
     __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
     __comptime_assert cta_group == 1 or _is_sm_100x_or_newer()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+    __comptime_assert not cache_hint or cta_group == 1
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
         "d.cta_group::2" if cta_group == 2 else "d",
         ".shared::cluster.global.tile.mbarrier::complete_tx::bytes",
+        ".L2::cache_hint" if cache_hint else "",
     )
 
     @parameter
-    if rank == 3:
-        inlined_assembly[
-            tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
-            NoneType,
-            constraints="r,l,r,r,r,r",
-        ](
-            Int32(Int(dst_mem)),
-            tma_descriptor,
-            Int32(Int(mem_bar)) & 0xFEFFFFFF,
-            Int32(coords[0]),
-            Int32(coords[1]),
-            Int32(coords[2]),
-        )
-    elif rank == 2:
-        inlined_assembly[
-            tma_asm + " [$0], [$1, {$3, $4}], [$2];",
-            NoneType,
-            constraints="r,l,r,r,r",
-        ](
-            Int32(Int(dst_mem)),
-            tma_descriptor,
-            Int32(Int(mem_bar)) & 0xFEFFFFFF,
-            Int32(coords[0]),
-            Int32(coords[1]),
-        )
-    elif rank == 1:
-        inlined_assembly[
-            tma_asm + " [$0], [$1, {$3}], [$2];",
-            NoneType,
-            constraints="r,l,r,r",
-        ](
-            Int32(Int(dst_mem)),
-            tma_descriptor,
-            Int32(Int(mem_bar)) & 0xFEFFFFFF,
-            Int32(coords[0]),
-        )
-    elif rank == 4:
-        inlined_assembly[
-            tma_asm + " [$0], [$1, {$3, $4, $5, $6}], [$2];",
-            NoneType,
-            constraints="r,l,r,r,r,r,r",
-        ](
-            Int32(Int(dst_mem)),
-            tma_descriptor,
-            Int32(Int(mem_bar)) & 0xFEFFFFFF,
-            Int32(coords[0]),
-            Int32(coords[1]),
-            Int32(coords[2]),
-            Int32(coords[3]),
-        )
-    else:  # rank == 5
-        inlined_assembly[
-            tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];",
-            NoneType,
-            constraints="r,l,r,r,r,r,r,r",
-        ](
-            Int32(Int(dst_mem)),
-            tma_descriptor,
-            Int32(Int(mem_bar)) & 0xFEFFFFFF,
-            Int32(coords[0]),
-            Int32(coords[1]),
-            Int32(coords[2]),
-            Int32(coords[3]),
-            Int32(coords[4]),
-        )
+    if cache_hint:
+
+        @parameter
+        if rank == 3:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5}], [$2], $6;",
+                NoneType,
+                constraints="r,l,r,r,r,r,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int64(eviction_policy._value),
+            )
+        elif rank == 2:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4}], [$2], $5;",
+                NoneType,
+                constraints="r,l,r,r,r,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int64(eviction_policy._value),
+            )
+        elif rank == 1:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3}], [$2], $4;",
+                NoneType,
+                constraints="r,l,r,r,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int64(eviction_policy._value),
+            )
+        elif rank == 4:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5, $6}], [$2], $7;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int64(eviction_policy._value),
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2], $8;",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r,l",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+                Int64(eviction_policy._value),
+            )
+    else:
+
+        @parameter
+        if rank == 3:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+            )
+        elif rank == 2:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+            )
+        elif rank == 1:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3}], [$2];",
+                NoneType,
+                constraints="r,l,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+            )
+        elif rank == 4:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5, $6}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+            )
+        else:  # rank == 5
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5, $6, $7}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+                Int32(coords[4]),
+            )
 
 
 @always_inline

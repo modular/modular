@@ -201,17 +201,17 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(batch.value)
-        * Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        batch.value
+        * ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(batch.value)
-        * Int(ceildiv(n.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        batch.value
+        * ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K

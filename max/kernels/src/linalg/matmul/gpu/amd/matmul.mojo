@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of, simd_width_of
 
 from gpu import (
@@ -242,7 +242,7 @@ fn gemm_kernel_amd[
     a_linear_idx_type: DType,
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[
         c_type,
@@ -759,7 +759,7 @@ fn write_output_fragments[
     MMA_M: Int,
     MMA_N: Int,
     output_thread_layout: Layout,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_reg_fragment: LayoutTensor,
     c_gmem_fragment: LayoutTensor[mut=True, ...],

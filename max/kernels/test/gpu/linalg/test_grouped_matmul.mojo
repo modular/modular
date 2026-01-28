@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -243,10 +243,10 @@ fn test[
         ptr = c_dev_ndbuffer.data + new_j * total_num_tokens * N + i * N + new_k
         ptr.store[width=width, alignment=alignment](new_val.cast[out_type]())
 
-    comptime elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+    comptime elementwise_lambda_fn = Optional[elementwise_epilogue_type](
         perm_dim_fn
     ) if qkv_perm_dim else (
-        OptionalReg[elementwise_epilogue_type](
+        Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if has_epilogue else None
     )

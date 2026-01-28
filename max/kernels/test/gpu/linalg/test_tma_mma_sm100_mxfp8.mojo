@@ -58,7 +58,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from collections import OptionalReg
+from collections import Optional
 from linalg.utils import elementwise_epilogue_type
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from gpu.sync import syncwarp
@@ -511,7 +511,7 @@ fn sm100_block_scaled_mxfp8[
     SF_VECTOR_SIZE: Int,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -663,7 +663,7 @@ fn sm100_block_scaled_mxfp8[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -819,14 +819,14 @@ def test_block_scaled_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, atom_m[0] * atom_m[1]))
+        ceildiv(m.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, atom_m[0] * atom_m[1]))
+        ceildiv(n.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]

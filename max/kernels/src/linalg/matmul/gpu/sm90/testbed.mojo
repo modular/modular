@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import align_of
 
@@ -51,7 +51,7 @@ fn test_matmul_sm90[
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     measure_threshold: OptionalReg[Float64] = None,
@@ -202,7 +202,7 @@ fn test_matmul_sm90[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    comptime elf = OptionalReg[elementwise_epilogue_type](
+    comptime elf = Optional[elementwise_epilogue_type](
         epilogue_fn
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 

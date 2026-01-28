@@ -42,7 +42,7 @@ from .fp4_utils import (
 )
 from gpu.host.info import B200
 from utils import StaticTuple
-from collections import OptionalReg
+from collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
@@ -426,7 +426,7 @@ fn naive_block_scaled_matmul[
     SF_VECTOR_SIZE: Int,
     accum_type: DType = DType.float32,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     BLOCK_DIM: Int = 16,
 ](
     c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
@@ -570,7 +570,7 @@ fn naive_block_scaled_matmul_kernel[
     scaling_kind: UMMAKind,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1243,7 +1243,7 @@ fn block_scaled_matmul_with_epilogue[
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],

@@ -31,7 +31,7 @@ fn sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     var start = global_perf_counter_ns()
     sleep(0.1)
     var end = global_perf_counter_ns()
-    result_ptr[] = UInt64(end - start)
+    result_ptr[] = end - start
 
 
 fn sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
@@ -39,7 +39,7 @@ fn sleep_kernel_500us(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     var start = global_perf_counter_ns()
     sleep(0.0005)
     var end = global_perf_counter_ns()
-    result_ptr[] = UInt64(end - start)
+    result_ptr[] = end - start
 
 
 fn sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
@@ -47,7 +47,7 @@ fn sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     var start = global_perf_counter_ns()
     sleep(0.0)
     var end = global_perf_counter_ns()
-    result_ptr[] = UInt64(end - start)
+    result_ptr[] = end - start
 
 
 def test_sleep_100ms(ctx: DeviceContext):

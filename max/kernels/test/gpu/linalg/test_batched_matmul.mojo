@@ -258,7 +258,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, Int(n)),
+            IndexList[3](b, m, n),
             ctx,
         )
 

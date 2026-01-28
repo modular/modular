@@ -29,6 +29,7 @@ from max.interfaces import (
     TokenBuffer,
     TokenSlice,
 )
+from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextContext
 
 
@@ -152,6 +153,7 @@ class EchoTokenGenerator(
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
+        self.kv_managers = [DummyKVCache()]
 
     def execute(
         self,
