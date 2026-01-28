@@ -41,10 +41,7 @@ from max._core.dialects import builtin, mo
 from max.graph import Graph
 
 # Import handlers to register them (side effect import)
-from ._interpreter_ops import (
-    _get_operand_value,
-    lookup_handler,
-)
+from ._interpreter_ops import lookup_handler
 
 # Type alias for interpreter slots
 InterpreterSlots = dict[Any, driver.Buffer | None]
@@ -159,10 +156,10 @@ class MOInterpreter:
         if output_op is None:
             raise RuntimeError("Graph has no output terminator")
         outputs = []
-        # op.operands can return either OpOperand or Value objects
+        # mo.OutputOp.operands returns Value directly (not OpOperand)
         for operand in output_op.operands:
             try:
-                outputs.append(slots[_get_operand_value(operand)])
+                outputs.append(slots[operand])
             except RuntimeError as e:
                 raise RuntimeError(
                     f"Output value not computed: {operand}"
@@ -228,12 +225,11 @@ class MOInterpreter:
         """
         # Check handler registry
         if (handler := lookup_handler(op)) is not None:
-            # op.operands can return either OpOperand or Value objects
+            # Operation.operands returns OpOperand, use .value to get the Value.
             # Use .get() with default None for chain values (ChainCreateOp is
             # skipped, so chain values are not stored in slots)
             input_buffers = [
-                slots.get(_get_operand_value(operand))
-                for operand in op.operands
+                slots.get(operand.value) for operand in op.operands
             ]
             outputs = handler(self.devices, op, input_buffers)
         else:

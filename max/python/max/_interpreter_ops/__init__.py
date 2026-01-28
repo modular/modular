@@ -84,7 +84,6 @@ UNARY_ELEMENTWISE: dict[
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import (
     _MO_OP_HANDLERS,
-    _get_operand_value,
     lookup_handler,
     register_op_handler,
 )
@@ -94,7 +93,6 @@ __all__ = [
     "BINARY_ELEMENTWISE_COMPARISON",
     "UNARY_ELEMENTWISE",
     "_MO_OP_HANDLERS",
-    "_get_operand_value",
     "lookup_handler",
     "register_op_handler",
 ]
