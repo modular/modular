@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of, size_of
 
 from buffer import Dim, DimList, NDBuffer
@@ -314,7 +314,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     # grouped_matmul_sm100_blockwise_scaled_fp8[
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config=config,
-        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](

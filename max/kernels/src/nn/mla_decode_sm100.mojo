@@ -766,7 +766,7 @@ struct OffsetPosition[
         out self,
         k: Self.KVLUTType,
         valid_length: UnsafePointer[
-            Scalar[Self.ValidLengthType.dtype], origin=MutAnyOrigin
+            Scalar[Self.ValidLengthType.dtype], origin=ImmutAnyOrigin
         ],
         max_seq_len: Int,
     ):

@@ -13,10 +13,9 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve/kvcache_agent",
-        "//max/python/max/serve/queue",
         "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
         requirement("msgspec"),
-        requirement("pyzmq"),
     ],
 )

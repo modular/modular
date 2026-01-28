@@ -23,7 +23,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
-        "bench_allreduce.py",
+        "bench_allreduce_subgraph.py",
         "bench_blackwell_grouped_gemm.py",
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",
@@ -114,7 +114,7 @@ modular_py_binary(
 # SGLang's custom allreduce (cross_device_reduce_1stage) is optimized for
 # small message sizes (<256KB) using NVLink P2P communication.
 # Moved to kbench. Please run the following:
-# kbench bench_allreduce --mpirun-np 8
+# kbench bench_allreduce_subgraph.yaml --mpirun-np 8
 
 modular_py_binary(
     name = "install_sglang",

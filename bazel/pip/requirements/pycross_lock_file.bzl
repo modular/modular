@@ -46,6 +46,7 @@ PINS = {
     "cyclopts": "cyclopts@4.2.5",
     "datasets": "datasets@2.21.0",
     "device-smi": "device-smi@0.4.1",
+    "diffusers": "diffusers@0.36.0",
     "docutils": "docutils@0.20.1",
     "einops": "einops@0.8.0",
     "einx": "einx@0.3.0",
@@ -1771,6 +1772,30 @@ def targets():
         name = "device-smi@0.4.1",
         wheel = ":_wheel_device-smi@0.4.1",
         testonly = "device-smi" in _TESTONLY_DEPS,
+    )
+
+    _diffusers_0_36_0_deps = [
+        ":filelock@3.16.1",
+        ":httpx@0.27.2",
+        ":huggingface-hub@0.34.3",
+        ":importlib-metadata@7.1.0",
+        ":numpy@multiple",
+        ":pillow@12.0.0",
+        ":regex@2025.11.3",
+        ":requests@2.32.3",
+        ":safetensors@0.6.2",
+    ]
+
+    native.alias(
+        name = "_wheel_diffusers@0.36.0",
+        actual = "@pycross_lock_file_wheel_diffusers_0.36.0_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "diffusers@0.36.0",
+        deps = _diffusers_0_36_0_deps,
+        wheel = ":_wheel_diffusers@0.36.0",
+        testonly = "diffusers" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -13362,6 +13387,16 @@ def repositories():
         ],
         sha256 = "d31effad4261cebecb58955d832e448ace88f432328f95f82fd99c30fd9308d4",
         downloaded_file_path = "depyf-0.20.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_diffusers_0.36.0_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/35/50/281f92cb1f83854dbd79b6e958b3bc5018607e2542971d41604ba7a14b2f/diffusers-0.36.0-py3-none-any.whl",
+        ],
+        sha256 = "525d42abc74bfc3b2db594999961295c054b48ef40a11724dacf50e6abd1af98",
+        downloaded_file_path = "diffusers-0.36.0-py3-none-any.whl",
     )
 
     maybe(

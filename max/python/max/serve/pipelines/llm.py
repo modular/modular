@@ -38,10 +38,13 @@ from max.interfaces import (
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
-from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from max.serve.worker_interface.lora_queue import LoRAQueue
+from max.serve.worker_interface.worker_interface import (
+    EngineQueue,
+    ModelWorkerInterface,
+)
 from typing_extensions import Self
 
 if sys.version_info < (3, 11):
@@ -82,7 +85,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self,
         model_name: str,
         tokenizer: PipelineTokenizer[ContextType, Any, RequestType],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
         lora_queue: LoRAQueue | None = None,
     ) -> None:
         super().__init__()  # TaskGroup
@@ -98,7 +101,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self.lora_queue = lora_queue
 
         self.engine_queue = EngineQueue[ContextType, OutputType](
-            scheduler_zmq_configs=scheduler_zmq_configs,
+            model_worker_interface=model_worker_interface,
         )
 
         self.tasks: set[asyncio.Task[Any]] = set()
@@ -309,7 +312,7 @@ class TokenGeneratorPipeline(
             with record_ms(METRICS.output_time):
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
                 # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
-                # this based on the scheduler_zmq_configs pipeline_task.
+                # this based on the model_worker_interface pipeline_task.
                 async for response in self.engine_queue.stream(
                     request.request_id, context
                 ):

@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 )
 
 from ..llama3 import weight_adapters
+from ..llama3.model_config import Llama3Config
 from .model import Phi3Model
 
 phi3_arch = SupportedArchitecture(
@@ -43,4 +44,5 @@ phi3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Llama3Config,
 )

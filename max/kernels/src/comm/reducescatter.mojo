@@ -14,7 +14,7 @@
 """
 
 from collections import InlineArray
-from collections.optional import Optional, OptionalReg
+from collections.optional import Optional
 
 from buffer import NDBuffer
 from gpu import (
@@ -376,7 +376,7 @@ fn reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,

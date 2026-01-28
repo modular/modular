@@ -167,9 +167,9 @@ def execute_matmul_k_cache_ragged_scale[
     comptime paged_lut_layout = Layout.row_major[2]()
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
-    comptime input_scale_rows = Int(ceildiv(hidden_size, block_scale))
+    comptime input_scale_rows = ceildiv(hidden_size, block_scale)
     comptime weight_scale_rows = Int(ceildiv(kv_hidden_size, block_scale))
-    comptime weight_scale_cols = Int(ceildiv(hidden_size, block_scale))
+    comptime weight_scale_cols = ceildiv(hidden_size, block_scale)
     comptime input_scale_layout = Layout.row_major(
         input_scale_rows, UNKNOWN_VALUE
     )
@@ -215,7 +215,7 @@ def execute_matmul_k_cache_ragged_scale[
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = cache_sizes[i]
         max_full_context_length = max(
-            max_full_context_length, Int(cache_sizes[i] + prompt_lens[i])
+            max_full_context_length, cache_sizes[i] + prompt_lens[i]
         )
         max_seq_length_batch = max(max_seq_length_batch, prompt_lens[i])
         total_length += prompt_lens[i]

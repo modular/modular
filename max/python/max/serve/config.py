@@ -22,7 +22,7 @@ import os
 from enum import Enum, IntEnum
 from pathlib import Path
 
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

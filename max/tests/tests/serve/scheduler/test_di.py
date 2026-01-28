@@ -26,10 +26,9 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache.paged_cache.transfer_engine import KVTransferEngineMetadata
+from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
-from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
@@ -42,10 +41,11 @@ from max.serve.scheduler.di_dispatchers import (
     RequestType,
 )
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
+from max.serve.worker_interface.zmq_queue import ClientIdentity
 from tests.serve.scheduler.common import (
     FakeTokenGeneratorPipeline,
     PagedKVCacheManager,
-    create_paged_manager,
+    create_kv_cache,
 )
 
 TIMEOUT = 1.0
@@ -112,8 +112,8 @@ def create_di_scheduler(
     dp: int = 1,
     device: Device = CPU(),
 ) -> tuple[DecodeScheduler, PrefillScheduler, str]:
-    def _create_paged_manager() -> PagedKVCacheManager:
-        return create_paged_manager(
+    def _create_kv_cache() -> PagedKVCacheManager:
+        return create_kv_cache(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,
             max_seq_len=max_seq_len,
@@ -142,8 +142,8 @@ def create_di_scheduler(
     ] = queue.Queue()
     cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
 
-    paged_manager_prefill = _create_paged_manager()
-    paged_manager_decode = _create_paged_manager()
+    kv_cache_prefill = _create_kv_cache()
+    kv_cache_decode = _create_kv_cache()
     server_addr = generate_zmq_ipc_path()
     client_addr = generate_zmq_ipc_path()
     dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
@@ -151,10 +151,10 @@ def create_di_scheduler(
 
     decode_scheduler = DecodeScheduler(
         pipeline=FakeTokenGeneratorPipeline(
-            paged_manager_decode, max_seq_len=max_seq_len, start_token_id=42
+            kv_cache_decode, max_seq_len=max_seq_len, start_token_id=42
         ),
         scheduler_config=scheduler_config,
-        paged_manager=paged_manager_decode,
+        kv_cache=kv_cache_decode,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
@@ -163,10 +163,10 @@ def create_di_scheduler(
 
     prefill_scheduler = PrefillScheduler(
         pipeline=FakeTokenGeneratorPipeline(
-            paged_manager_prefill, max_seq_len=max_seq_len, start_token_id=99
+            kv_cache_prefill, max_seq_len=max_seq_len, start_token_id=99
         ),
         scheduler_config=scheduler_config,
-        paged_cache=paged_manager_prefill,
+        kv_cache=kv_cache_prefill,
         dispatcher=dispatcher_server,
     )
 

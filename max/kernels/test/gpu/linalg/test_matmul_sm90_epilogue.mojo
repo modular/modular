@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -187,7 +187,7 @@ def main():
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = OptionalReg[
+            elementwise_compute_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_fn_square),
             default_epilogue=True,
@@ -216,7 +216,7 @@ def main():
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn = OptionalReg[
+            elementwise_compute_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords),
             default_epilogue=True,

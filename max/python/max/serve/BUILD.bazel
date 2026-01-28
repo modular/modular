@@ -8,7 +8,7 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
-        "//max/python/max/serve/queue",
+        "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
     ],
 )
@@ -43,11 +43,10 @@ modular_py_library(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve/pipelines",
-        "//max/python/max/serve/queue",
         "//max/python/max/serve/recordreplay",
         "//max/python/max/serve/router",
-        "//max/python/max/serve/scheduler",
         "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
         requirement("fastapi"),
         requirement("prometheus-client"),
         requirement("uvicorn"),

@@ -27,7 +27,7 @@ from max.interfaces import (
     RequestID,
 )
 from max.interfaces.lora import LORA_REQUEST_ENDPOINT, LORA_RESPONSE_ENDPOINT
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 

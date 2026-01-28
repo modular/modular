@@ -306,14 +306,10 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Generate Idefics3 config from HuggingFace config
-        idefics3_config = Idefics3Config.generate(
-            pipeline_config=self.pipeline_config,
+        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
-            dtype=self.dtype,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
 

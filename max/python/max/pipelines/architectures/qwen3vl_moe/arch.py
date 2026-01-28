@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
+from .model_config import Qwen3VLConfig
 from .tokenizer import Qwen3VLTokenizer
 from .weight_adapters import convert_qwen3vl_model_state_dict
 
@@ -33,6 +34,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -43,6 +45,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
     required_arguments={
         "enable_chunked_prefill": False,
     },
+    config=Qwen3VLConfig,
 )
 
 # Register the same architecture under Qwen's non-MoE name for models like Qwen3-VL-4B-Instruct
@@ -57,6 +60,7 @@ qwen3vl_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -67,4 +71,5 @@ qwen3vl_arch = SupportedArchitecture(
     required_arguments={
         "enable_chunked_prefill": False,
     },
+    config=Qwen3VLConfig,
 )

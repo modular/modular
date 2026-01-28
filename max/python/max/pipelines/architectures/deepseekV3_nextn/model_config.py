@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
@@ -23,6 +25,7 @@ from transformers import AutoConfig
 from ..deepseekV3.model_config import DeepseekV3Config
 
 
+@dataclass(kw_only=True)
 class DeepseekV3NextNConfig(DeepseekV3Config):
     """Configuration for DeepseekV3 NextN model.
 

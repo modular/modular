@@ -21,7 +21,7 @@ Functions
 * :code_link:`/max/api/python/kv_cache/registry|load_kv_manager`: Load and initialize a KV cache manager.
 * :code_link:`/max/api/python/kv_cache/registry|estimate_kv_cache_size`: Estimate KV cache memory requirements.
 * :code_link:`/max/api/python/kv_cache/registry|infer_optimal_batch_size`: Infer optimal batch size based on available cache memory.
-* :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|available_port`: Find an available TCP port for transfer engine communication.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|available_port`: Find an available TCP port for transfer engine communication.
 
 Modules
 =======
@@ -31,18 +31,18 @@ Modules
 Packages
 ========
 
-* :code_link:`/max/api/python/kv_cache/paged_cache|paged_cache`: Paged attention KV cache implementation.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache|paged_kv_cache`: Paged attention KV cache implementation.
 
 Classes
 =======
 
-* :code_link:`/max/api/python/kv_cache/paged_cache/cache_manager|PagedKVCacheManager`: Manager for paged KV cache with data and tensor parallelism support.
-* :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|KVTransferEngine`: Manages KV cache transfers between devices in distributed settings.
-* :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|KVTransferEngineMetadata`: Metadata for KV cache transfer engine configuration.
-* :code_link:`/max/api/python/kv_cache/paged_cache/transfer_engine|TransferReqData`: Data structure for KV cache transfer requests.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache/cache_manager|PagedKVCacheManager`: Manager for paged KV cache with data and tensor parallelism support.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|KVTransferEngine`: Manages KV cache transfers between devices in distributed settings.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|KVTransferEngineMetadata`: Metadata for KV cache transfer engine configuration.
+* :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|TransferReqData`: Data structure for KV cache transfer requests.
 
 .. toctree::
    :hidden:
 
-   paged_cache/index
+   paged_kv_cache/index
    registry

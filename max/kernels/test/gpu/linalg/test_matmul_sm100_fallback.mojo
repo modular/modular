@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
@@ -167,7 +167,7 @@ def test_matmul_sm100_fallback[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](c, a, b, ctx)

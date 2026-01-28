@@ -16,6 +16,7 @@ dependencies = [
   "cyclopts",
   "datasets",
   "device-smi",
+  "diffusers",
   "docutils",
   "einops",
   "einx",
