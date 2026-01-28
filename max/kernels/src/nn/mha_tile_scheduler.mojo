@@ -516,7 +516,7 @@ struct TileScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
     /,
-    num_ctas: UInt32 = H100.sm_count,
+    num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](Defaultable, MHATileScheduler, TrivialRegisterType):
     comptime may_advance: Bool = True
@@ -636,7 +636,7 @@ struct QueuedTileScheduler[
     num_heads: UInt32,
     /,
     decoding: Bool,
-    num_ctas: UInt32 = H100.sm_count,
+    num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](DevicePassable, MHATileScheduler, TrivialRegisterType):
     """

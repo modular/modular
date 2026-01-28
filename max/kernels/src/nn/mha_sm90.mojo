@@ -224,7 +224,7 @@ fn mha_sm90_dispatch[
     @parameter
     if persistent == 0:
         comptime SchedulerType = TransientScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads
+            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -271,7 +271,7 @@ fn mha_sm90_dispatch[
         )
     elif persistent == 2:
         comptime SchedulerType = TileScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads
+            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
         ]
         var scheduler: SchedulerType = SchedulerType()
         _mha_sm90_sink_dispatch[
@@ -318,7 +318,9 @@ fn mha_sm90_dispatch[
         )
     else:
         comptime SchedulerType = QueuedTileScheduler[
-            UInt32(scheduler_tile_shape), num_scheduler_heads, decoding=decoding
+            UInt32(scheduler_tile_shape),
+            UInt32(num_scheduler_heads),
+            decoding=decoding,
         ]
         var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
@@ -988,7 +990,7 @@ fn _mha_sm90[
     comptime num_consumer = num_consumer_threads // UInt(WARPGROUP_SIZE)
     comptime pipeline_stages = Int(config.num_pipeline_stages)
     var tid = UInt32(thread_idx.x)
-    var warp_group_idx: UInt32 = warp.broadcast(tid // WARPGROUP_SIZE)
+    var warp_group_idx: UInt32 = warp.broadcast(tid // UInt32(WARPGROUP_SIZE))
 
     mask = pack.mask
     score_mod = pack.score_mod
@@ -1003,7 +1005,9 @@ fn _mha_sm90[
         num_consumer_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    var warp_id: UInt32 = warp.broadcast((tid - WARPGROUP_SIZE) // WARP_SIZE)
+    var warp_id: UInt32 = warp.broadcast(
+        (tid - UInt32(WARPGROUP_SIZE)) // UInt32(WARP_SIZE)
+    )
     var lane = UInt32(lane_id())
 
     # Coordinates of the current warp.
@@ -1388,7 +1392,7 @@ fn _mha_sm90[
             address_space = AddressSpace.SHARED,
             alignment=128,
         ]:
-            return {q_smem + q_size * q_idx}
+            return {q_smem + UInt32(q_size) * q_idx}
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
@@ -1615,7 +1619,7 @@ fn _mha_sm90[
                 num_rows = MMA_M // 2, row_size = Int(BN), access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            comptime q_tile_size: UInt32 = q_smem_size // 2
+            comptime q_tile_size: UInt32 = UInt32(q_smem_size // 2)
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[Int32(num_consumer_threads)]()

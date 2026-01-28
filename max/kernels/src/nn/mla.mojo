@@ -511,7 +511,10 @@ fn flare_mla_decoding_dispatch[
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=shared_mem_bytes,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+                UInt32(
+                    ctx.default_device_info.shared_memory_per_multiprocessor
+                    - 4096
+                )
             ),
         )
 
@@ -941,7 +944,7 @@ fn mla_decoding_single_batch[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
         var k_ptr = k.block_paged_ptr[Int(BN)](
-            batch_idx, kv_tile_start_row, kv_head_idx, 0
+            UInt32(batch_idx), UInt32(kv_tile_start_row), kv_head_idx, 0
         )
 
         comptime kv_gmem_layout = Layout(
@@ -1043,9 +1046,13 @@ fn mla_decoding_single_batch[
             static_num_iters = Int(rope_dim // BK),
         ](
             p_reg_tile,
-            q_smem_iter.next_unsafe(Int(nope_dim // BK)),
+            q_smem_iter.next_unsafe(
+                q_smem_iter.linear_uint_type(Int(nope_dim // BK))
+            ),
             k_rope_smem_iter,
-            q_smem_iter.next_unsafe(Int(nope_dim // BK)),
+            q_smem_iter.next_unsafe(
+                q_smem_iter.linear_uint_type(Int(nope_dim // BK))
+            ),
             k_rope_smem_iter,
             Int(nope_dim // BK),
         )
@@ -1834,9 +1841,9 @@ fn mla_prefill[
 
     @parameter
     if _ndbuffer_mha_operand:
-        start_pos = k_rope.cache_length(Int(batch_idx)) - seq_len
+        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)) - seq_len)
     else:
-        start_pos = k_rope.cache_length(Int(batch_idx))
+        start_pos = UInt32(k_rope.cache_length(Int(batch_idx)))
 
     if cache_offsets:
         var cache_offsets_nd = cache_offsets.value()
@@ -2026,7 +2033,7 @@ fn mla_prefill_single_batch[
     var q_tile_num_rows = min(
         UInt32(BM), UInt32(seq_len) - q_tile_idx * UInt32(BM)
     )
-    var q_offset = q_depth * (
+    var q_offset = UInt32(q_depth) * (
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
 
@@ -2145,7 +2152,9 @@ fn mla_prefill_single_batch[
 
     @parameter
     for q_id in range(q_depth // Int(BK)):
-        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
+        var q_smem_tile = q_smem_iter.next_unsafe(
+            q_smem_iter.linear_uint_type(q_id)
+        )[]
 
         copy_dram_to_sram_async[
             thread_layout=async_copy_q_layout,
@@ -2179,7 +2188,7 @@ fn mla_prefill_single_batch[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    Int(kv_tile_start_row + cache_start_pos),
+                    Int(UInt32(kv_tile_start_row) + cache_start_pos),
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -2214,7 +2223,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             k.block_paged_ptr[Int(BN)](
-                batch_idx, kv_tile_start_row, Int(head_idx), 0
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row),
+                UInt32(Int(head_idx)),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -2230,7 +2242,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             v.block_paged_ptr[Int(BN)](
-                batch_idx, kv_tile_start_row, Int(head_idx), 0
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row),
+                UInt32(Int(head_idx)),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -2263,10 +2278,10 @@ fn mla_prefill_single_batch[
             masked = not not_last_iter,
         ](
             k_rope.block_paged_ptr[Int(BN)](
-                batch_idx,
-                kv_tile_start_row + cache_start_pos,
-                Int(head_idx // group),
-                cache_depth - rope_depth,
+                UInt32(batch_idx),
+                UInt32(kv_tile_start_row) + cache_start_pos,
+                UInt32(Int(head_idx // UInt32(group))),
+                UInt32(cache_depth - rope_depth),
             ),
             k_rope_runtime_layout,
         )
@@ -2319,7 +2334,9 @@ fn mla_prefill_single_batch[
 
         @parameter
         for k_id in range(depth // BK, q_depth // Int(BK)):
-            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
+            var k_smem_tile = k_smem_iter.next_unsafe(
+                k_smem_iter.linear_uint_type(k_id)
+            )[]
 
             copy_dram_to_sram_async[
                 thread_layout=async_copy_k_layout,
@@ -2387,15 +2404,19 @@ fn mla_prefill_single_batch[
                     )
 
                     # Offset to current thread's fragment
-                    mask_frag_row += lane // (MMA_N // p_frag_simdwidth)
-                    mask_frag_col += lane * p_frag_simdwidth % MMA_N
+                    mask_frag_row += lane // UInt32(MMA_N // p_frag_simdwidth)
+                    mask_frag_col += (
+                        lane * UInt32(p_frag_simdwidth) % UInt32(MMA_N)
+                    )
 
                     @parameter
                     for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
                         var score_row = (
-                            mask_block_row + mask_frag_row + i * MMA_M // 2
+                            mask_block_row
+                            + mask_frag_row
+                            + UInt32(i * MMA_M // 2)
                         )
                         var score_col = mask_frag_col
 
@@ -2456,7 +2477,7 @@ fn mla_prefill_single_batch[
             mask.status(
                 Index[dtype = DType.uint32](
                     Int(q_tile_idx * UInt32(BM) + start_pos),
-                    kv_tile_start_row + cache_start_pos,
+                    UInt32(kv_tile_start_row) + cache_start_pos,
                 ),
                 Index[dtype = DType.uint32](Int(BM), Int(BN)),
             )
@@ -2838,9 +2859,11 @@ fn mla_prefill_plan_kernel[
     @parameter
     for chunk_idx in range(MAX_CHUNKS):
         if chunk_idx < start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = buffer_size
+            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(buffer_size)
         elif chunk_idx == start_chunk:
-            buffer_row_offsets[chunk_idx, seq_idx] = seq_start_pos % buffer_size
+            buffer_row_offsets[chunk_idx, seq_idx] = UInt32(
+                seq_start_pos % buffer_size
+            )
         else:
             buffer_row_offsets[chunk_idx, seq_idx] = 0
 
@@ -2850,7 +2873,7 @@ fn mla_prefill_plan_kernel[
             seq_len_left,
             buffer_size - Int(buffer_row_offsets[chunk_idx, seq_idx]),
         )
-        processed_seq_len += chunk_len
+        processed_seq_len += UInt32(chunk_len)
         seq_len_left -= chunk_len
 
     # If this is the last sequence in the batch
@@ -2862,13 +2885,13 @@ fn mla_prefill_plan_kernel[
         @parameter
         for chunk_idx in range(MAX_CHUNKS):
             if chunk_idx < end_chunk:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = buffer_size
-                buffer_lengths[chunk_idx] = buffer_size
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(buffer_size)
+                buffer_lengths[chunk_idx] = Int32(buffer_size)
             elif chunk_idx == end_chunk:
-                buffer_row_offsets[chunk_idx, seq_idx + 1] = (
+                buffer_row_offsets[chunk_idx, seq_idx + 1] = UInt32(
                     seq_end_pos % buffer_size
                 )
-                buffer_lengths[chunk_idx] = seq_end_pos % buffer_size
+                buffer_lengths[chunk_idx] = Int32(seq_end_pos % buffer_size)
             else:
                 buffer_row_offsets[chunk_idx, seq_idx + 1] = 0
                 buffer_lengths[chunk_idx] = -1
@@ -2916,7 +2939,7 @@ fn _k_cache_to_buffer[
         )
 
         var token_idx = Int(
-            global_token_idx
+            UInt32(global_token_idx)
             - buffer_row_offsets[batch_idx][0]
             + cache_offsets[batch_idx][0]
         )
