@@ -106,6 +106,55 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
         self.empty[self._producer_stage].wait(self._producer_phase)
 
     @always_inline
+    fn try_wait_producer(self) -> Bool:
+        """Non-blocking check if producer data is ready.
+
+        Returns:
+            True if the producer has filled the current stage, False otherwise.
+
+        Note:
+            Use this with wait_producer_if_needed() for the try-acquire pattern:
+            ```
+            var ready = pipeline.try_wait_producer()
+            # ... do other work ...
+            pipeline.wait_producer_if_needed(ready)
+            ```
+        """
+        return self.full[self._consumer_stage].try_wait(self._consumer_phase)
+
+    @always_inline
+    fn try_wait_consumer(self) -> Bool:
+        """Non-blocking check if consumer has freed the stage.
+
+        Returns:
+            True if the consumer has freed the current stage, False otherwise.
+
+        Note:
+            Use this with wait_consumer_if_needed() for the try-acquire pattern.
+        """
+        return self.empty[self._producer_stage].try_wait(self._producer_phase)
+
+    @always_inline
+    fn wait_producer_if_needed(self, already_ready: Bool):
+        """Conditionally wait for producer if not already ready.
+
+        Args:
+            already_ready: Result from try_wait_producer(). If True, skips waiting.
+        """
+        if not already_ready:
+            self.wait_producer()
+
+    @always_inline
+    fn wait_consumer_if_needed(self, already_ready: Bool):
+        """Conditionally wait for consumer if not already ready.
+
+        Args:
+            already_ready: Result from try_wait_consumer(). If True, skips waiting.
+        """
+        if not already_ready:
+            self.wait_consumer()
+
+    @always_inline
     fn producer_mbar(self, stage: UInt32) -> MbarPtr:
         """Get the producer barrier for a specific stage.
 

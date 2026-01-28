@@ -41,6 +41,10 @@ _EXTRA_CONSTRAINTS = {
     src: ["//:h100_gpu"]
     for src in _H100_TESTS
 } | {
+    # TMA tensormap update test - uses NVIDIA-specific mbarrier and TMA
+    # Works on any NVIDIA GPU (H100+), incompatible with AMD
+    "test_grouped_tensormap_update.mojo": ["//:nvidia_gpu"],
+} | {
     "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific

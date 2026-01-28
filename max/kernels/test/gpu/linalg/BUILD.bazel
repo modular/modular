@@ -3,6 +3,21 @@ load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
 package(default_visibility = ["//max:consumers"])
 
+# Grouped GEMM infrastructure tests - portable to any NVIDIA GPU
+# These tests validate scheduling logic, not block-scaled MMA operations
+_GROUPED_GEMM_INFRA_TESTS = [
+    "test_grouped_tile_scheduler.mojo",
+]
+
+# Grouped block-scaled GEMM tests - require B200 GPU (SM100-specific)
+# These tests run SM100 block-scaled MMA kernels with TMA
+_GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
+    "test_grouped_block_scaled_gemm_nvfp4.mojo",
+    "test_grouped_block_scaled_gemm_nvfp4_execution.mojo",
+    "test_grouped_block_scaled_gemm_execution.mojo",
+    "test_grouped_block_scaled_gemm_epilogue.mojo",
+]
+
 _EXTRA_CONSTRAINTS = {
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -89,6 +104,10 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
+} | {
+    # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
+    src: ["//:nvidia_gpu"]
+    for src in _GROUPED_GEMM_INFRA_TESTS
 }
 
 _FILECHECK_TESTS = [
@@ -244,6 +263,32 @@ _GPU_MEMORY = {
     for src in _B200_SMOKE_TESTS
 ]
 
+# Grouped block-scaled GEMM tests - require B200 GPU (SM100-specific operations)
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = [
+            "gpu",
+        ],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS
+]
+
 [
     mojo_test(
         name = src + ".test",
@@ -272,7 +317,7 @@ _GPU_MEMORY = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS,
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS,
     )
 ]
 

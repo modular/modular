@@ -407,6 +407,40 @@ struct SharedMemBarrier(TrivialRegisterType):
             Int32(Int(self.unsafe_ptr())), phase
         )
 
+    @always_inline("nodebug")
+    fn try_wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0) -> Bool:
+        """Non-blocking check if barrier phase is complete.
+
+        Performs a single non-blocking check to see if the barrier has completed
+        the specified phase. Returns immediately with the result without spinning.
+
+        This is useful for implementing the try-acquire pattern where you want to
+        overlap barrier checking with other useful work.
+
+        Args:
+            phase: The phase parity (0 or 1) to check for. Defaults to 0.
+
+        Returns:
+            True if the barrier phase is complete, False otherwise.
+
+        Example:
+            ```mojo
+            # Try-acquire pattern for pipelined execution
+            var ready = barrier.try_wait(phase)
+            # Do other work while potentially waiting
+            do_useful_work()
+            # Now wait conditionally
+            if not ready:
+                barrier.wait(phase)
+            ```
+        """
+        # PTX: mbarrier.try_wait.parity.shared::cta.b64 waitComplete, [addr], phaseParity;
+        return inlined_assembly[
+            "mbarrier.try_wait.parity.shared::cta.b64 $0, [$1], $2;",
+            Bool,
+            constraints="=b,r,r",
+        ](Int32(Int(self.unsafe_ptr())), phase)
+
     @always_inline
     fn unsafe_ptr[
         origin: Origin

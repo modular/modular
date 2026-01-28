@@ -77,6 +77,7 @@ struct TileWriter[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    batched: Bool = False,
 ](TrivialRegisterType):
     """Output tile writer for SM100 matmul epilogue.
 
@@ -169,8 +170,30 @@ struct TileWriter[
         shape: Tuple[UInt32, UInt32],
         elect_one_warp: Bool,
     ):
-        """Write accumulated results to global memory."""
+        """Write accumulated results to global memory (2D coords)."""
         self._copy_to_gmem(c_tiles, stage, tile_coord, shape)
+
+    @always_inline
+    fn write_batched(
+        self,
+        c_tiles: Self.CTileArray,
+        stage: Self.Stage,
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        alpha: Float32 = Float32(1.0),
+    ):
+        """Write accumulated results to global memory (3D batched coords).
+
+        Use this method when batched=True for grouped GEMM or batched matmul.
+
+        Args:
+            c_tiles: SMEM tile array for C output (double-buffered).
+            stage: OutputStage with pipeline, index, and TMEM handle.
+            tile_coord: (m_tile, n_tile, batch) coordinates.
+            shape: (M, N) problem dimensions.
+            alpha: Tensor scale factor (scalar).
+        """
+        self._copy_to_gmem_batched(c_tiles, stage, tile_coord, shape, alpha)
 
     @always_inline
     fn write_splitk[
@@ -249,6 +272,7 @@ struct TileWriter[
             Self.c_swizzle,
             Self.transpose_c,
             Self.is_lower_frag_required,
+            batched = Self.batched,
         ]
 
         comptime EpilogueApplierType = EpilogueApplier[
@@ -357,6 +381,214 @@ struct TileWriter[
                 Self.cta_group,
                 Self.c_smem_layout.shape[0].value(),
                 stage,
+                batched = Self.batched,
+            ]
+            var store_coords = StoreCoords(c_coord, UInt32(warp_id))
+            StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+                c_smem_tile,
+                store_coords,
+                self.c_tma_op[],
+                UInt32(warp_id),
+                UInt32(lane),
+            )
+            tma_wait_pipelined[
+                Self.c_type,
+                Self.c_layout,
+                Self.c_desc_layout,
+                stage == Self.num_stages - 1,
+            ](self.c_tma_op[])
+
+            @parameter
+            if stage > 0 or stage == Self.num_stages - 1:
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+    @always_inline
+    fn _copy_to_gmem_batched(
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        c_coord: Tuple[UInt32, UInt32, UInt32],
+        c_shape: Tuple[UInt32, UInt32],
+        alpha: Float32,
+    ):
+        """TMEM → Registers → SMEM → GMEM pipeline (batched 3D coords).
+
+        Similar to _copy_to_gmem but with 3D coordinates for batched/grouped GEMM.
+        Also supports alpha scaling on the accumulated results.
+        """
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
+
+        comptime simd_size = simd_width_of[Self.c_type]()
+        var warp_id = get_warp_id()
+        var lane = lane_id()
+
+        comptime SMEMWriter = TMEMToSMemWriter[
+            Self.c_type,
+            Self.accum_type,
+            Self.c_smem_layout,
+            Self.BM,
+            Self.BN,
+            Self.MMA_M,
+            Self.MMA_N,
+            Self.stageN,
+            Self.cta_group,
+            Self.num_output_warps,
+            Self.c_swizzle,
+            Self.transpose_c,
+        ]
+        var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
+
+        comptime StoreExecutor = TMAStoreExecutor[
+            Self.c_type,
+            Self.c_smem_layout,
+            Self.BM,
+            Self.BN,
+            Self.MMA_M,
+            Self.MMA_N,
+            Self.stageN,
+            Self.stage_contiguous_size,
+            Self.cta_group,
+            Self.c_swizzle,
+            Self.transpose_c,
+            Self.is_lower_frag_required,
+            batched = Self.batched,
+        ]
+
+        comptime EpilogueApplierType = EpilogueApplier[
+            Self.MMA_M,
+            Self.stageN,
+            Self.num_stages,
+            Self.rep,
+            Self.cta_group,
+            Self.transpose_c,
+        ]
+        var epilogue_applier = EpilogueApplierType(
+            UInt32(warp_id), UInt32(lane)
+        )
+        var c_row = c_coord[0] * UInt32(Self.BM)
+        var c_col = c_coord[1] * UInt32(Self.MMA_N)
+
+        var upper_frag_partial: SIMD[Self.accum_type, Self.rep_frag_size]
+        var lower_frag_partial = SIMD[Self.accum_type, Self.rep_frag_size]()
+        var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
+        var lower_frag_casted = SIMD[Self.epilogue_dtype, Self.rep_frag_size]()
+
+        @parameter
+        for stage in range(Self.num_stages):
+            # Load fragments from TMEM tile
+            var frags = accum_tiles[stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+
+            # Extract fragments (rebind for type compatibility)
+            upper_frag_partial = rebind[
+                SIMD[Self.accum_type, Self.rep_frag_size]
+            ](frags.upper)
+
+            @parameter
+            if Self.is_lower_frag_required:
+                lower_frag_partial = rebind[
+                    SIMD[Self.accum_type, Self.rep_frag_size]
+                ](frags.lower)
+
+            @parameter
+            if stage == Self.num_stages - 1:
+                AccumBarrier[Self.cta_group].arrive(
+                    output_stage.pipeline, output_stage.index
+                )
+
+            # Apply tensor scale factor (alpha)
+            upper_frag_partial = (
+                upper_frag_partial * alpha.cast[Self.accum_type]()
+            )
+            if Self.is_lower_frag_required:
+                lower_frag_partial = (
+                    lower_frag_partial * alpha.cast[Self.accum_type]()
+                )
+
+            # Cast to epilogue dtype
+            upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
+
+            @parameter
+            if Self.is_lower_frag_required:
+                lower_frag_casted = lower_frag_partial.cast[
+                    Self.epilogue_dtype
+                ]()
+
+            # Apply epilogue lambda if provided
+            @parameter
+            if Self.elementwise_compute_lambda_fn:
+
+                @parameter
+                if Self.register_based_epilogue:
+                    upper_frag_casted, lower_frag_casted = (
+                        epilogue_applier.apply_to_both_fragments[
+                            Self.epilogue_dtype,
+                            Self.rep_frag_size,
+                            Self.elementwise_compute_lambda_fn.value(),
+                            Self.is_lower_frag_required,
+                        ](
+                            upper_frag_casted,
+                            lower_frag_casted,
+                            UInt32(stage),
+                            c_row,
+                            c_col,
+                        )
+                    )
+
+            var c_smem_tile = c_tiles[stage % 2]
+
+            @parameter
+            if (
+                Self.register_based_epilogue
+                or not Self.elementwise_compute_lambda_fn
+            ):
+                comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
+                constrained[
+                    Self.rep_frag_size == expected_size,
+                    "Fragment sizes must match",
+                ]()
+                smem_writer.write_fragments[Self.rep](
+                    rebind[SIMD[Self.c_type, expected_size]](
+                        upper_frag_casted.cast[Self.c_type]()
+                    ),
+                    rebind[SIMD[Self.c_type, expected_size]](
+                        lower_frag_casted.cast[Self.c_type]()
+                    ),
+                    c_smem_tile,
+                )
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+            else:
+                var writer = SMemEpilogueWriter[
+                    Self.epilogue_dtype,
+                    Self.BM,
+                    Self.BN,
+                    Self.MMA_M,
+                    Self.MMA_N,
+                    Self.cta_group,
+                    Self.num_output_warps,
+                    Self.c_swizzle,
+                    Self.transpose_c,
+                    Self.is_lower_frag_required,
+                    Self.num_stages,
+                    simd_size,
+                    stage,
+                    Self.rep_frag_size,
+                    Self.elementwise_compute_lambda_fn.value(),
+                ](UInt32(warp_id), c_tiles, c_shape, (c_coord[0], c_coord[1]))
+                writer.write_tile(
+                    AccumTile(upper_frag_casted, lower_frag_casted)
+                )
+
+            comptime StoreCoords = TMAStoreCoords[
+                Self.BM,
+                Self.BN,
+                Self.MMA_M,
+                Self.MMA_N,
+                Self.stageN,
+                Self.cta_group,
+                Self.c_smem_layout.shape[0].value(),
+                stage,
+                batched = Self.batched,
             ]
             var store_coords = StoreCoords(c_coord, UInt32(warp_id))
             StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](

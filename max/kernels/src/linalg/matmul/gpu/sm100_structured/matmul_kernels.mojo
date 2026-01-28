@@ -252,8 +252,13 @@ struct KernelContext[
         self.b_multicast_mask <<= UInt16(self.rank_n * UInt(Self.CLUSTER_M))
 
         # MMA completion mask for barrier synchronization
+        # For 2SM: peer is the other CTA in the cluster (XOR with 1)
         var self_mask = 1 << Int(block_rank_in_cluster())
-        var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
+        var peer_rank = (
+            block_rank_in_cluster() ^ 1 if Self.cta_group
+            == 2 else block_rank_in_cluster()
+        )
+        var peer_mask = 1 << Int(peer_rank)
         self.mma_complete_mask = self_mask | peer_mask
 
         # TMEM pointer
