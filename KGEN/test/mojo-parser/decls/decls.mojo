@@ -139,7 +139,7 @@ fn paramOverload(y: Int):
     pass
 
 
-fn paramOverload[x: Int, T: __TypeOfAllTypes](y: T):
+fn paramOverload[x: Int, T: TrivialRegisterType](y: T):
     pass
 
 
@@ -161,7 +161,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
     # CHECK-NEXT: lit.call {{.*}}@"paramOverload{{.*}}<:variadic<!Int> [a, b]>(%x)
     paramOverload[a, b](x)
 
-struct VariadicStruct[*Ts: __TypeOfAllTypes]:
+struct VariadicStruct[*Ts: TrivialRegisterType]:
     fn __init__(out self):
         pass
 
@@ -170,15 +170,15 @@ struct VariadicStruct[*Ts: __TypeOfAllTypes]:
         pass
 
 
-fn take_variadic_struct[*Ts: __TypeOfAllTypes](a: VariadicStruct[*Ts]):
+fn take_variadic_struct[*Ts: TrivialRegisterType](a: VariadicStruct[*Ts]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"variadic_params()"
 fn variadic_params():
-    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<#alias___TypeOfAllTypes> [#kgen.type<!Int>, #kgen.type<!FloatDyn>], :!Int {4}>
+    # CHECK-NEXT: call {{.*}}param_func[{{.*}}Int]()"<:variadic<!TrivialRegisterType> [!Int, !FloatDyn], :!Int {4}>
     VariadicStruct[Int, FloatDyn].param_func[4]()
-    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<#alias___TypeOfAllTypes> [#kgen.type<!Int>, #kgen.type<!FloatDyn>]>>
+    # CHECK: call {{.*}}take_variadic_struct{{.*}}<:variadic<!TrivialRegisterType> [!Int, !FloatDyn]>>
     take_variadic_struct(VariadicStruct[Int, FloatDyn]())
 
 
@@ -201,7 +201,7 @@ fn callReturnParam() -> __mlir_type.index:
     return returnParameter[Int(3)._mlir_value]()
 
 
-fn paramRefFunc[T: __TypeOfAllTypes](x: T):
+fn paramRefFunc[T: TrivialRegisterType](x: T):
     pass
 
 
@@ -210,7 +210,7 @@ fn orvalueInferType():
     fn func(x: __mlir_type.index) -> __mlir_type.index:
         return x
 
-    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!alias___TypeOfAllTypes1 #kgen.type<!lit.generator<("x": index) -> index>>>
+    # CHECK: call {{.*}}paramRefFunc{{.*}}<:!TrivialRegisterType{{.*}}!lit.generator<("x": index) -> index>>
     paramRefFunc(func)
 
 

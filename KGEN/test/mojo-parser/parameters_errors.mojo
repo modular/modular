@@ -446,7 +446,7 @@ fn autoparams_variadic(*x: MemParamType):
     pass
 
 # expected-note @below {{'InferredParam' declared here}}
-struct InferredParam[p: Int, //, T: __TypeOfAllTypes, use: ParamType[p]]:
+struct InferredParam[p: Int, //, T: TrivialRegisterType, use: ParamType[p]]:
     pass
 
 

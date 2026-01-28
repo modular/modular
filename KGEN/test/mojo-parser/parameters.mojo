@@ -169,15 +169,15 @@ struct TypeParameter[T: __mlir_type.`!kgen.type`]:
 
 # Test that parameter decls can refine subsequent ones in the same param list.
 # CHECK-LABEL: lit.struct.decl @ParamSubst
-# CHECK-SAME: <T: {{.*}}, shape: variadic<T>>
+# CHECK-SAME: <T: {{.*}}, shape: variadic<:!TrivialRegisterType T>>
 struct ParamSubst[
-    T: __TypeOfAllTypes,
+    T: TrivialRegisterType,
     shape: __mlir_type[`!kgen.variadic<`, T,`>`],
   ]: pass
 
 # CHECK-LABEL: lit.fn @"testParamSubst
 fn testParamSubst():
-  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!alias___TypeOfAllTypes1 #kgen.type<index>, :variadic<index> [1, 2]>>,
+  # CHECK: %xx = lit.var.decl {{.*}} : !lit.ref<!lit.struct<#ParamSubst <:!TrivialRegisterType {{..*}}<:type index>, {{.*}}:variadic<index> [1, 2]>>,
   var xx : ParamSubst[__mlir_type.index, __mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`]
 
 
@@ -914,26 +914,26 @@ fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
     # CHECK: lit.var.decl "value" {{.*}}Abstraction <:!Int {7}>
     var value = e.value
 
-fn tail_types[T: __TypeOfAllTypes, *U: AnyType](a: T, *b: *U):
+fn tail_types[T: TrivialRegisterType, *U: AnyType](a: T, *b: *U):
     pass
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 fn call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterType !Int, :variadic<!AnyType> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> [!FloatDyn]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterType !Int, :variadic<!AnyType> [!FloatDyn]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:{{.*}} #kgen.type<!Int>, :variadic<!AnyType> [!Int]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!TrivialRegisterType !Int, :variadic<!AnyType> [!Int]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
 # COM: if other parameters are inferred correctly in their presence.
-fn infer_with_default_arg[T: __TypeOfAllTypes](a: T, b: Int = 7):
+fn infer_with_default_arg[T: TrivialRegisterType](a: T, b: Int = 7):
     pass
 
 # CHECK-LABEL: lit.fn @"test_infer_with_default_arg()"
 fn test_infer_with_default_arg():
-    # lit.call {{.*}}::@"infer_with_default_arg[__TypeOfAllTypes]($0,::Int)"<:type !Int>
+    # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterType]($0,::Int)"<:type !Int>
     infer_with_default_arg(128)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -978,13 +978,13 @@ fn test_deduce_kw_only(a: Abstraction[3]):
 fn test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
    _ = take_two(a, b)
 
-struct CallableArg[ArgT: __TypeOfAllTypes]:
+struct CallableArg[ArgT: TrivialRegisterType]:
     fn __call__(self, arg: Self.ArgT):
         pass
 
 # CHECK-LABEL: lit.fn @"infer_conversion_arg_type
 fn infer_conversion_arg_type(callable: CallableArg[NoneType]):
-    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:{{.*}} #kgen.type<!NoneType>
+    # CHECK: lit.call {{.*}}CallableArg::@"__call__{{.*}}<:!TrivialRegisterType !NoneType>
     callable(None)
 
 fn take_two[a_type: DType, c_type: DType, width: Int](
@@ -1340,17 +1340,17 @@ fn test_default_param_struct_all_default():
 
 
 # COM: Issue #22763
-fn IntForType[T: __TypeOfAllTypes]() -> Int:
+fn IntForType[T: TrivialRegisterType]() -> Int:
     return 1
 
-struct StructWithParametricDefaultValue[T: __TypeOfAllTypes, N: Int = IntForType[T]()]:
+struct StructWithParametricDefaultValue[T: TrivialRegisterType, N: Int = IntForType[T]()]:
     pass
 
 # CHECK-LABEL: lit.fn @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
     # CHECK: lit.alias.decl *"a{{.*}}": meta<!lit.struct<{{.*}}>> = <@{{.*}}::@StructWithParametricDefaultValue<
-    # CHECK-SAME: :!alias___TypeOfAllTypes1 #kgen.type<!Int>,
-    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[__TypeOfAllTypes]()"{{.*}}<:!alias___TypeOfAllTypes1 #kgen.type<!Int>>)>
+    # CHECK-SAME: :!TrivialRegisterType !Int,
+    # CHECK-SAME: :!Int apply(:!lit.generator<() -> !Int> @{{.*}}::@"IntForType[::TrivialRegisterType]()"{{.*}}<:!TrivialRegisterType !Int>)>
     comptime a = StructWithParametricDefaultValue[Int]
 
 ##===----------------------------------------------------------------------===##

@@ -22,7 +22,7 @@ struct BoxedInt:
         return self.value+rhs
 
 
-struct Param[T: __TypeOfAllTypes]:
+struct Param[T: TrivialRegisterType]:
     pass
 
 

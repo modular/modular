@@ -269,7 +269,7 @@ fn packArgOverload(x: Int):
 
 
 # expected-note @+1 {{function declared here}}
-fn first_and_rest[T: __TypeOfAllTypes, *Ts: AnyType](*values: *Ts):
+fn first_and_rest[T: TrivialRegisterType, *Ts: AnyType](*values: *Ts):
     pass
 
 
@@ -925,7 +925,7 @@ trait EverythingIsWrongTrait:
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
-trait TraitWithParams[T: __TypeOfAllTypes]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+trait TraitWithParams[T: TrivialRegisterType]: # expected-error {{TODO: trait declarations do not support parameters yet}}
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
