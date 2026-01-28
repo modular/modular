@@ -332,13 +332,14 @@ private:
 
   M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
       "I", cl::desc("Path to use to search for included files."),
-      llvm::cl::location(options.includePaths),
+      llvm::cl::Prefix, llvm::cl::location(options.includePaths),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MListOpt<std::string, SmallVector<std::string>> defines{
       "D",
       cl::desc("Defines passed into Mojo through the environment parameter."),
-      llvm::cl::location(options.defines), llvm::cl::cat(KGENOptionsCategory)};
+      llvm::cl::Prefix, llvm::cl::location(options.defines),
+      llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<bool, true> enableMLIRCrashReproducer{
       "enable-mlir-crash-repro",

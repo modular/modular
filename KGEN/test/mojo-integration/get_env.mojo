@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo -DVAR=1 %s | FileCheck %s
 # RUN: %mojo -D VAR=1 %s | FileCheck %s
 
 from sys import env_get_bool
