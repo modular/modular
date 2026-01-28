@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, rsqrt
-from memory import LegacyUnsafePointer
+from memory import alloc
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
@@ -1877,9 +1876,7 @@ fn rms_norm_fused_residual_add_cpu[
     __comptime_assert gamma1.rank == 1, "gamma1 must have rank 1"
     __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
-    var intermediate_buffer_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        shape.flattened_length()
-    )
+    var intermediate_buffer_ptr = alloc[Scalar[dtype]](shape.flattened_length())
     var intermediate_buffer = LayoutTensor[dtype, Layout.row_major[rank]()](
         intermediate_buffer_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(shape),

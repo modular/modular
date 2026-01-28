@@ -14,8 +14,6 @@
 from collections import Optional
 from math import align_down, align_up, ceildiv
 from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys._build import is_debug_build
 from sys.info import simd_width_of, size_of
 
@@ -53,9 +51,9 @@ fn memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[Int8],
+    dest_data: UnsafePointer[mut=True, Int8],
     out_byte_offset: Int,
-    src_data: type_of(dest_data),
+    src_data: UnsafePointer[Int8],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -124,7 +122,7 @@ struct _Span(TrivialRegisterType):
 
 @fieldwise_init
 struct _CanonicallyReshapedBuffer(TrivialRegisterType):
-    var data: UnsafePointer[Int8]
+    var data: UnsafePointer[Int8, MutAnyOrigin]
     var h: Int
     var w: Int
     var c: Int
@@ -140,7 +138,9 @@ fn _canonical_reshape[
     var h = product(shape, 0, axis)
     var w = buf.dim(axis)
     var c = product(shape, axis + 1, buf.rank) * size_of[dtype]()
-    return _CanonicallyReshapedBuffer(buf.ptr.bitcast[Int8](), h, w, c)
+    return _CanonicallyReshapedBuffer(
+        UnsafePointer[Int8, MutAnyOrigin](buf.ptr.bitcast[Int8]()), h, w, c
+    )
 
 
 fn _canonical_reshape_output[
@@ -157,7 +157,7 @@ fn _canonical_reshape_output[
     for i in range(1, len(inputs)):
         out_w += inputs[i].dim(axis)
     return _CanonicallyReshapedBuffer(
-        out_buf.ptr.bitcast[Int8](),
+        UnsafePointer[Int8, MutAnyOrigin](out_buf.ptr.bitcast[Int8]()),
         input0_canon.h,
         out_w,
         input0_canon.c,
@@ -365,9 +365,11 @@ fn _concat[
             var output_offset = j * stride_h_out + w_offset * stride_w_out
             # these slices are contiguous
             memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-                output.ptr.bitcast[Int8](),
+                UnsafePointer[Int8, MutAnyOrigin](output.ptr.bitcast[Int8]()),
                 output_offset * size_of[dtype](),
-                (inputs[i].ptr + input_offset).bitcast[Int8](),
+                UnsafePointer[Int8, MutAnyOrigin](
+                    (inputs[i].ptr + input_offset).bitcast[Int8]()
+                ),
                 w * c * size_of[dtype](),
                 rebind[
                     IndexList[
@@ -395,9 +397,9 @@ fn _concat_inner[
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
         memcpy_or_fuse[output.rank, dtype, epilogue_fn](
-            output.ptr.bitcast[Int8](),
+            UnsafePointer[Int8, MutAnyOrigin](output.ptr.bitcast[Int8]()),
             num_elems_copied * size_of[dtype](),
-            inputs[i].ptr.bitcast[Int8](),
+            UnsafePointer[Int8, MutAnyOrigin](inputs[i].ptr.bitcast[Int8]()),
             buffer_len * size_of[dtype](),
             rebind[
                 IndexList[

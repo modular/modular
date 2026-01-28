@@ -14,9 +14,6 @@
 
 from layout import LayoutTensor
 from memory import memcpy
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # ===-----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis
@@ -185,14 +182,13 @@ fn _tile_1d[
     dtype: DType,
 ](
     init_dst_ptr: UnsafePointer[
+        mut=True,
         Scalar[dtype],
         address_space = AddressSpace.GENERIC,
-        ...,
     ],
     src_ptr: UnsafePointer[
         Scalar[dtype],
         address_space = AddressSpace.GENERIC,
-        ...,
     ],
     tile_num_elems: Int,
     n: Int,
