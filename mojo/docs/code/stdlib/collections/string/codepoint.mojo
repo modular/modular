@@ -17,7 +17,7 @@ def summary():
     from testing import assert_true, assert_equal
 
     # Create a codepoint from a character
-    var c = Codepoint.ord("A")
+    var c = Codepoint("A")
 
     # Check properties
     assert_true(c.is_ascii())
@@ -32,14 +32,14 @@ def run_is_python_space():
     from testing import assert_true, assert_false
 
     # ASCII space characters
-    assert_true(Codepoint.ord(" ").is_python_space())
-    assert_true(Codepoint.ord("	").is_python_space())
+    assert_true(Codepoint(" ").is_python_space())
+    assert_true(Codepoint("	").is_python_space())
 
     # Unicode paragraph separator:
     assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
     # Letters are not space characters
-    assert_false(Codepoint.ord("a").is_python_space())
+    assert_false(Codepoint("a").is_python_space())
 
 
 def main():
