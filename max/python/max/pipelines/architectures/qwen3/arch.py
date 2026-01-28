@@ -24,6 +24,7 @@ from max.pipelines.lib import (
 
 from ..llama3 import weight_adapters
 from .model import Qwen3Model
+from .model_config import Qwen3Config
 
 qwen3_arch = SupportedArchitecture(
     name="Qwen3ForCausalLM_Legacy",
@@ -46,4 +47,5 @@ qwen3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Qwen3Config,
 )

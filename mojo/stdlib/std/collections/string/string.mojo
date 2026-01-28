@@ -1099,13 +1099,14 @@ struct String(
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin_of(self), forward=False](self)
+        return self.codepoint_slices_reversed()
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1227,10 +1228,15 @@ struct String(
         writer.write_string(self)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the string".
+        """Formats this string slice to the provided `Writer`.
 
         Args:
-            writer: The value to write to.
+            writer: The object to write to.
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
         StringSlice(self).write_repr_to(writer)
 
@@ -1330,6 +1336,20 @@ struct String(
         ```
         """
         return StringSlice(self).codepoint_slices()
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[origin_of(self), False]:
+        """Iterates backwards over the string, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string elements.
+        """
+        return CodepointSliceIter[origin_of(self), forward=False](self)
 
     @always_inline("nodebug")
     fn unsafe_ptr(
@@ -2028,9 +2048,9 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_rjust(width, fillchar)
@@ -2058,9 +2078,9 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_ljust(width, fillchar)
@@ -2098,17 +2118,21 @@ struct String(
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not
-        lie on a codepoint boundary.
+        lie on a codepoint boundary or if fill_byte is non-ascii (>=128).
 
         Args:
             length: The new length of the string.
-            fill_byte: The byte to fill any new space with.
+            fill_byte: The byte to fill any new space with. Must be a valid single-byte
+                       utf-8 character.
 
         Notes:
             If the new length is greater than the current length, the string is
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
+        debug_assert[assert_mode="safe"](
+            fill_byte < 128, "Fill byte is the start of a multi-byte character."
+        )
         self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
@@ -2245,9 +2269,9 @@ fn chr(c: Int) -> String:
     ```
     """
     if c <= _LARGEST_UNICODE_ASCII_BYTE:
-        return _unsafe_chr_ascii(c)
+        return _unsafe_chr_ascii(UInt8(c))
 
-    var char_opt = Codepoint.from_u32(c)
+    var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
         abort(String("chr(", c, ") is not a valid Unicode codepoint"))
@@ -2289,10 +2313,10 @@ fn _repr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a representation of the given code point.
     """
-    comptime ord_tab = ord("\t")
-    comptime ord_new_line = ord("\n")
-    comptime ord_carriage_return = ord("\r")
-    comptime ord_back_slash = ord("\\")
+    comptime ord_tab = UInt8(ord("\t"))
+    comptime ord_new_line = UInt8(ord("\n"))
+    comptime ord_carriage_return = UInt8(ord("\r"))
+    comptime ord_back_slash = UInt8(ord("\\"))
 
     if c == ord_back_slash:
         return r"\\"
@@ -2321,7 +2345,7 @@ fn ascii(value: StringSlice) -> String:
     Returns:
         A string containing the ASCII representation of the object.
     """
-    comptime ord_squote = ord("'")
+    comptime ord_squote = UInt8(ord("'"))
     var result = String()
     var use_dquote = False
     var data = value.as_bytes()
@@ -2501,8 +2525,8 @@ fn _trim_and_handle_sign(
     var start: Int = 0
     while start < str_len and Codepoint(buff[start]).is_posix_space():
         start += 1
-    var p: Bool = buff[start] == ord("+")
-    var n: Bool = buff[start] == ord("-")
+    var p: Bool = buff[start] == UInt8(ord("+"))
+    var n: Bool = buff[start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2529,7 +2553,7 @@ fn _handle_base_prefix(
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
         var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == ord("0") and (
+        if buff[start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
@@ -2669,7 +2693,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     )
     var n = UInt32(n0)
     var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+        UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
     return (n0 + lookup_table[log2]) >> 32
 

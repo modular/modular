@@ -19,8 +19,7 @@ from utils.index import IndexList
 
 # Padding handling method.
 @fieldwise_init
-@register_passable("trivial")
-struct PadHandling(ImplicitlyCopyable):
+struct PadHandling(TrivialRegisterType):
     var value: Int
     comptime EXCLUDE_PAD = PadHandling(0)  # Do not count padding.
     comptime INCLUDE_PAD = PadHandling(2)  # Count padding.
@@ -36,8 +35,7 @@ struct PadHandling(ImplicitlyCopyable):
 
 # Data layout encoding.
 @fieldwise_init
-@register_passable("trivial")
-struct Image2DLayout(ImplicitlyCopyable):
+struct Image2DLayout(TrivialRegisterType):
     var value: Int
     comptime UNKNOWN = Image2DLayout(-1)  # statically unknown layout.
     comptime NHWC = Image2DLayout(0)  # channels last layout.
@@ -56,13 +54,12 @@ struct Image2DLayout(ImplicitlyCopyable):
         return self.value != rhs.value
 
 
-@register_passable("trivial")
 struct ImageData[
     layout: Layout,
     dtype: DType,
     static_image_layout: Image2DLayout,
     origin: MutOrigin,
-]:
+](TrivialRegisterType):
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
@@ -290,8 +287,7 @@ struct ImageData[
         return self.data.size()
 
 
-@register_passable("trivial")
-struct ImageShape(ImplicitlyCopyable):
+struct ImageShape(TrivialRegisterType):
     """A data-layout agnostic representation of tensor shapes used in conv2d."""
 
     var N: Int

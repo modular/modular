@@ -35,8 +35,7 @@ from utils import StaticTuple
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttributeID(Equatable, Writable):
+struct LaunchAttributeID(Equatable, TrivialRegisterType, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -204,8 +203,7 @@ struct LaunchAttributeID(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttributeValue(Defaultable):
+struct LaunchAttributeValue(Defaultable, TrivialRegisterType):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -241,7 +239,9 @@ struct LaunchAttributeValue(Defaultable):
         Args:
             dim: The dimension specification to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](dim.x(), dim.y(), dim.z(), 0)
+        var tmp = StaticTuple[UInt32, 4](
+            UInt32(dim.x()), UInt32(dim.y()), UInt32(dim.z()), 0
+        )
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
@@ -251,14 +251,13 @@ struct LaunchAttributeValue(Defaultable):
         Args:
             value: The boolean value to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](Int(value), 0, 0, 0)
+        var tmp = StaticTuple[UInt32, 4](UInt32(Int(value)), 0, 0, 0)
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct AccessProperty(Equatable, Writable):
+struct AccessProperty(Equatable, TrivialRegisterType, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -328,8 +327,7 @@ struct AccessProperty(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
+struct LaunchAttribute(Defaultable, TrivialRegisterType):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -393,8 +391,7 @@ struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
         return res
 
 
-@register_passable("trivial")
-struct AccessPolicyWindow(Defaultable, Writable):
+struct AccessPolicyWindow(Defaultable, TrivialRegisterType, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

@@ -21,10 +21,13 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
+from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
+    fused_qkv_ragged_matmul_scaled_float8,
+    quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
@@ -54,6 +57,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         scale: float | None = None,
         has_bias: bool = True,
         rms_norm_eps: float = 1e-6,
+        float8_config: Float8Config | None = None,
     ) -> None:
         super().__init__()
 
@@ -71,6 +75,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
         self.devices = devices or [DeviceRef.CPU()]
         self._sharding_strategy: ShardingStrategy | None = None
+        self.float8_config = float8_config
 
         if not self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
@@ -87,6 +92,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -94,6 +100,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -101,6 +108,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
         self.o_proj = linear_cls(
             in_dim=q_weight_dim,
@@ -108,6 +116,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
+            float8_config=float8_config,
         )
 
         # Per-head RMSNorm for Q and K.
@@ -142,6 +151,21 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
         )
 
+    @property
+    def wqkv_scale(self) -> TensorValue | None:
+        """Concatenated QKV weight scales for FP8 models."""
+        if self.q_proj.weight_scale is None:
+            return None
+        assert self.k_proj.weight_scale is not None
+        assert self.v_proj.weight_scale is not None
+        return ops.concat(
+            (
+                self.q_proj.weight_scale,
+                self.k_proj.weight_scale,
+                self.v_proj.weight_scale,
+            )
+        )
+
     def __call__(
         self,
         layer_idx: TensorValue,
@@ -163,17 +187,69 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         """
         total_seq_len = x.shape[0]
 
-        # Project QKV; K/V are written into KV cache, Q is returned.
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
-            bias=self.wqkv_bias,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
+        # Keep attention stack in BF16.
+        self.kv_params.dtype = DType.bfloat16
+
+        # Make sure activations are BF16 for the fused kernel.
+        x_in = x if x.dtype == DType.bfloat16 else ops.cast(x, DType.bfloat16)
+
+        # Get concatenated QKV weights and optional bias
+        wqkv = self.wqkv
+        wqkv_bias = (
+            self.wqkv_bias.to(x_in.device)
+            if self.wqkv_bias is not None
+            else None
         )
+
+        # Project QKV using FP8 or BF16 path
+        if self.float8_config and self.q_proj.weight.dtype.is_float8():
+            # FP8 path: dynamically quantize input and use FP8 fused kernel
+            weight_scale = self.wqkv_scale
+            assert weight_scale is not None
+
+            # Get K block size for dynamic quantization (matches DeepSeek pattern)
+            weight_block_size = self.float8_config.weight_scale.block_size
+            k_block_size = (
+                weight_block_size[1] if weight_block_size is not None else -1
+            )
+
+            x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                x_in,
+                self.float8_config.input_scale,
+                self.float8_config.weight_scale,
+                scales_type=weight_scale.dtype,
+                group_size_or_per_token=k_block_size,
+                out_type=self.q_proj.weight.dtype,
+            )
+
+            xq = fused_qkv_ragged_matmul_scaled_float8(
+                self.kv_params,
+                input=x_fp8,
+                wqkv=wqkv,
+                bias=wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                input_scale=x_scales.to(x_fp8.device),
+                weight_scale=weight_scale.to(x_fp8.device),
+                float8_config=self.float8_config,
+            )
+        else:
+            # BF16 path: regular fused QKV matmul
+            if wqkv.dtype != DType.bfloat16:
+                wqkv = ops.cast(wqkv, DType.bfloat16)
+
+            xq = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x_in,
+                wqkv=wqkv,
+                bias=wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
 
         # [T, n_heads, head_dim]; per-head RMSNorm on Q.
         xq = ops.reshape(xq, (-1, self.n_heads, self.kv_params.head_dim))
@@ -224,6 +300,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         )
 
         # Merge heads + output projection.
+        # The Linear layer handles FP8 internally via dynamic_scaled_matmul.
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)
 
@@ -258,6 +335,14 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
                     num_devices, self.n_heads, self.kv_params.head_dim
                 )
             )
+            # For FP8 models with block-wise scales, the scale tensor shape
+            # doesn't match the weight shape (it has fewer columns based on
+            # block size). head_aware_columnwise sharding would try to slice
+            # based on the weight dimensions, so we explicitly replicate scales.
+            if self.float8_config and self.o_proj.weight_scale is not None:
+                self.o_proj.weight_scale.sharding_strategy = (
+                    ShardingStrategy.replicate(num_devices)
+                )
             self.q_norm.sharding_strategy = ShardingStrategy.replicate(
                 num_devices
             )
@@ -319,6 +404,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
                 scale=self.scale,
                 has_bias=self.has_bias,
                 rms_norm_eps=self.rms_norm_eps,
+                float8_config=self.float8_config,
             )
 
             sharded.q_proj = q_proj_shards[shard_idx]

@@ -23,7 +23,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache.paged_cache.block_utils import InsufficientBlocksError
+from max.kv_cache import InsufficientBlocksError
 from max.pipelines.core import TextContext
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
@@ -71,13 +71,13 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
     return manager
 
 
-def create_mock_paged_cache() -> Mock:
+def create_mock_kv_cache() -> Mock:
     """Create a mock paged KV cache manager with minimal interface."""
     cache = Mock()
     cache.max_seq_len = 2048
     cache.page_size = 16
-    cache.total_num_pages = 128
-    cache.free_blocks_pct = 0.5
+    cache.get_total_num_pages = Mock(return_value=128)
+    cache.get_free_blocks_pct = Mock(return_value=0.5)
 
     cache.alloc = Mock()
     cache.claim = Mock()
@@ -151,18 +151,18 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
         target_tokens_per_batch_ce=30,
     )
 
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue 6 CE requests, at 9 tokens each
@@ -268,18 +268,18 @@ def test_text_batch_constructor__batch_construction_no_requests(
         target_tokens_per_batch_ce=30,
     )
 
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches) == 1
@@ -298,19 +298,19 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = False
-    paged_cache.alloc.side_effect = InsufficientBlocksError
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = False
+    kv_cache.alloc.side_effect = InsufficientBlocksError
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     contexts = {}
@@ -339,18 +339,18 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
         target_tokens_per_batch_ce=30,
         kvcache_ce_watermark=0.95,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     contexts = {}
@@ -409,7 +409,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(batch_constructor.replicas[0].ce_reqs) == 3
     assert len(batch_constructor.replicas[0].tg_reqs) == 5
 
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.96
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.96
 
     # We still prioritize CE, but return an empty batch
     assert batch_constructor._identify_priority(0) == RequestType.CE
@@ -419,7 +419,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(inputs.batches[0]) == 5
 
     # Last Ce Batch
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     # Since we already have 5 CE request outstanding, we cannot grab any new CE requests.
@@ -443,7 +443,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # The first item won't have enough space, so we will pre-empt the last one
     # The first item will have 2 alloc calls, failing with InsufficientBlocksError on the first,
     # then succeeding and returning None for the remaining calls.
-    paged_cache.alloc.side_effect = [
+    kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
         None,
         None,
@@ -486,18 +486,18 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
         target_tokens_per_batch_ce=30,
         kvcache_ce_watermark=0.95,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     for _ in range(8):
@@ -563,18 +563,18 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     for _ in range(8):
@@ -634,7 +634,7 @@ def test_single_lora_scheduling() -> None:
     """Test scheduling a single LoRA request in CE batch."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -645,7 +645,7 @@ def test_single_lora_scheduling() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx = create_lora_context(model_name="lora_model1")
@@ -663,7 +663,7 @@ def test_multi_lora_within_budget() -> None:
     """Test scheduling multiple LoRA requests within budget."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -674,7 +674,7 @@ def test_multi_lora_within_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx1 = create_lora_context(model_name="lora_model1")
@@ -697,7 +697,7 @@ def test_lora_preemption_over_budget() -> None:
     """Test that LoRA requests are deferred when over budget during CE."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
@@ -708,7 +708,7 @@ def test_lora_preemption_over_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -736,7 +736,7 @@ def test_age_based_scheduling_with_lora() -> None:
     """Test that age-based scheduling is maintained with LoRA constraints."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -747,7 +747,7 @@ def test_age_based_scheduling_with_lora() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model2")
@@ -771,7 +771,7 @@ def test_tg_batch_with_active_loras() -> None:
     """Test that TG batch correctly handles requests with active LoRAs."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
@@ -782,7 +782,7 @@ def test_tg_batch_with_active_loras() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model1")
@@ -808,7 +808,7 @@ def test_ce_lora_activation_within_budget() -> None:
     """Test that LoRAs are activated during CE when within budget."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -819,7 +819,7 @@ def test_ce_lora_activation_within_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -842,9 +842,9 @@ def test_tg_pure_age_based_preemption() -> None:
     """Test that preemption is purely age-based for KV cache constraints."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
-    paged_cache.alloc = Mock(
+    kv_cache.alloc = Mock(
         side_effect=[None, InsufficientBlocksError, InsufficientBlocksError]
     )
 
@@ -857,7 +857,7 @@ def test_tg_pure_age_based_preemption() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model1")
@@ -882,7 +882,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     """Test LoRA remains active when moving from CE to TG."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -893,7 +893,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx = create_lora_context(model_name="lora_model1")
@@ -924,7 +924,7 @@ def test_mixed_requests_scheduling() -> None:
     """Test scheduling with mixed LoRA and base model requests."""
     lora_manager = create_mock_lora_manager(max_num_loras=1)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -935,7 +935,7 @@ def test_mixed_requests_scheduling() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -960,7 +960,7 @@ def test_mixed_requests_scheduling() -> None:
     assert len(lora_manager._active_loras) == 1
 
 
-def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache() -> (
+def test_text_batch_constructor__load_based_replica_assignment_with_kv_cache() -> (
     None
 ):
     """Test that load-based assignment distributes requests evenly across replicas.
@@ -975,8 +975,8 @@ def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache(
     pipeline.release = Mock()
 
     # Create paged cache
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -988,7 +988,7 @@ def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache(
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue requests - with load-based assignment, all should go to least loaded
@@ -1029,9 +1029,9 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
     pipeline.release = Mock()
 
     # Create paged cache (required but not used for explicit assignment)
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
-    paged_cache.get_replica_request_count = Mock(return_value=0)
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
+    kv_cache.get_replica_request_count = Mock(return_value=0)
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -1043,7 +1043,7 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue one request to each replica explicitly
@@ -1080,8 +1080,8 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
     pipeline.release = Mock()
 
     # Create paged cache
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -1093,7 +1093,7 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Create an imbalanced initial load: [5, 2, 8, 1]

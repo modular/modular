@@ -78,7 +78,7 @@ class SchedulerLogger:
     def log(
         self,
         batch: AudioGenerationSchedulerOutput,
-        paged_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         num_pending_reqs: int,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
@@ -135,24 +135,34 @@ class SchedulerLogger:
 
             self.logs.append(batch_info)
 
-        cache_metrics = paged_cache.metrics
-        paged_cache.reset_metrics()
+        dp = kv_cache.num_replicas
 
-        total_blocks = paged_cache.total_num_pages
-        used_blocks = paged_cache.total_num_pages - paged_cache.num_free_blocks
+        total_blocks = sum(
+            kv_cache.get_num_pages(replica_idx) for replica_idx in range(dp)
+        )
+        used_blocks = sum(
+            kv_cache.get_num_used_pages(replica_idx)
+            for replica_idx in range(dp)
+        )
         num_input_tokens = batch.input_tokens
-        denominator = cache_metrics.cache_tokens + num_input_tokens
+        cache_tokens = sum(
+            kv_cache.get_metrics(replica_idx).cache_tokens
+            for replica_idx in range(dp)
+        )
+        denominator = cache_tokens + num_input_tokens
         if denominator == 0:
             cache_hit_rate = 0.0
         else:
-            cache_hit_rate = cache_metrics.cache_tokens / float(denominator)
+            cache_hit_rate = cache_tokens / float(denominator)
+
+        kv_cache.reset_metrics()
 
         # log KV cache metrics
         METRICS.batch_size(batch.batch_size)
         METRICS.cache_num_used_blocks(used_blocks)
         METRICS.cache_num_total_blocks(total_blocks)
         METRICS.cache_hit_rate(cache_hit_rate)
-        METRICS.cache_hits(cache_metrics.cache_tokens)
+        METRICS.cache_hits(cache_tokens)
         METRICS.cache_misses(num_input_tokens)
 
     def __del__(self) -> None:
@@ -247,7 +257,7 @@ class AudioGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[AudioGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -259,7 +269,7 @@ class AudioGenerationScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: deque[TTSContext] = deque()
         self.decode_reqs: dict[RequestID, TTSContext] = {}
-        self.paged_manager = paged_manager
+        self.kv_cache = kv_cache
 
         self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
             pipeline
@@ -312,7 +322,7 @@ class AudioGenerationScheduler(Scheduler):
                 req_data, self._lora_manager
             ):
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.paged_manager.release(req_id)
+                self.kv_cache.release(req_id, replica_idx=0)
                 # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 req_data.reset()
@@ -368,13 +378,13 @@ class AudioGenerationScheduler(Scheduler):
                 deferred_lora_requests.append(req_data)
                 continue
 
-            if not self.paged_manager.contains(req_id):
-                self.paged_manager.claim(req_id)
+            if not self.kv_cache.contains(req_id, replica_idx=0):
+                self.kv_cache.claim(req_id, replica_idx=0)
 
             # Allocate enough memory to run the request for one step.
             # This also queries the prefix cache which may reduce the number of
             # tokens we need to encode.
-            self.paged_manager.alloc(req_data, num_steps=1)
+            self.kv_cache.alloc(req_data, replica_idx=0, num_steps=1)
 
             # activate the LoRA
             if self._lora_manager and is_lora(req_data, self._lora_manager):
@@ -409,7 +419,7 @@ class AudioGenerationScheduler(Scheduler):
                 continue
             del self.decode_reqs[req_id]
             # Release from paged cache (scheduler manages primary KV cache lifecycle)
-            self.paged_manager.release(req_id)
+            self.kv_cache.release(req_id, replica_idx=0)
             # Pipeline release handles audio_decoder_cache (special case)
             self.pipeline.release(req_id)
             num_terminated_reqs += 1
@@ -422,7 +432,7 @@ class AudioGenerationScheduler(Scheduler):
             if req_id in self.decode_reqs:
                 del self.decode_reqs[req_id]
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.paged_manager.release(req_id)
+                self.kv_cache.release(req_id, replica_idx=0)
                 # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
                 self.response_queue.put_nowait(
@@ -460,7 +470,7 @@ class AudioGenerationScheduler(Scheduler):
             for req_id in batch_request_ids:
                 self.decode_reqs.pop(req_id, None)
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.paged_manager.release(req_id)
+                self.kv_cache.release(req_id, replica_idx=0)
                 # Pipeline release handles audio_decoder_cache (special case)
                 self.pipeline.release(req_id)
 
@@ -552,7 +562,7 @@ class AudioGenerationScheduler(Scheduler):
         assert num_steps is not None and num_steps > 0
         self.batch_info_logger.log(
             batch,
-            self.paged_manager,
+            self.kv_cache,
             len(self.pending_reqs),
             batch_creation_time_s,
             batch_execution_time_s,

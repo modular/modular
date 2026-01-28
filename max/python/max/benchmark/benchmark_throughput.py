@@ -59,8 +59,8 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from pydantic import Field
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -348,7 +348,7 @@ async def run_max_async(
     pipeline_task: PipelineTask,
     top_k: int | None,
 ) -> tuple[float, list[int]]:
-    scheduler_zmq_configs = SchedulerZmqConfigs(
+    model_worker_interface = ZmqModelWorkerInterface(
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(config),
     )
@@ -359,14 +359,14 @@ async def run_max_async(
             pipeline_config=config,
             settings=Settings(),
             metric_client=NoopClient(),
-            scheduler_zmq_configs=scheduler_zmq_configs,
+            model_worker_interface=model_worker_interface,
         ) as worker_monitor,
         # Create dynamic and continuous batching workers and associated queues
         # to feed the model worker process.
         TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
-            scheduler_zmq_configs=scheduler_zmq_configs,
+            model_worker_interface=model_worker_interface,
         ) as pipeline,
     ):
         # Start timing and create a progress bar.

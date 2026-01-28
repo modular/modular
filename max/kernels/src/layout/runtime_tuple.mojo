@@ -67,10 +67,9 @@ fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
     return _int_type_of_width[bitwidth]()
 
 
-@register_passable("trivial")
 struct RuntimeTuple[
     S: IntTuple = UNKNOWN_VALUE, /, *, element_type: DType = DType.int64
-](Defaultable, Intable, Sized, Stringable, Writable):
+](Defaultable, Intable, Sized, Stringable, TrivialRegisterType, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
     RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
     tuple-like data structures, typically used for tensor shapes, indices, and coordinates

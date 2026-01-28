@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
@@ -489,7 +489,7 @@ fn multistage_qgemm_kernel[
     pack_factor: Int,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1435,7 +1435,7 @@ fn multistage_gemm_q[
     group_size: Int,
     pack_factor: Int,
     config: MatmulConfig[a_type, b_type, c_type, True],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
@@ -1546,7 +1546,7 @@ fn matmul_gpu_qint4[
     //,
     group_size: Int,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
@@ -1571,7 +1571,7 @@ fn matmul_gpu_qint4_impl[
     //,
     group_size: Int,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],

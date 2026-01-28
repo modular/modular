@@ -24,7 +24,7 @@ from sys.ffi import _get_global_or_null, external_call
 from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import OwnedDLHandle, _Global
-from collections.optional import OptionalReg
+from collections.optional import Optional
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._amdgpu_hip import HIP
@@ -37,8 +37,7 @@ comptime ncclComm_t = OpaquePointer
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclResult_t(Equatable, Writable):
+struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
     comptime ncclSuccess = Self(0)
 
@@ -53,8 +52,7 @@ struct ncclResult_t(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclRedOp_t:
+struct ncclRedOp_t(TrivialRegisterType):
     var _value: Int32
     comptime ncclSum = Self(0)
 
@@ -63,8 +61,7 @@ struct ncclRedOp_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ncclDataType_t:
+struct ncclDataType_t(TrivialRegisterType):
     var _value: Int32
     comptime ncclFloat16 = Self(6)
     comptime ncclFloat32 = Self(7)
@@ -298,7 +295,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
