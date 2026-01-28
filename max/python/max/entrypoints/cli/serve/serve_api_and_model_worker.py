@@ -45,14 +45,27 @@ def serve_api_server_and_model_worker(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
 ) -> None:
+    # Auto-detect pipeline task from the model architecture if using default task.
+    # This ensures models like embeddings automatically use the correct pipeline.
+    if pipeline_task == PipelineTask.TEXT_GENERATION:
+        try:
+            detected_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+                pipeline_config
+            )
+            if detected_task != PipelineTask.TEXT_GENERATION:
+                logger.info(
+                    f"Auto-detected pipeline task: {detected_task.value} "
+                    f"(model architecture: {pipeline_config.model.model_path})"
+                )
+                pipeline_task = detected_task
+        except (ValueError, KeyError):
+            # If we can't determine the task, use the provided default
+            logger.debug(
+                "Could not auto-detect pipeline task from model architecture, "
+                f"using default: {pipeline_task.value}"
+            )
+
     override_architecture: str | None = None
-    # TODO: This is a workaround to support embeddings generation until the
-    # changes to tie pipelines to tasks is complete. This will be removed.
-    if (
-        pipeline_config.model.model_path
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
-        pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     # Use the audio decoder architecture for the audio generation pipeline.
     if pipeline_task == PipelineTask.AUDIO_GENERATION:

@@ -20,14 +20,14 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
 from max.kv_cache import infer_optimal_batch_size
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -64,10 +64,20 @@ class AlwaysSignalBuffersMixin:
         perform allreduce, even for single-device setups. Therefore,
         signal buffers are always required to match the graph inputs.
 
+        In compile-only mode (virtual device mode), returns an empty list
+        to avoid GPU memory allocation which is not supported.
+
         Returns:
-            List of signal buffer tensors, one per device.
+            List of signal buffer tensors, one per device, or empty list
+            in compile-only mode.
         """
-        from max.nn import Signals
+        # In compile-only mode (virtual device mode), skip signal buffer
+        # allocation since VirtualDevice does not support memory allocation.
+        # Signal buffers are only needed during model execution, not compilation.
+        if is_virtual_device_mode():
+            return []
+
+        from max.nn.legacy.comm import Signals
 
         return [
             Buffer.zeros(
@@ -229,10 +239,15 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         Returns:
             List of signal buffer tensors, one per device for multi-device setups,
-            or an empty list for single-device setups.
+            or an empty list for single-device setups or compile-only mode.
         """
+        # In compile-only mode (virtual device mode), skip signal buffer
+        # allocation since VirtualDevice does not support memory allocation.
+        if is_virtual_device_mode():
+            return []
+
         # Import here to avoid circular dependency
-        from max.nn import Signals
+        from max.nn.legacy.comm import Signals
 
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.
@@ -320,8 +335,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         # TODO we should map HF configs to a unified MAX Config object
         # this would help avoid these excessive calls to class methods.
-        n_layers = cls.get_num_layers(huggingface_config=huggingface_config)
-
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -329,6 +342,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+        n_layers = kv_params.num_layers
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=cls.calculate_max_seq_len(

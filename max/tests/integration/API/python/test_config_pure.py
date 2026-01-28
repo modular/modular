@@ -257,7 +257,7 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create and set the config
@@ -274,13 +274,13 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {"kv_cache_page_size": 256}
 
         config._create_and_set_config(
-            "_model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
+            "model", MAXModelConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create model config with KV cache config
         assert config.model is not None
         assert config.model.model_path == "/test/path"
-        assert config.model._kv_cache.kv_cache_page_size == 256
+        assert config.model.kv_cache.kv_cache_page_size == 256
 
     @mock_pipeline_config_resolve
     def test_create_and_set_config_sampling_with_echo_enabled(self) -> None:
@@ -291,7 +291,7 @@ class TestPipelineConfigUtilityMethods:
         kv_cache_kwargs: dict[str, Any] = {}
 
         config._create_and_set_config(
-            "_sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
+            "sampling", SamplingConfig, matched_kwargs, kv_cache_kwargs
         )
 
         # Should create sampling config with variable logits enabled
@@ -327,7 +327,7 @@ class TestPipelineConfigUtilityMethods:
         assert config.sampling.enable_structured_output is True
         assert config.sampling.enable_penalties is True
         assert config.model.model_path == "/override/path"
-        assert config.model._kv_cache.kv_cache_page_size == 128
+        assert config.model.kv_cache.kv_cache_page_size == 128
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
@@ -417,6 +417,7 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
@@ -436,6 +437,7 @@ def test_config_post_init__other_repo_weights(
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert (
@@ -457,6 +459,7 @@ def test_config_init__reformats_with_str_weights_path(
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
             )
         ],
+        use_legacy_module=False,
     )
 
     assert isinstance(config.model.weight_path, list)
@@ -473,6 +476,7 @@ def test_validate_model_path__correct_repo_id_provided(
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
         quantization_encoding=SupportedEncoding.bfloat16,
+        use_legacy_module=False,
     )
 
     assert config.model.model_path == modular_ai_llama_3_1_local_path
@@ -480,6 +484,7 @@ def test_validate_model_path__correct_repo_id_provided(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -497,6 +502,7 @@ def test_config__test_incompatible_quantization_encoding(
             ],
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
     # This should not raise, as float32 == f32.
@@ -511,11 +517,13 @@ def test_config__test_incompatible_quantization_encoding(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@mock_pipeline_config_hf_dependencies
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -530,6 +538,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
     # This should pass, because the flag also supports casting bfloat16 weights
@@ -540,6 +549,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
@@ -550,6 +560,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         max_batch_size=1,
         max_length=1,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
@@ -561,6 +572,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             model_path="test/model",
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             # Note: quantization_encoding is not provided, which should cause the error
+            use_legacy_module=False,
         )
 
 
@@ -579,6 +591,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
         quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
+        use_legacy_module=False,
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -599,6 +612,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
             model_path=gemma_3_1b_it_local_path,
             max_batch_size=1,
             max_length=1,
+            use_legacy_module=False,
         )
 
 
@@ -623,6 +637,7 @@ def test_config_is_picklable(
     config = PipelineConfig(
         model_path=modular_ai_llama_3_1_local_path,
         quantization_encoding=SupportedEncoding.bfloat16,
+        use_legacy_module=False,
     )
 
     config.model._huggingface_config = None
@@ -652,6 +667,7 @@ def test_config__validates_supported_device(
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=SupportedEncoding.float32,
         max_length=1,
+        use_legacy_module=False,
     )
 
     if accelerator_count() == 0:
@@ -661,6 +677,7 @@ def test_config__validates_supported_device(
                 device_specs=[DeviceSpec.accelerator()],
                 quantization_encoding=SupportedEncoding.float32,
                 max_length=1,
+                use_legacy_module=False,
             )
     else:
         _ = PipelineConfig(
@@ -668,6 +685,7 @@ def test_config__validates_supported_device(
             device_specs=[DeviceSpec.accelerator()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
+            use_legacy_module=False,
         )
 
     with pytest.raises(
@@ -679,6 +697,7 @@ def test_config__validates_supported_device(
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.bfloat16,
             max_length=1,
+            use_legacy_module=False,
         )
 
 
@@ -697,6 +716,7 @@ def test_config__validates_lora_configuration(
         lora_paths=[llama_3_1_8b_lora_local_path],
         quantization_encoding=SupportedEncoding.bfloat16,
         enable_prefix_caching=False,  # Must be disabled for LoRA
+        use_legacy_module=False,
     )
     assert config.lora is not None
     assert config.lora.lora_paths[0] == llama_3_1_8b_lora_local_path
@@ -728,6 +748,7 @@ def test_config__validates_lora_only_supported_for_llama(
             lora_paths=["/some/lora/path"],
             enable_prefix_caching=False,
             quantization_encoding=SupportedEncoding.bfloat16,
+            use_legacy_module=False,
         )
 
 
@@ -748,6 +769,7 @@ def test_config__validates_lora_works_for_llama(
         quantization_encoding=SupportedEncoding.bfloat16,
         enable_prefix_caching=False,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
 
     # Verify LoRA config was created successfully
@@ -777,6 +799,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
             lora_paths=["/some/lora/path"],
             quantization_encoding=SupportedEncoding.bfloat16,
             enable_prefix_caching=True,  # This should conflict with LoRA
+            use_legacy_module=False,
         )
 
 
@@ -799,6 +822,7 @@ def test_config__validates_lora_single_device_only(
         max_length=1,
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
     assert config.lora is not None
     assert config.lora.enable_lora is True
@@ -829,6 +853,7 @@ def test_config__validates_lora_fails_with_multiple_devices(
             max_length=1,
             quantization_encoding=SupportedEncoding.bfloat16,
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+            use_legacy_module=False,
         )
 
     config = PipelineConfig(
@@ -837,8 +862,187 @@ def test_config__validates_lora_fails_with_multiple_devices(
         max_length=1,
         quantization_encoding=SupportedEncoding.bfloat16,
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
+        use_legacy_module=False,
     )
     assert config.lora is None
+
+
+def test_diffusers_config_loads_for_diffusion_pipeline() -> None:
+    """Test that diffusers_config is properly loaded for diffusion pipelines."""
+    # Use a small, publicly accessible diffusion model for testing
+    # This model is from HuggingFace's internal testing organization
+    diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
+
+    # Create a model config with a diffusion pipeline
+    model_config = MAXModelConfig(
+        model_path=diffusion_model,
+        device_specs=[DeviceSpec.cpu()],
+    )
+
+    # The diffusers_config should be automatically loaded
+    diffusers_config = model_config.diffusers_config
+
+    # Verify that diffusers_config is not None (indicating this is a diffusion pipeline)
+    assert diffusers_config is not None, (
+        "diffusers_config should not be None for diffusion pipelines"
+    )
+
+    # Verify that the config contains expected keys for a Stable Diffusion pipeline
+    # model_index.json typically contains pipeline class name and component mapping
+    assert "_class_name" in diffusers_config, (
+        "diffusers_config should contain _class_name"
+    )
+
+    # The pipeline class name should indicate this is a Stable Diffusion pipeline
+    assert "StableDiffusion" in diffusers_config["_class_name"], (
+        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
+    )
+
+    # Verify that the config contains the "components" key
+    assert "components" in diffusers_config, (
+        "diffusers_config should contain 'components' key"
+    )
+
+    # Verify that the components dict contains expected components
+    components = diffusers_config["components"]
+    expected_components = ["vae", "unet", "text_encoder"]
+    for component in expected_components:
+        assert component in components, (
+            f"components should contain {component} component"
+        )
+
+        # Verify each component has the expected structure
+        component_data = components[component]
+        assert "library" in component_data, (
+            f"{component} should have 'library' field"
+        )
+        assert "class_name" in component_data, (
+            f"{component} should have 'class_name' field"
+        )
+        assert "config_dict" in component_data, (
+            f"{component} should have 'config_dict' field"
+        )
+
+        # Print component info to see what's being downloaded
+        print(
+            f"Component {component}: library={component_data['library']}, "
+            f"class={component_data['class_name']}, "
+            f"config_dict_keys={list(component_data['config_dict'].keys()) if component_data['config_dict'] else 'empty'}"
+        )
+
+
+def test_diffusers_config_is_none_for_transformer_model(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Test that diffusers_config is None for non-diffusion models."""
+    # Create a model config with a standard transformer model (not a diffusion model)
+    model_config = MAXModelConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.cpu()],
+    )
+
+    # The diffusers_config should be None for non-diffusion models
+    diffusers_config = model_config.diffusers_config
+
+    assert diffusers_config is None, (
+        "diffusers_config should be None for non-diffusion transformer models"
+    )
+
+
+def test_pipeline_config_with_flux_1_dev_model() -> None:
+    """Test PipelineConfig instantiation with Flux.1-dev model."""
+    # Flux.1-dev is a diffusion model from Black Forest Labs
+    flux_model = "black-forest-labs/FLUX.1-dev"
+
+    # Create a PipelineConfig with Flux.1-dev
+    config = PipelineConfig(
+        model_path=flux_model,
+        device_specs=[DeviceSpec.cpu()],
+        defer_resolve=True,
+    )
+
+    # Verify that the config was created successfully
+    assert config.model.model_path == flux_model
+
+    # Verify that diffusers_config is loaded (since Flux is a diffusion model)
+    diffusers_config = config.model.diffusers_config
+    assert diffusers_config is not None, (
+        "diffusers_config should not be None for Flux.1-dev diffusion model"
+    )
+
+    # Verify that the config contains expected pipeline information
+    assert "_class_name" in diffusers_config, (
+        "diffusers_config should contain _class_name"
+    )
+
+    # Flux uses FluxPipeline class
+    assert "Flux" in diffusers_config["_class_name"], (
+        f"Expected Flux pipeline, got {diffusers_config['_class_name']}"
+    )
+
+    # Print component info to evaluate download behavior
+    if "components" in diffusers_config:
+        components = diffusers_config["components"]
+        print(f"\nFlux model has {len(components)} components:")
+        for component_name, component_data in components.items():
+            config_dict_size = len(str(component_data.get("config_dict", {})))
+            config_dict_keys = (
+                list(component_data["config_dict"].keys())
+                if component_data.get("config_dict")
+                else "empty"
+            )
+            print(
+                f"  {component_name}: library={component_data.get('library')}, "
+                f"class={component_data.get('class_name')}, "
+                f"config_dict_size={config_dict_size} chars, "
+                f"config_dict_keys={config_dict_keys}"
+            )
+
+
+def test_pipeline_config_with_tiny_stable_diffusion() -> None:
+    """Test PipelineConfig instantiation with tiny-stable-diffusion-torch model."""
+    # Use the same model as in test_diffusers_config_loads_for_diffusion_pipeline
+    # but test with PipelineConfig instead of MAXModelConfig
+    diffusion_model = "hf-internal-testing/tiny-stable-diffusion-torch"
+
+    # Create a PipelineConfig with the diffusion model
+    config = PipelineConfig(
+        model_path=diffusion_model,
+        device_specs=[DeviceSpec.cpu()],
+        defer_resolve=True,
+    )
+
+    # Verify that the config was created successfully
+    assert config.model.model_path == diffusion_model
+
+    # Verify that diffusers_config is loaded
+    diffusers_config = config.model.diffusers_config
+    assert diffusers_config is not None, (
+        "diffusers_config should not be None for diffusion pipelines"
+    )
+
+    # Verify that the config contains expected keys
+    assert "_class_name" in diffusers_config, (
+        "diffusers_config should contain _class_name"
+    )
+
+    # The pipeline class name should indicate this is a Stable Diffusion pipeline
+    assert "StableDiffusion" in diffusers_config["_class_name"], (
+        f"Expected StableDiffusion pipeline, got {diffusers_config['_class_name']}"
+    )
+
+    # Verify that the config contains the "components" key
+    assert "components" in diffusers_config, (
+        "diffusers_config should contain 'components' key"
+    )
+
+    # Verify that the components dict contains expected components
+    components = diffusers_config["components"]
+    expected_components = ["vae", "unet", "text_encoder"]
+    for component in expected_components:
+        assert component in components, (
+            f"components should contain {component} component"
+        )
 
 
 class TestSamplingConfig:

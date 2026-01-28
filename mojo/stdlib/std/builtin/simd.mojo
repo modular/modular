@@ -221,6 +221,9 @@ comptime Float64 = Scalar[DType.float64]
 comptime Byte = UInt8
 """Represents a byte (backed by an 8-bit unsigned integer)."""
 
+comptime UInt = Scalar[DType.uint]
+"""Represents an unsigned integer of platform-dependent bit-width."""
+
 # ===----------------------------------------------------------------------=== #
 # Utilities
 # ===----------------------------------------------------------------------=== #
@@ -363,7 +366,6 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable):
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
@@ -382,6 +384,7 @@ struct SIMD[dtype: DType, size: Int](
     Roundable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Truncable,
     Writable,
 ):
@@ -634,28 +637,6 @@ struct SIMD[dtype: DType, size: Int](
         """
         self = value.cast[Self.dtype]()
 
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: UInt, /):
-        """Initializes the SIMD vector with an unsigned integer.
-
-        The unsigned integer value is splatted across all the elements of the SIMD
-        vector.
-
-        Args:
-            value: The input value.
-        """
-        _simd_construction_checks[Self.dtype, Self.size]()
-
-        @parameter
-        if bit_width_of[Self.dtype]() > bit_width_of[DType.int]():
-            comptime dt = _unsigned_integral_type_of[DType.int]()
-            self = bitcast[dt](Scalar[DType.int](value.__int__())).cast[
-                Self.dtype
-            ]()
-        else:
-            self = Self(value.__int__())
-
     @always_inline("builtin")
     @implicit
     fn __init__(out self, value: Int, /):
@@ -719,19 +700,12 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-        var si128_ = __mlir_attr[
-            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
+        self._mlir_value = __mlir_attr[
+            `#pop.int_literal_convert<`,
+            value.value,
+            `> : `,
+            Self._mlir_type,
         ]
-        var si128 = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<si128>`
-        ](si128_)
-        var s = __mlir_op.`pop.cast`[_type = Scalar[Self.dtype]._mlir_type](
-            si128
-        )
-
-        self._mlir_value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
-            s
-        )
 
     @always_inline("nodebug")
     @implicit
@@ -977,7 +951,7 @@ struct SIMD[dtype: DType, size: Int](
             mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __truediv__(self, rhs: Self) -> Self:
         """Computes `self / rhs`.
 
@@ -1962,32 +1936,32 @@ struct SIMD[dtype: DType, size: Int](
         self.write_repr_to(output)
         return output^
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __floor__(self) -> Self:
         """Performs elementwise floor on the elements of a SIMD vector.
 
         Returns:
             The elementwise floor of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.floor"]()
+        return Self(mlir_value=__mlir_op.`pop.floor`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __ceil__(self) -> Self:
         """Performs elementwise ceiling on the elements of a SIMD vector.
 
         Returns:
             The elementwise ceiling of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.ceil"]()
+        return Self(mlir_value=__mlir_op.`pop.ceil`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __trunc__(self) -> Self:
         """Performs elementwise truncation on the elements of a SIMD vector.
 
         Returns:
             The elementwise truncated values of this SIMD vector.
         """
-        return self._floor_ceil_trunc_impl["llvm.trunc"]()
+        return Self(mlir_value=__mlir_op.`pop.trunc`(self._mlir_value))
 
     @always_inline
     fn __abs__(self) -> Self:
@@ -2021,7 +1995,9 @@ struct SIMD[dtype: DType, size: Int](
                 )
 
             comptime mask = FPUtils[Self.dtype].exponent_mantissa_mask()
-            return Self(from_bits=self.to_bits() & mask)
+            return Self(
+                from_bits=self.to_bits() & type_of(self.to_bits())(mask)
+            )
 
     @always_inline("nodebug")
     fn __round__(self) -> Self:
@@ -2391,19 +2367,6 @@ struct SIMD[dtype: DType, size: Int](
             count=size_of[Self](),
         )
         return array^
-
-    fn _floor_ceil_trunc_impl[intrinsic: StaticString](self) -> Self:
-        __comptime_assert (
-            intrinsic == "llvm.floor"
-            or intrinsic == "llvm.ceil"
-            or intrinsic == "llvm.trunc"
-        ), "unsupported intrinsic"
-
-        @parameter
-        if Self.dtype.is_integral() or Self.dtype == DType.bool:
-            return self
-        else:
-            return llvm_intrinsic[intrinsic, Self, has_side_effect=False](self)
 
     fn clamp(self, lower_bound: Self, upper_bound: Self) -> Self:
         """Clamps the values in a SIMD vector to be in a certain range.
@@ -3500,7 +3463,9 @@ fn _convert_float8_to_f32_scalar[
     result = FPUtils.set_mantissa(result, mantissa)
 
     var x_bits = FPUtils.bitcast_to_uint(x)
-    var exp_mantissa = x_bits & FPUtils[dtype].exponent_mantissa_mask()
+    var exp_mantissa = x_bits & type_of(x_bits)(
+        FPUtils[dtype].exponent_mantissa_mask()
+    )
 
     if exp_mantissa == 0x00:
         result = Scalar[result_dtype](0)
@@ -3650,8 +3615,8 @@ fn _convert_f32_to_float8_scalar[
     comptime FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
     comptime FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
     comptime FP32_NUM_BITS = bit_width_of[dtype]()
-    comptime FP8_EXPONENT_MASK: UInt8 = (1 << FP8_NUM_EXPONENT_BITS) - 1
-    comptime FP8_MANTISSA_MASK: UInt8 = (1 << FP8_NUM_MANTISSA_BITS) - 1
+    comptime FP8_EXPONENT_MASK: UInt8 = UInt8((1 << FP8_NUM_EXPONENT_BITS) - 1)
+    comptime FP8_MANTISSA_MASK: UInt8 = UInt8((1 << FP8_NUM_MANTISSA_BITS) - 1)
     comptime FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
     comptime FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
     comptime FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
@@ -3659,8 +3624,10 @@ fn _convert_f32_to_float8_scalar[
     comptime FP8_MAX_FLT = max_finite_byte()
 
     # Extract the bits in the FP32 type
-    var sign: UInt8 = 0x80 if FPUtils[dtype].get_sign(x) else 0x00
-    var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - FP32_EXPONENT_BIAS
+    var sign: UInt8 = UInt8(0x80) if FPUtils[dtype].get_sign(x) else UInt8(0x00)
+    var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - Int32(
+        FP32_EXPONENT_BIAS
+    )
     var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
 
     # NaN => NaN
@@ -3685,37 +3652,39 @@ fn _convert_f32_to_float8_scalar[
     if abs(x) >= Scalar[dtype](_max_finite[target]()):
         # satfinite
         return bitcast[target](sign | FP8_MAX_FLT)
-    elif exp >= FP8_MIN_EXPONENT:
+    elif exp >= Int32(FP8_MIN_EXPONENT):
         # normal fp32 to normal fp8
-        exp += FP8_EXPONENT_BIAS
+        exp += Int32(FP8_EXPONENT_BIAS)
         u = (
             (exp.cast[DType.uint32]() & FP8_EXPONENT_MASK.cast[DType.uint32]())
-            << FP8_NUM_MANTISSA_BITS
+            << UInt32(FP8_NUM_MANTISSA_BITS)
         ).cast[DType.uint8]()
         u = (
             u
             | (
-                mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
+                mantissa
+                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
             ).cast[DType.uint8]()
         )
     else:
         # normal single-precision to subnormal float8-precision representation
-        var rshift: Int32 = FP8_MIN_EXPONENT - exp
-        if rshift < FP32_NUM_BITS:
-            mantissa |= 1 << FP32_NUM_MANTISSA_BITS
+        var rshift: Int32 = Int32(FP8_MIN_EXPONENT) - exp
+        if rshift < Int32(FP32_NUM_BITS):
+            mantissa |= 1 << Int32(FP32_NUM_MANTISSA_BITS)
             sticky_bit = (
                 (mantissa & ((1 << rshift) - 1)).ne(0).cast[DType.int32]()
             )
             mantissa = mantissa >> rshift
             u = (
-                mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
+                mantissa
+                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
             ).cast[DType.uint8]() & FP8_MANTISSA_MASK
         else:
             mantissa = 0
             u = 0
 
     # round to nearest even
-    var NUM_BITS_SHIFT: Int32 = FP32_NUM_MANTISSA_BITS - (
+    var NUM_BITS_SHIFT: Int32 = Int32(FP32_NUM_MANTISSA_BITS) - Int32(
         FP8_NUM_MANTISSA_BITS + 1
     )
     var round_bit: Int32 = (mantissa >> NUM_BITS_SHIFT) & 1
@@ -3961,9 +3930,11 @@ fn _f32_to_bfloat16[
     width: Int, //
 ](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
     var f32_bits = f32.to_bits[DType.uint32]()
-    var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
+    var lsb = (f32_bits >> type_of(f32_bits)(_f32_bf16_mantissa_diff)) & 1
     var rounding_bias = 0x7FFF + lsb
-    var bf16_bits = (f32_bits + rounding_bias) >> _f32_bf16_mantissa_diff
+    var bf16_bits = (f32_bits + rounding_bias) >> type_of(f32_bits)(
+        _f32_bf16_mantissa_diff
+    )
     var bf16 = SIMD[DType.bfloat16, width](
         from_bits=bf16_bits.cast[DType.uint16]()
     )
@@ -4089,8 +4060,6 @@ fn _modf(x: SIMD) -> Tuple[type_of(x), type_of(x)]:
 # ===----------------------------------------------------------------------=== #
 # floor
 # ===----------------------------------------------------------------------=== #
-
-
 fn _floor(x: SIMD) -> type_of(x):
     @parameter
     if x.dtype.is_integral():
@@ -4105,9 +4074,12 @@ fn _floor(x: SIMD) -> type_of(x):
     comptime shift_factor = bitwidth - exponent_width - 1
 
     var bits = x._to_bits_signed()
-    var e = ((bits & mask) >> mantissa_width) - bias
-    bits = e.lt(shift_factor).select(
-        bits & ~((1 << (shift_factor - e)) - 1),
+    comptime BitsType = type_of(bits)
+    var e = ((bits & BitsType(mask)) >> BitsType(mantissa_width)) - BitsType(
+        bias
+    )
+    bits = e.lt(BitsType(shift_factor)).select(
+        bits & ~((1 << (BitsType(shift_factor) - e)) - 1),
         bits,
     )
     return type_of(x)(from_bits=bits)

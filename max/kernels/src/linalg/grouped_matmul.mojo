@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import align_of, simd_width_of, size_of
 from sys.info import has_amd_gpu_accelerator
@@ -96,7 +96,7 @@ fn naive_grouped_matmul[
     //,
     *,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -148,7 +148,7 @@ fn naive_grouped_matmul_kernel[
     b_type: DType,
     b_shape: DimList,
     *,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -173,7 +173,7 @@ fn naive_grouped_matmul_kernel[
     n = global_idx.x
     m = global_idx.y
 
-    if n >= UInt(N) or m >= UInt(M):
+    if n >= UInt(N) or m >= M:
         return
 
     comptime accum_type = get_accum_type[a_type]()
@@ -274,7 +274,7 @@ fn grouped_matmul_kernel_sm100[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = True,
     num_threads: Int = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -458,13 +458,13 @@ fn grouped_matmul_kernel_sm100[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(a_m_start)),
+                    (Int(k_start), Int(a_m_start)),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
-                    (UInt(k_start), UInt(b_n_start)),
+                    (Int(k_start), Int(b_n_start)),
                 )
         # wait for the copy to finish
         tma_mbar[0].wait(tma_phase)
@@ -599,7 +599,7 @@ fn grouped_matmul_sm100[
     transpose_b: Bool = True,
     mma_shape: IndexList[3] = Index(64, 128, 16),
     block_tile_shape: IndexList[3] = Index(64, 128, 64),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -681,7 +681,7 @@ fn grouped_matmul_sm100[
             num_active_experts,
         ),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -695,7 +695,7 @@ fn grouped_matmul_amd_kernel_launcher[
     layout_b: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],
     a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],
@@ -772,7 +772,7 @@ fn grouped_matmul_amd_kernel_launcher[
             a.linear_idx_type,
             b.linear_idx_type,
             config,
-            OptionalReg[elementwise_epilogue_type](
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -794,7 +794,7 @@ fn grouped_matmul_amd_kernel_launcher[
             var block_n = Int(block_idx.x)
 
             # Early exit if this block is completely outside the matrix bounds
-            if UInt32(block_m * BM) >= UInt32(M):
+            if UInt32(block_m * BM) >= M:
                 return
 
             comptime threads_per_block = 256
@@ -818,7 +818,7 @@ fn grouped_matmul_amd_kernel_launcher[
                     var remaining_in_tile_row = BN - tile_col
                     var actual_width = min(
                         width,
-                        min(Int(remaining_in_row), Int(remaining_in_tile_row)),
+                        min(Int(remaining_in_row), remaining_in_tile_row),
                     )
 
                     if actual_width == width and local_col + width <= N:
@@ -946,7 +946,7 @@ fn grouped_matmul_amd[
     *,
     transpose_b: Bool = True,
     block_tile_shape: IndexList[3] = Index(128, 128, 64),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -1047,7 +1047,7 @@ fn grouped_matmul[
     b_type: DType,
     b_shape: DimList,
     //,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],

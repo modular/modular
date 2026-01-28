@@ -273,18 +273,18 @@ fn kernel_4[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i * BK + k), block_idx.y * UInt(BM)),
+                    (i * BK + k, Int(block_idx.y) * BM),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
                     (
-                        UInt(i * BK + k),
-                        block_idx.x * UInt(BN),
+                        i * BK + k,
+                        Int(block_idx.x) * BN,
                     ) if transpose_b else (
-                        block_idx.x * UInt(BN),
-                        UInt(i * BK + k),
+                        Int(block_idx.x) * BN,
+                        i * BK + k,
                     ),
                 )
 
@@ -476,7 +476,7 @@ fn blackwell_kernel_4[
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 

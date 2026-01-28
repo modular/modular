@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of
 from sys.info import (
@@ -29,6 +29,7 @@ from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
 from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
@@ -244,7 +245,7 @@ fn _small_batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
@@ -377,7 +378,7 @@ fn batched_matmul[
     *,
     transpose_a: Bool,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -440,7 +441,7 @@ fn _batched_matmul_cpu[
     //,
     *,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank],
@@ -597,7 +598,7 @@ fn _batched_matmul_cpu[
                 config,
                 transpose_b,
                 b_packed=False,
-                elementwise_lambda_fn = OptionalReg[
+                elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 saturated_vnni=saturated_vnni,
@@ -622,7 +623,7 @@ fn naive_batched_matmul_kernel[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c_tensor: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
@@ -671,7 +672,7 @@ fn batched_matmul_kernel_gpu[
     layout_b: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],  # m
     a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],  # m * k
@@ -742,7 +743,7 @@ fn batched_matmul_kernel_gpu[
             a.linear_idx_type,
             b.linear_idx_type,
             config,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -762,7 +763,7 @@ fn batched_matmul_kernel_gpu[
             a.linear_idx_type,
             b.linear_idx_type,
             config,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -789,7 +790,7 @@ fn _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
     a_buf: NDBuffer[a_type, rank, _, _, _],
@@ -1007,7 +1008,7 @@ fn batched_matmul[
     //,
     *,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
@@ -1087,9 +1088,9 @@ fn batched_matmul_shape[
     return output_shape
 
 
-comptime _2D_layout[layout: Layout] = Layout.row_major(
-    layout.shape[1].value(),
-    layout.shape[2].value(),
+comptime _2D_layout[layout: Layout] = Layout(
+    IntTuple(layout.shape[1], layout.shape[2]),
+    IntTuple(layout.stride[1], layout.stride[2]),
 )
 
 
@@ -1120,7 +1121,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -1137,7 +1138,6 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     var M = c_tensor.dim(1)
     var N = c_tensor.dim(2)
 
-    var c_ptr = c_tensor.ptr + (block_idx.z * UInt(M) * UInt(N))
     var b_scales_ptr = b_scales_tensor.ptr + (
         block_idx.z
         * UInt(b_scales_tensor.dim(1))
@@ -1145,9 +1145,10 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     )
 
     var c = LayoutTensor[c_type, c_2d_layout, MutAnyOrigin](
-        c_ptr,
-        RuntimeLayout[c_2d_layout].row_major(
-            IndexList[2](c_tensor.dim(1), c_tensor.dim(2)),
+        c_tensor.ptr_at_offset(Index(block_idx.z, 0, 0)),
+        RuntimeLayout[c_2d_layout](
+            Index(c_tensor.dim(1), c_tensor.dim(2)),
+            Index(c_tensor.stride(1), c_tensor.stride(2)),
         ),
     )
 
@@ -1194,7 +1195,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=num_threads,
-        elementwise_lambda_fn = OptionalReg[matmul_elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
     ](
@@ -1224,7 +1225,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],
@@ -1377,7 +1378,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -1393,91 +1394,92 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     scales_granularity_mnk: IndexList[3],
     transpose_b: Bool = False,
 ](
-    c_device: NDBuffer[c_type, 3, _, _],
-    a_device: NDBuffer[a_type, 3, _, _],
-    b_device: NDBuffer[b_type, 3, _, _],
-    a_scales_device: NDBuffer[a_scales_type, 3, _, _],
-    b_scales_device: NDBuffer[b_scales_type, 3, _, _],
+    c_: LayoutTensor[mut=True, c_type, ...],
+    a_: LayoutTensor[a_type, ...],
+    b_: LayoutTensor[b_type, ...],
+    a_scales_: LayoutTensor[a_scales_type, ...],
+    b_scales_: LayoutTensor[b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
-        a_device.shape.has_value[2]() and c_device.shape.has_value[2]()
-    ), "N and K must be static"
-
     __comptime_assert (
         scales_granularity_mnk[0] == 1
         and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
     ), "Only support (1,128,128) scale granularity. Extend it for other cases."
 
     comptime BLOCK_SCALE_K = 128
-    var bs = c_device.dim(0)
-    var M = c_device.dim(1)
-    var M_a_scales = a_scales_device.dim(2)
-    comptime N = c_device.shape.get[2]()
-    comptime K = a_device.shape.get[2]()
-    comptime n_dim = Dim(N)
-    comptime k_dim = Dim(K)
 
-    comptime static_a_shape_2D = DimList(Dim(), k_dim)
-    comptime static_b_shape_2D = DimList(
-        n_dim, k_dim
-    ) if transpose_b else DimList(k_dim, n_dim)
-    comptime static_c_shape_2D = DimList(Dim(), n_dim)
+    # naive implementation requires all tensor have AddressSpace.GENERIC
+    var c = c_.address_space_cast[AddressSpace.GENERIC]()
+    var a = a_.address_space_cast[AddressSpace.GENERIC]()
+    var b = b_.address_space_cast[AddressSpace.GENERIC]()
+    var a_scales = a_scales_.address_space_cast[AddressSpace.GENERIC]()
+    var b_scales = b_scales_.address_space_cast[AddressSpace.GENERIC]()
 
-    comptime static_a_scales_shape_2D = DimList(
-        ceildiv(k_dim, BLOCK_SCALE_K), Dim()
-    )
-    comptime static_b_scales_shape_2D = DimList(
-        ceildiv(n_dim, BLOCK_SCALE_K), ceildiv(k_dim, BLOCK_SCALE_K)
-    )
+    var B = c.dim(0)
+    var M = c.dim(1)
+    var N = c.dim(2)
+    var K = a.dim(2)
+    var M_a_scales = a_scales.dim(2)
 
-    var dynamic_a_shape_2D = DimList(M, K)
-    var dynamic_b_shape_2D = DimList(N, K) if transpose_b else DimList(K, N)
-    var dynamic_c_shape_2D = DimList(M, N)
-    var dynamic_a_scales_shape_2D = DimList(
-        ceildiv(K, BLOCK_SCALE_K), M_a_scales
-    )
-    var dynamic_b_scales_shape_2D = DimList(
-        ceildiv(N, BLOCK_SCALE_K), ceildiv(K, BLOCK_SCALE_K)
-    )
+    # Create 2D layouts by extracting last 2 dims from 3D layouts
+    # This preserves the original shape and stride (not assuming row-major)
+    comptime c_layout_2d = _2D_layout[c.layout]
+    comptime a_layout_2d = _2D_layout[a.layout]
+    comptime b_layout_2d = _2D_layout[b.layout]
+    comptime a_scales_layout_2d = _2D_layout[a_scales.layout]
+    comptime b_scales_layout_2d = _2D_layout[b_scales.layout]
 
-    for batch in range(bs):
-        var c_ptr = c_device.data + batch * M * N
-        var a_ptr = a_device.data + batch * M * K
-        var b_ptr = b_device.data + batch * N * K
-        var a_scales_ptr = (
-            a_scales_device.data + batch * (K // BLOCK_SCALE_K) * M_a_scales
+    for batch in range(B):
+        # Create 2D LayoutTensor views
+        var c_view = LayoutTensor[c_type, c_layout_2d, MutAnyOrigin](
+            c.ptr_at_offset(Index(batch, 0, 0)),
+            RuntimeLayout[c_layout_2d](
+                Index(M, N), Index(c.stride(1), c.stride(2))
+            ),
         )
-        var b_scales_ptr = b_scales_device.data + batch * (
-            N // BLOCK_SCALE_K
-        ) * (K // BLOCK_SCALE_K)
-
-        var c_buffer = NDBuffer[c_type, 2, _, static_c_shape_2D](
-            c_ptr, dynamic_c_shape_2D
+        var a_view = LayoutTensor[a_type, a_layout_2d, MutAnyOrigin](
+            a.ptr_at_offset(Index(batch, 0, 0)),
+            RuntimeLayout[a_layout_2d](
+                Index(M, K), Index(a.stride(1), a.stride(2))
+            ),
         )
-        var a_buffer = NDBuffer[a_type, 2, _, static_a_shape_2D](
-            a_ptr, dynamic_a_shape_2D
+        var b_view = LayoutTensor[b_type, b_layout_2d, MutAnyOrigin](
+            b.ptr_at_offset(Index(batch, 0, 0)),
+            RuntimeLayout[b_layout_2d](
+                Index(N, K), Index(b.stride(1), b.stride(2))
+            ),
         )
-        var b_buffer = NDBuffer[b_type, 2, _, static_b_shape_2D](
-            b_ptr, dynamic_b_shape_2D
+        var a_scales_view = LayoutTensor[
+            a_scales_type, a_scales_layout_2d, MutAnyOrigin
+        ](
+            a_scales.ptr_at_offset(Index(batch, 0, 0)),
+            RuntimeLayout[a_scales_layout_2d](
+                Index(K // BLOCK_SCALE_K, M_a_scales),
+                Index(a_scales.stride(1), a_scales.stride(2)),
+            ),
         )
-        var a_scales_buffer = NDBuffer[
-            a_scales_type, 2, _, static_a_scales_shape_2D
-        ](a_scales_ptr, dynamic_a_scales_shape_2D)
-        var b_scales_buffer = NDBuffer[
-            b_scales_type, 2, _, static_b_scales_shape_2D
-        ](b_scales_ptr, dynamic_b_scales_shape_2D)
+        var b_scales_view = LayoutTensor[
+            b_scales_type,
+            b_scales_layout_2d,
+            MutAnyOrigin,
+        ](
+            b_scales.ptr_at_offset(Index(batch, 0, 0)),
+            RuntimeLayout[b_scales_layout_2d](
+                Index(N // BLOCK_SCALE_K, K // BLOCK_SCALE_K),
+                Index(b_scales.stride(1), b_scales.stride(2)),
+            ),
+        )
 
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
             scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         ](
-            c_buffer,
-            a_buffer,
-            b_buffer,
-            a_scales_buffer,
-            b_scales_buffer,
+            c_view,
+            a_view,
+            b_view,
+            a_scales_view,
+            b_scales_view,
             ctx,
         )
 
@@ -1497,11 +1499,11 @@ fn batched_matmul_dynamic_scaled_fp8[
     transpose_b: Bool = False,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, c_type, 3, _, _],
-    a: NDBuffer[a_type, 3, _, _],
-    b: NDBuffer[b_type, 3, _, _],
-    a_scales: NDBuffer[a_scales_type, 3, _, _],
-    b_scales: NDBuffer[b_scales_type, 3, _, _],
+    c: LayoutTensor[mut=True, c_type, ...],
+    a: LayoutTensor[a_type, ...],
+    b: LayoutTensor[b_type, ...],
+    a_scales: LayoutTensor[a_scales_type, ...],
+    b_scales: LayoutTensor[b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
     __comptime_assert (
@@ -1526,12 +1528,6 @@ fn batched_matmul_dynamic_scaled_fp8[
 
     @parameter
     if ctx.default_device_info == B200:
-        var a_tensor = from_ndbuffer_row_major(a)
-        var b_tensor = from_ndbuffer_row_major(b)
-        var c_tensor = from_ndbuffer_row_major(c)
-        var a_scales_tensor = from_ndbuffer_row_major(a_scales)
-        var b_scales_tensor = from_ndbuffer_row_major(b_scales)
-
         comptime umma_shape = Index(64, 64, 32)
         comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -1542,7 +1538,7 @@ fn batched_matmul_dynamic_scaled_fp8[
             block_tile_shape=block_tile_shape,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
-        ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
+        ](c, a, b, a_scales, b_scales, ctx)
 
     else:
         batched_matmul_dynamic_scaled_fp8_naive[

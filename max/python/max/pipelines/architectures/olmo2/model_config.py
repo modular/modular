@@ -15,19 +15,22 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import DistributedGemmConfig, ReturnHiddenStates, ReturnLogits
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
+from typing_extensions import Self, override
 
 from ..llama3.model_config import Llama3Config
 
 
+@dataclass(kw_only=True)
 class Olmo2Config(Llama3Config):
     """Implementation of MAXModelConfig for Olmo2 models.
     Olmo2 models use a different approach for head_dim calculation compared to Llama3.
@@ -36,14 +39,14 @@ class Olmo2Config(Llama3Config):
     """
 
     @staticmethod
-    def get_kv_params(
+    def construct_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Override the default Llama3Config.get_kv_params to use head_dim from config.
+        """Override the default Llama3Config.construct_kv_params to use head_dim from config.
         Olmo2 models have an explicit head_dim field in their configuration,
         unlike Llama models where it needs to be calculated.
         Args:
@@ -101,50 +104,45 @@ class Olmo2Config(Llama3Config):
             ),
         )
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> Olmo2Config:
-        """Generate an Olmo2Config from the provided parameters.
-        This method largely delegates to Llama3Config.generate but ensures
-        the correct attention_multiplier calculation using Olmo2's head_dim.
-        Args:
-            pipeline_config: Pipeline configuration.
-            huggingface_config: HuggingFace model configuration.
-            state_dict: Model state dictionary.
-            dtype: Model data type.
-            n_devices: Number of devices.
-            cache_dtype: KV cache data type.
-            kv_cache_config: KV cache configuration.
-            return_logits: Return logits configuration.
-            norm_method: Normalization method.
-            attention_bias: Whether to use attention bias.
-        Returns:
-            Configured Olmo2Config instance.
-        """
-        # Call the parent generate method to get most of the configuration
-        base_config = Llama3Config.generate(
-            pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config,
-            state_dict=state_dict,
-            dtype=dtype,
-            n_devices=n_devices,
-            cache_dtype=cache_dtype,
-            kv_cache_config=kv_cache_config,
-            return_logits=return_logits,
-            norm_method=norm_method,
-            attention_bias=attention_bias,
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
         )
+
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        """Initializes an Olmo2Config instance from pipeline and HuggingFace configuration.
+
+        This method creates a config instance with all fields that can be determined
+        from the pipeline and HuggingFace configuration, without needing the state_dict.
+        Fields that depend on the state_dict (like tie_word_embeddings, float8_config)
+        should be set via the `finalize()` method.
+
+        Overrides Llama3Config.initialize_from_config to use Olmo2-specific
+        KV params and attention multiplier calculations.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+            huggingface_config: The HuggingFace model configuration object.
+
+        Returns:
+            An initialized Olmo2Config instance.
+        """
+        # Get the base config from Llama3Config
+        base_config = Llama3Config.initialize_from_config(
+            pipeline_config, huggingface_config
+        )
+
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        cache_dtype = quantization_encoding.cache_dtype
+        n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -152,7 +150,7 @@ class Olmo2Config(Llama3Config):
         ]
 
         # Override the KV parameters and attention multiplier with Olmo2-specific calculations
-        olmo2_kv_params = Olmo2Config.get_kv_params(
+        olmo2_kv_params = Olmo2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,
@@ -165,13 +163,14 @@ class Olmo2Config(Llama3Config):
         )
 
         # Return a new Olmo2Config with the corrected parameters
-        return Olmo2Config(
+        return cls(
             hidden_size=base_config.hidden_size,
             num_attention_heads=base_config.num_attention_heads,
             num_key_value_heads=base_config.num_key_value_heads,
             num_hidden_layers=base_config.num_hidden_layers,
             rope_theta=base_config.rope_theta,
             rope_scaling_params=base_config.rope_scaling_params,
+            longrope_scaling_params=base_config.longrope_scaling_params,
             rms_norm_eps=base_config.rms_norm_eps,
             intermediate_size=base_config.intermediate_size,
             interleaved_rope_weights=base_config.interleaved_rope_weights,
@@ -179,21 +178,47 @@ class Olmo2Config(Llama3Config):
             dtype=base_config.dtype,
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
-            return_logits=base_config.return_logits,
             max_seq_len=base_config.max_seq_len,
             kv_params=olmo2_kv_params,  # Use Olmo2-specific KV params
-            norm_method=base_config.norm_method,
-            norm_dtype=base_config.norm_dtype,
-            attention_bias=base_config.attention_bias,
-            tie_word_embeddings=base_config.tie_word_embeddings,
-            stacked_mlp=base_config.stacked_mlp,
-            stacked_qkv=base_config.stacked_qkv,
             attention_multiplier=olmo2_attention_multiplier,  # Use Olmo2-specific attention multiplier
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
-            float8_config=base_config.float8_config,
             use_subgraphs=base_config.use_subgraphs,
-            dist_gemm_config=DistributedGemmConfig.generate(),
+            dist_gemm_config=base_config.dist_gemm_config,
+            lora_config=base_config.lora_config,
+            logits_scaling=base_config.logits_scaling,
+            data_parallel_degree=base_config.data_parallel_degree,
+        )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        """Define parameters that can't be determined just from the pipeline config.
+
+        Delegates to the parent Llama3Config.finalize() method.
+
+        Args:
+            huggingface_config: The HuggingFace model configuration object.
+            state_dict: The model's state dictionary containing weights.
+            return_logits: Whether to return the last token, all tokens or a
+                variable number of logits.
+            return_hidden_states: Whether to return hidden states.
+            norm_method: The normalization method to use.
+            attention_bias: Whether to include bias in attention projections.
+        """
+        super().finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            norm_method=norm_method,
+            attention_bias=attention_bias,
         )

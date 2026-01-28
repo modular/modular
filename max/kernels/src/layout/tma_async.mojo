@@ -51,6 +51,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
+    CacheEviction,
 )
 from gpu.sync import (
     cp_async_bulk_commit_group,
@@ -145,8 +146,7 @@ fn _tma_desc_tile_layout[
         )
 
 
-@register_passable("trivial")
-struct SharedMemBarrier(ImplicitlyCopyable):
+struct SharedMemBarrier(TrivialRegisterType):
     """A hardware-accelerated synchronization primitive for GPU shared memory operations.
 
     This struct provides a barrier mechanism optimized for coordinating thread execution
@@ -192,7 +192,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         """
         mbarrier_init(self.unsafe_ptr(), num_threads)
 
-    @always_inline
+    @always_inline("nodebug")
     fn expect_bytes[
         o: MutOrigin
     ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
@@ -312,7 +312,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         @parameter
         if ticks:
             inlined_assembly[asm, NoneType, constraints=constraints](
-                Int32(Int(self.unsafe_ptr())), phase, UInt32(ticks.value())
+                Int32(Int(self.unsafe_ptr())), phase, ticks.value()
             )
         else:
             inlined_assembly[asm, NoneType, constraints=constraints](
@@ -472,8 +472,7 @@ struct SharedMemBarrier(ImplicitlyCopyable):
         return mbarrier_arrive(self.unsafe_ptr())
 
 
-@register_passable("trivial")
-struct PipelineState[num_stages: Int](Defaultable, ImplicitlyCopyable):
+struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a
@@ -671,9 +670,9 @@ struct TMATensorTile[
             "TMATensorTile[dtype = ",
             Self.dtype,
             ", layout = ",
-            Self.layout,
+            materialize[Self.layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             ", is_k_major = ",
             Self.is_k_major,
             "]",
@@ -724,12 +723,13 @@ struct TMATensorTile[
 
     @always_inline
     fn async_copy[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified coordinates.
@@ -742,6 +742,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -803,24 +805,29 @@ struct TMATensorTile[
                     + "\ndesc_layout="
                     + String(Self.desc_layout)
                 )
-                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
+                cp_async_bulk_tensor_shared_cluster_global[
+                    cta_group=cta_group,
+                    eviction_policy=eviction_policy,
+                ](
                     dst.ptr.mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + (j * copy_dim1),
+                        coords[1] + (i * copy_dim0),
                     ),
                 )
 
-    @always_inline
-    fn async_copy_3d(
+    @always_inline("nodebug")
+    fn async_copy_3d[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 3D coordinates.
@@ -834,6 +841,10 @@ struct TMATensorTile[
                  Must be 128-byte aligned.
             mem_barrier: The memory barrier used to track and synchronize the asynchronous transfer.
             coords: The 3D coordinates in the source tensor from which to copy data.
+
+        Parameters:
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_FIRST.
 
         Constraints:
 
@@ -887,27 +898,30 @@ struct TMATensorTile[
                         IntTuple(m, i, j)
                     ) * copy_size
 
-                    cp_async_bulk_tensor_shared_cluster_global(
+                    cp_async_bulk_tensor_shared_cluster_global[
+                        eviction_policy=eviction_policy
+                    ](
                         dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + (j * copy_dim2),
+                            coords[1] + (i * copy_dim1),
+                            coords[2] + (m * copy_dim0),
                         ),
                     )
 
     @always_inline
     fn async_copy_4d[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 4D coordinates.
@@ -920,6 +934,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -977,7 +993,8 @@ struct TMATensorTile[
                         ) * copy_size
 
                         cp_async_bulk_tensor_shared_cluster_global[
-                            cta_group=cta_group
+                            cta_group=cta_group,
+                            eviction_policy=eviction_policy,
                         ](
                             dst.ptr.mut_cast[True]() + copy_offset,
                             UnsafePointer(to=self.descriptor).bitcast[
@@ -985,23 +1002,24 @@ struct TMATensorTile[
                             ](),
                             mem_barrier.unsafe_ptr(),
                             Index(
-                                coords[0] + UInt(j * copy_dim3),
-                                coords[1] + UInt(i * copy_dim2),
-                                coords[2] + UInt(m * copy_dim1),
-                                coords[3] + UInt(n * copy_dim0),
+                                coords[0] + (j * copy_dim3),
+                                coords[1] + (i * copy_dim2),
+                                coords[2] + (m * copy_dim1),
+                                coords[3] + (n * copy_dim0),
                             ),
                         )
 
     @always_inline
     fn async_copy_5d[
-        cta_group: Int = 1
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous copy from global memory to shared memory at specified 5D coordinates.
@@ -1014,6 +1032,8 @@ struct TMATensorTile[
             cta_group: Int
                 If the TMA is issued with cta_group == 2, only the leader CTA needs
                 to be notified upon completion.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -1086,7 +1106,8 @@ struct TMATensorTile[
                             ) * copy_size
 
                             cp_async_bulk_tensor_shared_cluster_global[
-                                cta_group=cta_group
+                                cta_group=cta_group,
+                                eviction_policy=eviction_policy,
                             ](
                                 dst.ptr.mut_cast[True]() + copy_offset,
                                 UnsafePointer(to=self.descriptor).bitcast[
@@ -1094,17 +1115,20 @@ struct TMATensorTile[
                                 ](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
-                                    coords[0] + UInt(j * copy_dim4),
-                                    coords[1] + UInt(i * copy_dim3),
-                                    coords[2] + UInt(m * copy_dim2),
-                                    coords[3] + UInt(n * copy_dim1),
-                                    coords[4] + UInt(o * copy_dim0),
+                                    coords[0] + (j * copy_dim4),
+                                    coords[1] + (i * copy_dim3),
+                                    coords[2] + (m * copy_dim2),
+                                    coords[3] + (n * copy_dim1),
+                                    coords[4] + (o * copy_dim0),
                                 ),
                             )
 
-    @always_inline
+    @always_inline("nodebug")
     fn async_copy[
-        rank: Int, //, cta_group: Int = 1
+        rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
         dst: LayoutTensor[
@@ -1123,6 +1147,8 @@ struct TMATensorTile[
             rank: The dimensionality of the tensor (must be 2, 3, 4, or 5).
             cta_group: If set to 2, only the leader CTA needs to be notified upon completion.
                 Defaults to 1.
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -1139,36 +1165,36 @@ struct TMATensorTile[
 
         @parameter
         if rank == 2:
-            self.async_copy(
-                dst, mem_barrier, (UInt(coords[0]), UInt(coords[1]))
+            self.async_copy[eviction_policy=eviction_policy](
+                dst, mem_barrier, (Int(coords[0]), Int(coords[1]))
             )
         elif rank == 3:
-            self.async_copy_3d(
+            self.async_copy_3d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
-                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif rank == 4:
-            self.async_copy_4d(
+            self.async_copy_4d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
                 ),
             )
         elif rank == 5:
-            self.async_copy_5d(
+            self.async_copy_5d[eviction_policy=eviction_policy](
                 dst,
                 mem_barrier,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
-                    UInt(coords[4]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
                 ),
             )
 
@@ -2478,9 +2504,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2507,9 +2531,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 3, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2540,9 +2562,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 4, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2581,9 +2601,7 @@ def create_tensor_tile[
         return create_tma_descriptor[dtype, 5, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -2710,12 +2728,12 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        MutAnyOrigin,
+        ptr.origin,
     ],
 ):
     comptime split_rank = len(flatten(ret.layout.shape))
@@ -2737,13 +2755,13 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
         dtype,
         _split_last_layout[dtype](shape, swizzle_mode, pad=False),
-        MutAnyOrigin,
+        ptr.origin,
     ],
 ):
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
@@ -2770,7 +2788,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -2918,13 +2936,12 @@ def create_tma_tile_template[
     return TMATensorTile[dtype, __tile_layout, __desc_layout](TMADescriptor())
 
 
-@register_passable("trivial")
 struct TMATensorTileArray[
     num_of_tensormaps: Int,
     dtype: DType,
     cta_tile_layout: Layout,
     desc_layout: Layout,
-](DevicePassable, ImplicitlyCopyable):
+](DevicePassable, TrivialRegisterType):
     """An array of TMA descripotr.
 
     Parameters:
@@ -2979,9 +2996,9 @@ struct TMATensorTileArray[
             ", dtype = ",
             Self.dtype,
             ", cta_tile_layout = ",
-            Self.cta_tile_layout,
+            materialize[Self.cta_tile_layout](),
             ", desc_layout = ",
-            Self.desc_layout,
+            materialize[Self.desc_layout](),
             "]",
         )
 
@@ -3026,9 +3043,7 @@ struct TMATensorTileArray[
         Returns:
             `UnsafePointer` to the `TMATensorTile` at the specified index.
         """
-        return UnsafePointer[UInt8, MutAnyOrigin](
-            self.tensormaps_ptr + index * self.descriptor_bytes
-        ).bitcast[
+        return (self.tensormaps_ptr + index * self.descriptor_bytes).bitcast[
             TMATensorTile[Self.dtype, Self.cta_tile_layout, Self.desc_layout]
         ]()
 
@@ -3214,7 +3229,9 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
-    fn async_copy_from(
+    fn async_copy_from[
+        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
+    ](
         self,
         src: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.SHARED
@@ -3232,6 +3249,10 @@ struct RaggedTMA3DTile[
             ragged_idx: Index into the ragged dimension.
             dynamic_dim: Number of rows to copy.
             middle_idx: Index into the middle (generally head) dimension.
+
+        Parameters:
+            eviction_policy: Optional cache eviction policy that controls how the data is handled
+                in the cache hierarchy. Defaults to EVICT_FIRST.
         """
 
         var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
@@ -3241,7 +3262,9 @@ struct RaggedTMA3DTile[
         for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
             comptime copy_offset = col * Self.BM * Self.swizzle_granularity
 
-            cp_async_bulk_tensor_global_shared_cta(
+            cp_async_bulk_tensor_global_shared_cta[
+                eviction_policy=eviction_policy
+            ](
                 src + copy_offset,
                 UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                 Index(
@@ -3336,7 +3359,7 @@ struct RaggedTensorMap[
             layout.shape.replace_entry(idx, int_value=UNKNOWN_VALUE)
             layout.stride.replace_entry(idx, int_value=UNKNOWN_VALUE)
 
-        return layout
+        return layout^
 
     comptime device_type: AnyType = Self
     """The TensorMapDescriptorArray type."""

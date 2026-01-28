@@ -27,7 +27,7 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils.fast_div import FastDiv
 
-from linalg.structuring import SMemPtr, SMemArrayType
+from linalg.structuring import SMemPtr, SMemArray
 from .pipeline import ProducerConsumerPipeline
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -36,8 +36,7 @@ from linalg.matmul.gpu.tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -49,6 +48,11 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
     @always_inline
     fn is_valid(self) -> Bool:
         return self.is_valid_tile
+
+    @always_inline
+    fn coord(self) -> Tuple[UInt, UInt]:
+        """Get (m, n) tile coordinates as a tuple."""
+        return (UInt(self.m), UInt(self.n))
 
     @no_inline
     fn __str__(self) -> String:
@@ -94,7 +98,6 @@ struct WorkInfo(ImplicitlyCopyable, Movable, Stringable, Writable):
 # =============================================================================
 
 
-@register_passable("trivial")
 struct AdvanceAfterWorkContext[
     work_origin: MutOrigin,
     state_origin: MutOrigin,
@@ -102,7 +105,7 @@ struct AdvanceAfterWorkContext[
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
 
     - __enter__: Returns current work_info for use in the block
@@ -149,15 +152,21 @@ struct AdvanceAfterWorkContext[
         self.consumer_state_ptr[].step()
 
 
-@register_passable("trivial")
-struct PrefetchBeforeWorkContext[
+struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
-]:
-    """Context for MMA warp that prefetches BEFORE work (software pipelining).
+](TrivialRegisterType):
+    """Context for waiting on CLC barrier and advancing work iterator.
 
-    - Construction: Fetches next work and steps state immediately
-    - __enter__: Returns current work_info for use in the block
-    - __exit__: Assigns prefetched work to work_info
+    Encapsulates the CLC response barrier synchronization:
+    - Construction: Waits for CLC response, fetches next work
+    - __enter__: Returns current work_info for processing
+    - __exit__: Assigns fetched work as current
+
+    Usage:
+        with work_iter.wait_and_advance() as current:
+            # current is the work item to process NOW
+            process(current)
+        # After exit, work_iter.work_info is the NEXT work item
     """
 
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
@@ -186,13 +195,12 @@ struct PrefetchBeforeWorkContext[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct WorkIterator[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
@@ -255,19 +263,29 @@ struct WorkIterator[
         )
 
     @always_inline
-    fn next_prefetch[
+    fn wait_and_advance[
         state_origin: MutOrigin, //
     ](
         ref [state_origin]self,
-    ) -> PrefetchBeforeWorkContext[
+    ) -> WaitAndAdvanceContext[
         origin_of(self.work_info)
     ]:
-        """Get next work item with prefetch (advance BEFORE work pattern)."""
+        """Wait for next work from CLC and advance iterator.
+
+        Encapsulates the CLC barrier wait:
+        - __enter__: Waits for CLC response, returns current work
+        - __exit__: Assigns fetched work as current
+
+        Usage:
+            with work_iter.wait_and_advance() as current:
+                # Process current work item
+            # After exit, work_iter points to next work
+        """
         var next = self.scheduler.fetch_next_work(
             self.work_info, self.consumer_state
         )
         self.consumer_state.step()
-        return PrefetchBeforeWorkContext(Pointer(to=self.work_info), next)
+        return WaitAndAdvanceContext(Pointer(to=self.work_info), next)
 
     # ========== CLC Throttle (Producer Side) ==========
 
@@ -291,13 +309,12 @@ struct WorkIterator[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct SchedulerWorkIterator[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-]:
+](TrivialRegisterType):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
@@ -396,7 +413,6 @@ struct SchedulerWorkIterator[
             self.producer_state.step()
 
 
-@register_passable("trivial")
 struct TileScheduler[
     num_stages: Int,
     cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
@@ -404,7 +420,7 @@ struct TileScheduler[
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-]:
+](TrivialRegisterType):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
@@ -415,9 +431,9 @@ struct TileScheduler[
     comptime ThrottlePipeline = ProducerConsumerPipeline[Self.num_stages]
 
     # Typed barrier array aliases for clean API
-    comptime ClcResponseArray = SMemArrayType[UInt128, Self.num_stages]
-    comptime ClcBarrierArray = SMemArrayType[SharedMemBarrier, Self.num_stages]
-    comptime ThrottleBarrierArray = SMemArrayType[
+    comptime ClcResponseArray = SMemArray[UInt128, Self.num_stages]
+    comptime ClcBarrierArray = SMemArray[SharedMemBarrier, Self.num_stages]
+    comptime ThrottleBarrierArray = SMemArray[
         SharedMemBarrier, Self.num_stages * 2
     ]
 
@@ -490,7 +506,7 @@ struct TileScheduler[
             m=ret_val[0],
             n=ret_val[1],
             k_start=ret_val[2],
-            is_valid_tile=Bool(ret_val[3] == 1),
+            is_valid_tile=(ret_val[3] == 1),
         )
 
     @always_inline
@@ -633,25 +649,25 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn prefetch_before_work[
+    fn wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
         self,
         ref [work_origin]work_info: WorkInfo,
         mut consumer_state: PipelineState[Self.num_stages],
-    ) -> PrefetchBeforeWorkContext[work_origin]:
-        """Context for MMA warp that prefetches BEFORE work (software pipelining).
+    ) -> WaitAndAdvanceContext[work_origin]:
+        """Wait for next work from CLC and advance.
 
-        Fetches next work and steps state IMMEDIATELY (before the with block).
+        Encapsulates the CLC barrier wait (called on scheduler directly).
 
         Usage:
-            with scheduler.prefetch_before_work(work_info, state) as current:
-                do_mma(current)  # Uses current, not prefetched
-            # After: work_info updated to prefetched value
+            with scheduler.wait_and_advance_work(work_info, state) as current:
+                do_mma(current)
+            # After: work_info updated to next value
         """
         var next = self.fetch_next_work(work_info, consumer_state)
         consumer_state.step()
-        return PrefetchBeforeWorkContext(Pointer(to=work_info), next)
+        return WaitAndAdvanceContext(Pointer(to=work_info), next)
 
     @always_inline
     fn work_iterator(

@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 
 from gpu import barrier, block_idx, lane_id
@@ -190,7 +187,7 @@ __extension Attention:
                 k_rope.block_paged_ptr[Int(Self.BN)](
                     self.get_batch_idx(),
                     kv_tile_start_row + self.cache_start_pos,
-                    Int(Self.kv_head_idx() // UInt(cache_group)),
+                    Int(Self.kv_head_idx() // cache_group),
                     cache_depth - rope_depth,
                 ),
                 k_rope_runtime_layout,
@@ -261,8 +258,12 @@ __extension Attention:
     @always_inline
     fn mla_decoding(
         mut self,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
         num_partitions: Int,
     ):
         self.mha_decoding(exp_sum_ptr, qk_max_ptr, num_partitions)

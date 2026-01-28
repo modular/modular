@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.comm import Allreduce
-from max.nn.moe import MoE, MoEGate
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.moe import MoE, MoEGate
 
 
 class Llama4MoEGate(MoEGate):

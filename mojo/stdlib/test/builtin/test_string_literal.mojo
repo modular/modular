@@ -51,7 +51,7 @@ def test_equality():
     assert_false(StringLiteral.__ne__("six", "six"))
 
     var hello = "hello"
-    var hello_ref = hello.as_string_slice()
+    var hello_ref = StringSlice(hello)
 
     assert_false(StringLiteral.__eq__("goodbye", hello))
     assert_true(StringLiteral.__eq__("hello", hello))
@@ -163,8 +163,8 @@ def test_comparison_operators():
     assert_true(StringLiteral.__ge__("", ""))
 
     # Test less than and greater than
-    def_slice = "def".as_string_slice()
-    abcd_slice = "abc".as_string_slice()
+    def_slice = StringSlice("def")
+    abcd_slice = StringSlice("abc")
     assert_true(StringLiteral.__lt__("abc", def_slice))
     assert_false(StringLiteral.__lt__("def", abcd_slice[0:3]))
     assert_false(StringLiteral.__lt__("abc", abcd_slice[0:3]))
@@ -180,12 +180,12 @@ def test_comparison_operators():
     assert_false(StringLiteral.__ge__("ab", abcd_slice[0:3]))
     assert_true(StringLiteral.__ge__("abcd", abcd_slice[0:3]))
 
-    abc_upper_slice = "ABC".as_string_slice()
+    abc_upper_slice = StringSlice("ABC")
     # Test case sensitivity in comparison (assuming ASCII order)
     assert_true(StringLiteral.__gt__("abc", abc_upper_slice))
     assert_false(StringLiteral.__le__("abc", abc_upper_slice))
 
-    empty_slice = "".as_string_slice()
+    empty_slice = StringSlice("")
     # Test comparisons involving empty strings
     assert_true(StringLiteral.__lt__("", abcd_slice[0:3]))
     assert_false(StringLiteral.__lt__("abc", empty_slice))
@@ -207,10 +207,10 @@ def test_intable():
         _ = StringLiteral.__int__("hi")
 
 
-def test_isdigit():
-    assert_true("123".isdigit())
-    assert_false("abc".isdigit())
-    assert_false("123abc".isdigit())
+def test_is_ascii_digit():
+    assert_true("123".is_ascii_digit())
+    assert_false("abc".is_ascii_digit())
+    assert_false("123abc".is_ascii_digit())
     # TODO: Uncomment this when PR3439 is merged
     # assert_false("".isdigit())
 
@@ -233,15 +233,24 @@ def test_isupper():
 
 def test_iter():
     # Test iterating over a string
-    var s = "one"
     var i = 0
-    for c in s.codepoints():
+    for c in "one".codepoint_slices():
         if i == 0:
-            assert_equal(String(c), "o")
+            assert_equal(c, "o")
         elif i == 1:
-            assert_equal(String(c), "n")
+            assert_equal(c, "n")
         elif i == 2:
-            assert_equal(String(c), "e")
+            assert_equal(c, "e")
+        i += 1
+
+    i = 0
+    for c in "one".codepoints():
+        if i == 0:
+            assert_equal(c, Codepoint.ord("o"))
+        elif i == 1:
+            assert_equal(c, Codepoint.ord("n"))
+        elif i == 2:
+            assert_equal(c, Codepoint.ord("e"))
         i += 1
 
 
@@ -325,16 +334,16 @@ def test_count():
     assert_equal(String("aaaaaa").count("aa"), 3)
 
 
-def test_rjust():
-    assert_equal("hello".rjust(4), "hello")
-    assert_equal("hello".rjust(8), "   hello")
-    assert_equal("hello".rjust(8, "*"), "***hello")
+def test_ascii_rjust():
+    assert_equal("hello".ascii_rjust(4), "hello")
+    assert_equal("hello".ascii_rjust(8), "   hello")
+    assert_equal("hello".ascii_rjust(8, "*"), "***hello")
 
 
-def test_ljust():
-    assert_equal("hello".ljust(4), "hello")
-    assert_equal("hello".ljust(8), "hello   ")
-    assert_equal("hello".ljust(8, "*"), "hello***")
+def test_ascii_ljust():
+    assert_equal("hello".ascii_ljust(4), "hello")
+    assert_equal("hello".ascii_ljust(8), "hello   ")
+    assert_equal("hello".ascii_ljust(8, "*"), "hello***")
 
 
 def test_center():
@@ -353,6 +362,32 @@ def test_float_conversion():
 # If this compiles, then the format method does not raise.
 fn _test_format_does_not_raise():
     var _hello = "Hello, {}! I am {} years old.".format("world", 42)
+
+
+def test_string_literal_codepoint_slices_reversed():
+    # Test ASCII
+    var iter = "abc".codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "c")
+    assert_equal(iter.__next__(), "b")
+    assert_equal(iter.__next__(), "a")
+
+    # Test concatenation
+    var concat = String()
+    for v in "abc".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    concat = String()
+    for v in "test✅".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "✅tset")
+
+    # Test empty string
+    concat = String()
+    for v in "".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
 
 
 def main():

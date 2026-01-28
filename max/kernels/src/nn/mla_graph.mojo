@@ -22,7 +22,7 @@ from utils.index import Index, IndexList
 
 from algorithm.functional import _elementwise_impl_gpu
 from gpu.host import DeviceContext, get_gpu_target
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
@@ -562,14 +562,7 @@ fn quantize_and_bmm_fp8_helper[
         k_scale_granularity=k_scale_granularity,
         transpose_b=True,
         target=target,
-    ](
-        _layout_tensor_to_nd_buffer[3](c),
-        _layout_tensor_to_nd_buffer[3](fp8_a),
-        _layout_tensor_to_nd_buffer[3](b),
-        _layout_tensor_to_nd_buffer[3](fp8_a_scale),
-        _layout_tensor_to_nd_buffer[3](b_scales),
-        ctx,
-    )
+    ](c, fp8_a, b, fp8_a_scale, b_scales, ctx)
 
 
 @always_inline
@@ -825,20 +818,22 @@ fn mla_decode_branch_fp8[
         ctx,
     )
 
-    # Another batched matmul to project the raw output to the original space
-    comptime output_t_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, v_head_dim
-    )
-    var output_t_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * v_head_dim
+    # Create a view of the output tensor with logical shape
+    # [num_heads, seq_len, v_head_dim], and map directly to
+    # [seq_len, num_heads, v_head_dim] physical memory.
+    comptime output_t_layout = Layout(
+        IntTuple(num_heads, UNKNOWN_VALUE, v_head_dim),
+        IntTuple(v_head_dim, num_heads * v_head_dim, 1),
     )
     var output_t = LayoutTensor[dtype, output_t_layout](
-        output_t_buf,
-        RuntimeLayout[output_t_layout].row_major(
-            Index(num_heads, seq_len, v_head_dim)
+        output.ptr,
+        RuntimeLayout[output_t_layout](
+            Index(num_heads, seq_len, v_head_dim),
+            Index(v_head_dim, num_heads * v_head_dim, 1),
         ),
     )
 
+    # Another batched matmul to project the raw output to the original space
     # This helper function uses the transposed view of the input tensor `raw_output`.
     quantize_and_bmm_fp8_helper[
         dtype=dtype,
@@ -849,9 +844,6 @@ fn mla_decode_branch_fp8[
         k_scale_granularity=k_scale_granularity,
         target=target,
     ](output_t, raw_output, w_uv, w_uv_scale, ctx)
-
-    # Transpose the output tensor from [num_heads, tot_seq_len, v_head_dim] to [tot_seq_len, num_heads, v_head_dim].
-    transpose_helper[dtype](output, output_t, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

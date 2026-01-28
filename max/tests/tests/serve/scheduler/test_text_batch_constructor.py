@@ -23,7 +23,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache.paged_cache.block_utils import InsufficientBlocksError
+from max.kv_cache import InsufficientBlocksError
 from max.pipelines.core import TextContext
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
@@ -71,19 +71,18 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
     return manager
 
 
-def create_mock_paged_cache() -> Mock:
+def create_mock_kv_cache() -> Mock:
     """Create a mock paged KV cache manager with minimal interface."""
     cache = Mock()
     cache.max_seq_len = 2048
     cache.page_size = 16
-    cache.total_num_pages = 128
-    cache.free_blocks_pct = 0.5
+    cache.get_total_num_pages = Mock(return_value=128)
+    cache.get_free_blocks_pct = Mock(return_value=0.5)
 
     cache.alloc = Mock()
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
-    cache.get_or_recommend_replica = Mock(return_value=0)
     cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.94)
 
     return cache
@@ -97,7 +96,8 @@ def create_mock_pipeline_with_lora(lora_manager: Mock) -> Mock:
     ) -> dict[RequestID, TextGenerationOutput]:
         responses: dict[RequestID, TextGenerationOutput] = {}
 
-        for request_id, request in inputs.batch.items():
+        for request in inputs.flat_batch:
+            request_id = request.request_id
             request.update(0)
 
             responses[request_id] = TextGenerationOutput(
@@ -135,30 +135,34 @@ def create_lora_context(
     return context
 
 
+def has_request(batch: list[TextContext], request_id: RequestID) -> bool:
+    return any(ctx.request_id == request_id for ctx in batch)
+
+
 def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_preemption(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
 
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue 6 CE requests, at 9 tokens each
@@ -175,7 +179,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
-    # 9 * 4 = 36 tokens, since no max_batch_context_length is set, we should have 4 requests in the batch
+    # 9 * 4 = 36 tokens, since no max_batch_total_tokens is set, we should have 4 requests in the batch
     assert len(inputs.batches[0]) == 4
     # since this is CE, we should have 1 step
     assert inputs.num_steps == 1
@@ -205,7 +209,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -231,7 +235,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     assert inputs.num_steps == 1
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -257,25 +261,25 @@ def test_text_batch_constructor__batch_construction_no_requests(
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
 
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches) == 1
@@ -288,25 +292,25 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = False
-    paged_cache.alloc.side_effect = InsufficientBlocksError
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = False
+    kv_cache.alloc.side_effect = InsufficientBlocksError
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     contexts = {}
@@ -328,25 +332,25 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=False,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
         kvcache_ce_watermark=0.95,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     contexts = {}
@@ -363,11 +367,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
     # The last request should be chunked
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -376,10 +380,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
         )
     )
     assert len(chunked_request_ids) == 1
-    assert (
-        chunked_request_ids[0]
-        == list(inputs.batches[0].values())[-1].request_id
-    )
+    assert chunked_request_ids[0] == inputs.batches[0][-1].request_id
 
     # There should now be 3 requests in TG, and 7 in CE
     assert len(batch_constructor.replicas[0].tg_reqs) == 3
@@ -392,10 +393,10 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # We only grab 2 new CE requests here, because we have 3 TG requests outstanding.
     # Since max_batch_size is 5, we can only have 5 requests outstanding at a time.
     assert len(inputs.batches[0]) == 2
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -408,7 +409,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(batch_constructor.replicas[0].ce_reqs) == 3
     assert len(batch_constructor.replicas[0].tg_reqs) == 5
 
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.96
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.96
 
     # We still prioritize CE, but return an empty batch
     assert batch_constructor._identify_priority(0) == RequestType.CE
@@ -418,14 +419,14 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(inputs.batches[0]) == 5
 
     # Last Ce Batch
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     # Since we already have 5 CE request outstanding, we cannot grab any new CE requests.
     assert len(inputs.batches[0]) == 5
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -442,7 +443,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # The first item won't have enough space, so we will pre-empt the last one
     # The first item will have 2 alloc calls, failing with InsufficientBlocksError on the first,
     # then succeeding and returning None for the remaining calls.
-    paged_cache.alloc.side_effect = [
+    kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
         None,
         None,
@@ -456,7 +457,9 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(batch_constructor.replicas[0].ce_reqs) == 3
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert last_request_id not in inputs.batches[0]
+    assert all(
+        context.request_id != last_request_id for context in inputs.batches[0]
+    )
 
     # We've pre-empted the last request, so it should be in the CE queue
     assert len(batch_constructor.replicas[0].ce_reqs) == 4
@@ -476,25 +479,25 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
         kvcache_ce_watermark=0.95,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     for _ in range(8):
@@ -509,11 +512,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -522,10 +525,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
         )
     )
     assert len(chunked_request_ids) == 1
-    assert (
-        chunked_request_ids[0]
-        == list(inputs.batches[0].values())[-1].request_id
-    )
+    assert chunked_request_ids[0] == inputs.batches[0][-1].request_id
 
     # There should now be 3 requests in TG, and 7 in CE
     assert len(batch_constructor.replicas[0].tg_reqs) == 3
@@ -538,10 +538,10 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     # We should have 5 requests
     assert len(inputs.batches[0]) == 7
     # Last item should be chunked, with a length of 3
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -557,24 +557,24 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
 ) -> None:
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
-        max_batch_context_length=None,
+        max_batch_total_tokens=None,
         max_forward_steps_tg=10,
         enable_in_flight_batching=True,
         enable_chunked_prefill=False,
         target_tokens_per_batch_ce=30,
     )
-    paged_cache = Mock()
-    paged_cache.alloc = Mock()
-    paged_cache.alloc.return_value = True
-    paged_cache.claim = Mock()
-    paged_cache.contains = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation = Mock()
-    paged_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache = Mock()
+    kv_cache.alloc = Mock()
+    kv_cache.alloc.return_value = True
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     for _ in range(8):
@@ -588,11 +588,11 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 4
-    assert list(inputs.batches[0].values())[-1].tokens.generated_length == 0
+    assert inputs.batches[0][-1].tokens.generated_length == 0
 
     # Update a token for each request in the batch
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -611,17 +611,13 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     for i in range(len(inputs.batches[0])):
         if i < 4:
             # The first four requests are TG, and should not need CE
-            assert (
-                list(inputs.batches[0].values())[i].tokens.generated_length != 0
-            )
+            assert inputs.batches[0][i].tokens.generated_length != 0
         else:
             # The second four requests are CE, and should need CE
-            assert (
-                list(inputs.batches[0].values())[i].tokens.generated_length == 0
-            )
+            assert inputs.batches[0][i].tokens.generated_length == 0
 
     for batch in inputs.batches:
-        for context in batch.values():
+        for context in batch:
             context.update(0)
 
     chunked_request_ids = (
@@ -638,7 +634,7 @@ def test_single_lora_scheduling() -> None:
     """Test scheduling a single LoRA request in CE batch."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -649,7 +645,7 @@ def test_single_lora_scheduling() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx = create_lora_context(model_name="lora_model1")
@@ -658,7 +654,7 @@ def test_single_lora_scheduling() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 1
-    assert ctx.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx.request_id)
     lora_manager.activate_adapter.assert_called_once_with("lora_model1")
     assert "lora_model1" in lora_manager._active_loras
 
@@ -667,7 +663,7 @@ def test_multi_lora_within_budget() -> None:
     """Test scheduling multiple LoRA requests within budget."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -678,7 +674,7 @@ def test_multi_lora_within_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx1 = create_lora_context(model_name="lora_model1")
@@ -691,9 +687,9 @@ def test_multi_lora_within_budget() -> None:
 
     output = batch_constructor.construct_batch()
     assert len(output.batches[0]) == 3
-    assert ctx1.request_id in output.batches[0]
-    assert ctx2.request_id in output.batches[0]
-    assert ctx3.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx1.request_id)
+    assert has_request(output.batches[0], ctx2.request_id)
+    assert has_request(output.batches[0], ctx3.request_id)
     assert len(lora_manager._active_loras) == 3
 
 
@@ -701,7 +697,7 @@ def test_lora_preemption_over_budget() -> None:
     """Test that LoRA requests are deferred when over budget during CE."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
@@ -712,7 +708,7 @@ def test_lora_preemption_over_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -728,9 +724,9 @@ def test_lora_preemption_over_budget() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 3
-    assert ctx_base.request_id in output.batches[0]
-    assert ctx_lora1.request_id in output.batches[0]
-    assert ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_base.request_id)
+    assert has_request(output.batches[0], ctx_lora1.request_id)
+    assert has_request(output.batches[0], ctx_lora2.request_id)
     assert ctx_lora3.request_id not in output.batches[0]
 
     assert ctx_lora3.request_id in batch_constructor.all_ce_reqs
@@ -740,7 +736,7 @@ def test_age_based_scheduling_with_lora() -> None:
     """Test that age-based scheduling is maintained with LoRA constraints."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -751,7 +747,7 @@ def test_age_based_scheduling_with_lora() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model2")
@@ -767,15 +763,15 @@ def test_age_based_scheduling_with_lora() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 2
-    assert ctx_inactive.request_id in output.batches[0]
-    assert ctx_base.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_inactive.request_id)
+    assert has_request(output.batches[0], ctx_base.request_id)
 
 
 def test_tg_batch_with_active_loras() -> None:
     """Test that TG batch correctly handles requests with active LoRAs."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
@@ -786,7 +782,7 @@ def test_tg_batch_with_active_loras() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model1")
@@ -803,16 +799,16 @@ def test_tg_batch_with_active_loras() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0])
-    assert ctx_active1.request_id in output.batches[0]
-    assert ctx_active2.request_id in output.batches[0]
-    assert ctx_base.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_active1.request_id)
+    assert has_request(output.batches[0], ctx_active2.request_id)
+    assert has_request(output.batches[0], ctx_base.request_id)
 
 
 def test_ce_lora_activation_within_budget() -> None:
     """Test that LoRAs are activated during CE when within budget."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -823,7 +819,7 @@ def test_ce_lora_activation_within_budget() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -835,8 +831,8 @@ def test_ce_lora_activation_within_budget() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 2
-    assert ctx_lora1.request_id in output.batches[0]
-    assert ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_lora1.request_id)
+    assert has_request(output.batches[0], ctx_lora2.request_id)
 
     assert "lora_model1" in lora_manager._active_loras
     assert "lora_model2" in lora_manager._active_loras
@@ -846,9 +842,9 @@ def test_tg_pure_age_based_preemption() -> None:
     """Test that preemption is purely age-based for KV cache constraints."""
     lora_manager = create_mock_lora_manager(max_num_loras=3)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
-    paged_cache.alloc = Mock(
+    kv_cache.alloc = Mock(
         side_effect=[None, InsufficientBlocksError, InsufficientBlocksError]
     )
 
@@ -861,7 +857,7 @@ def test_tg_pure_age_based_preemption() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     lora_manager._active_loras.add("lora_model1")
@@ -878,7 +874,7 @@ def test_tg_pure_age_based_preemption() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 1
-    assert ctx1.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx1.request_id)
     pipeline.release.assert_called()
 
 
@@ -886,7 +882,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     """Test LoRA remains active when moving from CE to TG."""
     lora_manager = create_mock_lora_manager(max_num_loras=2)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -897,7 +893,7 @@ def test_lora_swapping_ce_to_tg() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx = create_lora_context(model_name="lora_model1")
@@ -920,15 +916,15 @@ def test_lora_swapping_ce_to_tg() -> None:
 
     tg_output = batch_constructor.construct_batch()
 
-    assert ctx.request_id in tg_output.batches[0]
-    assert ctx2.request_id in tg_output.batches[0]
+    assert has_request(tg_output.batches[0], ctx.request_id)
+    assert has_request(tg_output.batches[0], ctx2.request_id)
 
 
 def test_mixed_requests_scheduling() -> None:
     """Test scheduling with mixed LoRA and base model requests."""
     lora_manager = create_mock_lora_manager(max_num_loras=1)
     pipeline = create_mock_pipeline_with_lora(lora_manager)
-    paged_cache = create_mock_paged_cache()
+    kv_cache = create_mock_kv_cache()
 
     config = TokenGenerationSchedulerConfig(
         max_batch_size=4,
@@ -939,7 +935,7 @@ def test_mixed_requests_scheduling() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     ctx_lora1 = create_lora_context(model_name="lora_model1")
@@ -955,16 +951,16 @@ def test_mixed_requests_scheduling() -> None:
     output = batch_constructor.construct_batch()
 
     assert len(output.batches[0]) == 3
-    assert ctx_base1.request_id in output.batches[0]
-    assert ctx_base2.request_id in output.batches[0]
-    assert (ctx_lora1.request_id in output.batches[0]) or (
-        ctx_lora2.request_id in output.batches[0]
+    assert has_request(output.batches[0], ctx_base1.request_id)
+    assert has_request(output.batches[0], ctx_base2.request_id)
+    assert has_request(output.batches[0], ctx_lora1.request_id) or (
+        has_request(output.batches[0], ctx_lora2.request_id)
     )
 
     assert len(lora_manager._active_loras) == 1
 
 
-def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache() -> (
+def test_text_batch_constructor__load_based_replica_assignment_with_kv_cache() -> (
     None
 ):
     """Test that load-based assignment distributes requests evenly across replicas.
@@ -979,8 +975,8 @@ def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache(
     pipeline.release = Mock()
 
     # Create paged cache
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -992,7 +988,7 @@ def test_text_batch_constructor__load_based_replica_assignment_with_paged_cache(
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue requests - with load-based assignment, all should go to least loaded
@@ -1033,9 +1029,9 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
     pipeline.release = Mock()
 
     # Create paged cache (required but not used for explicit assignment)
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
-    paged_cache.get_replica_request_count = Mock(return_value=0)
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
+    kv_cache.get_replica_request_count = Mock(return_value=0)
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -1047,7 +1043,7 @@ def test_text_batch_constructor__data_parallel_explicit_replica_assignment() -> 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Enqueue one request to each replica explicitly
@@ -1084,8 +1080,8 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
     pipeline.release = Mock()
 
     # Create paged cache
-    paged_cache = create_mock_paged_cache()
-    paged_cache.num_replicas = data_parallel_degree
+    kv_cache = create_mock_kv_cache()
+    kv_cache.num_replicas = data_parallel_degree
 
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=10,
@@ -1097,7 +1093,7 @@ def test_text_batch_constructor__load_based_handles_imbalance() -> None:
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_cache=paged_cache,
+        kv_cache=kv_cache,
     )
 
     # Create an imbalanced initial load: [5, 2, 8, 1]

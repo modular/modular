@@ -35,8 +35,8 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.telemetry.common import configure_metrics
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -61,7 +61,7 @@ def mock_pipeline_config() -> PipelineConfig:
     )
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config._model = model_config
+    pipeline_config.model = model_config
     return pipeline_config
 
 

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 from math import ceildiv, exp2, recip
 from math.constants import log2e
@@ -38,18 +35,16 @@ from nn.mha_sm100_2q import (
     MBarType,
     ConsumerPipeline,
     TMemTile,
-    KVConsumerPipeline,
     ProducerPipeline,
 )
 from nn.mha import q_num_matrix_view_rows
 from nn.mha_sm100_2q import (
-    SM100MHA2Q,
+    elect_mbar_init,
     MBarPipeline,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     LocalTensor,
     apply_mask,
-    maximum,
     STMatrixLayout,
     elect_mma_arrive,
     TMADestination,
@@ -64,7 +59,6 @@ from nn.mha_fa3_utils import (
     OptionalPointer,
     output_reg_to_smem_st_matrix,
     Pack,
-    PositionSummary,
     produce,
     q_coord,
     q_tma,
@@ -76,7 +70,7 @@ from layout.tma_async import (
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from layout.layout import Layout, blocked_product
+from layout.layout import Layout, blocked_product, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
 import gpu.primitives.warp as warp
 from gpu.sync import (
@@ -109,14 +103,78 @@ from nn.mha_utils import (
 )
 from gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from utils.index import Index, IndexList
-from kv_cache.types import swizzle_granularity
+from kv_cache.types import swizzle_granularity, padded_depth
 
 
-@register_passable("trivial")
-struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
+struct MLAPositionSummary(TrivialRegisterType):
+    var num_keys: UInt32
+    var score_row: UInt32
+
+    @always_inline
+    fn __init__(out self, num_keys: UInt32, score_row: UInt32):
+        self.num_keys = num_keys
+        self.score_row = score_row
+
+    @staticmethod
+    @always_inline
+    fn get_start_pos[
+        KRopeType: MHAOperand,
+        //,
+        _ndbuffer_mha_operand: Bool,
+    ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> UInt32:
+        # For causal masking with num_keys != seq_len, start_pos is the offset
+        # such that query position p attends to keys 0..(start_pos + p).
+        # start_pos = num_keys - seq_len
+        @parameter
+        if _ndbuffer_mha_operand:
+            var cache_len = warp.broadcast(
+                k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+            )
+            var seq_len = warp.broadcast(seq_info.seq_len)
+            return cache_len - seq_len
+        else:
+            return warp.broadcast(
+                k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+            )
+
+    @staticmethod
+    @always_inline
+    fn get_num_keys[
+        KVLUTType: MHAOperand,
+    ](kv_lut: KVLUTType, seq_info: SeqInfo) -> UInt32:
+        return warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+
+    @staticmethod
+    @always_inline
+    fn get_score_row(seq_info: SeqInfo, start_pos: UInt32) -> UInt32:
+        return start_pos + warp.broadcast(seq_info.prompt_offset)
+
+    @staticmethod
+    @always_inline
+    fn create[
+        KVLUTType: MHAOperand,
+        KRopeType: MHAOperand,
+        //,
+        _ndbuffer_mha_operand: Bool,
+    ](
+        kv_lut: KVLUTType,
+        k_rope_lut: KRopeType,
+        seq_info: SeqInfo,
+    ) -> MLAPositionSummary:
+        start_pos = Self.get_start_pos[
+            _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+        ](k_rope_lut, seq_info)
+        num_keys = Self.get_num_keys(kv_lut, seq_info)
+        score_row = Self.get_score_row(seq_info, start_pos)
+        return {num_keys, score_row}
+
+
+struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
+    TrivialRegisterType
+):
     comptime k_layout = tile_layout_k_major[
         Self.dtype,
         Self.config.BN,
@@ -158,7 +216,7 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
     comptime SMemType = SharedMemPointer[Scalar[Self.dtype]]
 
     var kv_pipeline: KVPipeline[
-        Self.config.num_kv_stages, Self.config.num_mma_stages
+        Self.config.num_kv_stages, Self.config.num_qk_stages
     ]
     var smem: Self.SMemType
 
@@ -169,9 +227,9 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
         smem: Self.SMemType,
     ):
         __comptime_assert (
-            Self.config.padded_depth % Self.config.num_mma_stages == 0
+            Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
+        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = {mbar}
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -180,51 +238,51 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
     fn __init__(
         out self,
         kv_pipeline: KVPipeline[
-            Self.config.num_kv_stages, Self.config.num_mma_stages
+            Self.config.num_kv_stages, Self.config.num_qk_stages
         ],
         smem: Self.SMemType,
     ):
         __comptime_assert (
-            Self.config.padded_depth % Self.config.num_mma_stages == 0
+            Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_mma_stages == 0
+        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = kv_pipeline
         self.smem = smem
         self.kv_pipeline.state._phase = 1
 
     @always_inline
-    fn init(self):
+    fn init(self, *, elect: Int32):
         """
         Only one of the producer or consumer should call `init()`.
         """
-        self.kv_pipeline.init()
+        self.kv_pipeline.init(elect=elect)
 
     @always_inline
-    fn get_kv_smem[*, mma_stage: Int](self) -> Self.SMemType:
-        comptime stage_offset = mma_stage * Self.config.padded_depth * Self.config.BN
+    fn get_kv_smem[*, qk_stage: Int](self) -> Self.SMemType:
+        comptime stage_offset = qk_stage * Self.config.padded_depth * Self.config.BN
         var dyn_offset: UInt32 = (
             Self.k_elements * self.kv_pipeline.state.index()
         )
         return self.smem + stage_offset + dyn_offset
 
     @always_inline
-    fn get_k[*, mma_stage: Int, expect: Bool = True](self) -> Self.KPairType:
-        p_mbar = self.kv_pipeline.producer_mbar[mma_stage=mma_stage]()
+    fn get_k[*, qk_stage: Int, expect: Bool = True](self) -> Self.KPairType:
+        p_mbar = self.kv_pipeline.producer_mbar[qk_stage=qk_stage]()
 
         @parameter
         if expect:
             p_mbar[].expect_bytes(Self.k_bytes)
-        return {p_mbar, {self.get_kv_smem[mma_stage=mma_stage]()}}
+        return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
 
     @always_inline
-    fn get_v[*, mma_stage: Int](self) -> Self.VPairType:
-        p_mbar = self.kv_pipeline.producer_mbar[mma_stage=mma_stage]()
+    fn get_v[*, qk_stage: Int](self) -> Self.VPairType:
+        p_mbar = self.kv_pipeline.producer_mbar[qk_stage=qk_stage]()
         p_mbar[].expect_bytes(Self.v_bytes)
-        return {p_mbar, {self.get_kv_smem[mma_stage=mma_stage]()}}
+        return {p_mbar, {self.get_kv_smem[qk_stage=qk_stage]()}}
 
     @always_inline
-    fn acquire_kv[*, mma_stage: Int = Self.config.num_mma_stages - 1](self):
-        self.kv_pipeline.producer_acquire[mma_stage]()
+    fn acquire_kv[*, qk_stage: Int = Self.config.num_qk_stages - 1](self):
+        self.kv_pipeline.producer_acquire[qk_stage]()
 
     @always_inline
     fn commit_kv_step(mut self):
@@ -235,7 +293,6 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config]:
         self.kv_pipeline.state.step()
 
 
-@register_passable("trivial")
 struct SM100MLA[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -247,12 +304,12 @@ struct SM100MLA[
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
-    _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
-]:
+    _ndbuffer_mha_operand: Bool,
+](TrivialRegisterType):
     comptime qkv_type = Self.KVLUTType.dtype
-    comptime accum_type = get_accum_type[Self.qkv_type]()
+    comptime accum_type = DType.float32
     comptime simd_size: Int = simd_width_of[Self.qkv_type]()
 
     comptime cta_group = 1  # TODO: support 2
@@ -276,9 +333,9 @@ struct SM100MLA[
 
     comptime OPipelineType = MBarPipeline[2]  # x1 -> 4 barriers
 
-    comptime num_mma_stages = Self.config.num_mma_stages
+    comptime num_qk_stages = Self.config.num_qk_stages
 
-    # First MMA is
+    # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         Self.qkv_type,
@@ -289,9 +346,9 @@ struct SM100MLA[
         swizzle_a = Self.config.swizzle_mode,
         swizzle_b = Self.config.swizzle_mode,
         transpose_b=True,
-        num_stages = Self.num_mma_stages,
+        num_stages = Self.num_qk_stages,
     ]
-    # Second MMA is
+    # Second MMA is P@V
     # (BM x BN) @ (BN x depth) -> (BM x depth)
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         Self.qkv_type,
@@ -301,7 +358,7 @@ struct SM100MLA[
         BK = Self.BN,
         swizzle_b = Self.config.swizzle_mode,
         transpose_b=False,
-        num_stages = Self.num_mma_stages,
+        num_stages = Self.num_qk_stages,
     ]
 
     comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // Self.qkv_dt_size
@@ -312,7 +369,7 @@ struct SM100MLA[
     comptime v_bytes_per_mma: UInt32 = Self.qkv_dt_size * Self.MMA_K * Self.config.padded_depth
 
     comptime KVPipelineType = KVPipeline[
-        Self.config.num_kv_stages, Self.config.num_mma_stages
+        Self.config.num_kv_stages, Self.config.num_qk_stages
     ]
     comptime PositionType = MHAPosition[
         Self.config.BM,
@@ -322,6 +379,10 @@ struct SM100MLA[
         Self.config.num_q_heads,
         Self.config.group,
         _is_decoding[Self.MaxSeqLenType](),
+    ]
+    comptime MiscMBarsType = FA4MiscMBars[
+        num_qk_stages = Self.config.num_qk_stages,
+        num_pv_stages = Self.config.num_pv_stages,
     ]
 
     @staticmethod
@@ -371,9 +432,9 @@ struct SM100MLA[
             BN = Self.kv_depth,
         ],
         kv_lut: Self.KVLUTType,
+        k_rope_lut: KRopeType,
         scale: Float32,
         batch_size: UInt32,
-        num_keys_arg: UInt32,
         pack: Pack[
             Self.MaskType,
             Self.ScoreModType,
@@ -424,33 +485,30 @@ struct SM100MLA[
             name="mha_dynamic_shared_memory",
         ]()
         kv_smem = q_smem + Self.config.BM * Self.config.padded_depth
-        comptime kv_total_stages = Self.config.num_kv_stages * Self.config.num_mma_stages
+        comptime kv_total_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
         comptime kv_smem_total_bytes = Self.config.padded_depth * Self.config.BN * kv_total_stages
         var correction_smem: SharedMemPointer[Scalar[Self.accum_type]] = (
             kv_smem + kv_smem_total_bytes
         ).bitcast[Scalar[Self.accum_type]]()
         var mbar_base: MBarType
 
-        @parameter
-        if Self.config.use_tmem_for_correction():
-            mbar_base = correction_smem.bitcast[SharedMemBarrier]()
-        else:
-            mbar_base = (
-                correction_smem + Self.config.correction_smem_elements()
-            ).bitcast[SharedMemBarrier]()
+        mbar_base = (
+            correction_smem + Self.config.correction_smem_elements()
+        ).bitcast[SharedMemBarrier]()
 
         kv_pipeline = Self.KVPipelineType(mbar_base)
         mbar_base += Self.KVPipelineType.num_mbars()
         # O += P@V -> correction
         o_mbar = mbar_base  # 2, UMMA
         mbar_base += Self.OPipelineType.num_mbars()
-        var misc_mbars: FA4MiscMBars = {mbar_base}
+        # MLA prefill uses default num_pv_stages=1 (no P@V staging)
+        var misc_mbars: Self.MiscMBarsType = {mbar_base}
         # S = Q@K' -> softmax 0/1
         # softmax 0/1 -> correction
         # 4s (2 consumer, 2 producer)
         # 4c (2 consumer, 2 producer)
         # 2 softmax-order
-        ptr_tmem_addr = misc_mbars.end().bitcast[UInt32]()
+        ptr_tmem_addr = (mbar_base + misc_mbars.num_mbars()).bitcast[UInt32]()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         comptime num_reg_softmax = 200
@@ -464,15 +522,17 @@ struct SM100MLA[
 
         var warp_idx = UInt32(warp.broadcast(warp_id()))
         if warp_idx == 0:
-            if elect() != 0:
-                kv_pipeline.init()
+            e = elect()
+            kv_pipeline.init(elect=e)
 
-                # o produced by 1 MMA, consumed by 128 correction
-                @parameter
-                for i in range(2):
-                    o_mbar[i].init(1)  # producer
-                    o_mbar[i + 2].init(WARPGROUP_SIZE)  # consumer
-                misc_mbars.init()
+            # o produced by 1 MMA, consumed by 128 correction
+            @parameter
+            for i in range(2):
+                elect_mbar_init(o_mbar + i, count=1, elect=e)  # producer
+                elect_mbar_init(
+                    o_mbar + i + 2, count=WARPGROUP_SIZE, elect=e
+                )  # consumer
+            misc_mbars.init(elect=e)
         elif warp_idx == 1:
             tcgen05_alloc[Self.cta_group](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
@@ -492,10 +552,9 @@ struct SM100MLA[
             if not seq_info.is_valid():
                 return
 
-            var pos: PositionSummary = PositionSummary.create[
-                ragged = Self.ragged,
-                _is_cache_length_accurate = Self._is_cache_length_accurate,
-            ](kv_lut, seq_info, num_keys_arg, kv_input_row_offsets, max_seq_len)
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
 
             Self.softmax(
                 ptr_tmem_addr[0],
@@ -512,6 +571,7 @@ struct SM100MLA[
                 ragged_tma_store,
                 q_smem.bitcast[Scalar[Self.output_type]](),
                 sink_weights,
+                correction_smem,
             )
 
         elif warp_idx < 12:
@@ -523,10 +583,9 @@ struct SM100MLA[
             )
             if not seq_info.is_valid():
                 return
-            var pos: PositionSummary = PositionSummary.create[
-                ragged = Self.ragged,
-                _is_cache_length_accurate = Self._is_cache_length_accurate,
-            ](kv_lut, seq_info, num_keys_arg, kv_input_row_offsets, max_seq_len)
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -534,6 +593,7 @@ struct SM100MLA[
                 pos.score_row,
                 pos.num_keys,
                 mask,
+                correction_smem,
             )
         else:
             warpgroup_reg_dealloc[num_reg_other]()
@@ -544,16 +604,10 @@ struct SM100MLA[
 
                 if not seq_info.is_valid():
                     return
-                var pos: PositionSummary = PositionSummary.create[
-                    ragged = Self.ragged,
-                    _is_cache_length_accurate = Self._is_cache_length_accurate,
-                ](
-                    kv_lut,
-                    seq_info,
-                    num_keys_arg,
-                    kv_input_row_offsets,
-                    max_seq_len,
-                )
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+                ](kv_lut, k_rope_lut, seq_info)
+
                 Self.load(
                     misc_mbars,
                     kv_pipeline,
@@ -567,6 +621,7 @@ struct SM100MLA[
                     k_rope_tma_op,
                     v_tma_op,
                     kv_lut,
+                    k_rope_lut,
                     q_smem,
                 )
 
@@ -581,16 +636,9 @@ struct SM100MLA[
                         ptr_tmem_addr[0], Self.config.sm100_tmem_cols
                     )
                     return
-                var pos: PositionSummary = PositionSummary.create[
-                    ragged = Self.ragged,
-                    _is_cache_length_accurate = Self._is_cache_length_accurate,
-                ](
-                    kv_lut,
-                    seq_info,
-                    num_keys_arg,
-                    kv_input_row_offsets,
-                    max_seq_len,
-                )
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+                ](kv_lut, k_rope_lut, seq_info)
                 Self.mma(
                     ptr_tmem_addr[0],
                     misc_mbars,
@@ -606,18 +654,17 @@ struct SM100MLA[
     @always_inline
     fn correction(
         tmem_addr: UInt32,
-        mbars: FA4MiscMBars,
+        mbars: Self.MiscMBarsType,
         o_mbar: MBarType,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
+        correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         __comptime_assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + Self.config.TMEM_O0
         o1_tmem = tmem_addr + Self.config.TMEM_O1
-        c0_tmem = tmem_addr + Self.config.TMEM_C0
-        c1_tmem = tmem_addr + Self.config.TMEM_C1
 
         pipeline_c0 = mbars.consumer_c0()
         pipeline_c1 = mbars.consumer_c1()
@@ -634,37 +681,24 @@ struct SM100MLA[
         # output is BM x depth
         comptime load_iters = Self.kv_depth // (2 * batch_size)
         comptime load_remainder = Self.kv_depth % (2 * batch_size)
+        var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128
+        var correction_smem_1 = correction_smem_0 + (Self.BM // 2)
 
         while iter_count != 0:
             iter_count -= 1
 
             @parameter
             for i in range(2):
-                var c_tmem: UInt32
+                var c_scalar: Scalar[Self.accum_type]
 
                 @parameter
                 if i == 0:
-                    c_tmem = c0_tmem
                     pipeline_c0.wait()
-                else:
-                    c_tmem = c1_tmem
-                    pipeline_c1.wait()
-
-                # correct
-                c_scalar = tcgen05_ld[
-                    datapaths=32,
-                    bits=32,
-                    repeat=1,
-                    dtype = Self.accum_type,
-                    pack=False,
-                    width=1,
-                ](c_tmem)
-                tcgen05_load_wait()
-
-                @parameter
-                if i == 0:
+                    c_scalar = correction_smem_0[0]
                     pipeline_c0.release()
                 else:
+                    pipeline_c1.wait()
+                    c_scalar = correction_smem_1[0]
                     pipeline_c1.release()
 
                 change = _vote_nvidia_helper(c_scalar != 1) != 0
@@ -761,13 +795,13 @@ struct SM100MLA[
     fn softmax(
         tmem_addr: UInt32,
         warp_idx: UInt32,
-        mbars: FA4MiscMBars,
+        mbars: Self.MiscMBarsType,
         o_mbar: MBarType,
         score_row: UInt32,
         seq_info: SeqInfo,
         mask: Self.MaskType,
         num_keys: UInt32,
-        scale: Scalar[Self.accum_type],
+        scale: Float32,
         score_mod: Self.ScoreModType,
         max_seq_len: UInt32,
         ragged_tma_store: RaggedTMA3DTile[
@@ -778,6 +812,7 @@ struct SM100MLA[
         ],
         o_smem: SharedMemPointer[Scalar[Self.output_type]],
         sink_weights: Self.SinkType,
+        correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         # FIXME: for depth 256
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
@@ -793,7 +828,6 @@ struct SM100MLA[
             s_tmem += Self.config.BN * warp_group_idx
 
         p_tmem = s_tmem
-        c_tmem = p_tmem + Self.config.BN // 2
         s_tile = Self.UMMA0Type.CType(s_tmem)
         p_tile = Self.UMMA1Type.AType(p_tmem)
 
@@ -806,8 +840,9 @@ struct SM100MLA[
 
         var q_head_idx: UInt32 = seq_info.head_idx
         var tid = UInt32(thread_idx.x)
-        var row = UInt32(tid % 128)
+        var row = tid % 128
         var scale_log2e: Scalar[Self.accum_type] = scale
+        var correction_smem = correction_smem_arg + tid
 
         @parameter
         if not (Self.use_score_mod or Self.MaskType.apply_log2e_after_mask):
@@ -876,9 +911,10 @@ struct SM100MLA[
                 s_tmem + first_cols
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum[width = Self.simd_size](s0)
+            s0v = s0.ptr.load[width=first_cols]()
+            vrow_max = s0v.reduce_max[size_out = Self.simd_size]()
 
-            s.ptr.store(s0.ptr.load[width=first_cols]())
+            s.ptr.store(s0v)
             comptime cols = Self.config.BN - first_cols + batch_size
 
             @parameter
@@ -892,15 +928,21 @@ struct SM100MLA[
                 @parameter
                 if offset1 >= Self.config.BN:
                     mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
-                    vrow_max = maximum(s1, vrow_max)
-                    s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+                    s1v = s1.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset0, s1v)
                 else:
                     s2 = TMemTile[Self.accum_type, BM, batch_size](
                         s_tmem + offset1
                     ).load_async()
                     mask_row[mask_strategy=mask_strategy](s1, kv_row + offset0)
-                    vrow_max = maximum(s1, vrow_max)
-                    s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
+                    s1v = s1.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s1v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset0, s1v)
                     tcgen05_load_wait()
 
                     @parameter
@@ -909,8 +951,11 @@ struct SM100MLA[
                             s_tmem + offset2
                         ).load_async()
                     mask_row[mask_strategy=mask_strategy](s2, kv_row + offset1)
-                    vrow_max = maximum(s2, vrow_max)
-                    s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
+                    s2v = s2.ptr.load[width=batch_size]()
+                    vrow_max = max(
+                        s2v.reduce_max[size_out = Self.simd_size](), vrow_max
+                    )
+                    s.ptr.store(offset1, s2v)
 
             return vrow_max.reduce_max()
 
@@ -973,21 +1018,23 @@ struct SM100MLA[
                             mask_strategy = mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
-        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+        var sink_weights_ptr = UnsafePointer[
+            Scalar[Self.qkv_type], ImmutAnyOrigin
+        ]()
         var sink_weight: Scalar[Self.accum_type]
 
         @parameter
         if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
-                sink_weights.value()
-            )
+            sink_weights_ptr = rebind[
+                UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
+            ](sink_weights.value())
             var head_idx: UInt32 = seq_info.head_idx
             sink_weight = (
                 sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
             )
             row_max = max(row_max, sink_weight)
         else:
-            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+            sink_weights_ptr = {}
             sink_weight = 0.0
 
         @parameter
@@ -1136,12 +1183,7 @@ struct SM100MLA[
                     row_max = max(old_max, new_row_max)
                     correction = exp2(old_max - row_max)
                     pipeline_c.acquire()
-                    tcgen05_st[
-                        datapaths=32,
-                        bits=32,
-                        repeat=1,
-                        pack=False,
-                    ](c_tmem, correction)
+                    correction_smem[] = correction
                     pipeline_c.commit()
                     # update s->p
                     local_rowsum = store_exp(row_max)
@@ -1171,12 +1213,7 @@ struct SM100MLA[
                 row_max = max(old_max, new_row_max)
                 correction = exp2(old_max - row_max)
                 pipeline_c.acquire()
-                tcgen05_st[
-                    datapaths=32,
-                    bits=32,
-                    repeat=1,
-                    pack=False,
-                ](c_tmem, correction)
+                correction_smem[] = correction
                 pipeline_c.commit()
                 # update s->p
                 local_rowsum = store_exp(row_max)
@@ -1358,13 +1395,15 @@ struct SM100MLA[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype = DType.int32](Int(Self.BM), Int(Self.BN)),
+            Index[dtype = DType.int32](Self.BM, Self.BN),
         )
 
     @staticmethod
     @always_inline
-    fn load(
-        mbars: FA4MiscMBars,
+    fn load[
+        KRopeType: MHAOperand
+    ](
+        mbars: Self.MiscMBarsType,
         kv_pipeline_arg: Self.KVPipelineType,
         score_row: UInt32,
         num_keys: UInt32,
@@ -1398,6 +1437,7 @@ struct SM100MLA[
             BK = Self.kv_depth,
         ],
         kv_lut: Self.KVLUTType,
+        k_rope_lut: KRopeType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
     ):
         comptime KVPipeType = MLAKVProducerPipeline[
@@ -1425,7 +1465,7 @@ struct SM100MLA[
 
         var mbark0: KVPipeType.KPairType
 
-        mbark0 = pipeline_kv.get_k[mma_stage=0, expect=False]()  # no wait
+        mbark0 = pipeline_kv.get_k[qk_stage=0, expect=False]()  # no wait
         var q_gmem_row: UInt32 = Self.PositionType.get_q_gmem_row[
             ragged = Self.ragged
         ](seq_info, max_seq_len)
@@ -1449,6 +1489,9 @@ struct SM100MLA[
             Self.BM, Self.BN, Self.page_size
         ](score_row)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
+        var k_rope_gmem_row: UInt32 = k_rope_lut.row_idx(
+            seq_info.prompt_idx, kv_row
+        )
         var iter_count: UInt32 = (
             mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
                 score_row, num_keys
@@ -1473,7 +1516,7 @@ struct SM100MLA[
             var k_rope_coord = kv_coord[
                 depth = Self.k_rope_depth,
                 swizzle_granularity = Self.swizzle_granularity,
-            ](kv_gmem_row, k_rope_head_idx)
+            ](k_rope_gmem_row, k_rope_head_idx)
             k_rope_coord[0] = (
                 Self.cache_depth - Self.k_rope_depth
             )  # only load last 64 head_dims
@@ -1485,12 +1528,12 @@ struct SM100MLA[
             )
         pipeline_kv.commit_kv_step()
         if elect:
-            ref q1_mbar = mbars.q1_wait_mbar()
-            q1_mbar.expect_bytes(q_bytes)
+            var q1_mbar = mbars.q1_wait_mbar()
+            q1_mbar[0].expect_bytes(q_bytes)
             # Q1
             q_tma_op.async_copy(
                 QType(q_smem + q_elements),
-                q1_mbar,
+                q1_mbar[0],
                 q_coord[
                     depth = Self.depth,
                     swizzle_granularity = Self.swizzle_granularity,
@@ -1499,7 +1542,7 @@ struct SM100MLA[
             )
         # copy v0
         if elect:
-            mbarv0 = pipeline_kv.get_v[mma_stage=0]()
+            mbarv0 = pipeline_kv.get_v[qk_stage=0]()
             v_tma_op.async_copy(
                 mbarv0.smem,
                 mbarv0.mbar[],
@@ -1526,10 +1569,11 @@ struct SM100MLA[
                 ):
                     continue
             kv_gmem_row = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
+            k_rope_gmem_row = k_rope_lut.row_idx(seq_info.prompt_idx, kv_row)
             # produce k
             pipeline_kv.acquire_kv()
             if elect:
-                mbarkn = pipeline_kv.get_k[mma_stage=0]()
+                mbarkn = pipeline_kv.get_k[qk_stage=0]()
                 k_smem_n, k_rope_smem_n = mbarkn.split_smem[
                     KVPipeType.k_layout, KVPipeType.k_rope_layout
                 ]()
@@ -1546,7 +1590,7 @@ struct SM100MLA[
                 var k_rope_coord = kv_coord[
                     depth = Self.k_rope_depth,
                     swizzle_granularity = Self.swizzle_granularity,
-                ](kv_gmem_row, k_rope_head_idx)
+                ](k_rope_gmem_row, k_rope_head_idx)
                 k_rope_coord[0] = (
                     Self.cache_depth - Self.k_rope_depth
                 )  # only load last 64 head_dims
@@ -1559,7 +1603,7 @@ struct SM100MLA[
             pipeline_kv.commit_kv_step()
             pipeline_kv.acquire_kv()
             if elect:
-                mbarvn = pipeline_kv.get_v[mma_stage=0]()
+                mbarvn = pipeline_kv.get_v[qk_stage=0]()
                 v_tma_op.async_copy(
                     mbarvn.smem,
                     mbarvn.mbar[],
@@ -1586,7 +1630,7 @@ struct SM100MLA[
     @always_inline
     fn mma(
         tmem_addr: UInt32,
-        mbars: FA4MiscMBars,
+        mbars: Self.MiscMBarsType,
         kv_pipeline_arg: Self.KVPipelineType,
         o_mbar: MBarType,
         score_row: UInt32,
@@ -1594,10 +1638,6 @@ struct SM100MLA[
         mask: Self.MaskType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
     ):
-        comptime KVPipeType = KVConsumerPipeline[
-            Self.KVLUTType.dtype, Self.config
-        ]
-
         s0_tmem = tmem_addr + Self.config.TMEM_S0
         s1_tmem = tmem_addr + Self.config.TMEM_S1
         o0_tmem = tmem_addr + Self.config.TMEM_O0
@@ -1619,7 +1659,25 @@ struct SM100MLA[
         q1 = q0 + q0_bytes
         kv_smem = q_smem + 2 * q0_size
 
-        var pipeline_kv: KVPipeType = {kv_pipeline_arg, kv_smem}
+        # MLA uses a shared KVPipeline where K and V alternate states.
+        # Create K and V smem descriptors with MLA-specific dimensions.
+        comptime full_kv_bytes: UInt32 = (
+            Self.config.BN * Self.config.padded_depth * Self.qkv_dt_size
+        )
+        var k_smem_descriptor = smem_descriptor[
+            BMN = Self.config.BN,
+            BK = Self.config.BK0,
+            swizzle_mode = Self.config.swizzle_mode,
+            is_k_major=True,
+        ](kv_smem)
+        var v_smem_descriptor = smem_descriptor[
+            BMN = Self.kv_depth,
+            BK = Self.config.BK1,
+            swizzle_mode = Self.config.swizzle_mode,
+            is_k_major=False,
+        ](kv_smem)
+
+        var pipeline = kv_pipeline_arg
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
@@ -1630,24 +1688,22 @@ struct SM100MLA[
         )
 
         # Q_0 @ K_0'
-        k0 = pipeline_kv.wait_k[mma_stage=0, pre_increment=False]()  # [kv0]
+        pipeline.consumer_wait[0]()  # wait K0
+        k0 = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
         e = elect()
         Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
         elect_mma_arrive(producer_s0, e)
-        # pipeline_s0.step()  # pipline_s0.phase = 0
 
         # Q_1 @ K_0'
-        # pipeline_s1.producer_acquire()
-        mbars.q1_wait_mbar().wait()  # wait on Q1
-        # we don't need to wait on s1
+        mbars.q1_wait_mbar()[0].wait()  # wait on Q1
         Self.UMMA0Type.mma(q1, k0, s1_tmem, elect=e, c_scale=0)
         elect_mma_arrive(producer_s1, e)
 
-        pipeline_kv.release_k(e)  # [kv0]->kv1
+        pipeline.consumer_release[0](e)  # release K0, step to V state
 
-        vlatest = pipeline_kv.wait_v[mma_stage=0]()  # [kv1]
-        # For the first V tile in the current KV stage buffer:
-        # Use the SAME base pointer you used for K (no manual offset).
+        # Wait V0
+        pipeline.consumer_wait[0]()  # wait V0
+        vlatest = v_smem_descriptor + full_kv_bytes * pipeline.state.index()
         _ = consumer_s0[].wait(0)
         Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0)
         elect_mma_arrive(producer_o0, e)
@@ -1655,46 +1711,43 @@ struct SM100MLA[
         var phase_o: UInt32 = 1
 
         var c_scale: UInt32 = 0
-        # wait order
-        # s0.wait(1)              # Q0@K0'
-        # s1.wait(1)              # Q1@K0'
-        # s0.wait(0), o0.wait(1)  # P0@V0
-        # s1.wait(0), o1.wait(1)  # P1@V0
 
         while iter_count != 0:
             iter_count -= 1
+            # Save V release index and step to next K position
+            var v_release_index = pipeline.state.index()
+            pipeline.state.step()
+
             # Q_0 @ K_n'
-            kn = pipeline_kv.wait_k[mma_stage=0]()  # kv_{2n-1}->[kv_{2n}]
+            pipeline.consumer_wait[0]()  # wait Kn
+            kn = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
             Self.UMMA0Type.mma(q0, kn, s0_tmem, elect=e, c_scale=0)
             elect_mma_arrive(producer_s0, e)
 
             # O_1 + P_1 @ V_{n-1}
             _ = consumer_o1[].wait(phase_o)
-            # pipeline_o.acquire()
             _ = consumer_s1[].wait(phase_s)
-            # pipeline_s1.acquire()
             Self.UMMA1Type.mma(
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
             )
             elect_mma_arrive(producer_o1, e)
-            # pipeline_o.step()
             phase_o = phase_s
             c_scale = 1
-            pipeline_kv.release_v(e)  # [kv_{2n-1}]
+            # Release old V (deferred release, no step)
+            elect_mma_arrive(pipeline.consumer_mbar[0](v_release_index), e)
 
             # Q_1 @ K_n'
             Self.UMMA0Type.mma(q1, kn, s1_tmem, elect=e, c_scale=0)
             elect_mma_arrive(producer_s1, e)
             phase_s ^= 1
 
-            pipeline_kv.release_k(e)  # [kv_{2n}]->kv_{2n+1}
+            pipeline.consumer_release[0](e)  # release K, step to V state
 
             # O_0 + P_0 @ V_n
-            vlatest = pipeline_kv.wait_v[mma_stage=0]()  # [kv_{2n+1}]
+            pipeline.consumer_wait[0]()  # wait Vn
+            vlatest = v_smem_descriptor + full_kv_bytes * pipeline.state.index()
             _ = consumer_o0[].wait(phase_o)
-            # pipeline_o.acquire()
             _ = consumer_s0[].wait(phase_s)
-            # pipeline_s0.acquire()
             Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1)
             elect_mma_arrive(producer_o0, e)
 
@@ -1719,7 +1772,7 @@ fn mla_sm100_prefill[
     q_depth: Int,
     cache_depth: Int,
     use_score_mod: Bool,
-    _is_cache_length_accurate: Bool,
+    _ndbuffer_mha_operand: Bool,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -1741,48 +1794,28 @@ fn mla_sm100_prefill[
     comptime fa4_config = FA4Config(
         num_q_heads=Int(config.num_heads),
         group=group,
-        depth=Int(q_depth),
+        depth=q_depth,
         dtype_size=size_of[q_type](),
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
         is_mla=True,
     )
 
-    comptime SchedulerType = TransientScheduler[
-        fa4_config.BM, fa4_config.num_q_heads
-    ]
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
-    comptime SinkType = NullPointer[output_type]
-    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[get_accum_type[q.dtype]()]
-    var valid_len: ValidLengthType = {valid_length.ptr}
+    comptime k_rope_depth = 64
+    comptime kv_depth = q_depth - k_rope_depth
 
-    comptime SM100MLAType = SM100MLA[
-        KVType,
-        output.dtype,
-        MaskType,
-        ScoreModType,
-        SchedulerType,
-        fa4_config,
-        use_score_mod,
-        ValidLengthType,
-        SinkType,
-        KVRowOffsetsNull,
-        _is_cache_length_accurate,
-        MaxPromptLenType,
-        PartitionType,
-    ]
+    var num_rows_q = q_num_matrix_view_rows(q)
 
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
         fa4_config.swizzle_mode,
         BM = fa4_config.BM // 2,
-        BN = SM100MLAType.kv_depth,
+        BN = fa4_config.depth - 64,
     ]
 
-    comptime kernel = SM100MLAType.mla_prefill_kernel[KRopeType]
-
-    var num_rows_q = q_num_matrix_view_rows(q)
+    var ragged_tma_store = RaggedStoreType.create(
+        ctx, output.ptr, rows=num_rows_q, middle_dim=fa4_config.num_q_heads
+    )
 
     q_tma_op = q_tma[
         fa4_config.swizzle_mode,
@@ -1791,13 +1824,17 @@ fn mla_sm100_prefill[
         q_num_heads = fa4_config.num_q_heads,
         group = fa4_config.group,
         decoding=False,
-    ](ctx, q.ptr, num_rows_q)
+    ](
+        ctx,
+        q.ptr.as_unsafe_pointer(),
+        num_rows_q,
+    )
 
     # [batch_size * num_keys, num_heads, kv_depth]
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
         BN = fa4_config.BN,
-        depth = SM100MLAType.kv_depth,
+        depth = fa4_config.depth - 64,
     ](ctx)
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
@@ -1805,21 +1842,132 @@ fn mla_sm100_prefill[
         TensorMapSwizzle.SWIZZLE_128B,
         BN = fa4_config.BN,
         depth=cache_depth,
-        BK = SM100MLAType.k_rope_depth,
+        BK=64,
     ](ctx)
 
     # [batch_size * num_keys, num_heads, kv_depth]
     v_tma_op = v.create_tma_tile[
         fa4_config.swizzle_mode,
         BN = fa4_config.BN,
-        depth = SM100MLAType.kv_depth,
+        depth = fa4_config.depth - 64,
     ](ctx)
 
-    comptime out_depth = SM100MLAType.kv_depth
-
-    var ragged_tma_store = RaggedStoreType.create(
-        ctx, output.ptr, rows=num_rows_q, middle_dim=fa4_config.num_q_heads
+    _mla_prefill_sm100_valid_length_dispatch[
+        fa4_config=fa4_config,
+        cache_depth=cache_depth,
+        use_score_mod=use_score_mod,
+        _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+    ](
+        ragged_tma_store,
+        q_tma_op,
+        k_tma_op,
+        v_tma_op,
+        k_rope_tma_op,
+        k,
+        k_rope,
+        mask_functor,
+        score_mod_functor,
+        valid_length,
+        max_prompt_len,
+        scale,
+        batch_size,
+        ctx,
     )
+
+
+@always_inline
+fn _mla_prefill_sm100_valid_length_dispatch[
+    KVType: MHAOperand,
+    output_type: DType,
+    q_type: DType,
+    MaskType: MHAMask,
+    ScoreModType: ScoreModTrait,
+    KRopeType: MHAOperand,
+    MaxPromptLenType: OptionallyStaticInt,
+    //,
+    fa4_config: FA4Config,
+    cache_depth: Int,
+    use_score_mod: Bool,
+    _ndbuffer_mha_operand: Bool,
+](
+    ragged_tma_store: RaggedTMA3DTile[
+        output_type,
+        fa4_config.swizzle_mode,
+        BM = fa4_config.BM // 2,
+        BN = fa4_config.depth - 64,
+    ],
+    q_tma_op: QTMATile[
+        q_type,
+        fa4_config.swizzle_mode,
+        BM = fa4_config.BM // 2,
+        depth = fa4_config.depth,
+        group = fa4_config.group,
+        decoding=False,
+    ],
+    k_tma_op: KVTMATile[
+        KVType.dtype,
+        fa4_config.swizzle_mode,
+        BN = fa4_config.BN,
+        BK = padded_depth[
+            KVType.dtype, fa4_config.swizzle_mode, fa4_config.depth - 64
+        ](),
+    ],
+    v_tma_op: KVTMATile[
+        KVType.dtype,
+        fa4_config.swizzle_mode,
+        BN = fa4_config.BN,
+        BK = padded_depth[
+            KVType.dtype, fa4_config.swizzle_mode, fa4_config.depth - 64
+        ](),
+    ],
+    k_rope_tma_op: KVTMATile[
+        KRopeType.dtype,
+        TensorMapSwizzle.SWIZZLE_128B,
+        BN = fa4_config.BN,
+        BK=64,
+    ],
+    kv_lut: KVType,
+    k_rope_lut: KRopeType,
+    mask_functor: MaskType,
+    score_mod_functor: ScoreModType,
+    valid_length: LayoutTensor[
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    max_prompt_len: MaxPromptLenType,
+    scale: Float32,
+    batch_size: Int,
+    ctx: DeviceContext,
+) raises:
+    comptime SchedulerType = TransientScheduler[
+        fa4_config.BM, fa4_config.num_q_heads
+    ]
+    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime SinkType = NullPointer[output_type]
+    comptime KVRowOffsetsType = NullPointer[DType.uint32]
+    comptime PartitionType = NoPartition[DType.float32]
+    var valid_len: ValidLengthType = {
+        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
+    }
+
+    comptime SM100MLAType = SM100MLA[
+        KVType,
+        output_type,
+        MaskType,
+        ScoreModType,
+        SchedulerType,
+        fa4_config,
+        use_score_mod,
+        ValidLengthType,
+        SinkType,
+        KVRowOffsetsType,
+        MaxPromptLenType,
+        PartitionType,
+        _ndbuffer_mha_operand,
+    ]
+
+    comptime kernel = SM100MLAType.mla_prefill_kernel[KRopeType]
+
+    comptime out_depth = SM100MLAType.kv_depth
 
     comptime PackType = Pack[
         MaskType,
@@ -1827,7 +1975,7 @@ fn mla_sm100_prefill[
         SchedulerType,
         ValidLengthType,
         SinkType,
-        KVRowOffsetsNull,
+        KVRowOffsetsType,
         MaxPromptLenType,
         PartitionType,
     ]
@@ -1838,7 +1986,7 @@ fn mla_sm100_prefill[
         SchedulerType(),
         valid_len,
         SinkType(),
-        KVRowOffsetsNull(),
+        KVRowOffsetsType(),
         max_prompt_len,
         PartitionType(),
     }
@@ -1846,7 +1994,7 @@ fn mla_sm100_prefill[
     var max_num_prompt_tiles: UInt32 = ceildiv(
         max_prompt_len.as_uint32(), fa4_config.BM
     )
-    var num_key_blocks: UInt32 = (
+    var num_blocks: UInt32 = (
         max_num_prompt_tiles * PartitionType().num_partitions()
     )
 
@@ -1859,13 +2007,13 @@ fn mla_sm100_prefill[
         k_rope_tma_op,
         v_tma_op,
         ragged_tma_store,
-        k,
+        kv_lut,
+        k_rope_lut,
         scale,
         UInt32(batch_size),
-        UInt32(cache_depth),
         pack,
-        grid_dim=SchedulerType.grid_dim(batch_size, num_key_blocks),
-        block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        grid_dim=SchedulerType.grid_dim(batch_size, num_blocks),
+        block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )

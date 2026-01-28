@@ -228,18 +228,7 @@ struct Path(
         Returns:
           True if the String and Path are equal, and False otherwise.
         """
-        return self.path.as_string_slice() == other
-
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the path string value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self.path)
+        return StringSlice(self.path) == other
 
     fn stat(self) raises -> stat_result:
         """Returns the stat information on the path.

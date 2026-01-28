@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .null_cache_manager import NullKVCacheManager
-from .paged_cache import (
+from .paged_kv_cache import (
+    DummyKVCache,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -27,10 +27,10 @@ from .registry import (
 )
 
 __all__ = [
+    "DummyKVCache",
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "NullKVCacheManager",
     "PagedKVCacheManager",
     "TransferReqData",
     "available_port",

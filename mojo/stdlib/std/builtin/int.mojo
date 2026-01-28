@@ -46,7 +46,7 @@ trait Indexer:
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
-    types like `UInt` to not have to be converted to an `Int` first.
+    types like `SIMD` to not have to be converted to an `Int` first.
     """
 
     fn __mlir_index__(self) -> __mlir_type.index:
@@ -165,7 +165,6 @@ trait IntableRaising:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Int(
     Absable,
     Boolable,
@@ -188,6 +187,7 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
+    TrivialRegisterType,
     Truncable,
     Writable,
 ):
@@ -204,7 +204,7 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime BITWIDTH = Int(bit_width_of[DType.int]())
+    comptime BITWIDTH: Int = bit_width_of[DType.int]()
     """The bit width of the integer type."""
 
     comptime MAX = Int(Scalar[DType.int].MAX)
@@ -286,15 +286,6 @@ struct Int(
             value: The init value.
         """
         self = value.__int__()
-
-    @always_inline("builtin")
-    fn __init__(out self, value: UInt):
-        """Construct Int from the given UInt value.
-
-        Args:
-            value: The init value.
-        """
-        self._mlir_value = value._mlir_value
 
     @always_inline("nodebug")
     fn __init__[T: Intable](out self, value: T):
@@ -1093,7 +1084,7 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
-        self = Int(Python.py_long_as_ssize_t(py.__int__()))
+        self = Python.py_long_as_ssize_t(py.__int__())
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1169,4 +1160,4 @@ struct Int(
         if n >> 32 == 0:
             return _calc_initial_buffer_size_int32(n)
 
-        return _calc_initial_buffer_size_int64(n)
+        return _calc_initial_buffer_size_int64(UInt64(n))

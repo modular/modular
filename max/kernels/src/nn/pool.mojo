@@ -28,8 +28,7 @@ from .shapes import get_sliding_window_out_dim
 
 # Pooling method.
 @fieldwise_init
-@register_passable("trivial")
-struct PoolMethod(ImplicitlyCopyable):
+struct PoolMethod(TrivialRegisterType):
     var value: Int
     comptime MAX = PoolMethod(0)  # Max pooling.
     comptime AVG = PoolMethod(1)  # Average pooling not counting padded regions.
@@ -162,7 +161,7 @@ fn pool_shape_impl[
 
     @parameter
     for i in range(0, input_buf.rank - 2):
-        var input_spatial_dim = Int(input_buf.dim(i + 1))
+        var input_spatial_dim = input_buf.dim(i + 1)
         var filter = Int(filter_buf[i])
         var stride = Int(strides_buf[i])
         var dilation = Int(dilations_buf[i])

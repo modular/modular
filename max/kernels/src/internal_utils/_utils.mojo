@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv, floor
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -36,6 +36,31 @@ from tensor import DynamicTensor
 from utils import IndexList
 
 
+# ===----------------------------------------------------------------------=== #
+# Unsigned division/modulo helpers for Int
+# ===----------------------------------------------------------------------=== #
+# These helpers allow performing unsigned division and modulo operations on Int
+# arguments while using unsigned hardware operations internally. This is useful
+# when migrating from UInt to Int, as unsigned division is faster on NVIDIA GPUs.
+
+
+@always_inline
+fn ufloordiv(a: Int, b: Int) -> Int:
+    """Perform unsigned division (`//`) on Int arguments.
+
+    This function treats both arguments as unsigned values and performs
+    unsigned division, which is faster than signed division on NVIDIA GPUs.
+
+    Args:
+        a: The dividend (treated as unsigned).
+        b: The divisor (treated as unsigned).
+
+    Returns:
+        The quotient of unsigned division.
+    """
+    return Int(UInt(a) // UInt(b))
+
+
 struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
@@ -49,8 +74,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-@register_passable("trivial")
-struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
+struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -167,9 +191,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     @parameter
     for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert Bool(name_unsafe_ptr[i] == x_ptr) or Bool(
-            0 <= diff <= 9
-        )
+        __comptime_assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
         @parameter
         if name_unsafe_ptr[i] == x_ptr:
@@ -264,8 +286,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Mode(ImplicitlyCopyable, Stringable):
+struct Mode(Stringable, TrivialRegisterType):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -384,7 +405,7 @@ fn init_vector_gpu[
             if i == 3:
                 if tid >= UInt(len):
                     return
-            x[tid] = Scalar[dtype](values[i])
+            x[tid] = values[i]
             tid += stride
 
     var values = SIMD[dtype, 4]()
@@ -414,7 +435,7 @@ fn init_vector_launch[
     length: Int,
     init_type: InitializationType,
     context: DeviceContext,
-    value: OptionalReg[Scalar[dtype]] = None,
+    value: Optional[Scalar[dtype]] = None,
 ) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
@@ -437,7 +458,7 @@ fn _pretty_print_float(val: Float64) -> String:
         _pretty_print_float(2.0) returns "2"
         _pretty_print_float(2.5) returns "2.5"
     """
-    if Float64(floor(val)) == val:
+    if floor(val) == val:
         return String(Int(val))
     return String(val)
 

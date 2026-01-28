@@ -761,7 +761,7 @@ function arguments:
 
 ```mojo
 exp = 5 # or -5
-result = 2.0 ** Float64(exp) 
+result = 2.0 ** Float64(exp)
     if exp >= 0 \
     else 1.0 / (2.0 ** abs(Float64(exp))) \
     # For 5, 32, for -5, 0.03125
@@ -863,7 +863,7 @@ struct MyType(Copyable):
         return self.val > 0
 
     def __merge_with__[other_type: type_of(Int)](self) -> Int:
-        return Int(self.val)
+        return self.val
 
 def main():
     i = 0
@@ -1208,6 +1208,8 @@ This means we can use the
 [`@register_passable("trivial")`](/mojo/manual/decorators/register-passable/#register_passabletrivial)
 decorator, which declares that the type can be trivially copied, moved, and
 destroyed—and doesn't need a copy constructor, move constructor, or destructor.
+(This decorator is now deprecated, conform to the `TrivialRegisterType` trait
+instead.)
 
 For the time being, we'll also use the
 [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
@@ -1216,8 +1218,7 @@ for each field).
 
 ```mojo
 @fieldwise_init
-@register_passable("trivial")
-struct Complex:
+struct Complex(TrivialRegisterType):
     var re: Float64
     var im: Float64
 ```
@@ -1238,8 +1239,7 @@ As a convenience, let's add an explicit constructor to handle the case of
 creating a `Complex` instance with an imaginary component of 0.
 
 ```mojo
-@register_passable("trivial")
-struct Complex():
+struct Complex(TrivialRegisterType):
     var re: Float64
     var im: Float64
 
@@ -1273,10 +1273,10 @@ methods in [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
-@register_passable("trivial")
 struct Complex(
     Writable,
     Stringable,
+     TrivialRegisterType
 ):
     # ...
 

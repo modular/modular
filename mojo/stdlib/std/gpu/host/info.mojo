@@ -704,8 +704,7 @@ comptime AppleMetalFamily = AcceleratorArchitectureFamily(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct AcceleratorArchitectureFamily:
+struct AcceleratorArchitectureFamily(TrivialRegisterType):
     """Defines common defaults for a GPU architecture family.
 
     This struct captures the shared characteristics across GPUs in the same
@@ -734,8 +733,7 @@ struct AcceleratorArchitectureFamily:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Vendor(Equatable, Writable):
+struct Vendor(Equatable, TrivialRegisterType, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -1170,7 +1168,7 @@ fn _get_dgx_spark_target() -> _TargetType:
 
 
 comptime DGXSpark = GPUInfo.from_family(
-    family=NvidiaBlackwellFamily,
+    family=NvidiaBlackwellConsumerFamily,
     name="DGX Spark",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",

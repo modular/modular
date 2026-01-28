@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from os.atomic import Atomic
 
 import gpu.primitives.warp as warp
@@ -31,8 +26,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -67,8 +61,7 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
         )
 
 
-@register_passable("trivial")
-struct SeqInfo(ImplicitlyCopyable):
+struct SeqInfo(TrivialRegisterType):
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -104,7 +97,9 @@ struct SeqInfo(ImplicitlyCopyable):
         @parameter
         if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
-            ptr = rebind[UnsafePointer[UInt32]](valid_length.value())
+            ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
+                valid_length.value()
+            )
             seq = ptr.load[width=2](batch_idx)
             start_of_seq = warp.broadcast(seq[0])
             end_of_seq = warp.broadcast(seq[1])
@@ -116,8 +111,7 @@ struct SeqInfo(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MHASchedulerSynchronization(ImplicitlyCopyable):
+struct MHASchedulerSynchronization(TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(0)  # use for TMA
@@ -136,18 +130,21 @@ struct MHASchedulerSynchronization(ImplicitlyCopyable):
 
 # This class is constructed within the fully inlined kernel,
 # so unneeded fields can be optimized away.
-@register_passable("trivial")
-struct MHATileState:
+struct MHATileState(TrivialRegisterType):
     # Linear work tile index i.e. idx-th work among all possible workload.
     var idx: UInt32
-    var sidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED]
+    var sidx_ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+    ]
     var max_idx: UInt32
 
     @always_inline
     fn __init__(
         out self,
         idx: UInt32,
-        sidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        sidx_ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         max_idx: UInt32,
     ):
         self.idx = idx
@@ -163,8 +160,7 @@ struct MHATileState:
         return self.is_valid(self.idx)
 
 
-@register_passable("trivial")
-struct MHATileSummary[ValidLengthType: OptionalPointer](ImplicitlyCopyable):
+struct MHATileSummary[ValidLengthType: OptionalPointer](TrivialRegisterType):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -332,8 +328,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](ImplicitlyCopyable):
         return self.unsafe_seq_info[tile_shape, num_heads, schedule](state.idx)
 
 
-@register_passable("trivial")
-trait MHATileScheduler(Copyable, DevicePassable):
+trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterType):
     comptime may_advance: Bool
     comptime mha_schedule: MHASchedule
 
@@ -380,7 +375,9 @@ trait MHATileScheduler(Copyable, DevicePassable):
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object."""
@@ -397,8 +394,7 @@ trait MHATileScheduler(Copyable, DevicePassable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MHASchedule(ImplicitlyCopyable):
+struct MHASchedule(TrivialRegisterType):
     var _value: Int32
 
     comptime DEFAULT = Self(0)
@@ -418,11 +414,10 @@ struct MHASchedule(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](Defaultable, ImplicitlyCopyable, MHATileScheduler):
+](Defaultable, MHATileScheduler, TrivialRegisterType):
     comptime may_advance: Bool = False
     comptime mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -498,7 +493,9 @@ struct TransientScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState.__init__(0, ptr, 1)
@@ -515,14 +512,13 @@ struct TransientScheduler[
         )
 
 
-@register_passable("trivial")
 struct TileScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](Defaultable, ImplicitlyCopyable, MHATileScheduler):
+](Defaultable, MHATileScheduler, TrivialRegisterType):
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
 
@@ -614,7 +610,9 @@ struct TileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
@@ -633,7 +631,6 @@ struct TileScheduler[
         ](state.idx)
 
 
-@register_passable("trivial")
 struct QueuedTileScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
@@ -641,14 +638,16 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](DevicePassable, ImplicitlyCopyable, MHATileScheduler):
+](DevicePassable, MHATileScheduler, TrivialRegisterType):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.
     """
 
     # Linear work tile index i.e. idx-th work among all possible workload.
-    var gidx_ptr: UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL]
+    var gidx_ptr: UnsafePointer[
+        UInt32, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+    ]
 
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
@@ -656,7 +655,7 @@ struct QueuedTileScheduler[
     @always_inline
     fn __init__(
         out self,
-        gidx_ptr: UnsafePointer[UInt32],
+        gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
         self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
 
@@ -762,7 +761,9 @@ struct QueuedTileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[UInt32, address_space = AddressSpace.SHARED],
+        ptr: UnsafePointer[
+            UInt32, MutAnyOrigin, address_space = AddressSpace.SHARED
+        ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         state = MHATileState(

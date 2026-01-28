@@ -323,12 +323,12 @@ fn blockscaled_pair_cta_mxfp8[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
-    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
-    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
+    var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
+    var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
     var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
         b_mma_mask | b_mma_mask << 1
     )
@@ -338,10 +338,10 @@ fn blockscaled_pair_cta_mxfp8[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = UInt(
-                peer_cta_coord[2] * UInt(a_tma_rows) + block_idx.x * UInt(BM)
-            )
-            var b_gmem_slice_coord = UInt(
+            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+                a_tma_rows
+            ) + block_idx.x * UInt(BM)
+            var b_gmem_slice_coord = (
                 peer_cta_coord[1] * UInt(b_tma_rows)
                 + peer_cta_coord[0] * UInt(BN)
                 + block_idx.y * UInt(MMA_N)
@@ -370,10 +370,10 @@ fn blockscaled_pair_cta_mxfp8[
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt((block_idx.x) * UInt(BM // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.x) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -381,10 +381,10 @@ fn blockscaled_pair_cta_mxfp8[
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    UInt(block_idx.y * UInt(MMA_N // SF_MN_GROUP_SIZE)),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.y) * (MMA_N // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -904,14 +904,14 @@ def test_blockscaled_pair_cta_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1]))
+        ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1])
         * Int(ceildiv(sf_k, SF_ATOM_K))
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]

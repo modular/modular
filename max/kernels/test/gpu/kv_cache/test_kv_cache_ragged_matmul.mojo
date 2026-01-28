@@ -247,9 +247,7 @@ def execute_matmul_kv_cache_ragged[
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = cache_sizes[i]
         max_prompt_len = max(max_prompt_len, prompt_lens[i])
-        max_context_len = max(
-            max_context_len, Int(cache_sizes[i] + prompt_lens[i])
-        )
+        max_context_len = max(max_context_len, cache_sizes[i] + prompt_lens[i])
 
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
@@ -517,7 +515,7 @@ def execute_matmul_k_cache_ragged[
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = cache_sizes[i]
         max_full_context_length = max(
-            max_full_context_length, Int(cache_sizes[i] + prompt_lens[i])
+            max_full_context_length, cache_sizes[i] + prompt_lens[i]
         )
         max_seq_length_batch = max(max_seq_length_batch, prompt_lens[i])
         total_length += prompt_lens[i]
@@ -1068,7 +1066,7 @@ def execute_paged_fused_qkv_matmul[
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = cache_sizes[i]
         max_full_context_length = max(
-            max_full_context_length, Int(cache_sizes[i] + prompt_lens[i])
+            max_full_context_length, cache_sizes[i] + prompt_lens[i]
         )
         max_seq_length_batch = max(max_seq_length_batch, prompt_lens[i])
         total_length += prompt_lens[i]
@@ -1235,7 +1233,7 @@ def execute_cont_batch_fused_qkv_matmul[
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = cache_sizes[i]
         max_context_length = max(
-            max_context_length, Int(cache_sizes[i] + prompt_lens[i])
+            max_context_length, cache_sizes[i] + prompt_lens[i]
         )
         if prompt_lens[i] > max_seq_length_batch:
             max_seq_length_batch = prompt_lens[i]

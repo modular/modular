@@ -92,7 +92,7 @@ fn test_index_tensor_DLRM() raises:
             ref_output[i, j] = input[i, Int(index_a[j]), Int(index_b[j])]
 
     # Convert index_a, index_b (each of 1D size index_len) to a
-    # 2D index_len x 2 indices NDBuffer.
+    # 2D index_len x 2 indices LayoutTensor.
     # TODO: This needs to be part of the OP itself.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
@@ -216,7 +216,7 @@ fn test_index_tensor_DLRM_batch() raises:
                 ]
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
-    # indices NDBuffer.
+    # indices LayoutTensor.
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
         indices_stack
@@ -332,12 +332,14 @@ fn test_index_tensor_CLIPVIT() raises:
         ref_output[1, j] = input[Int(index_b[0]), Int(index_b[1]), j]
 
     # TODO:
-    # See how I need to convert separate indices to combined indices ndbuffer
+    # See how I need to convert separate indices to
+    # combined indices LayoutTensor
     # to be as input to gather_nd.
     # See if it works with 2D indices case.
     # See if it works with non-contiguous case.
 
-    # Convert index_a, index_b (each of 1D size 2) to a 2D indices_len x 2 indices NDBuffer
+    # Convert index_a, index_b (each of 1D size 2) to a
+    # 2D indices_len x 2 indices LayoutTensor
     var indices_stack = InlineArray[UInt64, index_len * 2](uninitialized=True)
     var indices = LayoutTensor[DType.uint64, Layout.row_major(index_len, 2)](
         indices_stack
@@ -501,7 +503,7 @@ fn test_advanced_indexing_getitem() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 3, 5, 6)
     var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.flattened_length())
+        Scalar[input_type], input_shape.flattened_length()
     ](uninitialized=True)
     comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
@@ -515,10 +517,10 @@ fn test_advanced_indexing_getitem() raises:
     comptime index_shape = IndexList[index_rank](2, 3)
     comptime index_type = DType.uint64
     var a_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     comptime index_layout = Layout.row_major[index_rank]()
     var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
@@ -582,7 +584,7 @@ fn test_advanced_indexing_getitem() raises:
     )
 
     var output_stack = InlineArray[
-        Scalar[input_type], Int(output_shape.flattened_length())
+        Scalar[input_type], output_shape.flattened_length()
     ](uninitialized=True)
     var reference_output = LayoutTensor[input_type, output_layout](
         output_stack, RuntimeLayout[output_layout].row_major(output_shape)
@@ -646,7 +648,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime input_rank = 4
     comptime input_shape = IndexList[input_rank](2, 2, 4, 4)
     var input_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.flattened_length())
+        Scalar[input_type], input_shape.flattened_length()
     ](uninitialized=True)
     comptime input_layout = Layout.row_major[input_rank]()
     var input_buffer = LayoutTensor[input_type, input_layout](
@@ -661,10 +663,10 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime index_type = DType.uint64
 
     var a_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     var b_stack = InlineArray[
-        Scalar[index_type], Int(index_shape.flattened_length())
+        Scalar[index_type], index_shape.flattened_length()
     ](uninitialized=True)
     comptime index_layout = Layout.row_major[index_rank]()
     var index_a = LayoutTensor[index_type, index_layout, MutAnyOrigin](
@@ -684,7 +686,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     comptime updates_rank = 4
     comptime updates_shape = IndexList[updates_rank](2, 2, 2, 2)
     var updates_stack = InlineArray[
-        Scalar[input_type], Int(updates_shape.flattened_length())
+        Scalar[input_type], updates_shape.flattened_length()
     ](uninitialized=True)
     comptime updates_layout = Layout.row_major[updates_rank]()
     var updates = LayoutTensor[input_type, updates_layout](
@@ -729,7 +731,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     )
 
     var output_stack = InlineArray[
-        Scalar[input_type], Int(input_shape.flattened_length())
+        Scalar[input_type], input_shape.flattened_length()
     ](uninitialized=True)
 
     var reference_output = LayoutTensor[input_type, input_layout](

@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured import (
+from linalg.matmul.gpu.sm100_structured.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -205,17 +205,17 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(batch.value)
-        * Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        batch.value
+        * ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(batch.value)
-        * Int(ceildiv(n.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        batch.value
+        * ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K

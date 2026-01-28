@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import time
-import traceback
 
 from max.interfaces import (
     MAXPullQueue,
@@ -29,7 +28,7 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -53,7 +52,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager | None = None,
+        kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -66,7 +65,7 @@ class TokenGenerationScheduler(Scheduler):
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_manager,
+            kv_cache=kv_cache,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
@@ -120,7 +119,7 @@ class TokenGenerationScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
-        if len(inputs.batch) > 0:
+        if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
                 num_terminated_reqs = self._schedule(inputs)
         else:
@@ -132,7 +131,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.batch_constructor.paged_cache,
+            kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
@@ -151,16 +150,15 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
-        batch_request_ids = list(inputs.batch.keys())
+        batch_request_ids = [
+            context.request_id for context in inputs.flat_batch
+        ]
 
         # Execute the batch.
         try:
             responses = self.pipeline.execute(inputs)
         except Exception as exc:
-            logger.error(
-                "Exception during pipeline execution: %s",
-                traceback.format_exc(),
-            )
+            logger.exception("Exception during pipeline execution")
 
             # Send error results to ALL requests in the batch
             self.response_queue.put_nowait(
@@ -207,7 +205,7 @@ class TokenGenerationScheduler(Scheduler):
 
 
 def load_text_generation_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -220,14 +218,14 @@ def load_text_generation_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    paged_manager = get_paged_manager(pipeline)
-
     # Return Scheduler
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_manager=paged_manager,
+        # For spec decoding, there may be multiple KVCaches. The scheduler
+        # arbitrarily uses either the draft or target one. The other kvcache is
+        # hidden from scheduler currently and managed by pipelines.
+        kv_cache=pipeline.kv_managers[0],
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

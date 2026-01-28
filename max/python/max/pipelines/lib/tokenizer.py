@@ -542,7 +542,7 @@ class TextAndVisionTokenizer(
         TextGenerationRequest,
     ],
 ):
-    """Encapsulates creation of TextContext and specific token encode/decode logic."""
+    """Encapsulates creation of TextAndVisionContext and specific token encode/decode logic."""
 
     def __init__(
         self,

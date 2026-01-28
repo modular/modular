@@ -21,6 +21,7 @@ from memory import OwnedPointer
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast, trait_downcast
+from format._utils import Repr, FormatStruct
 from reflection.type_info import _unqualified_type_name
 
 
@@ -261,6 +262,6 @@ struct OwnedPointer[T: AnyType](Writable):
             Element = Self.T,
             ParentConformsTo="Writable",
         ]()
-        writer.write("OwnedPointer[", _unqualified_type_name[Self.T](), "](")
-        trait_downcast[Writable](self[]).write_repr_to(writer)
-        writer.write_string(")")
+        FormatStruct(writer, "OwnedPointer").params(
+            _unqualified_type_name[Self.T]()
+        ).fields(Repr(trait_downcast[Writable](self[])))

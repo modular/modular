@@ -104,9 +104,7 @@ fn create_tma_descriptor[
         create_tensormap(
             DeviceBuffer(
                 ctx,
-                gmem_tensor.ptr.mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                gmem_tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -220,7 +218,7 @@ struct TMALoad[
         # check if layout is TMA compatible
         _ = Self.get_repeat_pattern[blocked_smem_layout]()
 
-        return blocked_smem_layout
+        return materialize[blocked_smem_layout]()
 
     @staticmethod
     fn get_repeat_pattern[
@@ -239,7 +237,7 @@ struct TMALoad[
             or check_tma_compatibility == False
         ), "Layout does not respect TMA bank alignment"
 
-        return repeat_pattern
+        return materialize[repeat_pattern]()
 
 
 comptime UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]

@@ -32,8 +32,12 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -262,18 +266,13 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Idefics3."""
-        return Idefics3Config.get_kv_params(
+        return Idefics3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Idefics3Config.get_num_layers(huggingface_config)
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Idefics3 models into the MAX Engine session.
@@ -307,14 +306,10 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Generate Idefics3 config from HuggingFace config
-        idefics3_config = Idefics3Config.generate(
-            pipeline_config=self.pipeline_config,
+        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
-            dtype=self.dtype,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
 
@@ -439,7 +434,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        kv_params = Idefics3Config.get_kv_params(
+        kv_params = Idefics3Config.construct_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],

@@ -23,8 +23,7 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable):
+struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -54,8 +53,7 @@ struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -111,8 +109,7 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MatmulSchedule(ImplicitlyCopyable):
+struct MatmulSchedule(TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -134,7 +131,6 @@ struct MatmulSchedule(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct TileScheduler[
     problem_shape: IndexList[3],
     tile_shape: IndexList[3],
@@ -142,7 +138,7 @@ struct TileScheduler[
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
-]:
+](TrivialRegisterType):
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
@@ -280,7 +276,7 @@ struct TileScheduler[
     fn _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
         # We consider a sweep on busy SMs a wave, not all SMs
         comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
-        comptime log_grid_shape = FastDiv[DType.uint32](Int(Self.grid_shape[0]))
+        comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
 
         num_waves_executed = Int(self.idx) / log_num_grids
         idx_in_wave = Int(self.idx) % log_num_grids
@@ -318,8 +314,8 @@ struct TileScheduler[
         var n = UInt(n_block_idx * Self.tile_shape[1])
         # Only support K starting from 0 for now.
         return WorkInfo(
-            UInt32(UInt(m)),
-            UInt32(UInt(n)),
+            UInt32(m),
+            UInt32(n),
             0,
             ceildiv(Self.problem_shape[2], Self.tile_shape[2]),
             is_valid,
@@ -377,7 +373,7 @@ struct TileScheduler[
 
         # Get swizzled indices based on the total number of aligned M blocks
         m_block_idx, n_block_idx = self._get_swizzled_block_idx(
-            self.num_aligned_m_blocks, Int(next_block_idx)
+            self.num_aligned_m_blocks, next_block_idx
         )
         return True
 

@@ -20,7 +20,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import env_get_int, has_nvidia_gpu_accelerator, size_of
+from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
 from sys.ffi import external_call
 
 from gpu import WARP_SIZE
@@ -94,13 +94,12 @@ fn _block_swizzle_by_scale[
 # ===------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](ImplicitlyCopyable, Stringable, Writable):
+](Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -200,7 +199,7 @@ struct MatmulConfig[
         return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
 
     fn num_threads(self) -> UInt:
-        return UInt(
+        return (
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
@@ -330,10 +329,9 @@ fn _shared_memory_usage[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
@@ -500,6 +498,21 @@ fn select_config[
     )
 
 
+fn _vendor_blas_fallback_disabled() -> Bool:
+    """Determine if fallback to vendor blas is disabled
+
+    Returns True if:
+        - vendor fallback has been globally disabled, or
+        - benchmark has specifically requested mojo kernel
+    else returns False.
+    """
+    comptime globally_disabled = env_get_bool[
+        "MODULAR_DISABLE_VENDOR_FALLBACK", False
+    ]()
+    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    return globally_disabled or bench_disabled
+
+
 fn create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
@@ -532,19 +545,19 @@ fn create_hilbert_lut(
             var ry = (t ^ rx) & 1
             if ry == 0:
                 if rx == 1:
-                    hx = UInt32(s) - 1 - hx
-                    hy = UInt32(s) - 1 - hy
+                    hx = s - 1 - hx
+                    hy = s - 1 - hy
                 # rotate
                 var tmp = hx
                 hx = hy
                 hy = tmp
-            hx += UInt32(s) * rx
-            hy += UInt32(s) * ry
+            hx += s * rx
+            hy += s * ry
             t >>= 2
             s <<= 1
 
         if hx < UInt32(grid_x) and hy < UInt32(grid_y):
-            host_ptr[seen] = UInt32((hy << 16) | hx)  # pack (y,x)
+            host_ptr[seen] = (hy << 16) | hx  # pack (y,x)
             seen += 1
         d += 1
 
@@ -564,7 +577,7 @@ fn get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[
         "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
-    ](key_str.as_string_slice().unsafe_ptr(), key_str.byte_length())
+    ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
 
     if cached_ptr:
         var device_ptr = cached_ptr.bitcast[UInt32]()

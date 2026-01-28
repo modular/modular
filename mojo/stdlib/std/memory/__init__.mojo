@@ -36,9 +36,11 @@ from .pointer import (
     AddressSpace,
     _GPUAddressSpace,
     GPUAddressSpace,
+    ImmutPointer,
+    MutPointer,
     Pointer,
 )
-from .span import Span
+from .span import ImmutSpan, MutSpan, Span
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import (
     alloc,

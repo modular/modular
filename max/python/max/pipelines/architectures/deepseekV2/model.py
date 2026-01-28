@@ -25,8 +25,14 @@ from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -39,7 +45,6 @@ from max.pipelines.lib import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
@@ -101,6 +106,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -115,6 +121,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
 
         self.model = self.load_model(session)
@@ -200,10 +207,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
@@ -212,7 +215,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return DeepseekV2Config.get_kv_params(
+        return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -320,15 +323,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 "only safetensors weights supported in DeepseekV2."
             )
 
-        pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
-
-        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
-            graph_mode = "prefill"
-        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
-            graph_mode = "decode"
-        else:
-            graph_mode = "auto"
 
         if self.adapter:
             state_dict = self.adapter(
@@ -341,56 +336,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        kv_params = self.kv_params
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
-        ]
-
-        model_config = DeepseekV2Config(
-            attention_bias=huggingface_config.attention_bias,
-            attention_dropout=huggingface_config.attention_dropout,
-            aux_loss_alpha=huggingface_config.aux_loss_alpha,
-            bos_token_id=huggingface_config.bos_token_id,
-            eos_token_id=huggingface_config.eos_token_id,
-            first_k_dense_replace=huggingface_config.first_k_dense_replace,
-            hidden_act=huggingface_config.hidden_act,
-            hidden_size=huggingface_config.hidden_size,
-            initializer_range=huggingface_config.initializer_range,
-            intermediate_size=huggingface_config.intermediate_size,
-            kv_lora_rank=huggingface_config.kv_lora_rank,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
-            moe_intermediate_size=huggingface_config.moe_intermediate_size,
-            moe_layer_freq=huggingface_config.moe_layer_freq,
-            n_group=huggingface_config.n_group,
-            n_routed_experts=huggingface_config.n_routed_experts,
-            n_shared_experts=huggingface_config.n_shared_experts,
-            norm_topk_prob=huggingface_config.norm_topk_prob,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_experts_per_tok=huggingface_config.num_experts_per_tok,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            num_key_value_heads=huggingface_config.num_key_value_heads,
-            pretraining_tp=huggingface_config.pretraining_tp,
-            q_lora_rank=huggingface_config.q_lora_rank,
-            qk_nope_head_dim=huggingface_config.qk_nope_head_dim,
-            qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
-            rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_scaling=huggingface_config.rope_scaling,
-            rope_theta=huggingface_config.rope_theta,
-            routed_scaling_factor=huggingface_config.routed_scaling_factor,
-            scoring_func=huggingface_config.scoring_func,
-            seq_aux=huggingface_config.seq_aux,
-            tie_word_embeddings=huggingface_config.tie_word_embeddings,
-            topk_group=huggingface_config.topk_group,
-            topk_method=huggingface_config.topk_method,
-            use_cache=huggingface_config.use_cache,
-            v_head_dim=huggingface_config.v_head_dim,
-            vocab_size=huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=kv_params,
-            devices=device_refs,
-            graph_mode=graph_mode,
-        )
+        model_config = DeepseekV2Config.initialize(self.pipeline_config)
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()
@@ -482,7 +428,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits
         sampled_tokens = next_tokens.to_numpy()
@@ -490,6 +435,24 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         model_inputs = cast(DeepseekV2Inputs, model_inputs)
         tokens = model_inputs.tokens.to_numpy()
         input_row_offsets = model_inputs.input_row_offsets.to_numpy()
+
+        # Determine if we have full logits for all tokens or only last-token logits.
+        # Full logits are only available when return_logits is ALL or VARIABLE.
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        # If echo is requested but we don't have full logits, raise an error.
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        # Pass logits=None when we only have last-token logits.
+        # compute_log_probabilities_ragged will use next_token_logits instead.
+        logits = model_outputs.logits if has_full_logits else None
 
         return compute_log_probabilities_ragged(
             self.logprobs_device,

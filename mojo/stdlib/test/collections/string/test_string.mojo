@@ -256,10 +256,10 @@ def test_ord():
     assert_equal(multi_byte3, 128293)
 
     # Test StringSlice overload
-    assert_equal(ord("A".as_string_slice()), 65)
-    assert_equal(ord("α".as_string_slice()), 945)
-    assert_equal(ord("➿".as_string_slice()), 10175)
-    assert_equal(ord("🔥".as_string_slice()), 128293)
+    assert_equal(ord(StringSlice("A")), 65)
+    assert_equal(ord(StringSlice("α")), 945)
+    assert_equal(ord(StringSlice("➿")), 10175)
+    assert_equal(ord(StringSlice("🔥")), 128293)
 
 
 def test_chr():
@@ -925,6 +925,14 @@ def test_rstrip():
     assert_true(str4.rstrip("sip ") == "mississippimississippi \n")
     assert_true(str4.rstrip("sip \n") == "mississippim")
 
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.rstrip("😀") == "😀smile")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "eeeeÑ"
+    assert_true(str6.rstrip("Ò") == "eeeeÑ")
+
 
 def test_lstrip():
     # with default lstrip chars
@@ -950,6 +958,14 @@ def test_lstrip():
     var str4 = " \n mississippimississippi"
     assert_true(str4.lstrip("mis ") == "\n mississippimississippi")
     assert_true(str4.lstrip("mis \n") == "ppimississippi")
+
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.lstrip("😀") == "smile😀")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "Ñeeee"
+    assert_true(str6.lstrip("Ò") == "Ñeeee")
 
 
 def test_strip():
@@ -996,6 +1012,14 @@ def test_strip():
         " \n mississippimississippi \n ".strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
+
+    # should strip off single codepoints
+    var str5 = "😀smile😀"
+    assert_true(str5.strip("😀") == "smile")
+
+    # Ñ and Ò share the leading utf-8 byte of 0xc3
+    var str6 = "ÑeeeeÑ"
+    assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
 def test_hash():
@@ -1116,7 +1140,7 @@ def test_string_char_slices_iter():
     assert_equal(123, atol(conc(vs)))
 
     concat = String()
-    for v in vs.__reversed__():
+    for v in vs.codepoint_slices_reversed():
         concat += v
     assert_equal(321, atol(concat))
 
@@ -1186,7 +1210,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for v in item.__reversed__():
+        for v in item.codepoint_slices_reversed():
             concat += v
         assert_equal(rev[item_idx], concat)
 
@@ -1392,8 +1416,8 @@ def test_float_conversion():
 
 
 def test_slice_contains():
-    assert_true("hello world".as_string_slice().__contains__("world"))
-    assert_false("hello world".as_string_slice().__contains__("not-found"))
+    assert_true(StringSlice("hello world").__contains__("world"))
+    assert_false(StringSlice("hello world").__contains__("not-found"))
 
 
 def test_reserve():
@@ -1401,6 +1425,16 @@ def test_reserve():
     assert_equal(s.capacity(), 23)
     s.reserve(61)
     assert_equal(s.capacity(), 64)
+
+
+def test_resize():
+    var s = String()
+    s.resize(100, 0)
+    for c in s.codepoints():
+        assert_equal(c, Codepoint(0))
+    var s2 = String("😀😃")
+    s2.resize(4)
+    assert_equal(s2, "😀")
 
 
 def test_uninit_ctor():
@@ -1523,9 +1557,7 @@ def test_sso():
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    comptime expected_capacity = UInt(
-        (Int(String.INLINE_CAPACITY) * 2 + 7) & ~7
-    )
+    comptime expected_capacity = UInt((String.INLINE_CAPACITY * 2 + 7) & ~7)
     assert_equal(s.capacity(), Int(expected_capacity))
     assert_equal(s._is_inline(), False)
 

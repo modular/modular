@@ -22,7 +22,7 @@ This module provides:
 
 from gpu import thread_idx, WARP_SIZE
 from layout import Layout
-from linalg.structuring import SMemArrayType
+from linalg.structuring import SMemArray
 from os.atomic import Atomic
 from sys._assembly import inlined_assembly
 from utils import StaticTuple
@@ -66,8 +66,7 @@ fn increment_counter_if_first_thread(
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-trait SyncStrategy:
+trait SyncStrategy(TrivialRegisterType):
     """Interface for synchronization strategies between producers and consumers.
 
     All methods have the same signature regardless of the specific implementation,
@@ -152,7 +151,6 @@ trait SyncStrategy:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct SingleCounterSync[
     pipeline_stages: Int,
     block_rows: Int,
@@ -173,7 +171,7 @@ struct SingleCounterSync[
     comptime writes_per_warp_block = 1
     comptime block_warps = Self.block_rows // Self.warp_rows
     comptime total_tiles = Self.block_warps * Self.pipeline_stages
-    comptime SyncCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime SyncCounterArray = SMemArray[Int32, Self.total_tiles]
 
     var sync_counter: Self.SyncCounterArray
 
@@ -225,7 +223,6 @@ struct SingleCounterSync[
         return Int32(Self.writes_per_warp_block + Self.reads_per_warp_block)
 
 
-@register_passable("trivial")
 struct SplitCounterSync[
     pipeline_stages: Int,
     block_rows: Int,
@@ -247,8 +244,8 @@ struct SplitCounterSync[
     comptime block_warps = Self.block_rows // Self.warp_rows
     comptime total_tiles = Self.block_warps * Self.pipeline_stages
 
-    comptime ProducerCounterArray = SMemArrayType[Int32, Self.total_tiles]
-    comptime ConsumerCounterArray = SMemArrayType[Int32, Self.total_tiles]
+    comptime ProducerCounterArray = SMemArray[Int32, Self.total_tiles]
+    comptime ConsumerCounterArray = SMemArray[Int32, Self.total_tiles]
 
     var producer_counters: Self.ProducerCounterArray
     var consumer_counters: Self.ConsumerCounterArray

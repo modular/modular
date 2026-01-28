@@ -120,8 +120,7 @@ struct FPUtils[
         Returns:
             The sign mask.
         """
-        # convert to `Int` first to bypass overflow check
-        return 1 << Int(Self.exponent_width() + Self.mantissa_width())
+        return 1 << (Self.exponent_width() + Self.mantissa_width())
 
     @staticmethod
     @always_inline
@@ -265,8 +264,9 @@ struct FPUtils[
             The biased exponent as an Int.
         """
         return Int(
-            Self.bitcast_to_uint(value) >> Self.mantissa_width()
-            & ((1 << Self.exponent_width()) - 1)
+            Self.bitcast_to_uint(value)
+            >> Scalar[Self.uint_type](Self.mantissa_width())
+            & Scalar[Self.uint_type]((1 << Self.exponent_width()) - 1)
         )
 
     @staticmethod
@@ -312,7 +312,9 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
-        return Self.bitcast_to_uint(value) & Self.mantissa_mask()
+        return Self.bitcast_to_uint(value) & Scalar[Self.uint_type](
+            Self.mantissa_mask()
+        )
 
     @staticmethod
     @always_inline

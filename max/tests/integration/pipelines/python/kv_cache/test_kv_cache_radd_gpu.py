@@ -20,8 +20,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.legacy.kernels import kv_cache_ragged_radd
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
 from test_common.context_utils import create_text_context
 
 
@@ -127,11 +131,11 @@ def test_kv_cache_radd_basic() -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),

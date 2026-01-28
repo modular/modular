@@ -58,7 +58,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from collections import OptionalReg
+from collections import Optional
 from linalg.utils import elementwise_epilogue_type
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from gpu.sync import syncwarp
@@ -300,37 +300,37 @@ fn block_scaled_mxfp8_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (k_iter * UInt(BK), block_idx.y * UInt(BM)),
+                (Int(k_iter) * BK, Int(block_idx.y) * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
                 (
-                    k_iter * UInt(BK),
-                    block_idx.x * UInt(BN),
+                    Int(k_iter) * BK,
+                    Int(block_idx.x) * BN,
                 ) if transpose_b else (
-                    block_idx.x * UInt(BN),
-                    k_iter * UInt(BK),
+                    Int(block_idx.x) * BN,
+                    Int(k_iter) * BK,
                 ),
             )
             a_scales_tma_op.async_copy_4d(
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    block_idx.y * UInt(BM // SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.y) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
             b_scales_tma_op.async_copy_4d(
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (
-                    UInt(0),
-                    UInt(0),
-                    UInt(k_iter),
-                    block_idx.x * UInt(BN // SF_MN_GROUP_SIZE),
+                    0,
+                    0,
+                    Int(k_iter),
+                    Int(block_idx.x) * (BN // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -511,7 +511,7 @@ fn sm100_block_scaled_mxfp8[
     SF_VECTOR_SIZE: Int,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -663,7 +663,7 @@ fn sm100_block_scaled_mxfp8[
         UInt(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -819,14 +819,14 @@ def test_block_scaled_mxfp8[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, atom_m[0] * atom_m[1]))
+        ceildiv(m.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, atom_m[0] * atom_m[1]))
+        ceildiv(n.value, atom_m[0] * atom_m[1])
         * Int(ceildiv(sf_k, atom_k))
         * atom_m[0]
         * atom_m[1]

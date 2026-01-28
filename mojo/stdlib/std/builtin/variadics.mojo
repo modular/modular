@@ -117,7 +117,7 @@ struct Variadic:
     # VariadicConcat
     # ===-----------------------------------------------------------------------===#
 
-    comptime concat[
+    comptime concat_types[
         T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
     ] = __mlir_attr[
         `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
@@ -126,6 +126,18 @@ struct Variadic:
 
     Parameters:
         T: The trait that types in the variadic sequences must conform to.
+        Ts: The variadic sequences to concatenate.
+    """
+
+    comptime concat_values[
+        T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
+    ] = __mlir_attr[
+        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
+    ]
+    """Represents the concatenation of multiple variadic sequences of values.
+
+    Parameters:
+        T: The types of the values in the variadic sequences.
         Ts: The variadic sequences to concatenate.
     """
 
@@ -407,8 +419,9 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-@register_passable("trivial")
-struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
+struct VariadicList[type: __TypeOfAllTypes](
+    Iterable, Sized, TrivialRegisterType
+):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -1170,7 +1183,7 @@ comptime _WrapVariadicIdxToTypeMapperToReducer[
     Prev: Variadic.TypesOfTrait[T],
     From: Variadic.TypesOfTrait[F],
     Idx: Int,
-] = Variadic.concat[Prev, Variadic.types[Mapper[From, Idx]]]
+] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
 
 
 comptime _MapVariadicAndIdxToType[
@@ -1219,7 +1232,7 @@ comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     Prev: Variadic.TypesOfTrait[T],
     From: Variadic.ValuesOfType[F],
     Idx: Int,
-] = Variadic.concat[Prev, Variadic.types[Mapper[From, Idx]]]
+] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
 
 
 comptime _MapValuesAndIdxToType[
@@ -1272,7 +1285,7 @@ comptime _MapTypeToTypeReducer[
     Prev: Variadic.TypesOfTrait[ToTrait],
     From: Variadic.TypesOfTrait[FromTrait],
     idx: Int,
-] = Variadic.concat[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
+] = Variadic.concat_types[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
 
 comptime _SliceReducer[
     Trait: type_of(AnyType),
@@ -1282,7 +1295,8 @@ comptime _SliceReducer[
     From: Variadic.TypesOfTrait[Trait],
     idx: Int,
 ] = (
-    Variadic.concat[Prev, Variadic.types[T=Trait, From[idx]]] if idx >= start
+    Variadic.concat_types[Prev, Variadic.types[T=Trait, From[idx]]] if idx
+    >= start
     and idx < end else Prev
 )
 """A reducer that extracts elements within a specified index range.
@@ -1317,9 +1331,9 @@ comptime _FilterReducer[
     From: Variadic.TypesOfTrait[Trait],
     idx: Int,
 ] = (
-    Variadic.concat[Prev, Variadic.types[T=Trait, From[idx]]] if Predicate[
-        From[idx]
-    ] else Prev
+    Variadic.concat_types[
+        Prev, Variadic.types[T=Trait, From[idx]]
+    ] if Predicate[From[idx]] else Prev
 )
 """A reducer that filters types based on a predicate function.
 

@@ -241,9 +241,7 @@ fn row_reduce[
 
     var tid: UInt = thread_idx.x
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
-        var idx_in_padded_row = UInt(
-            (tid + UInt(offset_in_row)) * UInt(simd_width)
-        )
+        var idx_in_padded_row = (tid + UInt(offset_in_row)) * UInt(simd_width)
 
         if idx_in_padded_row >= UInt(rounded_row_size):
             break
@@ -278,7 +276,7 @@ fn row_reduce[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn reduce_kernel[
     rank: Int,
@@ -343,7 +341,7 @@ fn reduce_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn small_reduce_kernel[
     rank: Int,
@@ -451,7 +449,7 @@ fn small_reduce_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn saturated_reduce_kernel[
     rank: Int,

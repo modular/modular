@@ -50,9 +50,9 @@ class BatchMetrics:
     terminated_reqs: int
     num_pending_reqs: int
     num_input_tokens: int
-    prefill_chunk_size: int
+    max_batch_input_tokens: int
     num_context_tokens: int
-    max_batch_context_length: int
+    max_batch_total_tokens: int
     batch_creation_time_s: float
     batch_execution_time_s: float
     prompt_throughput: float
@@ -75,7 +75,7 @@ class BatchMetrics:
         cls,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -83,7 +83,7 @@ class BatchMetrics:
         total_preemption_count: int,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
-        batch_size = len(inputs.batch)
+        batch_size = len(inputs.flat_batch)
         prompt_throughput = num_input_tokens / batch_execution_time_s
         generation_throughput = (
             batch_size * inputs.num_steps / batch_execution_time_s
@@ -98,11 +98,11 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
-        if paged_cache is not None:
-            cache_metrics = paged_cache.metrics
-            paged_cache.reset_metrics()
-
-            cache_hit_tokens = cache_metrics.cache_tokens
+        if kv_cache is not None:
+            cache_hit_tokens = sum(
+                kv_cache.get_metrics(replica_idx).cache_tokens
+                for replica_idx in range(kv_cache.num_replicas)
+            )
             all_tokens = cache_hit_tokens + cache_miss_tokens
             cache_hit_rate = 0.0
             # We have to handle case where denominator is 0 (empty batch)
@@ -111,11 +111,26 @@ class BatchMetrics:
                 # calculation takes chunked prefill into account.
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
-            if paged_cache.enable_kvcache_swapping_to_host:
-                used_host_kv_pct = paged_cache.host_committed_block_pct
-                total_host_kv_blocks = paged_cache.total_num_host_pages
-                h2d_blocks_copied = cache_metrics.h2d_blocks_copied
-                d2h_blocks_copied = cache_metrics.d2h_blocks_copied
+            if kv_cache.enable_kvcache_swapping_to_host:
+                total_host_kv_blocks = sum(
+                    kv_cache.get_num_host_pages(replica_idx)
+                    for replica_idx in range(kv_cache.num_replicas)
+                )
+                used_host_kv_blocks = sum(
+                    kv_cache.get_num_used_host_pages(replica_idx)
+                    for replica_idx in range(kv_cache.num_replicas)
+                )
+                used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
+                h2d_blocks_copied = sum(
+                    kv_cache.get_metrics(replica_idx).h2d_blocks_copied
+                    for replica_idx in range(kv_cache.num_replicas)
+                )
+                d2h_blocks_copied = sum(
+                    kv_cache.get_metrics(replica_idx).d2h_blocks_copied
+                    for replica_idx in range(kv_cache.num_replicas)
+                )
+
+                kv_cache.reset_metrics()
 
         return cls(
             batch_type=inputs.batch_type,
@@ -125,9 +140,9 @@ class BatchMetrics:
             terminated_reqs=num_terminated_reqs,
             num_pending_reqs=num_pending_reqs,
             num_input_tokens=num_input_tokens,
-            prefill_chunk_size=sch_config.target_tokens_per_batch_ce,
+            max_batch_input_tokens=sch_config.target_tokens_per_batch_ce,
             num_context_tokens=inputs.context_tokens,
-            max_batch_context_length=sch_config.max_batch_context_length or 0,
+            max_batch_total_tokens=sch_config.max_batch_total_tokens or 0,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             prompt_throughput=prompt_throughput,
@@ -146,8 +161,8 @@ class BatchMetrics:
 
     def pretty_format(self) -> str:
         context_tokens_str = ""
-        if self.max_batch_context_length != 0:
-            context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_context_length} toks | "
+        if self.max_batch_total_tokens != 0:
+            context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_total_tokens} toks | "
 
         kv_str = ""
         if self.total_kv_blocks != 0:
@@ -167,7 +182,7 @@ class BatchMetrics:
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
             f"Pending: {self.num_pending_reqs} reqs | "
-            f"Input Tokens: {self.num_input_tokens}/{self.prefill_chunk_size} toks | "
+            f"Input Tokens: {self.num_input_tokens}/{self.max_batch_input_tokens} toks | "
             f"{context_tokens_str}"
             f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
@@ -223,7 +238,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        paged_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -235,7 +250,7 @@ class SchedulerLogger:
         Args:
             sch_config: The scheduler configuration.
             inputs: The pipeline input / batch.
-            paged_cache: The PagedKVCacheManager, if any.
+            kv_cache: The PagedKVCacheManager, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
@@ -248,7 +263,7 @@ class SchedulerLogger:
         metrics = BatchMetrics.create(
             sch_config,
             inputs,
-            paged_cache,
+            kv_cache,
             batch_creation_time_s,
             batch_execution_time_s,
             num_pending_reqs,

@@ -22,19 +22,12 @@ from layout.tma_async import (
     RaggedTMA3DTile,
 )
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 from utils import Index, IndexList
 
 from builtin.device_passable import DevicePassable
 
 
-@register_passable("trivial")
-trait MHAOperand(DevicePassable):
+trait MHAOperand(DevicePassable, TrivialRegisterType):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     comptime dtype: DType
@@ -50,7 +43,7 @@ trait MHAOperand(DevicePassable):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         ...
 
     @always_inline
@@ -105,10 +98,9 @@ trait MHAOperand(DevicePassable):
         ...
 
 
-@register_passable("trivial")
 struct KVCacheMHAOperand[
     cache_t: KVCacheT,
-](MHAOperand):
+](MHAOperand, TrivialRegisterType):
     """An implementation for `mo.opaque` KVCacheT arguments to MHA kernels.
 
     We can eventually remove this trait and just add it as a sub-trait in the
@@ -144,7 +136,7 @@ struct KVCacheMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.cache.block_paged_ptr[tile_size](
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
         )
@@ -215,9 +207,10 @@ struct KVCacheMHAOperand[
         )
 
 
-@register_passable("trivial")
-struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
-    """An implementation for NDBuffer arguments to MHA kernels."""
+struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
+    MHAOperand, TrivialRegisterType
+):
+    """An implementation for LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
@@ -251,7 +244,7 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         var ret_ptr = self.buffer.ptr + self.buffer._offset(
             IndexList[self.layout.rank()](
                 Int(batch_idx),
@@ -260,11 +253,11 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
                 Int(head_dim_idx),
             )
         )
-        return rebind[UnsafePointer[Scalar[Self.dtype]]](ret_ptr)
+        return ret_ptr
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
-        # NDBuffer path assumes BSHD layout and all cache entries have
+        # LayoutTensor path assumes BSHD layout and all cache entries have
         # the same length.
         return self.buffer.dim[1]()
 
@@ -331,15 +324,14 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](MHAOperand):
         var rows = self.buffer.dim[0]() * self.buffer.dim[1]()
         var num_heads = self.buffer.dim[2]()
         tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=Int(rows), middle_dim=num_heads
+            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )
 
 
-@register_passable("trivial")
 struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
-    MHAOperand
+    MHAOperand, TrivialRegisterType
 ):
-    """An implementation for ragged NDBuffer arguments to MHA kernels."""
+    """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
     comptime page_size = 0
@@ -386,18 +378,18 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.dtype]]:
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer.ptr + self.buffer._offset(
             IndexList[self.layout.rank()](
-                Int(global_token_idx),
+                global_token_idx,
                 Int(head_idx),
                 Int(head_dim_idx),
             )
         )
-        return rebind[UnsafePointer[Scalar[Self.dtype]]](ret_ptr)
+        return ret_ptr
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -470,5 +462,5 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         var rows = self.buffer.dim[0]()  # total tokens
         var num_heads = self.buffer.dim[1]()
         tma = type_of(tma).create[depth=depth](
-            ctx, self.buffer.ptr, rows=Int(rows), middle_dim=num_heads
+            ctx, self.buffer.ptr, rows=rows, middle_dim=num_heads
         )

@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     RopeType,
@@ -24,15 +24,19 @@ from max.pipelines.lib import (
 
 from ..llama3 import weight_adapters
 from .model import Qwen3Model
+from .model_config import Qwen3Config
 
 qwen3_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM",
+    name="Qwen3ForCausalLM_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-8B", "Qwen/Qwen3-30B-A3B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.bfloat16: [
+            KVCacheStrategy.PAGED,
+        ],
+        SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
         ],
     },
@@ -43,4 +47,5 @@ qwen3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Qwen3Config,
 )

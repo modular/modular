@@ -13,16 +13,17 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
+from ..mistral.model_config import MistralConfig
 from . import weight_adapters
 from .model import Mistral3Model
 from .tokenizer import Mistral3Tokenizer
 
 mistral3_arch = SupportedArchitecture(
-    name="Mistral3ForConditionalGeneration",
+    name="Mistral3ForConditionalGeneration_Legacy",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
     default_weights_format=WeightsFormat.safetensors,
@@ -37,4 +38,5 @@ mistral3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=MistralConfig,
 )

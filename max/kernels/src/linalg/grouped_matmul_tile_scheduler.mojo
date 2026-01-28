@@ -17,13 +17,11 @@ from gpu import block_idx, grid_dim, thread_idx
 
 from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
-from buffer.buffer import NDBuffer
 from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable):
+struct RasterOrder(TrivialRegisterType):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -39,8 +37,7 @@ struct RasterOrder(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -92,7 +89,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # For simplicity, we always assume M is the static dimension here, because 2SM
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
-@register_passable("trivial")
 struct TileScheduler[
     offsets_layout: Layout,
     //,
@@ -105,7 +101,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-]:
+](TrivialRegisterType):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin
@@ -226,12 +222,12 @@ struct TileScheduler[
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
             num_n_blocks, group_local_block_idx, num_dynamic_dim_blocks
         )
-        var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
-        var n = UInt32(n_block_idx) * UInt32(Self.cta_group_tile_shape[1])
+        var m = m_block_idx * UInt32(Self.tile_shape[0])
+        var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
         if Self.swapAB:
-            n += UInt32(start_idx)
+            n += start_idx
         else:
-            m += UInt32(start_idx)
+            m += start_idx
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -277,7 +273,7 @@ struct TileScheduler[
         var secondary_num_blocks: UInt32 = (
             num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
         )
-        var num_blocks_per_group = UInt32(
+        var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
         var div_num_blocks_per_group = FastDiv[DType.uint32](

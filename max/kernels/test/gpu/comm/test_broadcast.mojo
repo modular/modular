@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from math import ceildiv
 from sys import size_of
 from itertools import product
 from buffer import NDBuffer
@@ -33,7 +34,7 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     rank to verify the correct source GPU was used.
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](Scalar[dtype](root + 1) + Scalar[dtype](j % 251))
+    return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
 
 # Shared test configurations - kept small to avoid CI timeouts on MI355
@@ -119,10 +120,15 @@ fn broadcast_test[
             out_ptr.unsafe_ptr(), DimList(length)
         )
 
+    # Signal buffers need payload space for 2-stage broadcast
+    var num_bytes = length * size_of[dtype]()
+    var chunk_bytes = ceildiv(num_bytes, ngpus)
+    var signal_buf_size = size_of[Signal]() + chunk_bytes
+
     for i in range(ngpus):
-        # Create and initialize signal buffers
+        # Create and initialize signal buffers (with payload space for 2-stage)
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
         list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()

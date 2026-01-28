@@ -76,8 +76,7 @@ fn is_benchmark() -> Bool:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WarpRole(ImplicitlyCopyable):
+struct WarpRole(TrivialRegisterType):
     var _role: Int32
 
     comptime MainLoad = Self(4)
@@ -86,7 +85,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __eq__(self, other: UInt) -> Bool:
-        return self._role == other
+        return self._role == Int32(other)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -98,7 +97,7 @@ struct WarpRole(ImplicitlyCopyable):
 
     @always_inline
     fn __ge__(self, other: UInt) -> Bool:
-        return self._role >= other
+        return self._role >= Int32(other)
 
     @staticmethod
     @always_inline
@@ -211,14 +210,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(a_gmem_slice_coord)),
+        (iter_idx * UInt(BK), a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+        (iter_idx * UInt(BK), b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -410,7 +409,7 @@ fn store_C[
         dtype=accum_type,
         pack=False,
         width = c_upper_pow_2_main.size,
-    ](tmem_addr | ((warp_id * 32) << 16))
+    ](tmem_addr | UInt32((warp_id * 32) << 16))
 
     # Load c_frag_lower
     # Primary load
@@ -421,7 +420,7 @@ fn store_C[
         dtype=accum_type,
         pack=False,
         width = c_lower_pow_2_main.size,
-    ](tmem_addr | ((warp_id * 32 + 16) << 16))
+    ](tmem_addr | UInt32((warp_id * 32 + 16) << 16))
 
     @parameter
     if MMA_N != prev_power_of_two(MMA_N):
@@ -435,7 +434,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_upper_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * UInt(WARP_SIZE)) << 16))
+        ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE)) << 16))
 
         c_lower_pow_2_rem = tcgen05_ld[
             datapaths=data_paths,
@@ -444,7 +443,7 @@ fn store_C[
             dtype=accum_type,
             pack=False,
             width = c_lower_pow_2_rem.size,
-        ](tmem_addr + 128 | ((warp_id * UInt(WARP_SIZE) + 16) << 16))
+        ](tmem_addr + 128 | UInt32((warp_id * UInt(WARP_SIZE) + 16) << 16))
 
     # Remainder load happens later, only if needed
     tcgen05_load_wait()
@@ -543,7 +542,7 @@ fn store_C[
                     d_reg_lower_packed,
                 )
 
-    named_barrier[num_output_warps * UInt(WARP_SIZE)]()
+    named_barrier[Int32(num_output_warps * UInt(WARP_SIZE))]()
 
     # SMEM -> GMEM: Direct TMA store
     # UMMA (tensor memory) → registers → shared memory → global memory
@@ -564,13 +563,13 @@ fn store_C[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
+        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
     if elect_one_warp:
         tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_dealloc[cta_group](tmem_addr, UInt32(max_tmem_cols))
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -762,7 +761,7 @@ fn kernel_6[
     var peer_cta_coord = (
         rank_m % UInt(cta_group),
         rank_m // UInt(cta_group),
-        UInt(rank_n),
+        rank_n,
     )  # v,m,n
 
     var a_multicast_mask: UInt16 = 0x0
@@ -777,9 +776,9 @@ fn kernel_6[
     for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= 1 << (i * cta_group)
 
-    a_multicast_mask <<= rank_m
-    b_multicast_mask <<= peer_cta_coord[0]
-    b_multicast_mask <<= rank_n * UInt(CLUSTER_M)
+    a_multicast_mask <<= UInt16(rank_m)
+    b_multicast_mask <<= UInt16(peer_cta_coord[0])
+    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
 
     var self_mask = 1 << Int(block_rank_in_cluster())
     var peer_mask = 1 << Int(block_rank_in_cluster() + 1)
@@ -801,7 +800,7 @@ fn kernel_6[
                     tma_mbar,
                     producer_phase,
                     peer_cta_coord,
-                    (UInt(block_idx.x), UInt(block_idx.y)),
+                    (block_idx.x, block_idx.y),
                     a_multicast_mask,
                     b_multicast_mask,
                     UInt(i),

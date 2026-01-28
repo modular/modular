@@ -11,10 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from collections import Optional, OptionalReg
 from sys.info import _current_target, simd_width_of
 from sys.intrinsics import _type_is_eq
 
@@ -1116,7 +1113,7 @@ fn _matmul_common[
     //,
     *,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     output_dtype: DType = dtype,
 ](
     hidden_state: LayoutTensor[
@@ -1136,7 +1133,7 @@ fn _matmul_common[
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
-        var c_ptr = UnsafePointer[Scalar[output_dtype]].alloc(TOTAL_SEQ_LEN * N)
+        var c_ptr = alloc[Scalar[output_dtype]](TOTAL_SEQ_LEN * N)
 
         c_nd = {
             c_ptr,
@@ -1146,7 +1143,7 @@ fn _matmul_common[
         }
     else:
         c_nd = {
-            UnsafePointer[Scalar[output_dtype]](),
+            UnsafePointer[Scalar[output_dtype], MutExternalOrigin](),
             RuntimeLayout[c_nd.layout].row_major(
                 IndexList[2](TOTAL_SEQ_LEN, N)
             ),
@@ -1170,7 +1167,7 @@ fn _qmatmul_common[
     *,
     group_size: Int,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -1189,7 +1186,7 @@ fn _qmatmul_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[dtype]](),
+        UnsafePointer[Scalar[dtype], MutAnyOrigin](),
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
@@ -1216,7 +1213,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     *,
     target: StaticString,
     scales_granularity_mnk: IndexList[3],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         a_type, address_space = AddressSpace.GENERIC, ...
@@ -1241,7 +1238,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[output_dtype]](),
+        UnsafePointer[Scalar[output_dtype], MutAnyOrigin](),
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
@@ -2158,7 +2155,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 @always_inline
 fn _qmatmul_gguf_quantized_alloc_output[
     quantization_encoding: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         DType.float32, address_space = AddressSpace.GENERIC, ...
@@ -2176,7 +2173,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
     # The CPU matmul codepath uses the C buffer as a workspace
     # even if an epilogue is provided, here we just allocate
     # something to ensure we don't segfault.
-    var c_ptr = UnsafePointer[Float32].alloc(TOTAL_SEQ_LEN * N)
+    var c_ptr = alloc[Float32](TOTAL_SEQ_LEN * N)
 
     c_nd = {
         c_ptr,
@@ -2193,7 +2190,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
 @always_inline
 fn _qmatmul_gguf_quantized_common[
     quantization_encoding: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         DType.float32, address_space = AddressSpace.GENERIC, ...
@@ -3355,12 +3352,10 @@ fn generic_kv_cache_radd_dispatch[
 
         var h_idx: UInt
         var hd_idx: UInt
-        h_idx, hd_idx = divmod(
-            UInt(corrected_dim), collection_t.kv_params.head_size
-        )
+        h_idx, hd_idx = divmod(corrected_dim, collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(Int(corrected_batch_idx))
-        var cache_token_idx = Int(tok_idx) + cache_length
+        var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
             Int(corrected_batch_idx), Int(h_idx), cache_token_idx, Int(hd_idx)
@@ -3526,10 +3521,10 @@ fn kv_cache_2m_iadd_dispatch[
 
         if idx[0] < m:
             cache = k_cache
-            row_idx = Int(idx[0])
+            row_idx = idx[0]
         else:
             cache = v_cache
-            row_idx = Int(idx[0] - m)
+            row_idx = idx[0] - m
 
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
@@ -3539,7 +3534,7 @@ fn kv_cache_2m_iadd_dispatch[
         h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
-        var cache_token_idx = Int(tok_idx) + cache_length
+        var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
             batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)

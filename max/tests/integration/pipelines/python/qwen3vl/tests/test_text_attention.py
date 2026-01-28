@@ -21,8 +21,12 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
-from max.nn.linear import Linear
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
+from max.nn.legacy.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
     Qwen3VLMoEDecoderAttentionWithRope,
@@ -329,10 +333,10 @@ def generate_qwen3_max_outputs(
         for seq_len in seq_lens
     ]
     for context in batch:
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    kv_cache_runtime = kv_manager.get_runtime_inputs(batch)[0]
+    kv_cache_runtime = kv_manager.get_runtime_inputs([batch])[0]
     blocks_tensor = kv_cache_runtime[0]
     cache_lengths_tensor = kv_cache_runtime[1]
     lookup_table_tensor = kv_cache_runtime[2]

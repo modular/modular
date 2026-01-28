@@ -14,6 +14,7 @@
 from sys import align_of, simd_width_of
 from os import abort
 
+from buffer import Dim, DimList, NDBuffer
 from builtin.builtin_slice import ContiguousSlice
 from builtin.device_passable import DevicePassable
 from builtin.variadics import (
@@ -26,6 +27,7 @@ from gpu import thread_idx, block_dim, lane_id
 from gpu.host import DeviceBuffer, HostBuffer
 from utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
+from utils import IndexList
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
@@ -41,6 +43,7 @@ from ._coord import (
     coord,
     coord_to_int_tuple,
     coord_to_index_list,
+    _CoordToDimList,
 )
 
 
@@ -58,7 +61,7 @@ struct TileTensor[
     element_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
         ComptimeInt[1]
     ],
-](Copyable, DevicePassable, Writable):
+](DevicePassable, ImplicitlyCopyable, TrivialRegisterType, Writable):
     comptime rank = Variadic.size(Self.shape_types)
     comptime element_size = Coord[*Self.element_shape_types].STATIC_PRODUCT
     comptime SHAPE_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN
@@ -77,7 +80,7 @@ struct TileTensor[
     comptime device_type = Self
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self.copy()
+        target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
     fn get_type_name() -> String:
@@ -102,7 +105,7 @@ struct TileTensor[
         var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         self.ptr = span.unsafe_ptr()
-        self.layout = layout^
+        self.layout = layout
 
     @always_inline
     fn __init__(
@@ -158,7 +161,7 @@ struct TileTensor[
             device_buffer.unsafe_ptr()
             .mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
-            layout^,
+            layout,
         )
 
     @always_inline
@@ -197,7 +200,7 @@ struct TileTensor[
             host_buffer.unsafe_ptr()
             .mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
-            layout^,
+            layout,
         )
 
     @always_inline("nodebug")
@@ -246,7 +249,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     fn load[
-        width: Int, alignment: Int = 1
+        width: Int = Self.element_size, alignment: Int = 1
     ](self, tuple: Coord) -> SIMD[Self.dtype, width] where Variadic.size(
         tuple.element_types
     ) == Variadic.size(Self.shape_types):
@@ -256,7 +259,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     fn store[
-        width: Int, alignment: Int = 1
+        width: Int = Self.element_size, alignment: Int = 1
     ](self, tuple: Coord, value: SIMD[Self.dtype, width]) where (
         tuple.rank == Self.rank
     ) & Self.mut:
@@ -352,6 +355,7 @@ struct TileTensor[
     @always_inline("nodebug")
     fn distribute[
         thread_layout: Layout,
+        swizzle: Optional[Swizzle] = None,
     ](self, thread_id: Int) -> TileTensor[
         shape_types = _Divide[Self.shape_types, thread_layout.shape_types],
         stride_types = _Multiply[Self.stride_types, thread_layout.shape_types],
@@ -361,7 +365,29 @@ struct TileTensor[
         linear_idx_type = Self.linear_idx_type,
         element_shape_types = Self.element_shape_types,
     ] where Self.ALL_DIMS_KNOWN:
-        return _distribute[thread_layout](self, thread_id)
+        """Distribute tensor workload across multiple threads in a structured
+        pattern.
+
+        This method partitions a tensor across multiple threads for parallel
+        processing, assigning each thread a specific portion of the tensor. The
+        distribution pattern is determined by the thread_layout parameter,
+        which defines the logical arrangement of threads.
+
+        Parameters:
+            thread_layout: Defines the logical arrangement of threads (e.g.,
+                2x2 grid of 4 threads). This layout determines how the tensor is
+                partitioned.
+            swizzle: Optional. A function that remaps the distribution pattern
+                to improve memory access patterns or cache locality.
+
+        Args:
+            thread_id: The ID of the current thread (0-based).
+
+        Returns:
+            A view into the original tensor representing the portion assigned to
+            this thread.
+        """
+        return _distribute[thread_layout, swizzle](self, thread_id)
 
     @always_inline
     fn fill[
@@ -444,7 +470,7 @@ struct TileTensor[
             for i in range(num_elements):
                 var idx = self.layout(Idx(i))
                 self.ptr.mut_cast[True]()[idx] = val
-        return self.copy()
+        return self
 
     @always_inline("nodebug")
     fn dim[i: Int](self) -> Scalar[Self.linear_idx_type]:
@@ -557,7 +583,7 @@ struct TileTensor[
             )
 
         # Strides remain unchanged
-        var new_layout = Layout(new_shape^, self.layout.stride)
+        var new_layout = Layout(new_shape, self.layout.stride)
 
         return TileTensor[
             shape_types=NewShapeTypes,
@@ -567,7 +593,7 @@ struct TileTensor[
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
             element_shape_types = Self.element_shape_types,
-        ](self.ptr + offset, new_layout^)
+        ](self.ptr + offset, new_layout)
 
     # ===------------------------------------------------------------------=== #
     # Vectorization
@@ -720,7 +746,7 @@ struct TileTensor[
             Coord(ComptimeInt[1]()),
         )
 
-        return Self.CoalescedType(self.ptr, new_layout^)
+        return Self.CoalescedType(self.ptr, new_layout)
 
     @always_inline("nodebug")
     fn to_layout_tensor(
@@ -749,6 +775,38 @@ struct TileTensor[
             layout.RuntimeLayout[result.layout](
                 coord_to_index_list(self.layout.shape),
                 coord_to_index_list(self.layout.stride),
+            ),
+        }
+
+    @always_inline("nodebug")
+    fn _to_ndbuffer(
+        self,
+        out result: NDBuffer[
+            Self.dtype,
+            Self.rank,
+            Self.origin,
+            _CoordToDimList[*Self.shape_types],
+            _CoordToDimList[*Self.stride_types],
+            address_space = Self.address_space,
+        ],
+    ):
+        """Return an NDBuffer with the same shape, stride, and address space
+        of this tensor. Currently it expects flat layouts.
+
+        This is a utility to help with porting NDBuffer methods to this type.
+
+        Returns:
+            An NDBuffer with the same shape, stride, and address space of
+            this tensor.
+        """
+
+        return {
+            self.ptr,
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(self.layout.shape)
+            ),
+            rebind[IndexList[Self.rank]](
+                coord_to_index_list(self.layout.stride)
             ),
         }
 
@@ -789,7 +847,7 @@ struct TileTensor[
         `MutAnyOrigin` can alias any memory value, so Mojo's ASAP
         destruction will not apply during the lifetime of the tensor.
         """
-        return {self.ptr.as_any_origin(), self.layout.copy()}
+        return {self.ptr.as_any_origin(), self.layout}
 
 
 @always_inline("nodebug")
@@ -818,7 +876,7 @@ fn stack_allocation[
             Scalar[dtype],
             address_space=address_space,
         ](),
-        layout^,
+        layout,
     )
 
 
@@ -838,6 +896,7 @@ fn _pretty_print_2d_tensor[
 @always_inline("nodebug")
 fn _distribute[
     thread_layout: Layout,
+    swizzle: Optional[Swizzle] = None,
 ](
     data_layout_tensor: TileTensor,
     thread_id: Int,
@@ -854,7 +913,20 @@ fn _distribute[
     linear_idx_type = data_layout_tensor.linear_idx_type,
     element_shape_types = data_layout_tensor.element_shape_types,
 ]:
-    """A simplified implementation of LayoutTensor.distribute on TileTensor."""
+    """A simplified implementation of LayoutTensor.distribute on TileTensor.
+
+    Parameters:
+        thread_layout: Defines the logical arrangement of threads.
+        swizzle: Optional swizzle function to remap the distribution pattern
+            for improved memory access patterns.
+
+    Args:
+        data_layout_tensor: The tensor to distribute.
+        thread_id: The ID of the current thread (0-based).
+
+    Returns:
+        A view into the tensor for the specified thread.
+    """
 
     var offset: UInt = 0
 
@@ -864,7 +936,19 @@ fn _distribute[
         comptime shape_i = thread_layout.shape_types[i].STATIC_VALUE
         var thread_coord_i = (thread_id // stride_i) % shape_i
         offset += UInt(
-            thread_coord_i * Int(data_layout_tensor.layout.stride[i].value())
+            thread_coord_i * data_layout_tensor.layout.stride[i].value()
+        )
+
+    # Swizzling applies to the index of elements rather than scalars because
+    # the former is the unit in distribution.
+    var swizzled_offset = offset
+
+    @parameter
+    if swizzle:
+        comptime swizzle_fn = swizzle.value()
+        comptime element_size = data_layout_tensor.element_size
+        swizzled_offset = UInt(
+            swizzle_fn(Int(offset) // element_size) * element_size
         )
 
     comptime ShapeType = Coord[
@@ -879,7 +963,7 @@ fn _distribute[
     __comptime_assert StrideType.ALL_DIMS_KNOWN
     var stride = StrideType()
 
-    var layout = Layout(shape^, stride^)
+    var layout = Layout(shape, stride)
 
     return TileTensor[
         data_layout_tensor.dtype,
@@ -888,8 +972,8 @@ fn _distribute[
         linear_idx_type = data_layout_tensor.linear_idx_type,
         element_shape_types = data_layout_tensor.element_shape_types,
     ](
-        UnsafePointer(to=data_layout_tensor.ptr[offset]),
-        layout^,
+        UnsafePointer(to=data_layout_tensor.ptr[swizzled_offset]),
+        layout,
     )
 
 
@@ -961,7 +1045,7 @@ fn _tile[
         offset += UInt(
             tile_coords[i].value()
             * tile_shape[i].value()
-            * Int(data_layout_tensor.layout.stride[i].value())
+            * data_layout_tensor.layout.stride[i].value()
         )
 
     var tile_layout = Layout(
@@ -1036,7 +1120,7 @@ fn _vectorize[
     var new_shape = Coord[*NewShapeTypes]()
     var new_stride = Coord[*NewStrideTypes]()
 
-    var new_layout = Layout(new_shape^, new_stride^)
+    var new_layout = Layout(new_shape, new_stride)
 
     return TileTensor[
         shape_types=NewShapeTypes,
@@ -1046,7 +1130,7 @@ fn _vectorize[
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
         element_shape_types=vector_shape_types,
-    ](data_layout_tensor.ptr, new_layout^)
+    ](data_layout_tensor.ptr, new_layout)
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:

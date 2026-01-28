@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from random import random_si64, random_float64
 from sys import align_of, size_of, env_get_bool
 
@@ -26,10 +26,10 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured import (
+from linalg.matmul.gpu.sm100_structured.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
-    MatmulConfig,
 )
+from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import Index, IndexList
@@ -180,7 +180,7 @@ def test_matmul_sm100_epilogue[
         k_group_size=k_group_size,
     )
 
-    comptime optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
+    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
         test_lambda_add_coords_summ
     ) if test_lambda_fn else None
 

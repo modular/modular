@@ -28,7 +28,7 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
     Field,
     ModelWrapValidatorHandler,
@@ -53,8 +53,8 @@ from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
-# Default prefill chunk size for chunked prefill and memory estimation.
-DEFAULT_PREFILL_CHUNK_SIZE = 8192
+# Default max batch input tokens for chunked prefill and memory estimation.
+DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
 
 class PipelineConfig(ConfigFileModel):
@@ -67,169 +67,245 @@ class PipelineConfig(ConfigFileModel):
     default.
     """
 
-    max_length: int | None = Field(default=None)
-    """Maximum sequence length of the model."""
+    max_length: int | None = Field(
+        default=None, description="Maximum sequence length of the model."
+    )
 
-    pipeline_role: PipelineRole = Field(default=PipelineRole.PrefillAndDecode)
-    """Whether the pipeline should serve both a prefill or decode role or both."""
+    pipeline_role: PipelineRole = Field(
+        default=PipelineRole.PrefillAndDecode,
+        description=(
+            "Whether the pipeline should serve both a prefill or decode role or "
+            "both."
+        ),
+    )
 
-    max_batch_size: int | None = Field(default=None)
-    """Maximum batch size to execute with the model.
-    When not specified (None), we determine this value dynamically. For users
-    launching in a server scenario, the expectation is that this value should be
-    set higher based on server capacity.
-    """
+    max_batch_size: int | None = Field(
+        default=None,
+        description=(
+            "Maximum batch size to execute with the model. When not specified "
+            "(None), this value is determined dynamically. For server launches, "
+            "set this higher based on server capacity."
+        ),
+    )
 
-    max_ce_batch_size: int = Field(default=192)
-    """Maximum cache size to reserve for a single context encoding batch.
-    The actual limit is the lesser of this and `max_batch_size`."""
+    max_queue_size_tg: int | None = Field(
+        default=None,
+        description=(
+            "Maximum number of requests in decode queue. By default, this is "
+            "max_batch_size."
+        ),
+    )
 
-    max_queue_size_tg: int | None = Field(default=None)
-    """Maximum number of requests in decode queue. By default, this is max-batch-size."""
+    min_batch_size_tg: int | None = Field(
+        default=None,
+        description=(
+            "Soft floor on the decode batch size. If the TG batch size is "
+            "larger, the scheduler continues TG batches; if it falls below, the "
+            "scheduler prioritizes CE. This is not a strict minimum. By "
+            "default, this is max_queue_size_tg. Experimental for the TTS "
+            "scheduler."
+        ),
+    )
 
-    min_batch_size_tg: int | None = Field(default=None)
-    """Specifies a soft floor on the decode batch size.
+    ep_size: int = Field(
+        default=1,
+        description=(
+            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
+            "or the total number of GPUs across nodes."
+        ),
+    )
 
-    If the TG batch size is larger than this value, the scheduler will continue to
-    run TG batches. If it falls below, the scheduler will prioritize CE. Note that
-    this is NOT a strict minimum! By default, this is max-queue-size-tg.
+    ce_delay_ms: float = Field(
+        default=0.0,
+        description=(
+            "Duration of scheduler sleep prior to starting a prefill batch. "
+            "Experimental for the TTS scheduler."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    enable_prioritize_first_decode: bool = Field(
+        default=False,
+        description=(
+            "When enabled, the scheduler always runs a TG batch immediately "
+            "after a CE batch with the same requests. This may reduce "
+            "time-to-first-chunk latency. Experimental for the TTS scheduler."
+        ),
+    )
 
-    ep_size: int = Field(default=1)
-    """The expert parallelism size. Needs to be 1 (no expert parallelism) or the
-    total number of GPUs across nodes."""
+    enable_chunked_prefill: bool = Field(
+        default=True,
+        description=(
+            "Enable chunked prefill to split context encoding requests into "
+            "multiple chunks based on max_batch_input_tokens."
+        ),
+    )
 
-    ce_delay_ms: float = Field(default=0.0)
-    """Duration of scheduler sleep prior to starting a prefill batch.
+    enable_in_flight_batching: bool = Field(
+        default=False,
+        description=(
+            "When enabled, prioritizes token generation by batching it with "
+            "context encoding requests."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    max_num_steps: int = Field(
+        default=-1,
+        description=(
+            "The number of steps to run for multi-step scheduling. -1 specifies "
+            "a default value based on configuration and platform. Ignored for "
+            "models which are not auto-regressive (e.g. embedding models)."
+        ),
+    )
 
-    enable_prioritize_first_decode: bool = Field(default=False)
-    """When enabled, the scheduler will always run a TG batch immediately after a CE batch,
-    with the same requests. This may be useful for decreasing time-to-first-chunk latency.
+    max_batch_input_tokens: int = Field(
+        default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
+        description=(
+            "The target number of un-encoded tokens to include in each batch. "
+            "This value is used for chunked prefill and memory estimation."
+        ),
+    )
 
-    This is an experimental flag solely for the TTS scheduler. Do not use unless
-    you know what you are doing.
-    """
+    enable_echo: bool = Field(
+        default=False,
+        description="Whether the model should be built with echo capabilities.",
+    )
 
-    enable_chunked_prefill: bool = Field(default=True)
-    """Enable chunked prefill to split context encoding requests into multiple chunks
-    based on 'prefill_chunk_size'."""
+    pool_embeddings: bool = Field(
+        default=True, description="Whether to pool embedding outputs."
+    )
 
-    enable_in_flight_batching: bool = Field(default=False)
-    """When enabled, prioritizes token generation by batching it with context
-    encoding requests."""
-
-    max_num_steps: int = Field(default=-1)
-    """The number of steps to run for multi-step scheduling. -1 specifies a default value based on
-    configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
-    models)."""
-
-    prefill_chunk_size: int = Field(default=DEFAULT_PREFILL_CHUNK_SIZE)
-    """The target number of un-encoded tokens to include in each batch.
-    This value is used for chunked prefill and memory estimation."""
-
-    enable_echo: bool = Field(default=False)
-    """Whether the model should be built with echo capabilities."""
-
-    pool_embeddings: bool = Field(default=True)
-    """Whether to pool embedding outputs."""
-
-    chat_template: Path | None = Field(default=None)
-    """Optional custom chat template to override the one shipped with the
-    HuggingFace model config. Can be either:
-    - A Path pointing to a file containing the template
-
-    If a Path is provided, the file will be read during config resolution and
-    the content will be stored as a string. This allows customizing the prompt
-    formatting for different use cases. If None, the model's default chat
-    template will be used."""
+    chat_template: Path | None = Field(
+        default=None,
+        description=(
+            "Optional custom chat template to override the one shipped with the "
+            "HuggingFace model config. If a path is provided, the file is read "
+            "during config resolution and the content stored as a string. If "
+            "None, the model's default chat template is used."
+        ),
+    )
 
     use_experimental_kernels: str = Field(
-        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false")
+        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
+        description=(
+            "Enables using experimental mojo kernels with max serve. The "
+            "kernels could be unstable or incorrect."
+        ),
     )
-    """Enables using experimental mojo kernels with max serve.
-    The kernels could be unstable, incorrect, or otherwise have issues.
-    """
 
     use_vendor_blas: str = Field(
-        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false")
+        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
+        description=(
+            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
+            "serve. Currently, this just replaces matmul calls."
+        ),
     )
-    """Enables using the vendor blas libraries (cublas/hipblas/etc) with max serve.
-    Currently, this just replaces matmul calls, but it could replace other numeric functions in the future.
-    """
 
-    pdl_level: str = Field(default=os.environ.get("PDL_LEVEL", "0"))
-    """Level of overlap of kernel launch via programmatic dependent grid control."""
+    pdl_level: str = Field(
+        default=os.environ.get("PDL_LEVEL", "0"),
+        description=(
+            "Level of overlap of kernel launch via programmatic dependent grid "
+            "control."
+        ),
+    )
 
-    custom_architectures: list[str] = Field(default_factory=list)
-    """A list of custom architecture implementations to register.
-    Each input can either be a raw module name or an import path followed by a colon and the module name.
-    Ex:
-    - `my_module`
-    - `folder/path/to/import:my_module`
+    custom_architectures: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Custom architecture implementations to register. Each input can "
+            "either be a raw module name or an import path followed by a colon "
+            "and the module name. Each module must expose an ARCHITECTURES list "
+            "of architectures to register."
+        ),
+    )
 
-    Each module must expose an `ARCHITECTURES` list of architectures to register.
-    """
+    zmq_endpoint_base: str = Field(
+        default_factory=generate_zmq_ipc_path,
+        description=(
+            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
+            "endpoints across MAX Serve instances on the same host. Example: "
+            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
+        ),
+    )
 
-    zmq_endpoint_base: str = Field(default_factory=generate_zmq_ipc_path)
-    """The prefix for the ZMQ endpoints used for IPC. This prefix ensures that the
-    ZMQ endpoints are unique across multiple MAX Serve instances running on the
-    same host. This should be randomly generated when the PipelineConfig is created.
-    Ex:
-    - lora_request_zmq_endpoint: f"{zmq_endpoint_base}-lora_request"
-    - lora_response_zmq_endpoint: f"{zmq_endpoint_base}-lora_response"
-    """
+    execute_empty_batches: bool = Field(
+        default=False,
+        description="Whether the scheduler should execute empty batches.",
+    )
 
-    execute_empty_batches: bool = Field(default=False)
-    """Whether the scheduler should execute empty batches."""
+    max_batch_total_tokens: int | None = Field(
+        default=None,
+        description=(
+            "Ensures that the sum of the context length in a batch does not "
+            "exceed max_batch_total_tokens. If None, the sum is not limited."
+        ),
+    )
 
-    max_batch_context_length: int | None = Field(default=None)
-    """Ensures that the sum of the context length in a batch does not exceed max_batch_context_length.
+    force: bool = Field(
+        default=False,
+        description=(
+            "Skip validation of user provided flags against the architecture's "
+            "required arguments."
+        ),
+    )
 
-    If None, the sum of the context length in batch is not limited.
-    """
+    kvcache_ce_watermark: float = Field(
+        default=0.95,
+        description=(
+            "Projected cache usage threshold for scheduling CE requests, "
+            "considering current and incoming requests. CE is scheduled if "
+            "either projected usage stays below this threshold or no active "
+            "requests exist. Higher values can cause more preemptions."
+        ),
+    )
 
-    force: bool = Field(default=False)
-    """Skip validation of user provided flags against the architecture's required arguments."""
+    enable_overlap_scheduler: bool = Field(
+        default=False,
+        description=(
+            "Whether to enable the overlap scheduler. This feature allows the scheduler "
+            "to run alongside GPU execution. This helps improve GPU utilization. "
+            "This is an experimental feature which may crash and burn."
+        ),
+    )
 
-    kvcache_ce_watermark: float = Field(default=0.95)
-    """Projected cache usage threshold for scheduling CE requests, considers current + incoming
-    request. CE is scheduled if either projected usage stays below this threshold OR no active
-    requests exist. Greater KVCache utilization (as controlled by this parameter) was
-    found to cause more preemptions.
-    """
-
-    use_module_v3: bool = Field(default=False)
-    """Whether to use the ModuleV3 architecture if it exists."""
+    use_legacy_module: bool = Field(
+        default=True,
+        description=(
+            "Whether to use the legacy Module architecture (default=True for backward "
+            "compatibility). Set to False to use the new Module-based architecture when "
+            "available."
+        ),
+    )
 
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
     # config fields are validated.
-    defer_resolve: bool = Field(default=False)
-    """Whether to defer resolving the pipeline config."""
+    defer_resolve: bool = Field(
+        default=False,
+        description="Whether to defer resolving the pipeline config.",
+    )
 
-    _model: MAXModelConfig = PrivateAttr(default_factory=MAXModelConfig)
-    """The model config."""
+    model: MAXModelConfig = Field(
+        default_factory=MAXModelConfig, description="The model config."
+    )
 
-    _draft_model: MAXModelConfig | None = PrivateAttr(default=None)
-    """The draft model config."""
+    draft_model: MAXModelConfig | None = Field(
+        default=None, description="The draft model config."
+    )
 
-    _sampling: SamplingConfig = PrivateAttr(default_factory=SamplingConfig)
-    """The sampling config."""
+    sampling: SamplingConfig = Field(
+        default_factory=SamplingConfig, description="The sampling config."
+    )
 
-    _profiling: ProfilingConfig = PrivateAttr(default_factory=ProfilingConfig)
-    """The profiling config."""
+    profiling: ProfilingConfig = Field(
+        default_factory=ProfilingConfig, description="The profiling config."
+    )
 
-    _lora: LoRAConfig | None = PrivateAttr(default=None)
-    """The LoRA config."""
+    lora: LoRAConfig | None = Field(
+        default=None, description="The LoRA config."
+    )
 
-    _speculative: SpeculativeConfig | None = PrivateAttr(default=None)
-    """The SpeculativeConfig."""
+    speculative: SpeculativeConfig | None = Field(
+        default=None, description="The SpeculativeConfig."
+    )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -297,7 +373,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if lora_kwargs.get("enable_lora", False):
-            self._lora = LoRAConfig(**lora_kwargs)
+            self.lora = LoRAConfig(**lora_kwargs)
         # TODO: We should add an elif to check / error out if other LoRA params
         # are provided, but enable_lora is not. We can't do this today as our
         # click PipelineConfig autogenerates defaults for all fields, including
@@ -313,7 +389,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if draft_kwargs.get("model_path", "") != "":
-            self._draft_model = MAXModelConfig(**draft_kwargs)
+            self.draft_model = MAXModelConfig(**draft_kwargs)
         # TODO: We should add an elif to check / error out if other draft model
         # params are provided, but model_path is not. We can't do this today
         # as our click PipelineConfig autogenerates defaults for all fields,
@@ -336,21 +412,21 @@ class PipelineConfig(ConfigFileModel):
                 k: v for k, v in speculative_kwargs.items() if v is not None
             }
             if filtered_kwargs:
-                self._speculative = SpeculativeConfig(**filtered_kwargs)
-                assert self._draft_model is not None
+                self.speculative = SpeculativeConfig(**filtered_kwargs)
+                assert self.draft_model is not None
                 # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
-                if self._speculative.is_eagle():
+                if self.speculative.is_eagle():
                     assert (
-                        len(self._draft_model.huggingface_config.architectures)
+                        len(self.draft_model.huggingface_config.architectures)
                         == 1
                     )
-                    hf_arch = (
-                        self._draft_model.huggingface_config.architectures[0]
-                    )
+                    hf_arch = self.draft_model.huggingface_config.architectures[
+                        0
+                    ]
                     if hf_arch == "LlamaForCausalLM":
-                        self._draft_model.huggingface_config.architectures[
-                            0
-                        ] = "EagleLlamaForCausalLM"
+                        self.draft_model.huggingface_config.architectures[0] = (
+                            "EagleLlamaForCausalLM"
+                        )
 
     def _process_remaining_config_classes(
         self, unmatched_kwargs: dict[str, Any]
@@ -364,11 +440,11 @@ class PipelineConfig(ConfigFileModel):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
-            # NOTE: _model must come before _sampling so that
+            # NOTE: model must come before sampling so that
             # SamplingConfig can use generation_config from the model
-            "_model",
-            "_sampling",
-            "_profiling",
+            "model",
+            "sampling",
+            "profiling",
         ]
 
         for config_name in config_mappings:
@@ -381,8 +457,7 @@ class PipelineConfig(ConfigFileModel):
                     matched_kwargs[key] = value
                 # Check if this is a KVCache config param
                 elif (
-                    config_name == "_model"
-                    and key in KVCacheConfig.model_fields
+                    config_name == "model" and key in KVCacheConfig.model_fields
                 ):
                     kv_cache_kwargs[key] = value
 
@@ -408,16 +483,16 @@ class PipelineConfig(ConfigFileModel):
         Create and set a config object with special handling for different config types.
 
         Args:
-            config_name: Name of the config attribute (e.g., "_model")
+            config_name: Name of the config attribute (e.g., "model")
             config_class: The config class to instantiate
             matched_kwargs: kwargs that matched the config class fields
             kv_cache_kwargs: kwargs for KVCache config (model config only)
         """
-        if config_name == "_model" and kv_cache_kwargs:
+        if config_name == "model" and kv_cache_kwargs:
             # Create new model config with updated KVCache config
             model_config = config_class(**matched_kwargs)
 
-            if self._draft_model:
+            if self.draft_model:
                 memory_util = kv_cache_kwargs.get(
                     "device_memory_utilization", 0.9
                 )
@@ -426,27 +501,27 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config._kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
-            if self._draft_model:
+            if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self._draft_model._kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
 
-        elif config_name == "_sampling":
-            if hasattr(self, "_model") and self._model:
-                assert isinstance(self._model, MAXModelConfig)
+        elif config_name == "sampling":
+            if hasattr(self, "model") and self.model:
+                assert isinstance(self.model, MAXModelConfig)
                 assert hasattr(
                     config_class, "from_generation_config_sampling_defaults"
                 )
                 sampling_config = config_class.from_generation_config_sampling_defaults(
-                    sampling_params_defaults=self._model.sampling_params_defaults,
+                    sampling_params_defaults=self.model.sampling_params_defaults,
                     **matched_kwargs,
                 )
             else:
                 sampling_config = config_class(**matched_kwargs)
 
-            if self.enable_echo or self._draft_model:
+            if self.enable_echo or self.draft_model:
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
@@ -515,8 +590,16 @@ class PipelineConfig(ConfigFileModel):
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
 
-        defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()
-        if defer_resolve not in {"1", "true", "yes"}:
+        # Check both the defer_resolve field and the environment variable
+        defer_resolve_env = os.getenv(
+            "MODULAR_PIPELINE_DEFER_RESOLVE", ""
+        ).lower()
+        should_defer = self.defer_resolve or defer_resolve_env in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not should_defer:
             self.resolve()
         return self
 
@@ -647,19 +730,19 @@ class PipelineConfig(ConfigFileModel):
 
         config_objects = [
             ("PipelineConfig", self),
-            ("MAXModelConfig", self._model),
-            ("SamplingConfig", self._sampling),
-            ("KVCacheConfig", self._model._kv_cache),
+            ("MAXModelConfig", self.model),
+            ("SamplingConfig", self.sampling),
+            ("KVCacheConfig", self.model.kv_cache),
         ]
 
         # Add draft model configurations if present
-        if self._draft_model is not None:
+        if self.draft_model is not None:
             config_objects.extend(
                 [
-                    ("Draft_MAXModelConfig", self._draft_model),
+                    ("Draft_MAXModelConfig", self.draft_model),
                     (
                         "Draft_KVCacheConfig",
-                        self._draft_model._kv_cache,
+                        self.draft_model.kv_cache,
                     ),
                 ]
             )
@@ -713,7 +796,7 @@ class PipelineConfig(ConfigFileModel):
             self.sampling.enable_penalties = False
 
         # Validate LoRA compatibility with model configuration
-        if self._lora and self._lora.enable_lora:
+        if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
         # By this point, we should have a valid model_path.
@@ -731,6 +814,43 @@ class PipelineConfig(ConfigFileModel):
 
             self._validate_pipeline_config_for_speculative_decoding()
 
+        # Disable features that are not supported with the overlap scheduler.
+        if self.enable_overlap_scheduler:
+            if self.pipeline_role != PipelineRole.PrefillAndDecode:
+                raise ValueError(
+                    "The Overlap scheduler does not support Disaggregated Inference yet. "
+                    "It is only supported with the PrefillAndDecode pipeline role. "
+                    f"Found {self.pipeline_role}."
+                )
+            if self.model.kv_cache.enable_prefix_caching:
+                raise ValueError(
+                    "Prefix caching is not supported with the Overlap scheduler."
+                )
+            if self.enable_chunked_prefill:
+                raise ValueError(
+                    "Chunked prefill is not supported with the Overlap scheduler."
+                )
+            if self.sampling.enable_structured_output:
+                raise ValueError(
+                    "Structured outputs are not supported with the Overlap scheduler."
+                )
+            if self.sampling.enable_variable_logits:
+                raise ValueError(
+                    "Variable logits are not supported with the Overlap scheduler. "
+                )
+            if self.speculative:
+                raise ValueError(
+                    "Speculative decoding is not supported with the Overlap scheduler."
+                )
+            if self.lora:
+                raise ValueError(
+                    "LoRA is not supported with the Overlap scheduler."
+                )
+            if self.max_num_steps > 1:
+                raise ValueError(
+                    "Max num steps > 1 is not supported with the Overlap scheduler."
+                )
+
     def _validate_and_resolve_max_num_steps(self) -> None:
         """
         Validate and resolve the max_num_steps field. These are platform-specific.
@@ -746,13 +866,13 @@ class PipelineConfig(ConfigFileModel):
         Validate the pipeline configs when used in speculative decoding mode.
         """
         assert self.draft_model is not None
-        assert self._speculative is not None
+        assert self.speculative is not None
 
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.draft_model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if not draft_arch:
@@ -762,7 +882,7 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
         if not target_arch:
             raise ValueError(
@@ -770,7 +890,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         # Validate that their tokenizers are identical.
-        if self._speculative.is_standalone():
+        if self.speculative.is_standalone():
             if draft_arch != target_arch:
                 raise ValueError(
                     f"architecture for the draft_model ({draft_arch.name}) does not match the architecture retrieved for the target model ({target_arch.name})"
@@ -834,7 +954,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -858,9 +978,9 @@ class PipelineConfig(ConfigFileModel):
         devices = load_devices(model_config.device_specs)
 
         # Validate LoRA support - currently only Llama3 models support LoRA
-        if self._lora and self._lora.enable_lora:
+        if self.lora and self.lora.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
-            if arch.name != "LlamaForCausalLM":
+            if "LlamaForCausalLM" not in arch.name:
                 raise ValueError(
                     f"LoRA is not currently supported for architecture '{arch.name}'. "
                     f"LoRA support is currently only available for Llama-3.x models (LlamaForCausalLM architecture). "
@@ -876,8 +996,8 @@ class PipelineConfig(ConfigFileModel):
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
         if "Gemma3" in arch.name:
-            model_config._kv_cache.kv_cache_page_size = max(
-                model_config._kv_cache.kv_cache_page_size, 256
+            model_config.kv_cache.kv_cache_page_size = max(
+                model_config.kv_cache.kv_cache_page_size, 256
             )
 
         model_config.validate_multi_gpu_supported(
@@ -927,17 +1047,17 @@ class PipelineConfig(ConfigFileModel):
                 )
                 self.max_length = clamped_max_seq_len
 
-        # Validate whether the architecture requires a max batch context length to be specified.
+        # Validate whether the architecture requires a max batch total tokens to be specified.
         # This needs to be done after max_length is resolved.
         if (
             arch.requires_max_batch_context_length
-            and self.max_batch_context_length is None
+            and self.max_batch_total_tokens is None
         ):
             logger.warning(
-                f"Architecture '{arch.name}' requires max-batch-context-length to be specified but found None. "
+                f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
                 f"Defaulting to the max sequence length of the model: {self.max_length}"
             )
-            self.max_batch_context_length = self.max_length
+            self.max_batch_total_tokens = self.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -957,7 +1077,7 @@ class PipelineConfig(ConfigFileModel):
         Returns:
             The graph quantization encoding corresponding to the CLI encoding.
         """
-        return self._model.graph_quantization_encoding
+        return self.model.graph_quantization_encoding
 
     def log_pipeline_info(self) -> None:
         """Log comprehensive pipeline and KVCache configuration information.
@@ -969,7 +1089,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if arch is None:
@@ -1081,7 +1201,9 @@ class PipelineConfig(ConfigFileModel):
         logger.info(
             f"    chunked_prefill        : {self.enable_chunked_prefill}"
         )
-        logger.info(f"    prefill_chunk_size     : {self.prefill_chunk_size}")
+        logger.info(
+            f"    max_batch_input_tokens : {self.max_batch_input_tokens}"
+        )
         logger.info(
             f"    in_flight_batching     : {self.enable_in_flight_batching}"
         )
@@ -1092,7 +1214,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info("=" * 60)
 
         # Primary model kvcache config
-        kv_config = self.model._kv_cache
+        kv_config = self.model.kv_cache
         _log_kvcache_details(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
@@ -1100,8 +1222,8 @@ class PipelineConfig(ConfigFileModel):
             logger.info("")
             logger.info("Draft Model KVCache Configuration:")
             logger.info("-" * 40)
-            assert self._draft_model is not None
-            draft_kv_config = self._draft_model._kv_cache
+            assert self.draft_model is not None
+            draft_kv_config = self.draft_model.kv_cache
             _log_kvcache_details(draft_kv_config)
 
         logger.info("")
@@ -1115,7 +1237,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
 
         if arch is None:
@@ -1127,7 +1249,7 @@ class PipelineConfig(ConfigFileModel):
         # Get pipeline task
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_module_v3=self.use_module_v3,
+            use_legacy_module=self.use_legacy_module,
         )
         if arch is None:
             raise ValueError(
@@ -1139,7 +1261,7 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config
-        kv_config = self.model._kv_cache
+        kv_config = self.model.kv_cache
         if kv_config._available_cache_memory is None:
             raise ValueError(
                 "KVCache config is not available after config resolution."
@@ -1165,51 +1287,6 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    max_seq_len        : {self.max_length}")
         logger.info(f"    cache_memory       : {memory_str}")
         logger.info("")
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        return {
-            "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
-            "pipeline_role": "Whether the pipeline should serve both a prefill or decode role or both.",
-            "max_batch_size": "Define the maximum batch size to execute with the model. When not specified (None), we determine this value dynamically. For users launching in a server scenario, the expectation is that this value should be set higher based on server capacity.",
-            "max_queue_size_tg": "Maximum number of requests in decode queue. By default, this is max-batch-size.",
-            "min_batch_size_tg": "Specifies a soft floor on the decode batch size. If the TG batch size is larger than this value, the scheduler will continue to run TG batches. If it falls below, the scheduler will prioritize CE. This is an experimental flag solely for the TTS scheduler.",
-            "ce_delay_ms": "Duration of scheduler sleep prior to starting a prefill batch. This is an experimental flag solely for the TTS scheduler. Default is 0.0.",
-            "enable_prioritize_first_decode": "When enabled, the scheduler will always run a TG batch immediately after a CE batch, with the same requests. This may be useful for decreasing time-to-first-chunk latency. This is an experimental flag solely for the TTS scheduler. Default is false.",
-            "experimental_background_queue": "When enabled, offloads queue draining to a background thread for improved performance. This is an experimental flag. Default is false.",
-            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `prefill-chunk-size`. Default is true.",
-            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Default is false.",
-            "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is -1 which specifies a default value based on configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding models).",
-            "prefill_chunk_size": "The target number of un-encoded tokens to include in each batch. This value is used for chunked prefill and memory estimation. Default is 8192.",
-            "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
-            "pool_embeddings": "Whether to pool embedding outputs. Default is true.",
-            "use_experimental_kernels": "Whether to use experimental kernels. Default is false.",
-            "max_batch_context_length": "Ensures that the sum of the context length in a batch does not exceed max_batch_context_length. If None, the sum of the context length in batch is not limited.",
-            "pdl_level": "Level of overlap of kernel launch via programmatic dependent grid control. Default is 0.",
-            "custom_architectures": "A list of custom architecture implementations to register. Each input can either be a raw module name or an import path followed by a colon and the module name.",
-            "kvcache_ce_watermark": "Projected cache usage threshold for scheduling CE requests, considers current + incoming request. CE is scheduled if either projected usage stays below this threshold OR no active requests exist. Greater KVCache utilization (as controlled by this parameter) was found to cause more preemptions. Default watermark value is 0.95.",
-        }
-
-    @property
-    def model(self) -> MAXModelConfig:
-        """Accessor for the MAXModelConfig instance."""
-        return self._model
-
-    @property
-    def draft_model(self) -> MAXModelConfig | None:
-        return self._draft_model
-
-    @property
-    def sampling(self) -> SamplingConfig:
-        return self._sampling
-
-    @property
-    def profiling(self) -> ProfilingConfig:
-        return self._profiling
-
-    @property
-    def lora(self) -> LoRAConfig | None:
-        return self._lora
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:
@@ -1257,49 +1334,66 @@ class PrometheusMetricsMode(str, Enum):
 
 class AudioGenerationConfig(PipelineConfig):
     # TODO: Make these flags more discoverable.
-    audio_decoder: str = Field(default="")
-    """The name of the audio decoder model architecture."""
+    audio_decoder: str = Field(
+        default="",
+        description="The name of the audio decoder model architecture.",
+    )
 
-    audio_decoder_weights: str = Field(default="")
-    """The path to the audio decoder weights file."""
+    audio_decoder_weights: str = Field(
+        default="", description="The path to the audio decoder weights file."
+    )
 
-    chunk_size: list[int] | None = Field(default=None)
-    """The chunk sizes to use for streaming.
-    If this is an int, then fixed-size chunks of the given size are used
-    If this is a list, then variable chunk sizes are used."""
+    chunk_size: list[int] | None = Field(
+        default=None,
+        description=(
+            "The chunk sizes to use for streaming. If this is an int, fixed-size "
+            "chunks of the given size are used. If this is a list, variable "
+            "chunk sizes are used."
+        ),
+    )
 
-    buffer: int = Field(default=0)
-    """The number of previous speech tokens to pass to the audio decoder on
-    each generation step."""
+    buffer: int = Field(
+        default=0,
+        description=(
+            "The number of previous speech tokens to pass to the audio decoder "
+            "on each generation step."
+        ),
+    )
 
-    block_causal: bool = Field(default=False)
-    """Whether prior buffered tokens should attend to tokens in the current block.
-    Has no effect if buffer is not set."""
+    block_causal: bool = Field(
+        default=False,
+        description=(
+            "Whether prior buffered tokens should attend to tokens in the "
+            "current block. Has no effect if buffer is not set."
+        ),
+    )
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
-        default=PrependPromptSpeechTokens.ONCE
+        default=PrependPromptSpeechTokens.ONCE,
+        description=(
+            "Whether the prompt speech tokens should be forwarded to the audio "
+            "decoder. Options: never, once, rolling."
+        ),
     )
-    """Whether the prompt speech tokens should be forwarded to the audio decoder.
-    If "never", the prompt tokens are not forwarded.
-    If "once", the prompt tokens are only forwarded on the first block.
-    If "always", the prompt tokens are forwarded on all blocks.
-    """
 
-    prepend_prompt_speech_tokens_causal: bool = Field(default=False)
-    """Whether the prompt speech tokens should attend to tokens in the currently
-    generated audio block.
-    Has no effect if prepend_prompt_speech_tokens is "never".
-    If False (default), the prompt tokens do not attend to the current block.
-    If True, the prompt tokens attend to the current block.
-    """
+    prepend_prompt_speech_tokens_causal: bool = Field(
+        default=False,
+        description=(
+            "Whether the prompt speech tokens should attend to tokens in the "
+            "currently generated audio block. Has no effect if "
+            "prepend_prompt_speech_tokens is never."
+        ),
+    )
 
-    audio_decoder_config: dict[str, Any] = Field(default_factory=dict)
-    """Parameters to pass to the audio decoder model."""
+    audio_decoder_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters to pass to the audio decoder model.",
+    )
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
-        default=PrometheusMetricsMode.INSTRUMENT_ONLY
+        default=PrometheusMetricsMode.INSTRUMENT_ONLY,
+        description="The mode to use for Prometheus metrics.",
     )
-    """The mode to use for Prometheus metrics."""
 
     _run_model_test_mode: bool = PrivateAttr(default=False)
     """Test-only flag that indicates that test parameters have been passed to
@@ -1340,35 +1434,6 @@ class AudioGenerationConfig(PipelineConfig):
         )
         self._run_model_test_mode = run_model_test_mode
         self.prometheus_metrics_mode = prometheus_metrics_mode
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        # Get the parent class help first
-        audio_help = PipelineConfig.help()
-
-        # Add AudioGenerationConfig-specific fields
-        audio_specific_help = {
-            "audio_decoder": "The name of the audio decoder model architecture.",
-            "audio_decoder_weights": "The path to the audio decoder weights file.",
-            "chunk_size": "The chunk sizes to use for streaming. If this is an int, then fixed-size chunks of the given size are used. If this is a list, then variable chunk sizes are used.",
-            "buffer": "The number of previous speech tokens to pass to the audio decoder on each generation step. Default is 0.",
-            "block_causal": "Whether prior buffered tokens should attend to tokens in the current block. Has no effect if buffer is not set. Default is false.",
-            "prepend_prompt_speech_tokens": "Whether the prompt speech tokens should be forwarded to the audio decoder. Options: 'never', 'once', 'rolling'. Default is 'once'.",
-            "prepend_prompt_speech_tokens_causal": "Whether the prompt speech tokens should attend to tokens in the currently generated audio block. Has no effect if prepend_prompt_speech_tokens is 'never'. Default is false.",
-            "audio_decoder_config": "Parameters to pass to the audio decoder model.",
-            "prometheus_metrics_mode": "The mode to use for Prometheus metrics. Default is 'instrument_only'.",
-        }
-
-        # Check for conflicts
-        for key in audio_specific_help:
-            if key in audio_help:
-                raise ValueError(
-                    f"Duplicate help key '{key}' found in AudioGenerationConfig"
-                )
-
-        # Merge the help dictionaries
-        audio_help.update(audio_specific_help)
-        return audio_help
 
     @classmethod
     def from_flags(

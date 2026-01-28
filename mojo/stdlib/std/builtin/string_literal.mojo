@@ -16,7 +16,11 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections.string.format import _FormatUtils
-from collections.string.string_slice import CodepointSliceIter, StaticString
+from collections.string.string_slice import (
+    CodepointSliceIter,
+    CodepointsIter,
+    StaticString,
+)
 from os import PathLike
 from sys.ffi import c_char, CStringSlice
 
@@ -27,7 +31,6 @@ from python import ConvertibleToPython, PythonObject
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 @nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
@@ -40,6 +43,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Representable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """This type represents a string literal.
@@ -96,7 +100,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             The string concatenated `n` times.
         """
-        return self.as_string_slice() * n
+        return StringSlice(self) * n
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: StringSlice) -> Bool:
@@ -120,7 +124,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if they are not equal.
         """
-        return self.as_string_slice() != rhs
+        return StringSlice(self) != rhs
 
     @always_inline("nodebug")
     fn __lt__(self, rhs: StringSlice) -> Bool:
@@ -132,7 +136,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if this is strictly less than the RHS and False otherwise.
         """
-        return self.as_string_slice() < rhs
+        return StringSlice(self) < rhs
 
     @always_inline("nodebug")
     fn __le__(self, rhs: StringSlice) -> Bool:
@@ -216,7 +220,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Raises:
             If the string cannot be parsed as a valid base-10 integer.
         """
-        return Int(self.as_string_slice())
+        return Int(StringSlice(self))
 
     @always_inline
     fn __float__(self) raises -> Float64:
@@ -228,7 +232,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Raises:
             If the string cannot be parsed as a valid floating-point number.
         """
-        return Float64(self.as_string_slice())
+        return Float64(StringSlice(self))
 
     @no_inline
     fn __str__(self) -> String:
@@ -248,7 +252,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A new representation of the string.
         """
-        return repr(self.as_string_slice())
+        return repr(StringSlice(self))
 
     fn __fspath__(self) -> String:
         """Return the file system path representation of the object.
@@ -258,23 +262,23 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.__str__()
 
+    @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
         """Return an iterator over the string literal.
 
         Returns:
             An iterator over the string.
         """
-        return CodepointSliceIter(self.as_string_slice())
+        return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator over the string.
         """
-        return CodepointSliceIter[StaticConstantOrigin, False](
-            self.as_string_slice()
-        )
+        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
@@ -372,7 +376,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             This method needs to traverse the whole string to count, so it has
             a performance hit compared to using the byte length.
         """
-        return self.as_string_slice().count_codepoints()
+        return StringSlice(self).count_codepoints()
 
     @always_inline("nodebug")
     fn unsafe_ptr(
@@ -455,7 +459,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             writer: The object to write to.
         """
 
-        writer.write(self.as_string_slice())
+        writer.write(StringSlice(self))
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the string literal".
@@ -463,7 +467,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Args:
             writer: The value to write to.
         """
-        self.as_string_slice().write_repr_to(writer)
+        StringSlice(self).write_repr_to(writer)
 
     fn find(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the first occurrence of `substr` starting at
@@ -476,7 +480,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The offset of `substr` relative to the beginning of the string.
         """
-        return self.as_string_slice().find(substr, start=start)
+        return StringSlice(self).find(substr, start=start)
 
     fn rfind(self, substr: StaticString, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
@@ -489,7 +493,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The offset of `substr` relative to the beginning of the string.
         """
-        return self.as_string_slice().rfind(substr, start=start)
+        return StringSlice(self).rfind(substr, start=start)
 
     fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
@@ -526,11 +530,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         return String(self).upper()
 
-    fn rjust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal right justified in a string of specified width.
 
         Pads the string literal on the left with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string literal is already longer than or equal to `width`,
         returns the string literal unchanged (as a `String`).
 
@@ -542,7 +546,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
                 a single-byte character.
 
         Returns:
-            A right-justified string of length `width`, or the original string
+            A right-justified string of byte length `width`, or the original string
             literal (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -550,18 +554,18 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).rjust(width, fillchar)
+        return String(self).ascii_rjust(width, fillchar)
 
-    fn ljust(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal left justified in a string of specified width.
 
         Pads the string literal on the right with the specified fill character so
-        that the total length of the resulting string equals `width`. If the
+        that the total byte length of the resulting string equals `width`. If the
         original string literal is already longer than or equal to `width`,
         returns the string literal unchanged (as a `String`).
 
@@ -573,7 +577,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
                 a single-byte character.
 
         Returns:
-            A left-justified string of length `width`, or the original string
+            A left-justified string of (byte) length `width`, or the original string
             literal (as a `String`) if its length is already greater than or
             equal to `width`.
 
@@ -581,12 +585,12 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         ```mojo
         var s = "hello"
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ljust(width, fillchar)
+        return String(self).ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.
@@ -634,7 +638,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
         """
-        return self.as_string_slice().startswith(prefix, start, end)
+        return StringSlice(self).startswith(prefix, start, end)
 
     fn endswith(
         self, suffix: StringSlice, start: Int = 0, end: Int = -1
@@ -650,17 +654,17 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
         """
-        return self.as_string_slice().endswith(suffix, start, end)
+        return StringSlice(self).endswith(suffix, start, end)
 
-    fn isdigit(self) -> Bool:
-        """Returns True if all characters in the string literal are digits.
+    fn is_ascii_digit(self) -> Bool:
+        """Returns True if all characters in the string literal are ASCII digits.
 
         Note that this currently only works with ASCII strings.
 
         Returns:
             True if all characters are digits else False.
         """
-        return String(self).isdigit()
+        return String(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
@@ -718,7 +722,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A string with no trailing characters.
         """
-        return self.as_string_slice().rstrip(chars)
+        return StringSlice(self).rstrip(chars)
 
     fn rstrip(self) -> StaticString:
         """Return a copy of the string with trailing whitespaces removed. This
@@ -728,7 +732,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return self.as_string_slice().rstrip()
+        return StringSlice(self).rstrip()
 
     fn lstrip(self, chars: StringSlice) -> StaticString:
         """Return a copy of the string with leading characters removed.
@@ -739,7 +743,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no leading characters.
         """
-        return self.as_string_slice().lstrip(chars)
+        return StringSlice(self).lstrip(chars)
 
     fn lstrip(self) -> StaticString:
         """Return a copy of the string with leading whitespaces removed. This
@@ -749,7 +753,39 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return self.as_string_slice().lstrip()
+        return StringSlice(self).lstrip()
+
+    fn codepoint_slices(self) -> CodepointSliceIter[StaticConstantOrigin]:
+        """Iterate over the string's codepoints as immutable slices.
+
+        Returns:
+            An iterator of codepoint slices.
+        """
+        return StringSlice(self).codepoint_slices()
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[StaticConstantOrigin, False]:
+        """Iterates backwards over the string literal, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string literal, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string literal elements.
+        """
+        return CodepointSliceIter[StaticConstantOrigin, False](
+            StringSlice(self)
+        )
+
+    fn codepoints(self) -> CodepointsIter[StaticConstantOrigin]:
+        """Iterate over the `Codepoint`s in this string constant.
+
+        Returns:
+            An iterator over successive `Codepoint` values.
+        """
+        return StringSlice(self).codepoints()
 
     fn format[*Ts: AnyType](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
@@ -849,7 +885,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return self.as_string_slice().split(sep)
+        return StringSlice(self).split(sep)
 
     @always_inline
     fn split(self, sep: StringSlice, maxsplit: Int) -> List[StaticString]:
@@ -872,7 +908,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return self.as_string_slice().split(sep, maxsplit=maxsplit)
+        return StringSlice(self).split(sep, maxsplit=maxsplit)
 
     @always_inline
     fn split(self, sep: NoneType = None) -> List[StaticString]:
@@ -895,11 +931,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _ = StringSlice("      hello    world     ").split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
         _ = StringSlice(
-            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
+            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85world"
         ).split()  # ["hello", "world"]
         ```
         """
-        return self.as_string_slice().split(sep)
+        return StringSlice(self).split(sep)
 
     @always_inline
     fn split(
@@ -920,4 +956,4 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return self.as_string_slice().split(sep, maxsplit=maxsplit)
+        return StringSlice(self).split(sep, maxsplit=maxsplit)

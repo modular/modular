@@ -322,7 +322,7 @@ fn flare_mla_decoding_dispatch[
     ragged: Bool = False,
     # Work arounds to unify KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs:
     # Differentiate two cases, KV cache's length is before adding the latest
-    # tokens e.g. zero for CE, and KV NDBuffer's length is the latest length
+    # tokens e.g. zero for CE, and KV LayoutTensor's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
     # valid_length is needed for KV cache inputs and is empty for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs
@@ -475,7 +475,7 @@ fn flare_mla_decoding_dispatch[
             num_heads=num_heads,
             num_threads = UInt(num_threads),
             num_pipeline_stages = UInt(num_pipeline_stages),
-            group = UInt(group),
+            group=group,
             use_score_mod=use_score_mod,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
@@ -507,7 +507,7 @@ fn flare_mla_decoding_dispatch[
             valid_length,
             mask_functor,
             score_mod_functor,
-            grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
+            grid_dim=(1, Int(num_blocks_y), batch_size),
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=shared_mem_bytes,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -732,7 +732,7 @@ fn mla_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -745,7 +745,7 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # The entire query block (BM x depth) is tiled in shared memory.
     comptime alignment = align_of[SIMD[q_type, simd_size]]()
@@ -946,9 +946,9 @@ fn mla_decoding_single_batch[
 
         comptime kv_gmem_layout = Layout(
             IntTuple(Int(BN), Int(depth)),
-            IntTuple(Int(kv_num_heads * Int(depth)), 1),
+            IntTuple(kv_num_heads * Int(depth), 1),
         )
-        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
@@ -1311,7 +1311,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1452,7 +1451,6 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1479,7 +1477,6 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
-    use_fa4: Bool = False,  # TODO: remove this flag when we support ragged inputs
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1597,7 +1594,6 @@ fn flare_mla_prefill[
             cache_depth=cache_depth,
             config=mha_config,
             _ndbuffer_mha_operand=True,
-            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1634,7 +1630,6 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
-    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -1692,7 +1687,7 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime is_sm100_available = ctx.default_device_info == B200 and use_fa4
+    comptime is_sm100_available = ctx.default_device_info == B200
 
     @parameter
     if is_sm100_available:
@@ -1702,7 +1697,7 @@ fn flare_mla_prefill_dispatch[
             q_depth=q_depth,
             cache_depth=cache_depth,
             use_score_mod=use_score_mod,
-            _is_cache_length_accurate=True,
+            _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
             output,
             q,
@@ -1736,13 +1731,13 @@ fn flare_mla_prefill_dispatch[
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ]
         var grid_dim = LaunchDim(
-            Int(ceildiv(max_prompt_len, Int(BM))),
+            ceildiv(max_prompt_len, Int(BM)),
             Int(config.num_heads),
-            Int(batch_size),
+            batch_size,
         ) if has_nvidia_gpu_accelerator() else LaunchDim(
             Int(config.num_heads),
-            Int(ceildiv(max_prompt_len, Int(BM))),
-            Int(batch_size),
+            ceildiv(max_prompt_len, Int(BM)),
+            batch_size,
         )
         ctx.enqueue_function[kernel, kernel](
             q_device,
@@ -1954,7 +1949,7 @@ fn mla_prefill_single_batch[
 
     comptime cache_num_heads = num_heads // UInt(group)
 
-    __comptime_assert num_warps_m * num_warps_n == UInt(
+    __comptime_assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2025,7 +2020,7 @@ fn mla_prefill_single_batch[
 
     # Query global memory iterator
     comptime q_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(q_depth)),
+        IntTuple(Int(BM), q_depth),
         IntTuple(Int(num_heads * UInt(q_depth)), 1),
     )
     var q_tile_num_rows = min(
@@ -2197,7 +2192,7 @@ fn mla_prefill_single_batch[
             IntTuple(Int(num_heads * depth), 1),
         )
 
-        var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
+        var kv_tile_num_rows = min(tile_size, end - kv_tile_start_row)
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
@@ -2245,7 +2240,7 @@ fn mla_prefill_single_batch[
 
         # here we set up variables for k_rope tensor
         comptime k_rope_gmem_layout = Layout(
-            IntTuple(Int(BN), Int(cache_depth)),
+            IntTuple(Int(BN), cache_depth),
             IntTuple(Int(cache_num_heads * UInt(cache_depth)), 1),
         )
 
@@ -2354,7 +2349,7 @@ fn mla_prefill_single_batch[
             True,  # transpose_b
             swizzle_a=True,
             prefetch_init=False,
-            static_num_iters = Int(q_depth // Int(BK)),
+            static_num_iters = q_depth // Int(BK),
             k_group_size = config.k_group_size,
         ](
             p_reg_tile,
@@ -2778,7 +2773,7 @@ fn mla_prefill_plan[
             input_row_offsets,
             k_cache,
             buffer_token_size,
-            grid_dim=(Int(ceildiv(batch_size, 128)), 1, 1),
+            grid_dim=(ceildiv(batch_size, 128), 1, 1),
             block_dim=(128, 1, 1),
         )
 

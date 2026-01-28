@@ -11,12 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     CompilationTarget,
     align_of,
@@ -63,9 +59,8 @@ comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 
-@register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Defaultable, ImplicitlyCopyable, Stringable, Writable
+    Defaultable, Stringable, TrivialRegisterType, Writable
 ):
     var _value: Int32
 
@@ -123,8 +118,7 @@ struct FlashAttentionAlgorithm(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
+struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -266,7 +260,7 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
         self.num_heads = num_heads
         self.depth = depth
         swizzle_granularity = swizzle_mode.bytes() // size_of[DType.bfloat16]()
-        self.padded_depth = UInt(align_up(depth, UInt(swizzle_granularity)))
+        self.padded_depth = align_up(depth, UInt(swizzle_granularity))
         self.num_pipeline_stages = num_pipeline_stages
         self.k_group_size = k_group_size
         self.algorithm = algorithm.init(Self.dtype)
@@ -750,8 +744,7 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-@register_passable("trivial")
-trait OptionallyStaticInt(Copyable, Intable):
+trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
     comptime static_value: OptionalReg[Int]
 
     fn as_uint32(self) -> UInt32:
@@ -760,8 +753,9 @@ trait OptionallyStaticInt(Copyable, Intable):
 
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
-@register_passable("trivial")
-struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
+struct StaticInt[value: Int](
+    Defaultable, OptionallyStaticInt, TrivialRegisterType
+):
     comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
 
     @always_inline("nodebug")
@@ -777,8 +771,7 @@ struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
         return UInt32(Self.value)
 
 
-@register_passable("trivial")
-struct DynamicInt(OptionallyStaticInt):
+struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
     var value: UInt32
     comptime static_value: OptionalReg[Int] = None
 
@@ -800,8 +793,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-@register_passable("trivial")
-trait MHAPartitionScheme(Copyable):
+trait MHAPartitionScheme(Copyable, TrivialRegisterType):
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -812,13 +804,12 @@ trait MHAPartitionScheme(Copyable):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         ...
 
 
-@register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Defaultable, ImplicitlyCopyable, MHAPartitionScheme
+    Defaultable, MHAPartitionScheme, TrivialRegisterType
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -834,24 +825,25 @@ struct NoPartition[dtype: DType](
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return UnsafePointer[Scalar[Self.accum_dtype]]()
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
-@register_passable("trivial")
-struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
+struct SplitKPartition[dtype: DType](MHAPartitionScheme, TrivialRegisterType):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
+    var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
+        ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
+        debug_assert(
+            ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
+        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 
@@ -862,5 +854,5 @@ struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         return self.ptr

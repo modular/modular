@@ -14,15 +14,14 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import OptionalReg
+from collections import Optional
 from math import ceil, fma
 from sys import align_of, simd_width_of, size_of
 from sys.info import CompilationTarget, is_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
-from buffer import DimList, NDBuffer
-from buffer.dimlist import _make_partially_static_index_list
+from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
 from builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host import get_gpu_target
@@ -31,7 +30,12 @@ from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from layout._coord import Coord, _DimsToCoordLike
 from layout._tile_tensor import TileTensor
+from memory import LegacyUnsafePointer
 
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+comptime OpaquePointer = LegacyUnsafePointer[
+    mut=True, NoneType, origin=MutAnyOrigin
+]
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import trace_arg
@@ -148,7 +152,7 @@ fn simd_store_into_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -196,7 +200,7 @@ fn simd_load_from_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: UnsafePointer[Scalar[dtype]],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -647,7 +651,6 @@ comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct ManagedTensorSlice[
     mut: Bool,
     input: IO,
@@ -657,7 +660,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, ImplicitlyCopyable, Stringable, Writable):
+](DevicePassable, Stringable, TrivialRegisterType, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -699,7 +702,7 @@ struct ManagedTensorSlice[
             + ", dtype = "
             + String(Self.device_type.dtype)
             + ", layout = "
-            + String(Self.device_type.layout)
+            + String(materialize[Self.device_type.layout]())
             + ", address_space = "
             + String(Self.device_type.address_space)
             + "]"
@@ -714,13 +717,13 @@ struct ManagedTensorSlice[
     comptime _in_lambda = Self.static_spec.in_lambda
     comptime _out_lambda = Self.static_spec.out_lambda
 
-    var _ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var _ptr: UnsafePointer[Scalar[Self.dtype]]
     var _spec: RuntimeTensorSpec[Self.dtype, Self.rank]
     var _runtime_strides: IndexList[Self.rank]
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
         slices: InlineArray[Slice, Self.rank],
         slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
     ):
@@ -769,7 +772,7 @@ struct ManagedTensorSlice[
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
         shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -784,7 +787,7 @@ struct ManagedTensorSlice[
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype]],
         shape: IndexList[Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -981,7 +984,7 @@ struct ManagedTensorSlice[
     @always_inline
     fn unsafe_ptr[
         _dtype: DType = Self.dtype
-    ](self) -> UnsafePointer[Scalar[_dtype], MutAnyOrigin]:
+    ](self) -> UnsafePointer[Scalar[_dtype]]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -994,7 +997,7 @@ struct ManagedTensorSlice[
         Returns:
             The `UnsafePointer` which contains the data for this tensor slice.
         """
-        return self._ptr.bitcast[Scalar[_dtype]]()
+        return rebind[UnsafePointer[Scalar[_dtype]]](self._ptr)
 
     @always_inline
     fn load[
@@ -1226,9 +1229,7 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ] = None,
+        offset_ptr: Optional[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec = Self.io_spec,
@@ -1310,7 +1311,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout._layout.Layout(shape_tuple^, stride_tuple^),
+            layout._layout.Layout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1389,7 +1390,7 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 
     Args:
         name: The name of the argument.
-        buf: The NDBuffer to trace.
+        buf: The tensor to trace.
 
     Returns:
         A string representation of the buffer with its shape and data type.
@@ -1410,7 +1411,6 @@ comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct VariadicTensors[
     mut: Bool,
     input: IO,
@@ -1421,11 +1421,32 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](ImplicitlyCopyable, Sized):
+](Sized, TrivialRegisterType):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
+
+    fn __init__(
+        out self,
+        ptrs: StaticTuple[UnsafePointer[Scalar[Self.dtype]], Self.size],
+        shapes: StaticTuple[IndexList[Self.rank], Self.size],
+    ):
+        """Initialize the variadic tensor from tuples of pointers and shapes.
+
+        This is a bulk initialization of the VariadicTensors value from an
+        array of pointers and an array of runtime shapes. This allows the graph
+        compiler to avoid generating code to construct DynamicTensor values
+        directly.
+        """
+
+        self._tensors = {}
+
+        for i in range(Self.size):
+            var tensor = DynamicTensor[Self.dtype, Self.rank](
+                ptrs[i], shapes[i]
+            )
+            self._tensors._unsafe_ref(i) = tensor
 
     fn __len__(self) -> Int:
         """Returns the number of variadic arguments in the pack.

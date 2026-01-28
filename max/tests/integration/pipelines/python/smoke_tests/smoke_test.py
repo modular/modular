@@ -63,6 +63,9 @@ IMAGE_PROMPT = {
 TEXT_PROMPT = {"role": "user", "content": "Say: 'hello world'"}
 URL = "http://127.0.0.1:8000/v1/chat/completions"
 
+TEXT_TASK = "gsm8k_cot_llama"
+VISION_TASK = "chartqa"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -83,7 +86,7 @@ def _inside_bazel() -> bool:
 
 
 def test_single_request(model: str, task: str) -> None:
-    is_vision = task == "chartqa"
+    is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
     r = requests.post(
@@ -147,7 +150,15 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
             "max": [*interpreter, *MAX.split()],
         }
         cmd = commands[framework]
-    return cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    cmd = cmd + ["--port", "8000", "--trust-remote-code", "--model", model]
+
+    # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
+    # so we need to enable penalties on the server
+    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+        cmd += ["--enable-penalties"]
+
+    return cmd
 
 
 def safe_model_name(model: str) -> str:
@@ -159,7 +170,14 @@ def call_lm_eval(
 ) -> tuple[LmEvalResults, LmEvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
-        kw in model for kw in ("academic-ds", "gpt-oss", "internvl3_5", "qwen3")
+        kw in model
+        for kw in (
+            "academic-ds",
+            "deepseek-r1",
+            "gpt-oss",
+            "internvl3_5",
+            "qwen3",
+        )
     )
     # Reasoning models needs extra tokens for .. reasoning
     if is_reasoning_model:
@@ -174,7 +192,7 @@ def call_lm_eval(
         sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
     )
 
-    include_path = str(Path(__file__).parent.resolve() / "chartqa_modular")
+    include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
         lm_eval_cmd = [
             "lm_eval",
@@ -261,10 +279,10 @@ def build_eval_summary(
         metrics = result["results"][task]
         total_secs = float(result["total_evaluation_time_seconds"])
 
-        if "chartqa" in task:
+        if VISION_TASK in task:
             accuracy = metrics["relaxed_accuracy,none"]
             accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
-        elif task == "gsm8k_cot_llama":
+        elif task == TEXT_TASK:
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
         else:
@@ -455,9 +473,9 @@ def smoke_test(
     if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
         is_vision_model = False
 
-    tasks = ["gsm8k_cot_llama"]
+    tasks = [TEXT_TASK]
     if is_vision_model:
-        tasks = ["chartqa"] + tasks
+        tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
@@ -485,6 +503,12 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        try:
+            gracefully_stop_process(server_process)
+        except Exception:
+            logger.exception(f"Failed to shutdown {framework.upper()}")
+
+    if results:
         summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
         if output_path is not None:
@@ -492,9 +516,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-        logger.info(pformat(summary, indent=2))
-
-        gracefully_stop_process(server_process)
+            logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

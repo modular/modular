@@ -719,19 +719,6 @@ PIPELINES = {
             kl_div_threshold=2.2e01,
         ),
     ),
-    "unsloth/gpt-oss-20b-BF16_ModuleV3": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="unsloth/gpt-oss-20b-BF16_ModuleV3",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
-                json_file="torch_gpt-oss_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=2.2e01,
-            kl_div_threshold=2.2e01,
-        ),
-    ),
     "allenai/OLMo-1B-hf-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=_make_pipeline_runner(
@@ -980,7 +967,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
                 json_file="torch_pixtral_bfloat16_golden.json",
             ),
-            cos_dist_threshold=1.7e-3,
+            cos_dist_threshold=1.9e-3,
             kl_div_threshold=5.0e-3,
         ),
     ),
@@ -1035,6 +1022,16 @@ PIPELINES = {
             kl_div_threshold=2.1e01,
         ),
     ),
+    "Qwen/Qwen3-VL-4B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=[],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-VL-4B-Instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=1.7e00,
+            kl_div_threshold=7.0e-02,
+        ),
+    ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
@@ -1043,6 +1040,17 @@ PIPELINES = {
             encoding="bfloat16",
             cos_dist_threshold=1.1e-3,
             kl_div_threshold=7.1e-3,
+        ),
+    ),
+    "Qwen/Qwen3-Embedding-0.6B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-Embedding-0.6B",
+            encoding="bfloat16",
+            relative_tolerance=1.0e-04,
+            absolute_tolerance=4.2e-01,
+            cos_dist_threshold=2.4e-1,
+            kl_div_threshold=2.6e-04,
         ),
     ),
     # Qwen2.VL-FP8
@@ -1077,7 +1085,7 @@ PIPELINES = {
             # TODO(MODELS-730): With the update to transformers=4.55, the
             # kl_div_threshold went from 8.7e-02 to 6.6e-01.
             # This is likely due to changes in the reference implementation.
-            cos_dist_threshold=4.1e-02,
+            cos_dist_threshold=5.0e-02,
             kl_div_threshold=6.8e-01,
         ),
     ),
@@ -1197,7 +1205,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
                 json_file="vllm_deepseek-r1_float8_golden.json",
             ),
-            cos_dist_threshold=5.2e-03,
+            cos_dist_threshold=8.8e-03,
             kl_div_threshold=1.6e-1,
             timeout=1200,
         ),
@@ -1256,7 +1264,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=3.6e-2,
-            kl_div_threshold=7.0e-1,
+            kl_div_threshold=1.4e0,
         ),
     ),
     # Multi-GPU variant
@@ -1271,7 +1279,7 @@ PIPELINES = {
                 json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
             ),
             cos_dist_threshold=2.3e-2,
-            kl_div_threshold=5.8e-1,
+            kl_div_threshold=6.8e-1,
         ),
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(

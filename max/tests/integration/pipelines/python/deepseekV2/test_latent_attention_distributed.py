@@ -23,17 +23,17 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn.attention.multi_latent_attention import (
+from max.kv_cache import PagedKVCacheManager
+from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -155,8 +155,8 @@ def _single_gpu_baseline(
     # Reserve 1 request
     batch = []
     ctx = create_text_context(np.empty(prompt_lens[0]))
-    kv_manager.claim(ctx.request_id)
-    kv_manager.alloc(ctx)
+    kv_manager.claim(ctx.request_id, replica_idx=0)
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     batch.append(ctx)
 
     # Row offsets on host to avoid GPU __setitem__
@@ -165,7 +165,7 @@ def _single_gpu_baseline(
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
-        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
         inp = (
             Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
@@ -178,8 +178,8 @@ def _single_gpu_baseline(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, 1)
-        kv_inputs = kv_manager.get_runtime_inputs(batch)[0]
+            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
         tok = (
             Buffer.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -190,7 +190,7 @@ def _single_gpu_baseline(
         out = compiled.execute(tok, row_off.to(device0), *kv_inputs)
 
         ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step([batch])
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]
@@ -267,7 +267,7 @@ def _build_graph_and_compile(
     session: InferenceSession,
     attn: DataParallelLatentAttentionWithRope,
     rope: DeepseekYarnRotaryEmbedding,
-    kv_manager: PagedKVCacheManager | NullKVCacheManager,
+    kv_manager: PagedKVCacheManager,
     devices: list[Accelerator],
 ) -> tuple:
     """Builds a per-device inputs graph and compiles it."""
@@ -384,12 +384,13 @@ def _run_distributed_dp(
     for replica_idx in range(dp_degree):
         ctx = create_text_context(np.empty(seq_len))
         kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, 1)
+        kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
         batch.append(ctx)
+    batches_by_replica = [[ctx] for ctx in batch]
 
     if use_prefill:
         # Single execute covering full prompt lengths (identical prompt on each replica).
-        fetch_list = kv_manager.get_runtime_inputs(batch)
+        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         # Per-device inputs: full sequence + [0, T] row offsets (built on host)
@@ -415,8 +416,8 @@ def _run_distributed_dp(
     outs = []
     for tok_idx in range(total_tokens):
         for ctx in batch:
-            kv_manager.alloc(ctx, 1)
-        fetch_list = kv_manager.get_runtime_inputs(batch)
+            kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
+        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         step_args = []
@@ -436,7 +437,7 @@ def _run_distributed_dp(
         # Advance contexts
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step(batches_by_replica)
 
         outs.append(
             from_dlpack(out[0]).to(torch.bfloat16).to("cpu")[:, None, :]

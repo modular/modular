@@ -82,27 +82,30 @@ fn _print_svg_impl[
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
-    debug_assert(tensor_base.layout.rank() == 2, "Layout rank must be 2")
+    __comptime_assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
 
     if len(tensors) > 0:
-        debug_assert(tensors[0].layout.rank() == 2, "Layout rank must be 2")
+        __comptime_assert layout.rank() == 2, "Layout rank must be 2"
 
-        debug_assert(
-            tensors[0].layout[0].size() <= tensor_base.layout[0].size(),
-            "Layout 0 should have the largest first dimension",
-        )
-        debug_assert(
-            tensors[0].layout[1].size() <= tensor_base.layout[1].size(),
-            "Layout 0 should have the largest second dimension",
-        )
+        __comptime_assert layout[0].size() <= (
+            tensor_base.layout[0].size()
+        ), "Layout 0 should have the largest first dimension"
+
+        __comptime_assert (
+            layout[1].size() <= tensor_base.layout[1].size()
+        ), "Layout 0 should have the largest second dimension"
 
     var colors: List[StaticString] = ["#FFFFFF", "#4A90E2", "#E8F0FF"]
 
     var cell_size = 80
     var margin = 40
     var text_margin = 30
-    var width = (tensor_base.layout[1].size() + 2) * cell_size + 2 * margin
-    var height = (tensor_base.layout[0].size() + 2) * cell_size + 2 * margin
+    var width = (
+        comptime (tensor_base.layout[1].size() + 2) * cell_size + 2 * margin
+    )
+    var height = (
+        comptime (tensor_base.layout[0].size() + 2) * cell_size + 2 * margin
+    )
 
     writer.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     writer.write(
@@ -144,9 +147,10 @@ fn _print_svg_impl[
     var start_y = margin + 60  # Additional space for legends
 
     # Draw base layout
-    for i in range(tensor_base.layout[0].size()):
-        for j in range(tensor_base.layout[1].size()):
-            var idx = tensor_base.layout([i, j])
+    var materialized_layout = materialize[tensor_base.layout]()
+    for i in range(comptime (tensor_base.layout[0].size())):
+        for j in range(comptime (tensor_base.layout[1].size())):
+            var idx = materialized_layout([i, j])
             var non_swizzled_idx = idx
 
             @parameter
@@ -252,21 +256,29 @@ fn _print_svg_impl[
 
     for t in range(len(tensors)):
         var tensor = tensors[t]
+        var materialized_element_layout = materialize[tensor.element_layout]()
+        var materialized_layout = materialize[tensor.layout]()
         # Draw other layouts
-        if tensor.element_layout.rank() == 2:
+        if comptime (tensor.element_layout.rank() == 2):
             var element_idx = 0
-            for i in range(tensor.layout[0].size()):
-                for j in range(tensor.layout[1].size()):
-                    for e_i in range(tensor.element_layout[0].size()):
-                        for e_j in range(tensor.element_layout[1].size()):
+            for i in range(comptime (tensor.layout[0].size())):
+                for j in range(comptime (tensor.layout[1].size())):
+                    for e_i in range(
+                        comptime (tensor.element_layout[0].size())
+                    ):
+                        for e_j in range(
+                            comptime (tensor.element_layout[1].size())
+                        ):
                             var offset = (
                                 Int(tensor.ptr) - Int(tensor_base.ptr)
                             ) // size_of[Scalar[tensor.dtype]]()
-                            var element_offset = tensor.element_layout(
+                            var element_offset = materialized_element_layout(
                                 [e_i, e_j]
                             )
                             var idx = (
-                                tensor.layout([i, j]) + offset + element_offset
+                                materialized_layout([i, j])
+                                + offset
+                                + element_offset
                             )
                             var orig_pos = map[idx]
                             var x = (
@@ -282,12 +294,12 @@ fn _print_svg_impl[
                             element_idx += 1
         else:
             var element_idx = 0
-            for i in range(tensor.layout[0].size()):
-                for j in range(tensor.layout[1].size()):
+            for i in range(comptime (tensor.layout[0].size())):
+                for j in range(comptime (tensor.layout[1].size())):
                     var offset = (
                         Int(tensor.ptr) - Int(tensor_base.ptr)
                     ) // size_of[Scalar[tensor.dtype]]()
-                    var idx = tensor.layout([i, j]) + offset
+                    var idx = materialized_layout([i, j]) + offset
                     var orig_pos = map[idx]
                     var x = (
                         margin + text_margin + orig_pos[1].value() * cell_size
@@ -300,7 +312,7 @@ fn _print_svg_impl[
                     element_idx += 1
 
     # Draw row labels with improved typography
-    for i in range(tensor_base.layout[0].size()):
+    for i in range(comptime (tensor_base.layout[0].size())):
         var y = start_y + i * cell_size + cell_size / 2
         writer.write(
             '<text x="',
@@ -318,7 +330,7 @@ fn _print_svg_impl[
         )
 
     # Draw column labels with improved typography
-    for j in range(tensor_base.layout[1].size()):
+    for j in range(comptime (tensor_base.layout[1].size())):
         var x = margin + text_margin + j * cell_size + cell_size / 2
         writer.write(
             '<text x="',

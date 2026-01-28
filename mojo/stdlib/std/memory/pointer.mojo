@@ -19,6 +19,7 @@ from memory import Pointer
 ```
 """
 
+from format._utils import FormatStruct, Named
 from reflection.type_info import _unqualified_type_name
 
 # ===-----------------------------------------------------------------------===#
@@ -26,12 +27,12 @@ from reflection.type_info import _unqualified_type_name
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct AddressSpace(
     Equatable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Address space of the pointer.
@@ -157,18 +158,51 @@ compatibility and will be removed in a future release."""
 
 
 # ===-----------------------------------------------------------------------===#
+# Pointer aliases
+# ===-----------------------------------------------------------------------===#
+
+
+comptime MutPointer[
+    type: AnyType,
+    origin: MutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[type, origin, address_space=address_space]
+"""A mutable pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+comptime ImmutPointer[
+    type: AnyType,
+    origin: ImmutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[type, origin, address_space=address_space]
+"""An immutable pointer.
+
+Parameters:
+    type: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+
+# ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct Pointer[
     mut: Bool,
     //,
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](ImplicitlyCopyable, Stringable, Writable):
+](Stringable, TrivialRegisterType, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -325,17 +359,11 @@ struct Pointer[
         Args:
             writer: The object to write to.
         """
-        writer.write(
-            "Pointer[mut=",
-            Self.mut,
-            ", ",
+        FormatStruct(writer, "Pointer").params(
+            Named("mut", Self.mut),
             _unqualified_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            "](",
-            self,
-            ")",
-        )
+            Named("address_space", Self.address_space),
+        ).fields(self)
 
     @always_inline("nodebug")
     fn __merge_with__[

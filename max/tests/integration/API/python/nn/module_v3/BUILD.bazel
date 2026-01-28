@@ -24,9 +24,12 @@ package(default_visibility = [
             "rope/test_yarn.py",
         ] else []),
         target_compatible_with = select({
-            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
             "//conditions:default": [],
-        }),  # FIXME: MOCO-2411
+        }) + select({
+            "//:asan": ["@platforms//:incompatible"],  # Too slow under ASAN
+            "//conditions:default": [],
+        }),
         deps = [
             "//max/python/max",
             "//max/tests/integration/pipelines/python:hf_repo_lock",

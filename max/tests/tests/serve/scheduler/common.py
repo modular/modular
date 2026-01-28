@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -64,7 +64,7 @@ def create_text_context(
     )
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -93,7 +93,7 @@ def create_paged_manager(
     session = InferenceSession(devices=[device])
 
     # CPU swap space is 100x the device cache memory
-    num_blocks = num_blocks * dp
+    num_blocks = num_blocks
     num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
@@ -103,7 +103,10 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks * dp
+    assert all(
+        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        for replica_idx in range(dp)
+    )
     return kv_manager
 
 
@@ -118,7 +121,7 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
-    max_batch_context_length: int | None = None,
+    max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
     kvcache_ce_watermark: float = 1.0,
@@ -127,7 +130,7 @@ def create_paged_scheduler(
     MAXPushQueue[TextContext],
 ]:
     # Create a paged manager that has one slot
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=num_blocks,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -146,11 +149,11 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
-        max_batch_context_length=max_batch_context_length,
+        max_batch_total_tokens=max_batch_total_tokens,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )
-    token_pipeline = FakeTokenGeneratorPipeline(paged_manager, max_seq_len)
+    token_pipeline = FakeTokenGeneratorPipeline(kv_cache, max_seq_len)
     request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -159,7 +162,7 @@ def create_paged_scheduler(
     scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
@@ -186,27 +189,35 @@ class FakeTokenGeneratorPipeline(
     ) -> dict[RequestID, TextGenerationOutput]:
         max_seq_len = self.max_seq_len
         # Truncate num steps based on the max seq len
-        for context in inputs.batch.values():
+        num_steps = inputs.num_steps
+        for context in inputs.flat_batch:
             num_available_steps = context.compute_num_available_steps(
                 max_seq_len
             )
             assert num_available_steps > 0
-            num_steps = min(inputs.num_steps, num_available_steps)
+            num_steps = min(num_steps, num_available_steps)
 
         # Claim cache rows for context.
-        for _, context in inputs.batch.items():
-            if not self.kv_manager.contains(context.request_id):
-                self.kv_manager.claim(context.request_id)
+        for replica_idx, batch in enumerate(inputs.batches):
+            for context in batch:
+                if not self.kv_manager.contains(
+                    context.request_id, replica_idx=replica_idx
+                ):
+                    self.kv_manager.claim(
+                        context.request_id, replica_idx=replica_idx
+                    )
 
-        ctxs: list[TextContext] = list(inputs.batch.values())
-
-        for ctx in ctxs:
-            self.kv_manager.alloc(ctx, num_steps=num_steps)
-        self.kv_manager.get_runtime_inputs(ctxs, num_steps=num_steps)
+        for replica_idx, batch in enumerate(inputs.batches):
+            for ctx in batch:
+                self.kv_manager.alloc(
+                    ctx, replica_idx=replica_idx, num_steps=num_steps
+                )
+        self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses
         responses = {}
-        for req_id, context in inputs.batch.items():
+        for context in inputs.flat_batch:
+            req_id = context.request_id
             for _ in range(num_steps):
                 context.update(new_token=self.token_id)
                 self.token_id += 1
@@ -220,12 +231,14 @@ class FakeTokenGeneratorPipeline(
             responses[req_id] = context.to_generation_output()
 
         # Step the kv cache manager
-        self.kv_manager.step(ctxs)
+        self.kv_manager.step(inputs.batches)
 
         return responses
 
     def release(self, request_id: RequestID) -> None:
-        self.kv_manager.release(request_id)
+        # No-op. Previously the pipeline was responsible for calling kv.release().
+        # but now the whole lifecycle is managed by the scheduler.
+        pass
 
 
 @dataclass(eq=True)
@@ -325,12 +338,12 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     num_preempted_after = scheduler.batch_constructor.total_preemption_count
 
     num_preempted = num_preempted_after - num_preempted_before
-    batch_size = len(inputs.batch)
+    batch_size = len(inputs.flat_batch)
     batch_type = inputs.batch_type
     input_tokens = inputs.input_tokens
     num_steps = inputs.num_steps
     batch_context_length = sum(
-        context.tokens.processed_length for context in inputs.batch.values()
+        context.tokens.processed_length for context in inputs.flat_batch
     )
 
     if batch_size == 0:

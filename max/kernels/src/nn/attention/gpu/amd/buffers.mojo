@@ -13,9 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv, recip
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
 
@@ -134,7 +131,7 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](Int(warp_col), 0)
+        return IndexList[2](warp_col, 0)
 
 
 @fieldwise_init
@@ -152,7 +149,7 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
     @always_inline
     fn get_wtile_coord() -> IndexList[2]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](0, Int(warp_col))
+        return IndexList[2](0, warp_col)
 
 
 struct KVBufferImpl[
@@ -303,8 +300,8 @@ struct KVBufferImpl[
         num_b_rows: OptionalReg[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         # __comptime_assert
@@ -566,8 +563,8 @@ struct VBufferTransposeLoads[
         global_tile: Self.GlobalTensorType,
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
-            ...,
         ],
     ):
         __comptime_assert Self.depth in (
@@ -828,7 +825,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(Int32(bounds))),
+                Int(readfirstlane(bounds)),
             )
             gmem_warp_iter._incr()
 
@@ -973,7 +970,9 @@ struct PRegisterBuffer[
     fn __init__(
         out self,
         shared_ptr: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED, ...
+            Scalar[Self.dtype],
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
         ],
     ):
         self.reg_tile = Self.RegisterTileType_.stack_allocation()

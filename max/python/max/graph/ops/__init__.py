@@ -32,7 +32,7 @@ from __future__ import annotations
 
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
-from . import allreduce, random
+from . import allreduce, random, reducescatter
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
@@ -76,6 +76,7 @@ from .reshape import reshape
 from .resize import InterpolationMode, resize
 from .scatter import masked_scatter, scatter, scatter_nd
 from .shape_to_tensor import shape_to_tensor
+from .shard_and_stack import shard_and_stack
 from .slice_tensor import slice_tensor
 from .split import split
 from .squeeze import squeeze

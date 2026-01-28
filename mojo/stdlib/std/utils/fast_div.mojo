@@ -23,8 +23,7 @@ from gpu.intrinsics import mulhi
 from sys.info import bit_width_of
 
 
-@register_passable("trivial")
-struct FastDiv[dtype: DType](Stringable, Writable):
+struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -60,7 +59,7 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         __comptime_assert (
             bit_width_of[Self.dtype]() <= 32
         ), "larger types are not currently supported"
-        self._div = divisor
+        self._div = Scalar[Self.uint_type](divisor)
 
         self._is_pow2 = divisor.is_power_of_two()
         self._log2_shift = log2_ceil(Int32(divisor)).cast[DType.uint8]()
@@ -69,9 +68,12 @@ struct FastDiv[dtype: DType](Stringable, Writable):
         if not self._is_pow2:
             self._mprime = (
                 (
-                    (UInt64(1) << bit_width_of[Self.dtype]())
-                    * ((1 << self._log2_shift.cast[DType.uint64]()) - divisor)
-                    / divisor
+                    (UInt64(1) << UInt64(bit_width_of[Self.dtype]()))
+                    * (
+                        (1 << self._log2_shift.cast[DType.uint64]())
+                        - UInt64(divisor)
+                    )
+                    / UInt64(divisor)
                 )
             ).cast[Self.uint_type]() + 1
             self._sh1 = min(self._log2_shift, 1)

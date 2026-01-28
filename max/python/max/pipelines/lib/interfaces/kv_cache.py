@@ -15,19 +15,17 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import Pipeline
 from max.kv_cache import (
-    NullKVCacheManager,
     PagedKVCacheManager,
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from transformers import AutoConfig
 
 if TYPE_CHECKING:
@@ -44,7 +42,7 @@ class KVCacheMixin(Protocol):
         max_seq_len: int,
         session: InferenceSession,
         available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
+    ) -> PagedKVCacheManager:
         """Provided a PipelineConfig and InferenceSession, loads the KV manager.
 
         Args:
@@ -104,44 +102,3 @@ class KVCacheMixin(Protocol):
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
-
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Returns the number of layers for the pipeline model."""
-        ...
-
-
-def get_paged_manager(
-    pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager | None:
-    """Get the paged KV cache manager from a pipeline, if available.
-
-    Args:
-        pipeline: The pipeline to extract the KV cache manager from.
-
-    Returns:
-        The paged KV cache manager if available, None otherwise.
-    """
-    if hasattr(pipeline, "_pipeline_model") and hasattr(
-        pipeline._pipeline_model, "kv_manager"
-    ):
-        kv_manager = pipeline._pipeline_model.kv_manager
-        # Accept standard PagedKVCacheManager
-        if isinstance(kv_manager, PagedKVCacheManager):
-            return kv_manager
-        # Duck-type acceptance for multimodal managers exposing the same interface
-        required_attrs = [
-            "alloc",
-            "fetch",
-            "step",
-            "release",
-            "contains",
-            "device_tensors",
-            "total_num_pages",
-        ]
-        if all(hasattr(kv_manager, a) for a in required_attrs):
-            return kv_manager
-
-    return None

@@ -37,7 +37,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTileArrayType
+from linalg.structuring import SMemTileArray
 
 from utils.index import IndexList
 
@@ -53,7 +53,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-@register_passable("trivial")
 struct BlockScaledTileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
@@ -74,8 +73,8 @@ struct BlockScaledTileWriter[
     c_smem_layout: Layout,
     num_output_stages: Int,
     stage_stride_cols: Int,
-    num_output_warps: UInt,
-]:
+    num_output_warps: Int,
+](TrivialRegisterType):
     """Output tile writer for SM100 block-scaled matmul epilogue.
 
     Uses TMAStoreExecutor with batched=True for 3D (M, N, Batch) TMA stores.
@@ -93,7 +92,7 @@ struct BlockScaledTileWriter[
         Self.c_type, Self.c_layout, Self.c_desc_layout
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
-    comptime CTileArray = SMemTileArrayType[
+    comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
     ]
     comptime Stage = OutputStage[
@@ -158,7 +157,7 @@ struct BlockScaledTileWriter[
         Self.MMA_N,
         Self.stageN,
         Self.cta_group,
-        Int(Self.num_output_warps),
+        Self.num_output_warps,
         Self.c_swizzle,
         Self.transpose_c,
     ]
@@ -198,6 +197,7 @@ struct BlockScaledTileWriter[
         stage: Self.Stage,
         c_coord: Tuple[UInt32, UInt32, UInt32],
         c_shape: Tuple[UInt32, UInt32],
+        alpha: Float32,
     ):
         """Write accumulated results to global memory.
 
@@ -206,6 +206,7 @@ struct BlockScaledTileWriter[
             stage: OutputStage with pipeline, index, and TMEM handle.
             c_coord: (m_tile, n_tile, batch) coordinates.
             c_shape: (M, N) problem dimensions.
+            alpha: Tensor scale factor (scalar).
         """
         # Fragment registers
         var upper_frag_partial: SIMD[Self.accum_type, Self.rep_frag_size]
@@ -245,6 +246,15 @@ struct BlockScaledTileWriter[
             if loop_stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(stage.pipeline, stage.index)
 
+            # Apply tensor scale factor
+            upper_frag_partial = (
+                upper_frag_partial * alpha.cast[Self.accum_type]()
+            )
+            if Self.is_lower_frag_required:
+                lower_frag_partial = (
+                    lower_frag_partial * alpha.cast[Self.accum_type]()
+                )
+
             # Cast to epilogue dtype
             upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
 
@@ -275,7 +285,7 @@ struct BlockScaledTileWriter[
                 c_smem_tile,
             )
 
-            WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+            WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
             # ================================================================
             # PHASE 4: TMA Store - Using TMAStoreExecutor with batched=True
@@ -314,4 +324,4 @@ struct BlockScaledTileWriter[
 
             @parameter
             if loop_stage > 0 or loop_stage == Self.num_stages - 1:
-                WarpGroupBarrier[Int(Self.num_output_warps) * WARP_SIZE].sync()
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()

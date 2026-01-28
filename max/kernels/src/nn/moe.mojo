@@ -781,10 +781,10 @@ fn _warp_bitonic_sort[
             p=Int(warp.shuffle_xor(Int32(v.p), step)),  # p is the index
         )
 
-        if v.u == partner.u:
-            return v
-
         var cmp_val = (v.u < partner.u) ^ descending
+        if v.u == partner.u:
+            cmp_val = v.p > partner.p
+
         var merge_direction = pop_count(i & (stage | step)) == 1
 
         if cmp_val == merge_direction:
@@ -952,7 +952,7 @@ fn group_limited_router_kernel[
         # Now, we use the first warp to find the global top `n_experts_per_tok` experts.
         barrier()
         if warp_id == 0:
-            if tid_in_group < topk_group * n_experts_per_tok:
+            if tid < topk_group * n_experts_per_tok:
                 thd_topk2 = shared_mem[tid]
             else:
                 thd_topk2 = TopK_2[scores_type]()
@@ -964,7 +964,7 @@ fn group_limited_router_kernel[
             var weights_sum: Scalar[scores_type] = 0
             var original_weight: Scalar[scores_type] = 0
 
-            if tid_in_group < n_experts_per_tok:
+            if tid < n_experts_per_tok:
                 # We need to subtract the expert bias from the weight to get the original score.
                 # This global load shouldn't be a problem since the expert bias is likely to be cached in L1.
                 original_weight = (
@@ -984,11 +984,11 @@ fn group_limited_router_kernel[
 
             original_weight *= Scalar[scores_type](routed_scaling_factor)
 
-            if tid_in_group < n_experts_per_tok:
+            if tid < n_experts_per_tok:
                 expert_indices.store(
-                    token_idx, tid_in_group, Int32(global_topk_result.p)
+                    token_idx, tid, Int32(global_topk_result.p)
                 )
-                expert_weights.store(token_idx, tid_in_group, original_weight)
+                expert_weights.store(token_idx, tid, original_weight)
 
 
 @always_inline

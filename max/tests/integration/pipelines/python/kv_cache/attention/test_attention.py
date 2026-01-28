@@ -25,8 +25,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+)
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
 
@@ -134,9 +138,9 @@ def test_kv_cache_ragged_attention(
     ]
 
     for context in batch:
-        kv_manager.claim(context.request_id)
+        kv_manager.claim(context.request_id, replica_idx=0)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -148,7 +152,7 @@ def test_kv_cache_ragged_attention(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(batch)[0]
+        kv_manager.get_runtime_inputs([batch])[0]
     )
 
     @modular_graph_test(
