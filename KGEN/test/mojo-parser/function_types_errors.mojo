@@ -222,9 +222,9 @@ struct ZBool:
 # Copied from stdlib
 @always_inline("nodebug")
 fn rebind[
-    src_type: __TypeOfAllTypes,
+    src_type: TrivialRegisterType,
     //,
-    dest_type: __TypeOfAllTypes,
+    dest_type: TrivialRegisterType,
 ](src: src_type) -> dest_type:
     return __mlir_op.`kgen.rebind`[_type=dest_type](src)
 

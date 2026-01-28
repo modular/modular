@@ -10,8 +10,7 @@
 # CHECK-DAG: #[[SOURCENAME_RP:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]] from <(module)"debuginfo_struct">>
 
 # CHECK-DAG: #[[SOURCENAME_RP3:.*]] = #debuginfo.source_name<(struct)"MyRP"[#[[SOURCENAME_INT]]]<":{{.*}} {3}"> from <(module)"debuginfo_struct">>
-# CHECK-DAG: #[[SOURCENAME_DATA:.*]] = #debuginfo.source_name<(struct)"MyData"[#[[SOURCENAME_INT]], #[[SOURCENAME_RP3]], <"type">] from <(module)"debuginfo_struct">>
-
+# CHECK-DAG: #[[SOURCENAME_DATA:.*]] = #debuginfo.source_name<(struct)"MyData"[#[[SOURCENAME_INT]], #[[SOURCENAME_RP3]], <"{{.*}}@TrivialRegisterType>">] from <(module)"debuginfo_struct">>
 
 # CHECK: lit.struct.decl @MyRP
 # CHECK-SAME: sourceName = #[[SOURCENAME_RP]]
@@ -28,7 +27,7 @@ struct MyRP[A: Int](TrivialRegisterType):
 
 # CHECK: lit.struct.decl @MyData
 # CHECK-SAME: sourceName = #[[SOURCENAME_DATA]]
-struct MyData[A: Int, B: MyRP[3], C: __TypeOfAllTypes]:
+struct MyData[A: Int, B: MyRP[3], C: TrivialRegisterType]:
     var a: Int
     var b: MyRP[3]
     var c: Self.C

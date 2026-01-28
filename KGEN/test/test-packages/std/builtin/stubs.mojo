@@ -713,7 +713,9 @@ struct Slice(TrivialRegisterType):
         return
 
     fn __init__[
-        T0: __TypeOfAllTypes, T1: __TypeOfAllTypes, T2: __TypeOfAllTypes
+        T0: TrivialRegisterType,
+        T1: TrivialRegisterType,
+        T2: TrivialRegisterType,
     ](out self, start: T0, end: T1, step: T2):
         pass
 
@@ -853,7 +855,7 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-struct VariadicList[type: __TypeOfAllTypes](TrivialRegisterType):
+struct VariadicList[type: TrivialRegisterType](TrivialRegisterType):
     comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
@@ -1347,9 +1349,9 @@ struct Optional[T: ImplicitlyCopyable]:
 
 @always_inline("builtin")
 fn rebind[
-    src_type: __TypeOfAllTypes,
+    src_type: TrivialRegisterType,
     //,
-    dest_type: __TypeOfAllTypes,
+    dest_type: TrivialRegisterType,
 ](src: src_type) -> dest_type:
     return __mlir_op.`kgen.rebind`[_type=dest_type](src)
 
@@ -1387,7 +1389,7 @@ comptime downcast[_Trait: AnyTrait, T: AnyType] = __mlir_attr[
 
 @always_inline
 fn trait_downcast[
-    T: __TypeOfAllTypes, //, Trait: AnyTrait
+    T: TrivialRegisterType, //, Trait: AnyTrait
 ](var x: T) -> downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
 

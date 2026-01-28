@@ -7,6 +7,8 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
+# CHECK: [[SCALARF64:.*]] = #kgen.type<!lit.struct<#MLIRType <:type scalar<f64>>>, scalar<f64>> : !TrivialRegisterType
+
 struct MyInt(TrivialRegisterType):
     var value: Int
 
@@ -34,29 +36,29 @@ fn test_kw_args_overload(x: Int, y: Int):
 
 
 # COM: test parametric overload in the presence of keyword operands.
-fn take_kw_param_infer[A: __TypeOfAllTypes, B: __TypeOfAllTypes](a: A, b: B):
+fn take_kw_param_infer[A: TrivialRegisterType, B: TrivialRegisterType](a: A, b: B):
     pass
 
 
-fn take_kw_param_infer[B: __TypeOfAllTypes](a: MyInt, b: B):
+fn take_kw_param_infer[B: TrivialRegisterType](a: MyInt, b: B):
     pass
 
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 fn test_kw_args_param_infer(x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt):
-    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes,__TypeOfAllTypes]{{.*}}"<:{{.*}}#kgen.type<!Int>, {{.*}}#kgen.type<scalar<f64>>>(%x, %f)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType,::TrivialRegisterType]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer[Int, __mlir_type.`!pop.scalar<f64>`](b=f, a=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(s, b=x)
 
-    # CHECK: call {{.*}}@"take_kw_param_infer[__TypeOfAllTypes]{{.*}}<:{{.*}}#kgen.type<!Int>>(%s, %x)
+    # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterType]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(b=x, a=s)
 
 
