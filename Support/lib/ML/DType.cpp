@@ -58,59 +58,55 @@ ssize_t DType::getWidthInBits() const {
 /// specified number of elements, or -1 for non-numeric types or too large
 /// values.  This supports densely packed sub-byte types like i1, i2, i4.
 ssize_t DType::getSizeInBytes(size_t numElements) const {
+  auto sizeOr = getSizeInBytesChecked(numElements);
+  if (failed(sizeOr))
+    return -1;
+  return *sizeOr;
+}
+
+/// Return the in-memory size for an array of the specified type with the
+/// specified number of elements, or Error for non-numeric types or too large
+/// values.  This supports densely packed sub-byte types like i1, i2, i4.
+FailureOr<size_t> DType::getSizeInBytesChecked(size_t numElements) const {
   // Handle complex separately from per-element types below.
   if (isComplex()) {
-    ssize_t size = stripComplex().getSizeInBytes(numElements) * 2;
-    // If the element type was negative, or the multiply by two overflows,
-    // return -1.
-    return size >= 0 ? size : -1;
+    if (numElements > std::numeric_limits<ssize_t>::max() >> 1)
+      return failure();
+    return stripComplex().getSizeInBytesChecked(numElements * 2);
   }
 
   // This switch handles special cases inline, or determines the logarithmic
   // size of each element and breaks for the overflow check.
   size_t widthShift;
-
   if (isInt()) {
     // For integers, we just return the bit-width turned into bytes.  We treat
     // i1/i2/i4 types as being a single byte.
     widthShift = getIntegerWidthInLogBits();
-    // i1,i2,i4 values are packed densely in memory.
-    if (widthShift < 3) {
-      // We're going to do a truncating division (with a shift right) by the
-      // element size, so make sure we round up to the next byte.
-      return llvm::divideCeil(numElements << widthShift, CHAR_BIT);
-    }
-
-    // Otherwise, we're growing this convert shift amount to byte shift amount.
-    widthShift -= 3;
   } else if (isFloat()) {
     ssize_t bitCount = getWidthInBits();
-
-    // Float4 and Float6 types are sub-byte types.
-    if (bitCount < 8 && numElements == 1) {
-      assert(false && "cannot get the size in bytes for Float4 and Float6 "
-                      "types since they are sub-byte types");
-      return -1;
-    }
-
     assert(llvm::isPowerOf2_32(bitCount) && "all FP types are power of 2 size");
-    widthShift = llvm::Log2_32(bitCount) - 3;
+    widthShift = llvm::Log2_32(bitCount);
+  } else if (isBool()) {
+    widthShift = 3; // kBool is stored in a single byte each.
   } else {
-    switch (getValue()) {
-    default:
-      return -1;
-    // Handle other types.
-    case DType::kBool:
-      widthShift = 0; // kBool is stored in a single byte each.
-      break;
-    }
+    // Unhandled dtype
+    return failure();
   }
 
-  // Check that the result doesn't overflow.
-  ssize_t result = numElements << widthShift;
-  if (result >> widthShift != ssize_t(numElements))
-    return -1;
-  return result;
+  // i1,i2,i4,fp4 values are packed densely in memory.
+  // We're going to do a truncating division (with a shift right) by the
+  // element size, so make sure we round up to the next byte.
+  if (widthShift <= 3) {
+    if (numElements > std::numeric_limits<size_t>::max() >> widthShift)
+      return failure();
+    return llvm::divideCeil(numElements << widthShift, 8);
+  }
+
+  auto byteShift = widthShift - 3;
+  // Otherwise we're growing. Convert to byte shift amount.
+  if (numElements > std::numeric_limits<ssize_t>::max() >> byteShift)
+    return failure();
+  return numElements << byteShift;
 }
 
 /// Return a complex type if it is valid, otherwise fail.
@@ -146,8 +142,8 @@ FailureOr<DType> DType::getFromString(StringRef str) {
   case 'b':
     if (str == "bool")
       return DType(kBool);
-    // Handle the bf16 special case, since it's a floating point type which does
-    // not start with the letter 'f'.
+    // Handle the bf16 special case, since it's a floating point type which
+    // does not start with the letter 'f'.
     if (str == "bf16")
       return DType(bf16);
     return failure();
