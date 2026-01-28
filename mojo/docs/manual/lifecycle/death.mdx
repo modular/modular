@@ -1,5 +1,5 @@
 ---
-title: Death of a value
+title: Value destruction
 sidebar_position: 3
 description: An explanation of when and how Mojo destroys values.
 ---
@@ -20,7 +20,7 @@ required cleanup.
 For types that require stronger guarantees, Mojo also supports _explicit_
 compiler-checked destructors, which provide an additional layer of safety for
 managing cleanup. For details, read about [explicit
-destruction](#implicit-and-explicit-destruction) below.
+destruction](#explicitly-destroyed-types) below.
 :::
 
 For example, notice when the `__del__()` destructor is called for each instance
@@ -124,7 +124,7 @@ shadow variables to keep track of the state of your values to provide safety.
 These are often optimized away, but the Mojo approach eliminates this overhead
 entirely, making the generated code faster and avoiding ambiguity.
 
-## Destructor
+## Destructors {#destructor}
 
 Mojo calls a value's destructor (`__del__()` method) when the value's lifetime
 ends (typically the point at which the value is last used). As we mentioned
@@ -196,7 +196,7 @@ The destructor takes its `self` argument using the `deinit`
 [argument convention](/mojo/manual/values/ownership#argument-conventions), which
 grants exclusive ownership of the value and marks it as destroyed at the end of
 the function. (For more information on the `deinit` convention, see
-[Field lifetimes during destruct and move](#field-lifetimes-during-destruct-and-move)).
+[Field lifetimes during move and destruction](#field-lifetimes-during-destruct-and-move)).
 
 Note that a pointer doesn't _own_ any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
@@ -242,7 +242,7 @@ Mojo won't allow you to define `__del__()`  using `fn raises` or `def`.
 
 :::
 
-## Implicit and explicit destruction
+## Explicitly-destroyed types
 
 Mojo supports both implicit and explicit value destruction. Each approach
 balances different needs around safety, performance, and overhead.
@@ -262,7 +262,7 @@ With _implicit destruction_, the compiler manages cleanup. It automatically
 calls `__del__()` when a value has no further uses, based on lifetime analysis. You
 do not invoke the destructor yourself.
 
-With _explicit destruction_, you take over cleanup responsibilities. You 
+With _explicit destruction_, you take over cleanup responsibilities. You
 must define and call a named cleanup method (such as `cleanup()` or `save_and_close()`)
 and you must call that cleanup method before the end of the scope
 in which your value lives. The compiler disables automatic
@@ -412,7 +412,7 @@ Choose one of the following approaches:
       pass  # value.__del__() called automatically
   ```
 
-### The `deinit` argument convention
+## The `deinit` argument convention
 
 In a method, adding the `deinit` convention to `self` means
 the method fully consumes the value by the time it returns.
@@ -516,7 +516,7 @@ aggregate type's initializer and destroyed with the aggregate destructor. This
 means it's impossible to create an object by initializing only its fields, and
 it's likewise impossible to destroy an object by destroying only its fields.
 
-### Field lifetimes during destruct and move
+### Field lifetimes during move and destruction {#field-lifetimes-during-destruct-and-move}
 
 Both the consuming move constructor and the destructor take their operand with
 the `deinit` argument convention. This grants exclusive ownership of the value
