@@ -971,9 +971,7 @@ def test_count():
 def test_chars_iter():
     # Test `for` loop iteration support
     for char in StringSlice("abc").codepoints():
-        assert_true(
-            char in (Codepoint.ord("a"), Codepoint.ord("b"), Codepoint.ord("c"))
-        )
+        assert_true(char in (Codepoint("a"), Codepoint("b"), Codepoint("c")))
 
     # Test empty string chars
     var s0 = StringSlice("")
@@ -988,9 +986,9 @@ def test_chars_iter():
     var s1 = StringSlice("abc")
     var s1_iter = s1.codepoints()
 
-    assert_equal(s1_iter.next().value(), Codepoint.ord("a"))
-    assert_equal(s1_iter.next().value(), Codepoint.ord("b"))
-    assert_equal(s1_iter.next().value(), Codepoint.ord("c"))
+    assert_equal(s1_iter.next().value(), Codepoint("a"))
+    assert_equal(s1_iter.next().value(), Codepoint("b"))
+    assert_equal(s1_iter.next().value(), Codepoint("c"))
     assert_true(s1_iter.next() is None)
 
     # Multibyte character decoding: A visual character composed of a combining
@@ -1000,7 +998,7 @@ def test_chars_iter():
     assert_equal(s2.count_codepoints(), 2)
 
     var iter = s2.codepoints()
-    assert_equal(iter.__next__(), Codepoint.ord("a"))
+    assert_equal(iter.__next__(), Codepoint("a"))
     # U+0301 Combining Acute Accent
     assert_equal(iter.__next__().to_u32(), 0x0301)
     with assert_raises():
@@ -1016,25 +1014,25 @@ def test_chars_iter():
     # Iterator __len__ returns length in codepoints, not bytes.
     assert_equal(s3_iter.__len__(), 5)
     assert_equal(s3_iter._slice.byte_length(), 13)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("߷"))
+    assert_equal(s3_iter.__next__(), Codepoint("߷"))
 
     assert_equal(s3_iter.__len__(), 4)
     assert_equal(s3_iter._slice.byte_length(), 11)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("ക"))
+    assert_equal(s3_iter.__next__(), Codepoint("ക"))
 
     # Combining character, visually comes first, but codepoint-wise comes
     # after the character it combines with.
     assert_equal(s3_iter.__len__(), 3)
     assert_equal(s3_iter._slice.byte_length(), 8)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("ൈ"))
+    assert_equal(s3_iter.__next__(), Codepoint("ൈ"))
 
     assert_equal(s3_iter.__len__(), 2)
     assert_equal(s3_iter._slice.byte_length(), 5)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("🔄"))
+    assert_equal(s3_iter.__next__(), Codepoint("🔄"))
 
     assert_equal(s3_iter.__len__(), 1)
     assert_equal(s3_iter._slice.byte_length(), 1)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("!"))
+    assert_equal(s3_iter.__next__(), Codepoint("!"))
 
     assert_equal(s3_iter.__len__(), 0)
     assert_equal(s3_iter._slice.byte_length(), 0)
