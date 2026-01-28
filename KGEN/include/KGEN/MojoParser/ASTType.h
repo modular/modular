@@ -232,6 +232,11 @@ public:
   /// type an implicit origin reference with the specified arg name.
   RefType getRefForArgument(const Twine &argName, bool isMut);
 
+  /// Extract a single field from a struct-typed value. Returns null if the
+  /// field doesn't exist or the value isn't a struct type.
+  static TypedAttr extractStructField(TypedAttr value, StringRef fieldName,
+                                      llvm::SMLoc loc, SharedState &shared);
+
   /// Given a parameter that is a !lit.origin or an Origin, return the
   /// underlying !lit.origin.  This returns null on failure.
   static TypedAttr extractOriginOf(llvm::SMLoc loc, TypedAttr value,
