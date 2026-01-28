@@ -28,7 +28,7 @@ from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache.paged_cache.cache_manager import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
 from max.kv_cache.registry import load_kv_manager
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
