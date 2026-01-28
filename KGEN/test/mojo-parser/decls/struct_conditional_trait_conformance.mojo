@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: echo "TODO(MOCO-3205): Fix this test."
+# RUN:  %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 # Test file for conditional trait conformance parsing.
 # This tests that `where` clauses in struct trait inheritance lists
@@ -11,8 +11,8 @@
 
 # Type aliases with constraints are generated for constrained trait compositions.
 # Check for constrained trait type aliases containing the expected constraints:
-# CHECK-DAG: @std::@builtin::@stubs::@Copyable where #kgen.constraint<conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
-# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<conforms_to(:!Movable T, ["std::builtin::stubs::Intable"])
+# CHECK-DAG: @std::@builtin::@stubs::@Copyable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+# CHECK-DAG: @std::@builtin::@stubs::@Intable where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Intable"])
 
 
 # ===========================================================================
@@ -38,7 +38,7 @@ struct UnconditionalMovable[T: Movable](Movable):
 # Verify the ConformanceOp has the constraint attached:
 # CHECK: lit.struct.decl @ConditionalCopyable<T: !Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
 struct ConditionalCopyable[T: Movable](Copyable where conforms_to(T, Copyable), Movable):
     var value: Self.T
 
@@ -58,9 +58,9 @@ struct ConditionalCopyable[T: Movable](Copyable where conforms_to(T, Copyable), 
 # Verify ConformanceOps have constraints for both Copyable and Intable:
 # CHECK: lit.struct.decl @MultipleConditionalConformances<T: !Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
-# CHECK: } where #kgen.constraint<conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
 # CHECK: kgen.conformance @"std::builtin::stubs::Intable"
-# CHECK: } where #kgen.constraint<conforms_to(:!Movable T, ["std::builtin::stubs::Intable"])
+# CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Intable"])
 struct MultipleConditionalConformances[T: Movable](
     Copyable where conforms_to(T, Copyable),
     Intable where conforms_to(T, Intable),
