@@ -41,7 +41,7 @@ bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
 CompiledFrameworkLabel
 CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
                                           StringRef frameworkName) {
-  if (opName == "mgp.model") {
+  if (opName == "mef.model") {
     if (frameworkName == "mof")
       return CompiledFrameworkLabel{kModularModel};
   }
