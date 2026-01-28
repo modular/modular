@@ -48,7 +48,7 @@ from utils._ansi import Color, Text
 @always_inline
 fn _assert_error[
     append_message: fn[W: Writer] (mut writer: W) capturing
-](loc: _SourceLocation) -> Error:
+](loc: SourceLocation) -> Error:
     @parameter
     fn write_to[W: Writer](mut writer: W):
         writer.write("AssertionError: ")
@@ -512,7 +512,7 @@ fn _assert_cmp_error[
     rhs: Some[Writable],
     *,
     msg: String,
-    loc: _SourceLocation,
+    loc: SourceLocation,
 ) -> Error:
     @parameter
     fn write_to[W: Writer](mut writer: W):

@@ -24,7 +24,7 @@ from memory import (
 )
 from sys import external_call, is_gpu
 from sys.info import size_of, align_of
-
+from format._utils import _TotalWritableBytes
 
 # ===-----------------------------------------------------------------------===#
 # StackTrace
@@ -482,7 +482,9 @@ struct Error(
             function.
         """
 
-        var string = String()
+        var total_bytes = _TotalWritableBytes()
+        message_func(total_bytes)
+        var string = String(capacity=total_bytes.size)
         message_func(string)
         self = Error(string, depth=0)
 
