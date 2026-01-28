@@ -29,6 +29,7 @@ static std::vector<DType> getAllKnownDTypes() {
       DType(DType::ui64),
       DType(DType::si128),
       DType(DType::ui128),
+      DType(DType::f4e2m1fn),
       DType(DType::f8e8m0fnu),
       DType(DType::f8e5m2),
       DType(DType::f8e5m2fnuz),
@@ -127,6 +128,9 @@ TEST(DType, getSizeInBytesPacked) {
   EXPECT_EQ(DType(DType::si2).getSizeInBytes(4), 1);
   EXPECT_EQ(DType(DType::si1).getSizeInBytes(3), 1);
   EXPECT_EQ(DType(DType::si1).getSizeInBytes(9), 2);
+  EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(1), 1);
+  EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(2), 1);
+  EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(3), 2);
 }
 
 TEST(DType, getSizeInBytes) {
@@ -137,6 +141,16 @@ TEST(DType, getSizeInBytes) {
     if (dt.getWidthInBits() % 8 == 0)
       EXPECT_EQ(dt.getSizeInBytes(8), dt.getWidthInBits()) << dt.getAsString();
   }
+}
+
+TEST(DType, getSizeInBytesOverflow) {
+  EXPECT_GT(DType(DType::f4e2m1fn)
+                .getSizeInBytes(std::numeric_limits<ssize_t>::max() >> 1),
+            0);
+  EXPECT_EQ(-1, DType(DType::f4e2m1fn)
+                    .getSizeInBytes(std::numeric_limits<size_t>::max()));
+  EXPECT_EQ(-1, DType::getComplex(DType::ui8)
+                    .getSizeInBytes(std::numeric_limits<ssize_t>::max()));
 }
 
 TEST(DType, getAsString) {

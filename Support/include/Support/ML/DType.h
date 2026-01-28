@@ -236,6 +236,11 @@ public:
   /// values.  This supports densely packed sub-byte types like i1, i2, i4.
   ssize_t getSizeInBytes(size_t numElements = 1) const;
 
+  /// Return the in-memory size for an array of the specified type with the
+  /// specified number of elements, or Error for non-numeric types or too large
+  /// values.  This supports densely packed sub-byte types like i1, i2, i4.
+  FailureOr<size_t> getSizeInBytesChecked(size_t numElements = 1) const;
+
   constexpr bool operator==(uint8_t v) const { return value == v; }
   constexpr bool operator!=(uint8_t v) const { return value != v; }
   constexpr bool operator==(DType v) const { return value == v.value; }

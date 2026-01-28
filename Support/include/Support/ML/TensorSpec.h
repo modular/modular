@@ -57,7 +57,9 @@ public:
   void setEltType(DType type) { setAuxiliaryStorage(type.getValue()); }
 
   size_t getSizeInBytes() const {
-    return getEltType().getSizeInBytes(getNumElements());
+    auto sizeOr = getEltType().getSizeInBytesChecked(getNumElements());
+    assert(succeeded(sizeOr) && "overflow");
+    return *sizeOr;
   }
 
   /// This turns the printed form of a TensorSpec back into a TensorSpec or
