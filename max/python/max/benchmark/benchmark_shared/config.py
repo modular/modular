@@ -719,47 +719,6 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
         return parent_required_fields.union({"workload_config"})
 
 
-# Convenience functions for loading specific configuration types
-def load_base_benchmark_config(
-    config_file: str = "configs/base_config.yaml",
-    overrides: dict[str, Any] | None = None,
-) -> BaseBenchmarkConfig:
-    """Load base benchmark configuration with optional overrides.
-
-    Args:
-        config_file: Path to configuration file
-        overrides: Optional dictionary of parameter overrides
-
-    Returns:
-        BaseBenchmarkConfig instance
-    """
-    config = BaseBenchmarkConfig.from_config_file(config_file)
-    if overrides:
-        for key, value in overrides.items():
-            setattr(config, key, value)
-    return config
-
-
-def load_serving_benchmark_config(
-    config_file: str = "configs/serving_config.yaml",
-    overrides: dict[str, Any] | None = None,
-) -> ServingBenchmarkConfig:
-    """Load serving benchmark configuration with optional overrides.
-
-    Args:
-        config_file: Path to configuration file
-        overrides: Optional dictionary of parameter overrides
-
-    Returns:
-        ServingBenchmarkConfig instance
-    """
-    config = ServingBenchmarkConfig.from_config_file(config_file)
-    if overrides:
-        for key, value in overrides.items():
-            setattr(config, key, value)
-    return config
-
-
 def _load_user_provided_config(
     user_config_path: Path,
     default_config_path: Path,
