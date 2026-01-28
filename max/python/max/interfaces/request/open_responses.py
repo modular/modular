@@ -27,6 +27,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
+from max.interfaces.provider_options import ProviderOptions
 from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
@@ -1040,6 +1041,15 @@ class CreateResponseBody(BaseModel):
     verbosity: VerbosityEnum | None = Field(
         None,
         description="The verbosity level for responses.",
+    )
+    provider_options: ProviderOptions | None = Field(
+        None,
+        description=(
+            "Provider-specific options for MAX platform and modalities. "
+            "Structure: 'max' for universal MAX options (target_endpoint, etc.), "
+            "and modality-specific fields like 'pixel' for vision pipelines. "
+            "Example: {'max': {'target_endpoint': 'instance-123'}, 'pixel': {...}}"
+        ),
     )
 
 
