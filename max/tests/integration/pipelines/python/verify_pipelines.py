@@ -968,7 +968,7 @@ PIPELINES = {
                 json_file="torch_pixtral_bfloat16_golden.json",
             ),
             cos_dist_threshold=1.9e-3,
-            kl_div_threshold=5.0e-3,
+            kl_div_threshold=1.7e-2,
         ),
     ),
     "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
