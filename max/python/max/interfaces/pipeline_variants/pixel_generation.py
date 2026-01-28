@@ -31,6 +31,8 @@ from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
+from .text_generation import TextGenerationRequestMessage
+
 
 @dataclass(frozen=True)
 class PixelGenerationRequest(Request):
@@ -55,6 +57,14 @@ class PixelGenerationRequest(Request):
     secondary_negative_prompt: str | None = None
     """
     The second negative prompt to guide what NOT to generate.
+    """
+    messages: list[TextGenerationRequestMessage] = field(default_factory=list)
+    """
+    Role and content-based messages to guide the generation process.
+    """
+    chat_template_options: dict[str, Any] | None = None
+    """
+    Optional dictionary of options to pass when applying the chat template.
     """
     guidance_scale: float = 3.5
     """
