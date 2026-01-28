@@ -555,8 +555,12 @@ struct ContinuousBatchingKVCache[
         Self.dtype,
         IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ]:
         """Creates a TMA tile for this KV cache."""
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
         var total_blocks = self.blocks.dim[0]()
@@ -596,7 +600,11 @@ struct ContinuousBatchingKVCache[
             BM=BN,
             BN=BK,
         ],
-    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ) raises:
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
@@ -830,8 +838,12 @@ struct PagedKVCache[
         Self.dtype,
         IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ]:
         """Creates a TMA tile for this KV cache."""
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
         #
@@ -873,7 +885,11 @@ struct PagedKVCache[
             BM=BN,
             BN=BK,
         ],
-    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ) raises:
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](

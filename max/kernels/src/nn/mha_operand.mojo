@@ -196,11 +196,15 @@ struct KVCacheMHAOperand[
             BM=BN,
             BN=BK,
         ],
-    ) raises where depth == Int(Self.cache_t.kv_params.head_size):
+    ) raises:
         # Forward to the underlying cache's implementation
-        # TODO: remove `__comptime_assert` when the `where` clause is enough
         constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
+            depth == Int(Self.cache_t.kv_params.head_size),
+            "depth must match kv_params.head_size",
+        ]()
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
         ]()
         tma = rebind[type_of(tma)](
             self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
