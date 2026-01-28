@@ -94,8 +94,8 @@ def max_flash_attention_with_sinks(
     for i in range(batch_size):
         seq_len = input_row_offsets[i + 1] - input_row_offsets[i]
         context = create_text_context(np.empty(seq_len))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     kv_cache_inputs = kv_manager.get_runtime_inputs([batch])[0]

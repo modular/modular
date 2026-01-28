@@ -255,7 +255,10 @@ class Gemma3_MultiModalModel(
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
-        # to avoid GPU memory allocation during compile-only mode (cross-compilation)
+        # to avoid GPU memory allocation during compile-only mode (cross-compilation).
+        # Force initialization here to ensure buffers are ready before model execution,
+        # preventing potential race conditions in multi-GPU scenarios.
+        _ = self.signal_buffers
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
@@ -312,14 +315,12 @@ class Gemma3_MultiModalModel(
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
 
         raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
-        model_config = Gemma3ForConditionalGenerationConfig.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Gemma3ForConditionalGenerationConfig.initialize(
+            self.pipeline_config
+        )
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=raw_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.config = model_config

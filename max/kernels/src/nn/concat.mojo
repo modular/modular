@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import align_down, align_up, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -51,7 +51,7 @@ comptime elementwise_epilogue_type = fn[
 fn memcpy_or_fuse[
     rank: Int,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     dest_data: UnsafePointer[Int8],
     out_byte_offset: Int,
@@ -109,8 +109,7 @@ fn memcpy_or_fuse[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _Span(ImplicitlyCopyable):
+struct _Span(TrivialRegisterType):
     var start: Int
     var end: Int
 
@@ -124,8 +123,7 @@ struct _Span(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _CanonicallyReshapedBuffer(ImplicitlyCopyable):
+struct _CanonicallyReshapedBuffer(TrivialRegisterType):
     var data: UnsafePointer[Int8]
     var h: Int
     var w: Int
@@ -170,7 +168,7 @@ fn _concat_parallel[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -328,7 +326,7 @@ fn _concat[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -386,7 +384,7 @@ fn _concat_inner[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -435,7 +433,7 @@ fn _concat_serial[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -465,7 +463,7 @@ fn _concat_small[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -541,7 +539,7 @@ fn _concat_cpu[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
     output: LayoutTensor[
@@ -649,7 +647,7 @@ fn concat[
     dtype: DType,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
-    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     output: LayoutTensor[mut=True, dtype, output_layout],
     axis: Int,
@@ -696,7 +694,7 @@ fn _concat_inner_most_single_dim[
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
     inputs: StaticTuple[
@@ -733,7 +731,7 @@ fn _concat_gpu_elementwise[
     //,
     dtype: DType,
     num_inputs: Int,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
     axis: Int,
@@ -758,7 +756,7 @@ fn _concat_gpu_elementwise[
     axis: Int,
     dtype: DType,
     num_inputs: Int,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
@@ -812,7 +810,7 @@ fn _concat_gpu[
     inputs_layout: Layout,
     //,
     dtype: DType,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
     axis: Int,

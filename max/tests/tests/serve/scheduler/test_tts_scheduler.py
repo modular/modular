@@ -71,7 +71,7 @@ def create_text_context(
     )
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -107,7 +107,7 @@ def create_paged_manager(
         enable_runtime_checks=True,
     )
 
-    assert kv_manager.total_num_pages == num_blocks
+    assert kv_manager.get_num_pages(replica_idx=0) == num_blocks
     return kv_manager
 
 
@@ -129,7 +129,7 @@ def create_paged_scheduler(
     max_kv_slots = max_batch_size
     if max_queue_size_tg is not None:
         max_kv_slots = max(max_kv_slots, max_queue_size_tg)
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=num_blocks,
         max_batch_size=max_kv_slots,
         max_seq_len=max_seq_len,
@@ -150,7 +150,7 @@ def create_paged_scheduler(
         enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
     token_pipeline = FakeAudioGeneratorPipeline(
-        paged_manager,
+        kv_cache,
         max_num_steps=max_forward_steps_tg,
         max_seq_len=max_seq_len,
     )
@@ -167,7 +167,7 @@ def create_paged_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
     )
 
     return scheduler, request_queue
@@ -176,11 +176,11 @@ def create_paged_scheduler(
 class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
     def __init__(
         self,
-        paged_manager: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         max_num_steps: int,
         max_seq_len: int,
     ) -> None:
-        self.paged_manager = paged_manager
+        self.kv_cache = kv_cache
         self.max_num_steps = max_num_steps
         self.max_seq_len = max_seq_len
         self._prev_num_steps: int | None = None
@@ -210,8 +210,8 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
         ctxs: list[TTSContext] = list(inputs.batch.values())
 
         for context in ctxs:
-            self.paged_manager.alloc(context, num_steps=num_tokens)
-        self.paged_manager.get_runtime_inputs([ctxs], num_steps=num_tokens)
+            self.kv_cache.alloc(context, replica_idx=0, num_steps=num_tokens)
+        self.kv_cache.get_runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
@@ -241,7 +241,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
             responses[req_id] = resp
 
         # Step the kv cache manager
-        self.paged_manager.step(ctxs)
+        self.kv_cache.step([ctxs])
 
         return responses
 
@@ -377,7 +377,7 @@ TG = BatchType.TG
 def test_audio_pipeline_exception_sends_error_to_client() -> None:
     """Test that audio scheduler catches exceptions and sends error results."""
     max_seq_len = 2048
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=100, max_batch_size=4, max_seq_len=max_seq_len, page_size=128
     )
 
@@ -406,7 +406,7 @@ def test_audio_pipeline_exception_sends_error_to_client() -> None:
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=queue.Queue(),
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
     )
 
     mock_request = create_text_context(prompt_len=100, max_seq_len=max_seq_len)

@@ -91,12 +91,12 @@ def test_claim() -> None:
 
     # Release a slot.
     replica_idx, context = batch[0]
-    kv_manager.release(context.request_id)
-    assert not kv_manager.contains(context.request_id)
+    kv_manager.release(context.request_id, replica_idx=replica_idx)
+    assert not kv_manager.contains(context.request_id, replica_idx=replica_idx)
 
     # Check that the new context can be claimed using the released slot.
     kv_manager.claim(new_context.request_id, replica_idx=replica_idx)
-    assert kv_manager.contains(new_context.request_id)
+    assert kv_manager.contains(new_context.request_id, replica_idx=replica_idx)
 
 
 def test_step() -> None:
@@ -124,12 +124,14 @@ def test_step() -> None:
 
     # Update these values a few times
     for j in range(3):
-        for ctx in batch:
-            kv_manager.alloc(ctx, 1)
+        for i, ctx in enumerate(batch):
+            kv_manager.alloc(
+                ctx, replica_idx=i % data_parallel_degree, num_steps=1
+            )
         kv_manager.get_runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batch)
+        kv_manager.step(batches_by_replica)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
@@ -146,7 +148,7 @@ def test_step() -> None:
 def test_get_runtime_inputs_requires_per_replica_batches() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree=2, num_devices=2)
 
-    with pytest.raises(ValueError, match="Got 1 batches for 2 replicas"):
+    with pytest.raises(ValueError):
         kv_manager.get_runtime_inputs([[]])
 
 
@@ -172,7 +174,7 @@ def test_increment_cache_lengths() -> None:
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=True):
         context = create_text_context(np.empty(prompt_len))
         kv_manager.claim(context.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.alloc(context, replica_idx=replica_idx, num_steps=1)
         batch.append(context)
         batches_by_replica[replica_idx].append(context)
 

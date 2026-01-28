@@ -93,8 +93,7 @@ comptime EllipsisType = __mlir_type.`!lit.ellipsis`
 """The type of the `...` literal."""
 
 
-@register_passable("trivial")
-struct Origin[*, mut: Bool]:
+struct Origin[*, mut: Bool](TrivialRegisterType):
     """This represents a origin reference for a memory value.
 
     Parameters:

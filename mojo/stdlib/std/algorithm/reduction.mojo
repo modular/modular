@@ -1633,7 +1633,7 @@ fn mean[
         @parameter
         if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            var reciprocal = 1.0 / input_shape[reduce_dim]
+            var reciprocal = 1.0 / Float64(input_shape[reduce_dim])
 
             @always_inline
             @__copy_capture(reciprocal)
@@ -1669,7 +1669,7 @@ fn mean[
             fn wrapped_output_div[
                 _dtype: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-                var mean_val = value / dim_size
+                var mean_val = value / SIMD[_dtype, width](dim_size)
                 output_fn[width, rank](
                     indices, mean_val._refine[dtype, width]()
                 )
@@ -1713,9 +1713,9 @@ fn mean[
 
     @parameter
     if dtype.is_integral():
-        return total // length
+        return total // Scalar[dtype](length)
     else:
-        return total / length
+        return total / Scalar[dtype](length)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1842,7 +1842,7 @@ fn variance[
         reduce_dim=0,
     )
 
-    return out / (length - correction)
+    return out / Scalar[dtype](length - correction)
 
 
 fn variance[

@@ -629,6 +629,24 @@ class HuggingFaceRepo:
 # TODO: Over time we'd like to extend this into a new HFAssetResolver class that
 # automatically handles locally cached vs. remotely fetched artifacts via
 # specified repo_ids and revisions.
+def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
+    """Check if a HuggingFace repository is a diffusion pipeline.
+
+    Diffusion pipelines typically have a model_index.json file that describes
+    the pipeline components.
+
+    Args:
+        repo: The HuggingFaceRepo to check.
+
+    Returns:
+        bool: True if the repository appears to be a diffusion pipeline, False otherwise.
+    """
+    try:
+        return repo.file_exists("model_index.json")
+    except Exception:
+        return False
+
+
 def generate_local_model_path(repo_id: str, revision: str) -> str:
     """Generate the local filesystem path where a HuggingFace model repo is cached.
 

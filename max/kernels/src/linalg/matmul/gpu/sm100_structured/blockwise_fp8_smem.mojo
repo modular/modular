@@ -31,6 +31,14 @@ from layout.tensor_core_async import (
 )
 
 from .config import MatmulConfig
+from .pipeline_storage import (
+    InputPipelineStorage,
+    OutputPipelineStorage,
+    ClcPipelineStorage,
+    TmemDeallocStorage,
+    BlockwiseFP8TileStorage,
+)
+from .tile_pipeline import BlockwiseFP8TilePayload
 from linalg.structuring import SMemTileArray, SMemArray
 
 
@@ -85,129 +93,118 @@ struct BlockwiseFP8Smem[
     # A-scales layout: 1D row vector with BM elements (one scale per row)
     comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
 
-    # ========== Tile Array Type Aliases ==========
-    comptime ATileArray = SMemTileArray[
+    # ========== Tile Storage (Single Source of Truth) ==========
+    # Combined storage preserves SMEM layout: a, b, c, a_scales
+    comptime Tiles = BlockwiseFP8TileStorage[
         Self.a_type,
-        Self.a_smem_layout,
-        Self.num_pipeline_stages,
-        alignment=128,
-    ]
-    comptime BTileArray = SMemTileArray[
         Self.b_type,
-        Self.b_smem_layout,
-        Self.num_pipeline_stages,
-        alignment=128,
-    ]
-    comptime CTileArray = SMemTileArray[
         Self.c_type,
-        Self.c_smem_layout,
-        Self.num_output_stages,
-        alignment=128,
-    ]
-    comptime AScalesTileArray = SMemTileArray[
         Self.a_scales_type,
+        Self.a_smem_layout,
+        Self.b_smem_layout,
+        Self.c_smem_layout,
         Self.a_scales_smem_layout,
         Self.num_pipeline_stages,
-        alignment=128,
+        Self.num_output_stages,
     ]
 
-    # ========== Storage Fields ==========
-    var a_tiles_storage: Self.ATileArray.Storage
-    var b_tiles_storage: Self.BTileArray.Storage
-    var c_tiles_storage: Self.CTileArray.Storage
-    var a_scales_tiles_storage: Self.AScalesTileArray.Storage
+    # Re-export tile array types for external use
+    comptime ATileArray = Self.Tiles.ATileArray
+    comptime BTileArray = Self.Tiles.BTileArray
+    comptime CTileArray = Self.Tiles.CTileArray
+    comptime AScalesTileArray = Self.Tiles.AScalesTileArray
 
+    # ========== Tile Storage Field ==========
+    var tiles: Self.Tiles
+
+    # ========== Tile Accessors (Delegated) ==========
     @always_inline
     fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
-        return Self.ATileArray(self.a_tiles_storage)
+        return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
-        return Self.BTileArray(self.b_tiles_storage)
+        return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
-        return Self.CTileArray(self.c_tiles_storage)
+        return self.tiles.c_tiles()
 
     @always_inline
     fn a_scales_tiles(ref [AddressSpace.SHARED]self) -> Self.AScalesTileArray:
-        return Self.AScalesTileArray(self.a_scales_tiles_storage)
+        return self.tiles.a_scales_tiles()
 
-    # ========== Barrier Type Aliases ==========
-    comptime InputBarriers = SMemArray[
-        SharedMemBarrier, Self.num_group_pipeline_stages * 2
+    # ========== Pipeline Storage (Embedded) ==========
+    comptime InputPipeline = InputPipelineStorage[
+        Self.num_group_pipeline_stages,
+        BlockwiseFP8TilePayload[
+            Self.a_type,
+            Self.b_type,
+            Self.a_scales_type,
+            Self.a_smem_layout,
+            Self.b_smem_layout,
+            Self.a_scales_smem_layout,
+            Self.num_pipeline_stages,
+        ],
     ]
-    comptime AccumBarriers = SMemArray[
-        SharedMemBarrier, Self.num_accum_pipeline_stages * 2
+    comptime OutputPipeline = OutputPipelineStorage[
+        Self.num_accum_pipeline_stages
     ]
-    comptime ClcBarriers = SMemArray[
-        SharedMemBarrier, Self.num_clc_pipeline_stages
-    ]
-    comptime ClcThrottleBarriers = SMemArray[
-        SharedMemBarrier, Self.num_clc_pipeline_stages * 2
-    ]
-    comptime ClcResponse = SMemArray[UInt128, Self.num_clc_pipeline_stages]
-    comptime TmemDealloc = SMemArray[SharedMemBarrier, 1]
-    comptime TmemAddr = SMemArray[UInt32, 1]
+    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
+    comptime TmemDeallocPipeline = TmemDeallocStorage
 
-    # ========== Barrier Storage Fields ==========
-    var tma_mma_mbars_storage: Self.InputBarriers.Storage
-    var accum_mbars_storage: Self.AccumBarriers.Storage
-    var clc_mbars_full_storage: Self.ClcBarriers.Storage
-    var clc_mbars_empty_storage: Self.ClcBarriers.Storage
-    var clc_throttle_mbars_storage: Self.ClcThrottleBarriers.Storage
-    var clc_response_storage: Self.ClcResponse.Storage
-    var tmem_dealloc_mbar_storage: Self.TmemDealloc.Storage
-    var tmem_addr_storage: Self.TmemAddr.Storage
+    # Storage fields - embedded in SMEM
+    var input_pipeline: Self.InputPipeline
+    var output_pipeline: Self.OutputPipeline
+    var clc_pipeline: Self.ClcPipeline
+    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
 
-    # ========== Barrier Accessors ==========
+    # Type aliases for accessor return types
+    comptime InputBarriers = Self.InputPipeline.BarrierArray
+    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
+    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
+    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
+    comptime ClcResponse = Self.ClcPipeline.ResponseArray
+    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
+    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
+
+    # ========== Barrier Accessors (Delegated to Pipelines) ==========
     @always_inline
-    fn tma_mma_mbars(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
-        return Self.InputBarriers(self.tma_mma_mbars_storage)
+    fn input_barriers(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
+        """Returns input tile pipeline barriers."""
+        return self.input_pipeline.barriers.barriers()
 
     @always_inline
-    fn accum_mbars(ref [AddressSpace.SHARED]self) -> Self.AccumBarriers:
-        return Self.AccumBarriers(self.accum_mbars_storage)
+    fn accum_barriers(ref [AddressSpace.SHARED]self) -> Self.AccumBarriers:
+        """Returns accumulator pipeline barriers."""
+        return self.output_pipeline.barriers.barriers()
 
     @always_inline
     fn clc_mbars_full(ref [AddressSpace.SHARED]self) -> Self.ClcBarriers:
-        return Self.ClcBarriers(self.clc_mbars_full_storage)
+        return self.clc_pipeline.full()
 
     @always_inline
     fn clc_mbars_empty(ref [AddressSpace.SHARED]self) -> Self.ClcBarriers:
-        return Self.ClcBarriers(self.clc_mbars_empty_storage)
+        return self.clc_pipeline.empty()
 
     @always_inline
     fn clc_throttle_mbars(
         ref [AddressSpace.SHARED]self,
     ) -> Self.ClcThrottleBarriers:
-        return Self.ClcThrottleBarriers(self.clc_throttle_mbars_storage)
+        return self.clc_pipeline.throttle()
 
     @always_inline
     fn clc_response(ref [AddressSpace.SHARED]self) -> Self.ClcResponse:
-        return Self.ClcResponse(self.clc_response_storage)
-
-    @always_inline
-    fn tmem_dealloc_mbar(ref [AddressSpace.SHARED]self) -> Self.TmemDealloc:
-        return Self.TmemDealloc(self.tmem_dealloc_mbar_storage)
-
-    @always_inline
-    fn tmem_addr(ref [AddressSpace.SHARED]self) -> Self.TmemAddr:
-        return Self.TmemAddr(self.tmem_addr_storage)
-
-    # ========== Standard API Aliases ==========
-
-    @always_inline
-    fn input_barriers(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
-        return self.tma_mma_mbars()
-
-    @always_inline
-    fn accum_barriers(ref [AddressSpace.SHARED]self) -> Self.AccumBarriers:
-        return self.accum_mbars()
+        return self.clc_pipeline.response()
 
     @always_inline
     fn tmem_dealloc(ref [AddressSpace.SHARED]self) -> Self.TmemDealloc:
-        return self.tmem_dealloc_mbar()
+        """Returns TMEM deallocation barrier."""
+        return self.tmem_dealloc_pipeline.barrier()
+
+    @always_inline
+    fn tmem_addr(ref [AddressSpace.SHARED]self) -> Self.TmemAddr:
+        return self.tmem_dealloc_pipeline.addr()
 
     # ========== Size Utilities ==========
     @staticmethod

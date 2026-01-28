@@ -158,8 +158,8 @@ PIXTRAL_MESSAGES = [
     {
         "role": "user",
         "content": [
-            {"type": "image"},
             {"type": "text", "text": "Describe the images."},
+            {"type": "image"},
         ],
     }
 ]

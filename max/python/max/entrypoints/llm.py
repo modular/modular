@@ -34,8 +34,8 @@ from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.worker_interface.lora_queue import LoRAQueue
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -204,7 +204,7 @@ async def _async_worker(
         else None
     )
     # Create Queues
-    scheduler_zmq_configs = SchedulerZmqConfigs(
+    model_worker_interface = ZmqModelWorkerInterface(
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(pipeline_config),
     )
@@ -215,13 +215,13 @@ async def _async_worker(
             pipeline_config=pipeline_config,
             settings=settings,
             metric_client=metric_client,
-            scheduler_zmq_configs=scheduler_zmq_configs,
+            model_worker_interface=model_worker_interface,
         ) as worker_monitor,
         TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
             lora_queue=lora_queue,
-            scheduler_zmq_configs=scheduler_zmq_configs,
+            model_worker_interface=model_worker_interface,
         ) as pipeline,
     ):
         pc.ready.set()
