@@ -16,7 +16,7 @@ struct MemType(ImplicitlyCopyable):
         return MemType(self.member + other.member)
 
 
-fn makes_escaping_closure(m: Int) -> fn (n: Int) escaping -> Int:
+fn makes_escaping_closure(m: Int) -> fn(n: Int) escaping -> Int:
     fn myclosure(n: Int) -> Int:
         return n + m
 
@@ -32,14 +32,14 @@ struct Foo[a: Int](ImplicitlyCopyable):
         return Self.a + self.b
 
 
-fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
+fn legal_type_ref[a: Int](c: Int) -> fn(x: Int, y: Int) escaping -> Int:
     fn p_capture(x: Int, y: Int) -> Int:
         return Foo[a](x + c + y).get()
 
     return p_capture
 
 
-fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
+fn parameter_capture[a: Int, b: Int](c: Int) -> fn(x: Int) escaping -> Int:
     comptime X = Foo[a](1)
 
     fn p_capture(x: Int) -> Int:
@@ -61,7 +61,7 @@ struct Bar[C: Int, D: Int]:
 struct Bat[A: Int](ImplicitlyCopyable):
     var b: Int
 
-    fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, Self.A]:
+    fn get[B: Int](self) -> fn(y: Int) escaping -> Bar[B, Self.A]:
         fn bar(y: Int) -> Bar[B, Self.A]:
             var w = B + self.b + y
             return Bar[B, Self.A](w + Self.A)
@@ -71,7 +71,7 @@ struct Bat[A: Int](ImplicitlyCopyable):
 
 fn makes_escaping_closure_position_only(
     m: MemType,
-) -> fn (n: MemType, /) escaping -> MemType:
+) -> fn(n: MemType, /) escaping -> MemType:
     fn myclosure(n: MemType, /) -> MemType:
         return n + m
 
@@ -84,7 +84,7 @@ fn foo[Z: Int, W: Int]() -> Int:
 
 fn test_captures_are_ordered_correctly[
     aa: Int, a: Int, b: Int, bb: Int
-](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
+](c: Int) -> fn(x: Int, y: Foo[b]) escaping -> Foo[a]:
     comptime Y = foo[aa, bb]()
 
     fn p_capture(x: Int, y: Foo[b]) -> Foo[a]:
@@ -98,8 +98,8 @@ fn bar[a: Int](x: Foo[a]) -> Int:
 
 
 fn captureCallable[
-    callable: fn[A: Int] (p: Foo[A]) -> Int
-](a: Int) -> fn (x: Int) escaping -> Int:
+    callable: fn[A: Int](p: Foo[A]) -> Int
+](a: Int) -> fn(x: Int) escaping -> Int:
     fn foo(x: Int) -> Int:
         var w = callable[3](Foo[3](a))
         return w + a
@@ -118,11 +118,11 @@ struct C[B: DType](ImplicitlyCopyable):
 
 fn take_closure[
     c_type: DType
-](x: C[c_type], closure: fn (z: C[c_type]) escaping -> None):
+](x: C[c_type], closure: fn(z: C[c_type]) escaping -> None):
     closure(x)
 
 
-fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
+fn make_closure[c_type: DType]() -> fn(z: C[c_type]) escaping -> None:
     fn foo(z: C[c_type]) escaping -> None:
         print(z.get())
 
@@ -131,11 +131,11 @@ fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
 
 fn deep_runtime_capture(
     m: Int, flag: Bool
-) raises -> fn (n: Int) escaping -> fn (o: Int) escaping -> Int:
+) raises -> fn(n: Int) escaping -> fn(o: Int) escaping -> Int:
     if flag:
         var q = m + m
 
-        fn myclosure2(n: Int) -> fn (o: Int) escaping -> Int:
+        fn myclosure2(n: Int) -> fn(o: Int) escaping -> Int:
             fn my_inner_closure(o: Int) -> Int:
                 var x = o + q
                 return x + n
@@ -147,13 +147,13 @@ fn deep_runtime_capture(
         raise Error("unreachable")
 
 
-fn takeClosure(writer: fn (v: Int) escaping -> Int, value: Int):
+fn takeClosure(writer: fn(v: Int) escaping -> Int, value: Int):
     print(writer(value))
 
 
 fn makeEscapingClosure[
-    parametricClosure: fn (v: Int) capturing -> Int
-](x: Int) -> fn (v: Int) escaping -> Int:
+    parametricClosure: fn(v: Int) capturing -> Int
+](x: Int) -> fn(v: Int) escaping -> Int:
     fn writer(v: Int) -> Int:
         return parametricClosure(x + v)
 

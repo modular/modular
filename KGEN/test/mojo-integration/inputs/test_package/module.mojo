@@ -78,7 +78,7 @@ fn exported_func():
 # declaration will first be pulled from this package. Thus the signatures of
 # the two closures must match.
 fn call_closure[
-    func: fn[x: Int, y: Int, z: Int] (idx: Int) unified -> None,
+    func: fn[x: Int, y: Int, z: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
 ](size: Int, closure: func):

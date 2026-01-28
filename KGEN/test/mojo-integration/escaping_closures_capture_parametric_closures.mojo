@@ -37,14 +37,14 @@ fn use(lhs: Int, rhs: Int) -> Int:
 
 
 @no_inline
-fn takeClosure(writer: fn (v: Int) escaping -> Int, value: Int):
+fn takeClosure(writer: fn(v: Int) escaping -> Int, value: Int):
     _ = writer(value)
 
 
 @no_inline
 fn makeEscapingClosure[
-    parametricClosure: fn[x: Int] (v: Int) capturing -> Int
-](x: Int) -> fn (v: Int) escaping -> Int:
+    parametricClosure: fn[x: Int](v: Int) capturing -> Int
+](x: Int) -> fn(v: Int) escaping -> Int:
     fn writer(v: Int) -> Int:
         return parametricClosure[2](use(x, v))
 

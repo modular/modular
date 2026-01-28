@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn printIt[kernel: fn (x: Int) unified -> Int](func: kernel, y: Int):
+fn printIt[kernel: fn(x: Int) unified -> Int](func: kernel, y: Int):
     print(func(y))
 
 

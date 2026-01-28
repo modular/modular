@@ -59,7 +59,7 @@ comptime alias_cond = 2 if is_nvidia_gpu() else 1
 # CHECK:  "name": "alias_fn",
 # CHECK:  "path": "/mojo_doc/#alias_fn",
 # CHECK:  "value": "fn(Int, Int) -> None"
-comptime alias_fn = fn (Int, Int) -> None
+comptime alias_fn = fn(Int, Int) -> None
 
 
 # CHECK:  "kind": "alias",
@@ -336,9 +336,9 @@ fn fn_with_params_and_return(arg: Int) -> Int:
 
 fn fn_with_fn_param_and_arg[
     T: AnyType,
-    param_fn: fn (T, T) capturing [_] -> Bool,
+    param_fn: fn(T, T) capturing[_] -> Bool,
     S: AnyType = T,
-](arg_fn: fn (S, S) capturing [_] -> Bool) -> S:
+](arg_fn: fn(S, S) capturing[_] -> Bool) -> S:
     pass
 
 
@@ -359,7 +359,7 @@ fn logsoftmax[
     buffer_size: Dim,
     dtype: DType,
     origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
 ](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
@@ -376,9 +376,9 @@ fn tile_and_unswitch[
     pass
 
 
-comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool](
     Int, Int
-) capturing [_] -> None
+) capturing[_] -> None
 
 
 @fieldwise_init
@@ -947,7 +947,7 @@ struct StructWithDefault[a: Int = 1]:
 
 struct StructWithFnParam[
     T: AnyType,
-    param_fn: fn (T, T) capturing [_] -> Bool,
+    param_fn: fn(T, T) capturing[_] -> Bool,
     S: AnyType = T,
 ]:
     pass

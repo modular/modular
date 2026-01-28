@@ -25,7 +25,7 @@ trait ATrait(Movable):
         ...
 
 
-struct AStruct[func: fn (x: Int) unified -> Int](ATrait):
+struct AStruct[func: fn(x: Int) unified -> Int](ATrait):
     var myFunc: Self.func
 
     fn __init__(out self, var x: Self.func):
@@ -40,7 +40,7 @@ fn takeIt[T: ATrait](impl: T):
 
 
 # COM: Test the capturing effect is propagated through to trait methods
-trait DefinesClosure(fn (z: Int) unified -> Int):
+trait DefinesClosure(fn(z: Int) unified -> Int):
     pass
 
 
@@ -52,7 +52,7 @@ struct DefinesClosureImpl(DefinesClosure):
         return z + self.x
 
 
-fn takeIt[f: fn (z: Int) unified -> Int](impl: f, y: Int):
+fn takeIt[f: fn(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 

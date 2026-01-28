@@ -6,7 +6,7 @@
 
 
 @no_inline
-fn takeIt[F: fn[width: Int] (idx: Int) unified -> Scalar[DType.int]](impl: F):
+fn takeIt[F: fn[width: Int](idx: Int) unified -> Scalar[DType.int]](impl: F):
     print(impl.__call__[1](0))
 
 

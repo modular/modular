@@ -9,7 +9,7 @@ from sys import argv
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 
-fn hasOrigin[F: fn[T: MutOrigin] (TypeWithOrigin[T]) unified -> None, //](f: F):
+fn hasOrigin[F: fn[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //](f: F):
     f[MutAnyOrigin](TypeWithOrigin[MutAnyOrigin]())
 
 
@@ -21,12 +21,12 @@ struct TypeWithOrigin[T: MutOrigin](ImplicitlyCopyable, Movable):
         self.isMutable = Self.T.mut
 
 
-fn takeIt[f: ImplicitlyCopyable & fn (z: Int) unified -> Int](impl: f, y: Int):
+fn takeIt[f: ImplicitlyCopyable & fn(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 
 @no_inline
-fn aThing[f: fn (Int) capturing -> Int](y: Int):
+fn aThing[f: fn(Int) capturing -> Int](y: Int):
     fn aClosure(z: Int) unified {var} -> Int:
         return f(y)
 
@@ -80,7 +80,7 @@ struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
 
 
 fn useDefinesCapturingParamClosure[
-    NOT_X: Coordinate & ImplicitlyCopyable, C: fn () unified -> NOT_X
+    NOT_X: Coordinate & ImplicitlyCopyable, C: fn() unified -> NOT_X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
@@ -104,7 +104,7 @@ fn definesCapturingParamClosure[
 
 fn usesParamRefClosure[
     T: Coordinate & ImplicitlyCopyable,
-    C: fn[x: Int, Y: Coordinate] (xx: T, unused: Y) unified -> Polar[x],
+    C: fn[x: Int, Y: Coordinate](xx: T, unused: Y) unified -> Polar[x],
 ](impl: C, value: T):
     var typed_value = rebind[C.T](value)
     var result = impl[3, Cartesian](typed_value, Cartesian(3, 3))
