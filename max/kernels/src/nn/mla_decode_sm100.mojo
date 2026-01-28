@@ -1048,12 +1048,11 @@ struct DecodeSM100MiscMBars[
 
     @always_inline
     fn producer(self) -> ProducerPipeline[Self.num_stages]:
-        # ProducerPipeline assumes layout [prod0..prodN-1][cons0..consN-1]
-        return {self.mbar_base}
+        return {self.mbar_base, self.mbar_base + Self.num_stages}
 
     @always_inline
     fn consumer(self) -> ConsumerPipeline[Self.num_stages]:
-        return {self.mbar_base}
+        return {self.mbar_base, self.mbar_base + Self.num_stages}
 
     @always_inline
     fn end(self) -> MBarType:

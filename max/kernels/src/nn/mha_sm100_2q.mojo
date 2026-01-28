@@ -968,10 +968,15 @@ struct FA4Config(TrivialRegisterType):
                 self.num_pv_stages = 2
 
         var smem_use = 4
-        # Compute misc_mbars size using actual num_pv_stages:
-        # size = 4 * num_pv_stages + 7 (S barriers * 2 wgs + C + order + Q1Sync)
-        misc_mbars_size = 8 + 2 * self.num_pv_stages + self.num_qk_stages
-        smem_use += (misc_mbars_size + 4) * Self.mbar_size
+        # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
+        # - S barriers: 2 * (1 + num_pv_stages) per warp group = 4 + 4*num_pv_stages
+        # - C barriers: 4 (C0/C1 producer/consumer)
+        # - Order barriers: 2
+        # - Q1Sync barriers: num_qk_stages
+        # - O barriers: 4 (2 producer + 2 consumer)
+        # Total fixed = 8 + 2*num_pv_stages + num_qk_stages + 4
+        misc_mbars_fixed_size = 12 + 2 * self.num_pv_stages + self.num_qk_stages
+        smem_use += misc_mbars_fixed_size * Self.mbar_size
 
         # BK0: K-dimension chunk size for Q@K' per stage
         self.BK0 = self.padded_depth // self.num_qk_stages
@@ -981,13 +986,14 @@ struct FA4Config(TrivialRegisterType):
         # BM*depth*dtype_size + num_kv_stages*(2*mbar_size + BN*depth*dtype_size) <= smem_remaining
         # num_kv_stages <= (smem_remaining - 2*BM*depth*dtype_size) // (2*mbar_size + BN*depth*dtype_size)
         smem_use += self.BM * self.padded_depth * dtype_size
-        # Barriers per KV stage:
+        # Barriers per KV stage (K/V barriers scale with num_kv_stages):
         # - K loading: 2 * num_qk_stages (producer + consumer per stage)
-        # - V loading: 2 (single stage, producer + consumer)
+        # - V loading: 2 (single stage, producer + consumer) if separate_kv
+        # Note: For MLA (separate_kv=False), V barriers are 0
         smem_per_kv = (
             2 * self.BN * self.padded_depth * dtype_size
             + 2 * Self.mbar_size * self.num_qk_stages  # K barriers
-            + 2 * Self.mbar_size  # V barriers (1 stage)
+            + 2 * Self.mbar_size  # V barriers (MHA, 1 stage)
         )
         self.num_kv_stages = (
             Self.sm100_smem_carveout - smem_use
@@ -1396,46 +1402,6 @@ fn elect_mma_arrive[
         NoneType,
         constraints="r, r",
     ](Int32(Int(mbar_ptr)), elect)
-
-
-@always_inline
-fn elect_mbar_init[
-    cta_group: Int = 1
-](
-    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED, ...],
-    *,
-    count: UInt32,
-    elect: Int32,
-):
-    """Initialize mbar pointer for `count` arrivals using the elected thread.
-
-    Parameters:
-        cta_group: Number of ctas used by MMA.
-
-    Args:
-        mbar_ptr: Pointer to the mbar.
-        count: The number of arrivals to flip the phase.
-        elect: `elect()`.
-    """
-    __comptime_assert cta_group in (1, 2), String(
-        "Unsupported cta group: ", cta_group
-    )
-    comptime ptx = String(
-        """{
-        .reg .pred %pb;
-        setp.eq.s32  %pb, $2, 0;
-        @%pb bra skip;
-        mbarrier.init.shared""",
-        "" if cta_group == 1 else "::cta",
-        """.b64 [$0], $1;
-        skip:
-        }""",
-    )
-    inlined_assembly[
-        ptx,
-        NoneType,
-        constraints="r, r, r",
-    ](Int32(Int(mbar_ptr)), count, elect)
 
 
 @always_inline
@@ -2134,13 +2100,6 @@ struct StagedPipeline[num_kv_stages: Int, num_qk_stages: Int = 1](
         self.state = {}
 
     @always_inline
-    fn init(self, *, elect: Int32):
-        # Consumer & Producer mbars: arrived by 1 thread performing TMA/mma
-        @parameter
-        for i in range(2 * Self.num_stages):
-            elect_mbar_init(self.mbar + i, count=1, elect=elect)
-
-    @always_inline
     fn producer_mbar[qk_stage: Int = 0](self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.mbar + UInt32(Self.num_qk_stages) * idx + qk_stage
@@ -2277,11 +2236,6 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
         self.pipeline = pipeline
         self.smem = smem
         self.pipeline.state._phase = 1
-
-    @always_inline
-    fn init(self, *, elect: Int32):
-        """Only one of the producer or consumer should call `init()`."""
-        self.pipeline.init(elect=elect)
 
     @always_inline
     fn get_smem[*, qk_stage: Int = 0](self) -> Self.SMemType:
@@ -2426,11 +2380,6 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ):
         return Self(type_of(self.pipeline)(mbar), smem)
 
-    @always_inline
-    fn init(self, *, elect: Int32):
-        """Only one of the producer or consumer should call `init()`."""
-        self.pipeline.init(elect=elect)
-
     @always_inline("nodebug")
     fn get(self) -> MMASmemDescriptorPair:
         """Get smem descriptor for current stage."""
@@ -2487,14 +2436,21 @@ comptime KConsumerPipeline = TMAConsumerPipeline[_, _, True]
 comptime VConsumerPipeline = TMAConsumerPipeline[_, _, False]
 
 
-struct RolePipeline[number_of_stages: Int, is_producer: Bool = True](
-    TrivialRegisterType
-):
+struct RolePipeline[
+    number_of_stages: Int,
+    is_producer: Bool = True,
+    producer_sub_stages: Int = 1,
+    consumer_sub_stages: Int = 1,
+](TrivialRegisterType):
     """
     Unified producer/consumer pipeline for barrier synchronization.
 
     Producer role: Starts with phase=1, uses acquire/commit methods.
     Consumer role: Starts with phase=0, uses wait/release methods.
+
+    Sub-stages allow multiple barriers per stage:
+    - Total producer barriers: num_stages * producer_sub_stages
+    - Total consumer barriers: num_stages * consumer_sub_stages
 
     Synchronization behavior (example with num_stages=1):
 
@@ -2514,13 +2470,16 @@ struct RolePipeline[number_of_stages: Int, is_producer: Bool = True](
 
     comptime num_stages: Int = Self.number_of_stages
 
-    # mbars are ordered in {producer, consumer} pairs
-    var mbar: MBarType
+    var producer_mbar_base: MBarType
+    var consumer_mbar_base: MBarType
     var state: PipelineState[Self.num_stages]
 
     @always_inline
-    fn __init__(out self, mbar: MBarType):
-        self.mbar = mbar
+    fn __init__(
+        out self, producer_mbar_base: MBarType, consumer_mbar_base: MBarType
+    ):
+        self.producer_mbar_base = producer_mbar_base
+        self.consumer_mbar_base = consumer_mbar_base
         self.state = {}
 
         @parameter
@@ -2529,18 +2488,44 @@ struct RolePipeline[number_of_stages: Int, is_producer: Bool = True](
             self.state._phase = 1
 
     @always_inline
-    fn producer_mbar(self) -> MBarType:
-        return self.mbar + self.state.index()
+    fn producer_mbar[sub_stage_idx: Int = 0](self) -> MBarType:
+        """Get producer mbar for current stage and optional sub-stage.
+
+        Parameters:
+            sub_stage_idx: Sub-stage index (0 to producer_sub_stages-1).
+        """
+        constrained[
+            sub_stage_idx < Self.producer_sub_stages,
+            "sub_stage_idx out of range",
+        ]()
+        return (
+            self.producer_mbar_base
+            + self.state.index() * Self.producer_sub_stages
+            + sub_stage_idx
+        )
 
     @always_inline
-    fn consumer_mbar(self) -> MBarType:
-        return self.mbar + Self.number_of_stages + self.state.index()
+    fn consumer_mbar[sub_stage_idx: Int = 0](self) -> MBarType:
+        """Get consumer mbar for current stage and optional sub-stage.
+
+        Parameters:
+            sub_stage_idx: Sub-stage index (0 to consumer_sub_stages-1).
+        """
+        constrained[
+            sub_stage_idx < Self.consumer_sub_stages,
+            "sub_stage_idx out of range",
+        ]()
+        return (
+            self.consumer_mbar_base
+            + self.state.index() * Self.consumer_sub_stages
+            + sub_stage_idx
+        )
 
     # Producer methods
     @always_inline("nodebug")
-    fn acquire(self):
+    fn acquire[sub_stage_idx: Int = 0](self):
         """Wait until consumer has released the buffer. Producer-only."""
-        self.consumer_mbar()[].wait(self.state.phase())
+        self.consumer_mbar[sub_stage_idx]()[].wait(self.state.phase())
 
     @always_inline("nodebug")
     fn commit(mut self):
@@ -2567,10 +2552,15 @@ struct RolePipeline[number_of_stages: Int, is_producer: Bool = True](
         self.producer_mbar()[].wait(self.state.phase())
 
     @always_inline("nodebug")
-    fn release(mut self):
-        """Release buffer and step. Consumer-only."""
-        _ = self.consumer_mbar()[].arrive()
+    fn release[sub_stage_idx: Int = 0](mut self):
+        """Release buffer at sub-stage and step. Consumer-only."""
+        _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
         self.state.step()
+
+    @always_inline("nodebug")
+    fn release_no_step[sub_stage_idx: Int = 0](self):
+        """Release buffer without stepping. For multi-sub-stage release."""
+        _ = self.consumer_mbar[sub_stage_idx]()[].arrive()
 
     # Shared method
     @always_inline("nodebug")
@@ -2579,8 +2569,8 @@ struct RolePipeline[number_of_stages: Int, is_producer: Bool = True](
 
 
 # Backward-compatible type aliases
-comptime ProducerPipeline = RolePipeline[_, True]
-comptime ConsumerPipeline = RolePipeline[_, False]
+comptime ProducerPipeline = RolePipeline[_, True, _, _]
+comptime ConsumerPipeline = RolePipeline[_, False, _, _]
 
 
 struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
@@ -2814,99 +2804,144 @@ fn apply_mask[
             )
 
 
-struct FA4MiscMBars[*, num_qk_stages: Int = 1, num_pv_stages: Int = 1](
-    TrivialRegisterType
-):
-    """Manages miscellaneous barriers for FA4.
+struct FA4MiscMBars[
+    *,
+    num_qk_stages: Int = 1,
+    num_pv_stages: Int = 1,
+    num_kv_stages: Int = 2,
+    separate_kv: Bool = True,
+](TrivialRegisterType):
+    """Manages all mbarrier resources for FA4.
 
-    With P@V staging (num_pv_stages > 1), S barriers are replicated per stage:
-    - S0: 2*num_pv_stages barriers (producer + consumer per pv_stage for wg0)
-    - S1: 2*num_pv_stages barriers (producer + consumer per pv_stage for wg1)
-    - C0/C1, order, Q1Sync: unchanged
+    This struct consolidates all mbarrier management including:
+    - S barriers (score MMA synchronization)
+    - C barriers (correction synchronization)
+    - Order barriers (softmax ordering)
+    - Q1Sync barriers (Q tile synchronization)
+    - K/V pipeline barriers
+    - O pipeline barriers
+
+    Parameters:
+        num_qk_stages: Number of stages for Q@K' MMA (K loading can be staged).
+        num_pv_stages: Number of stages for P@V MMA (P writing can be staged).
+        num_kv_stages: Number of KV buffer stages for double/triple buffering.
+        separate_kv: True for MHA (separate K/V barriers), False for MLA (unified KV).
+
+    Memory layout (count=128 first, then count=1):
+        [S0_cons] [S1_cons] [C0] [C1] [Order] [O_cons] | [S0_prod] [S1_prod] [Q1Sync] [K] [V*] [O_prod]
+        *V barriers only present when separate_kv=True
     """
 
     var mbar_base: MBarType
 
-    # S barriers: 2 * num_pv_stages per warp group (producer + consumer per stage)
-    comptime S_barriers_per_wg = 1 + Self.num_pv_stages
-    comptime S0_offset = 0
-    comptime S1_offset = Self.S_barriers_per_wg
-    # C, order, Q1Sync barriers come after S barriers
-    comptime C0_offset = 2 * Self.S_barriers_per_wg
+    # ---- Count=128 section (first in smem) ----
+    # S consumer barriers: num_pv_stages per warp group
+    comptime S0_consumer_offset = 0
+    comptime S1_consumer_offset = Self.num_pv_stages
+    # C barriers: 2 per warp group (producer + consumer, both count=128)
+    comptime C0_offset = 2 * Self.num_pv_stages
     comptime C1_offset = Self.C0_offset + 2
+    # Order barriers: 1 per warp group (count=128)
     comptime order_offset = Self.C1_offset + 2
-    comptime Q1SyncIdx = Self.order_offset + 2
-    comptime size = Self.Q1SyncIdx + Self.num_qk_stages
+    # O consumer barriers (count=128)
+    comptime O_consumer_offset = Self.order_offset + 2
+
+    # ---- Count=1 section ----
+    # S producer barriers: 1 per warp group
+    comptime S0_producer_offset = Self.O_consumer_offset + 2
+    comptime S1_producer_offset = Self.S0_producer_offset + 1
+    # Q1Sync barriers
+    comptime Q1SyncIdx = Self.S1_producer_offset + 1
+    # K pipeline barriers
+    comptime K_offset = Self.Q1SyncIdx + Self.num_qk_stages
+    comptime K_barriers: Int = 2 * Self.num_qk_stages * Self.num_kv_stages
+    # V barriers only present when separate_kv=True (MHA uses separate K/V)
+    comptime V_offset: Int = Self.K_offset + Self.K_barriers
+    comptime V_barriers: Int = 2 * Self.num_kv_stages if Self.separate_kv else 0
+    # O producer barriers (count=1)
+    comptime O_producer_offset = Self.V_offset + Self.V_barriers
+
+    # Total size includes all barriers
+    comptime size = Self.O_producer_offset + 2
+    comptime number_warpgroup_count = Self.S0_producer_offset
 
     @always_inline
     fn __init__(out self, mbar_base: MBarType):
         self.mbar_base = mbar_base
 
     @always_inline
-    fn init(self, *, elect: Int32):
-        # S barriers: producer (arrived by MMA), consumer (arrived by softmax threads)
+    fn init(self, *, lane_idx: Int32):
         @parameter
-        for wg_idx in range(2):
-            comptime s_offset = wg_idx * Self.S_barriers_per_wg
-            elect_mbar_init(self.mbar_base + s_offset, count=1, elect=elect)
-
-            @parameter
-            for pv_stage in range(1, 1 + Self.num_pv_stages):
-                elect_mbar_init(
-                    self.mbar_base + s_offset + pv_stage, count=128, elect=elect
+        if Self.size < WARP_SIZE:
+            if lane_idx < Self.size:
+                self.mbar_base[lane_idx].init(
+                    128 if lane_idx < Self.number_warpgroup_count else 1
                 )
+        elif Self.size == WARP_SIZE:
+            self.mbar_base[lane_idx].init(
+                128 if lane_idx < Self.number_warpgroup_count else 1
+            )
+        else:
+            __comptime_assert Self.number_warpgroup_count <= WARP_SIZE, String(
+                "Number of count=128 barriers = ", Self.number_warpgroup_count
+            )
+            __comptime_assert (
+                Self.size - Self.number_warpgroup_count <= WARP_SIZE
+            ), String(
+                "Number of count=1 barriers = ",
+                Self.size - Self.number_warpgroup_count,
+            )
+            if lane_idx < Self.number_warpgroup_count:
+                self.mbar_base[lane_idx].init(128)
+            if lane_idx < Self.size - Self.number_warpgroup_count:
+                self.mbar_base[Self.number_warpgroup_count + lane_idx].init(1)
 
-            # C producer, produced by 128 softmax threads
-            elect_mbar_init(
-                self.mbar_base + Self.C0_offset + 2 * wg_idx,
-                count=128,
-                elect=elect,
-            )
-            # C consumer, consumed by 128 correction threads
-            elect_mbar_init(
-                self.mbar_base + Self.C0_offset + 2 * wg_idx + 1,
-                count=128,
-                elect=elect,
-            )
-            # ordering is done by 128 softmax threads
-            elect_mbar_init(
-                self.mbar_base + Self.order_offset + wg_idx,
-                count=128,
-                elect=elect,
-            )
-
-        @parameter
-        for qk_stage in range(Self.num_qk_stages):
-            elect_mbar_init(
-                self.mbar_base + Self.Q1SyncIdx + qk_stage, count=1, elect=elect
-            )
+    # S pipeline type: 1 producer sub-stage, num_pv_stages consumer sub-stages
+    comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
+    comptime SPipelineConsumer = RolePipeline[1, False, 1, Self.num_pv_stages]
 
     @always_inline
-    fn producer_s0(self) -> ProducerPipeline[1]:
-        """Get S producer for warp group 0 at given pv_stage."""
-        return {self.mbar_base + Self.S0_offset}
+    fn producer_s0(self) -> Self.SPipelineProducer:
+        """Get S producer for warp group 0."""
+        return {
+            self.mbar_base + Self.S0_producer_offset,
+            self.mbar_base + Self.S0_consumer_offset,
+        }
 
     @always_inline
-    fn producer_s1(self) -> ProducerPipeline[1]:
-        """Get S producer for warp group 1 at given pv_stage."""
-        return {self.mbar_base + Self.S1_offset}
+    fn producer_s1(self) -> Self.SPipelineProducer:
+        """Get S producer for warp group 1."""
+        return {
+            self.mbar_base + Self.S1_producer_offset,
+            self.mbar_base + Self.S1_consumer_offset,
+        }
 
     @always_inline
-    fn consumer_s(self, wg_idx: UInt32) -> ConsumerPipeline[1]:
-        """Get S consumer for given warp group and pv_stage."""
-        return {self.mbar_base + UInt32(Self.S_barriers_per_wg) * wg_idx}
+    fn consumer_s(self, wg_idx: UInt32) -> Self.SPipelineConsumer:
+        """Get S consumer for given warp group."""
+        return {
+            self.mbar_base + Self.S0_producer_offset + wg_idx,
+            self.mbar_base + Self.num_pv_stages * wg_idx,
+        }
 
     @always_inline
     fn consumer_c0(self) -> ConsumerPipeline[1]:
-        return {self.mbar_base + Self.C0_offset}
+        return {
+            self.mbar_base + Self.C0_offset,
+            self.mbar_base + Self.C0_offset + 1,
+        }
 
     @always_inline
     fn consumer_c1(self) -> ConsumerPipeline[1]:
-        return {self.mbar_base + Self.C1_offset}
+        return {
+            self.mbar_base + Self.C1_offset,
+            self.mbar_base + Self.C1_offset + 1,
+        }
 
     @always_inline
     fn producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
-        return {self.mbar_base + Self.C0_offset + 2 * wg_idx}
+        base = Self.C0_offset + 2 * wg_idx
+        return {self.mbar_base + base, self.mbar_base + base + 1}
 
     @always_inline
     fn pipeline_order_wait(self, wg_idx: UInt32) -> MBarType:
@@ -2919,6 +2954,48 @@ struct FA4MiscMBars[*, num_qk_stages: Int = 1, num_pv_stages: Int = 1](
     @always_inline
     fn q1_wait_mbar(self) -> MBarType:
         return self.mbar_base + Self.Q1SyncIdx
+
+    # K/V/O barrier accessors
+    @always_inline("nodebug")
+    fn get_k_mbars(self) -> MBarType:
+        """Returns base pointer for K pipeline barriers."""
+        return self.mbar_base + Self.K_offset
+
+    @always_inline("nodebug")
+    fn get_v_mbars(self) -> MBarType:
+        """Returns base pointer for V pipeline barriers (MHA only)."""
+        constrained[Self.separate_kv, "Use get_kv_mbars for unified pipeline"]()
+        return self.mbar_base + Self.V_offset
+
+    @always_inline("nodebug")
+    fn get_kv_mbars(self) -> MBarType:
+        """Returns base pointer for unified KV pipeline barriers (MLA)."""
+        return self.mbar_base + Self.K_offset
+
+    # O pipeline convenience methods
+    @always_inline("nodebug")
+    fn producer_o0(self) -> ProducerPipeline[1]:
+        """Get O producer for warp group 0."""
+        return {
+            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base + Self.O_consumer_offset,
+        }
+
+    @always_inline("nodebug")
+    fn producer_o1(self) -> ProducerPipeline[1]:
+        """Get O producer for warp group 1."""
+        return {
+            self.mbar_base + Self.O_producer_offset + 1,
+            self.mbar_base + Self.O_consumer_offset + 1,
+        }
+
+    @always_inline("nodebug")
+    fn consumer_o(self) -> ConsumerPipeline[2]:
+        """Get O consumer pipeline."""
+        return {
+            self.mbar_base + Self.O_producer_offset,
+            self.mbar_base + Self.O_consumer_offset,
+        }
 
     @staticmethod
     @always_inline
@@ -2961,14 +3038,15 @@ struct SM100MHA2Q[
     comptime qkv_dt_size = size_of[Self.qkv_type]()
     comptime HalfBM = Self.BM // 2
 
-    comptime OPipelineType = MBarPipeline[2]  # x1 -> 4 barriers
-
     comptime num_qk_stages = Self.config.num_qk_stages
     comptime num_pv_stages = Self.config.num_pv_stages
 
-    # Misc barriers type parameterized by num_pv_stages for proper S barrier count
+    # Unified misc barriers type managing all barriers including K/V/O pipelines
     comptime MiscMBarsType = FA4MiscMBars[
-        num_qk_stages = Self.num_qk_stages, num_pv_stages = Self.num_pv_stages
+        num_qk_stages = Self.num_qk_stages,
+        num_pv_stages = Self.num_pv_stages,
+        num_kv_stages = Self.config.num_kv_stages,
+        separate_kv=True,
     ]
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
@@ -3008,10 +3086,6 @@ struct SM100MHA2Q[
         Self.qkv_dt_size * Self.MMA_K * Self.config.padded_depth
     )
 
-    comptime KPipelineType = KPipeline[
-        Self.config.num_kv_stages, Self.config.num_qk_stages
-    ]
-    comptime VPipelineType = VPipeline[Self.config.num_kv_stages]
     comptime PositionType = MHAPosition[
         Self.config.BM,
         Self.config.BN,
@@ -3041,55 +3115,13 @@ struct SM100MHA2Q[
 
     @staticmethod
     @always_inline
-    fn get_k_mbars(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> MBarType:
-        return misc_mbars.mbar_base + Self.MiscMBarsType.num_mbars()
-
-    @staticmethod
-    @always_inline
-    fn get_v_mbars(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> MBarType:
-        comptime offset = Self.MiscMBarsType.num_mbars() + Self.KPipelineType.num_mbars()
-        return misc_mbars.mbar_base + offset
-
-    @staticmethod
-    @always_inline
-    fn get_o_mbars(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> MBarType:
-        comptime offset = Self.MiscMBarsType.num_mbars() + Self.KPipelineType.num_mbars() + Self.VPipelineType.num_mbars()
-        return misc_mbars.mbar_base + offset
-
-    @staticmethod
-    @always_inline
-    fn get_k_pipeline(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> Self.KPipelineType:
-        return {Self.get_k_mbars(misc_mbars)}
-
-    @staticmethod
-    @always_inline
-    fn get_v_pipeline(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> Self.VPipelineType:
-        return {Self.get_v_mbars(misc_mbars)}
-
-    @staticmethod
-    @always_inline
-    fn get_o_pipeline(
-        misc_mbars: Self.MiscMBarsType,
-    ) -> Self.OPipelineType:
-        return {Self.get_o_mbars(misc_mbars)}
-
-    @staticmethod
-    @always_inline
     fn get_tmem_ptr(
         misc_mbars: Self.MiscMBarsType,
     ) -> SharedMemPointer[UInt32]:
-        comptime offset = Self.MiscMBarsType.num_mbars() + Self.KPipelineType.num_mbars() + Self.VPipelineType.num_mbars() + Self.OPipelineType.num_mbars()
-        return (misc_mbars.mbar_base + offset).bitcast[UInt32]()
+        # tmem_ptr comes after all barriers (now unified in MiscMBarsType)
+        return (misc_mbars.mbar_base + Self.MiscMBarsType.num_mbars()).bitcast[
+            UInt32
+        ]()
 
     @staticmethod
     @always_inline
@@ -3230,6 +3262,13 @@ struct SM100MHA2Q[
 
         var warp_idx = UInt32(warp.broadcast(warp_id()))
         if warp_idx == 0:
+            # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
+            misc_mbars.init(lane_idx=Int32(thread_idx.x))
+        elif warp_idx == 1:
+            tcgen05_alloc[Self.cta_group](
+                Self.get_tmem_ptr(misc_mbars), Self.config.sm100_tmem_cols
+            )
+        elif warp_idx == 2:
             e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
@@ -3237,23 +3276,6 @@ struct SM100MHA2Q[
                 k_tma_op.prefetch_descriptor()
             if e != 0:
                 v_tma_op.prefetch_descriptor()
-            Self.get_k_pipeline(misc_mbars).init(elect=e)
-            Self.get_v_pipeline(misc_mbars).init(elect=e)
-
-            # o produced by 1 MMA, consumed by 128 correction
-            var o_mbar = Self.get_o_mbars(misc_mbars)
-
-            @parameter
-            for i in range(2):
-                elect_mbar_init(o_mbar + i, count=1, elect=e)  # producer
-                elect_mbar_init(
-                    o_mbar + i + 2, count=UInt32(WARPGROUP_SIZE), elect=e
-                )  # consumer
-            misc_mbars.init(elect=e)
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                Self.get_tmem_ptr(misc_mbars), Self.config.sm100_tmem_cols
-            )
 
         barrier()
 
@@ -3538,8 +3560,13 @@ struct SM100MHA2Q[
         var o_smem: SharedMemPointer[
             Scalar[Self.output_type]
         ] = Self.get_q_smem(mbars).bitcast[Scalar[Self.output_type]]()
-        var o_mbar: MBarType = Self.get_o_mbars(mbars)
-        var s_tmem: UInt32 = tmem_addr + UInt32(Self.config.TMEM_S0)
+        var o_prod_mbar: MBarType = (
+            mbars.mbar_base + Self.MiscMBarsType.O_producer_offset
+        )
+        var o_cons_mbar: MBarType = (
+            mbars.mbar_base + Self.MiscMBarsType.O_consumer_offset
+        )
+        var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
 
         var tid = UInt32(thread_idx.x)
         var row = tid % 128
@@ -3559,8 +3586,7 @@ struct SM100MHA2Q[
         s_tile = Self.UMMA0Type.CType(s_tmem)
         p_tile = Self.UMMA1Type.AType(p_tmem)
 
-        pipeline_s = mbars.consumer_s(warp_group_idx).mbar
-        var s_phase: UInt32 = 0
+        var pipeline_s = mbars.consumer_s(warp_group_idx)
         pipeline_c = mbars.producer_c(warp_group_idx)
         # TODO: order_s_wait/arrive
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
@@ -3619,8 +3645,7 @@ struct SM100MHA2Q[
         fn load_mask_max[
             *, mask_strategy: MaskStrategy
         ](kv_row: UInt32) -> Float32:
-            # pipeline_s.wait()
-            pipeline_s[].wait(s_phase)
+            pipeline_s.wait()
             tcgen05_fence_after()
             # break up into sets of 32
             # minimize wait time by using smallest first
@@ -3820,7 +3845,7 @@ struct SM100MHA2Q[
                     )
                     tcgen05_store_wait()
                     tcgen05_fence_before()
-                    _ = pipeline_s[b].arrive()
+                    pipeline_s.release_no_step[b - 1]()
 
                 @parameter
                 for i in range(offset, offset + batch_size):
@@ -3860,9 +3885,7 @@ struct SM100MHA2Q[
 
             tcgen05_store_wait()
             tcgen05_fence_before()
-            # pipeline_s.release()
-            _ = pipeline_s[Self.config.num_pv_stages].arrive()
-            s_phase ^= 1
+            pipeline_s.release[Self.config.num_pv_stages - 1]()
             # now we can sum the remaining elements of `acc`
             var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
             var acc1: f32x2 = rebind[f32x2](vs[batch_size // 2 + 1])
@@ -4068,7 +4091,7 @@ struct SM100MHA2Q[
             size_of[Self.output_type]() == size_of[Self.qkv_type]()
         )
         if num_output_rows > 0:
-            o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
+            o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
 
@@ -4081,7 +4104,7 @@ struct SM100MHA2Q[
                 + warp_group_idx * UInt32(Self.HalfBM * Self.padded_depth),
                 o_tile,
                 ragged_tma_store,
-                o_mbar + 2 + warp_group_idx,  # consumer arrive
+                o_cons_mbar + warp_group_idx,  # consumer arrive
                 num_output_rows,
                 q_head_idx,
                 gmem_row + warp_group_idx * UInt32(Self.HalfBM),
@@ -4109,11 +4132,10 @@ struct SM100MHA2Q[
         var correction_smem_arg: SharedMemPointer[
             Scalar[Self.accum_type]
         ] = Self.get_correction_smem(mbars)
-        var o_mbar: MBarType = Self.get_o_mbars(mbars)
 
         pipeline_c0 = mbars.consumer_c0()
         pipeline_c1 = mbars.consumer_c1()
-        pipeline_o = ConsumerPipeline[2](o_mbar)
+        pipeline_o = mbars.consumer_o()
 
         var iter_count: UInt32 = (
             mask.total_iters[Self.BM, Self.BN, Self.page_size](
@@ -4299,8 +4321,8 @@ struct SM100MHA2Q[
             + (Self.config.BN * Self.config.padded_depth)
             * Self.config.num_kv_stages
         )
-        var pipeline_k: KPipeType = {Self.get_k_mbars(mbars), k_smem}
-        var pipeline_v: VPipeType = {Self.get_v_mbars(mbars), v_smem}
+        var pipeline_k: KPipeType = {mbars.get_k_mbars(), k_smem}
+        var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem}
 
         var mbark0: KPipeType.KPairType
 
@@ -4458,7 +4480,6 @@ struct SM100MHA2Q[
         mask: Self.MaskType,
     ):
         var tmem_addr: UInt32 = Self.get_tmem_ptr(mbars)[]
-        var o_mbar: MBarType = Self.get_o_mbars(mbars)
         var q_smem: SharedMemPointer[
             Scalar[Self.KVLUTType.dtype]
         ] = Self.get_q_smem(mbars)
@@ -4468,15 +4489,21 @@ struct SM100MHA2Q[
         o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
         o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
 
-        producer_s0 = mbars.producer_s0().mbar  # phase = 1
-        consumer_s0 = producer_s0 + 1
-        producer_s1 = mbars.producer_s1().mbar  # phase = 1
-        consumer_s1 = producer_s1 + 1
-        pipeline_o_initial = ProducerPipeline[2](o_mbar)  # phase = 1
-        producer_o0 = pipeline_o_initial.mbar
-        producer_o1 = producer_o0 + 1
-        consumer_o0 = producer_o1 + 1
-        consumer_o1 = consumer_o0 + 1
+        # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
+        var pipeline_s0 = mbars.producer_s0()
+        var pipeline_s1 = mbars.producer_s1()
+        # Keep consumer pointers for acquire operations (shared phase tracking)
+        consumer_s0 = pipeline_s0.consumer_mbar_base
+        consumer_s1 = pipeline_s1.consumer_mbar_base
+
+        # O pipelines: o0 and o1 alternate with different initial phases
+        var pipeline_o0 = mbars.producer_o0()
+        var pipeline_o1 = mbars.producer_o1()
+        # Keep consumer pointers for acquire operations (shared phase tracking)
+        consumer_o0 = pipeline_o0.consumer_mbar_base
+        consumer_o1 = pipeline_o1.consumer_mbar_base
+        # Adjust pipeline_o0 phase to 0 (o0 waits with phases 0,1,0,1,...)
+        pipeline_o0.step()
 
         comptime q0_size = Self.HalfBM * Self.config.padded_depth
         comptime q0_bytes = q0_size * size_of[Self.KVLUTType.dtype]()
@@ -4500,8 +4527,8 @@ struct SM100MHA2Q[
         comptime VPipeType = VConsumerPipeline[
             Self.KVLUTType.dtype, Self.config
         ]
-        var pipeline_k: KPipeType = {Self.get_k_mbars(mbars), k_smem}
-        var pipeline_v: VPipeType = {Self.get_v_mbars(mbars), v_smem}
+        var pipeline_k: KPipeType = {mbars.get_k_mbars(), k_smem}
+        var pipeline_v: VPipeType = {mbars.get_v_mbars(), v_smem}
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
@@ -4521,7 +4548,7 @@ struct SM100MHA2Q[
             Self.UMMA0Type.mma[stage_idx=qk_stage](
                 q0, k0, s0_tmem, elect=e, c_scale=0
             )
-        elect_mma_arrive(producer_s0, e)
+        pipeline_s0.commit_mma(e)
 
         # Q_1 @ K_0' (staged over num_qk_stages)
         var q1_mbar = mbars.q1_wait_mbar()
@@ -4533,7 +4560,7 @@ struct SM100MHA2Q[
                 q1, k0, s1_tmem, elect=e, c_scale=0
             )
             pipeline_k.release_k[qk_stage=qk_stage](e)  # [kv0]->kv1
-        elect_mma_arrive(producer_s1, e)
+        pipeline_s1.commit_mma(e)
 
         vlatest = pipeline_v.get_v()  # [kv1]
         pipeline_v.wait_v()  # [kv1]
@@ -4547,7 +4574,7 @@ struct SM100MHA2Q[
             Self.UMMA1Type.mma[stage_idx=pv_stage](
                 s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0
             )
-        elect_mma_arrive(producer_o0, e)
+        pipeline_o0.commit_mma(e)
         var phase_s: UInt32 = 0
         var phase_o: UInt32 = 1
 
@@ -4569,7 +4596,7 @@ struct SM100MHA2Q[
                 Self.UMMA0Type.mma[stage_idx=qk_stage](
                     q0, kn, s0_tmem, elect=e, c_scale=0
                 )
-            elect_mma_arrive(producer_s0, e)
+            pipeline_s0.commit_mma(e)
 
             # O_1 + P_1 @ V_{n-1}
             _ = consumer_o1[].wait(phase_o)
@@ -4580,7 +4607,7 @@ struct SM100MHA2Q[
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
                     s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
                 )
-            elect_mma_arrive(producer_o1, e)
+            pipeline_o1.commit_mma(e)
             # pipeline_o.step()
             phase_o = phase_s
             c_scale = 1
@@ -4595,7 +4622,7 @@ struct SM100MHA2Q[
                 pipeline_k.release_k[qk_stage=qk_stage](
                     e
                 )  # [kv_{2n}]->kv_{2n+1}
-            elect_mma_arrive(producer_s1, e)
+            pipeline_s1.commit_mma(e)
             phase_s ^= 1
 
             # O_0 + P_0 @ V_n
@@ -4609,7 +4636,7 @@ struct SM100MHA2Q[
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
                     s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
                 )
-            elect_mma_arrive(producer_o0, e)
+            pipeline_o0.commit_mma(e)
 
         _ = consumer_o1[].wait(phase_o)
 
@@ -4619,4 +4646,4 @@ struct SM100MHA2Q[
             Self.UMMA1Type.mma[stage_idx=pv_stage](
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
             )
-        elect_mma_arrive(producer_o1, e)
+        pipeline_o1.commit_mma(e)

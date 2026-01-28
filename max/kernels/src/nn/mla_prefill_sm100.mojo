@@ -39,8 +39,6 @@ from nn.mha_sm100_2q import (
 )
 from nn.mha import q_num_matrix_view_rows
 from nn.mha_sm100_2q import (
-    elect_mbar_init,
-    MBarPipeline,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     LocalTensor,
@@ -251,13 +249,6 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         self.kv_pipeline.state._phase = 1
 
     @always_inline
-    fn init(self, *, elect: Int32):
-        """
-        Only one of the producer or consumer should call `init()`.
-        """
-        self.kv_pipeline.init(elect=elect)
-
-    @always_inline
     fn get_kv_smem[*, qk_stage: Int](self) -> Self.SMemType:
         comptime stage_offset = qk_stage * Self.config.padded_depth * Self.config.BN
         var dyn_offset: UInt32 = (
@@ -331,8 +322,6 @@ struct SM100MLA[
     comptime qo_elements = Self.padded_depth * Self.MMA_M
     comptime qkv_dt_size = size_of[Self.qkv_type]()
 
-    comptime OPipelineType = MBarPipeline[2]  # x1 -> 4 barriers
-
     comptime num_qk_stages = Self.config.num_qk_stages
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
@@ -384,9 +373,12 @@ struct SM100MLA[
         Self.config.group,
         _is_decoding[Self.MaxSeqLenType](),
     ]
+    # Unified misc barriers type managing all barriers including KV/O pipelines
     comptime MiscMBarsType = FA4MiscMBars[
         num_qk_stages = Self.config.num_qk_stages,
         num_pv_stages = Self.config.num_pv_stages,
+        num_kv_stages = Self.config.num_kv_stages,
+        separate_kv=False,  # MLA uses unified KV pipeline
     ]
 
     @staticmethod
@@ -500,18 +492,8 @@ struct SM100MLA[
             correction_smem + Self.config.correction_smem_elements()
         ).bitcast[SharedMemBarrier]()
 
-        kv_pipeline = Self.KVPipelineType(mbar_base)
-        mbar_base += Self.KVPipelineType.num_mbars()
-        # O += P@V -> correction
-        o_mbar = mbar_base  # 2, UMMA
-        mbar_base += Self.OPipelineType.num_mbars()
-        # MLA prefill uses default num_pv_stages=1 (no P@V staging)
+        # All barriers are managed by misc_mbars (S/C/order/Q1Sync/KV/O)
         var misc_mbars: Self.MiscMBarsType = {mbar_base}
-        # S = Q@K' -> softmax 0/1
-        # softmax 0/1 -> correction
-        # 4s (2 consumer, 2 producer)
-        # 4c (2 consumer, 2 producer)
-        # 2 softmax-order
         ptr_tmem_addr = (mbar_base + misc_mbars.num_mbars()).bitcast[UInt32]()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
@@ -526,21 +508,22 @@ struct SM100MLA[
 
         var warp_idx = UInt32(warp.broadcast(warp_id()))
         if warp_idx == 0:
-            e = elect()
-            kv_pipeline.init(elect=e)
-
-            # o produced by 1 MMA, consumed by 128 correction
-            @parameter
-            for i in range(2):
-                elect_mbar_init(o_mbar + i, count=1, elect=e)  # producer
-                elect_mbar_init(
-                    o_mbar + i + 2, count=UInt32(WARPGROUP_SIZE), elect=e
-                )  # consumer
-            misc_mbars.init(elect=e)
+            # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
+            misc_mbars.init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:
             tcgen05_alloc[Self.cta_group](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
+        elif warp_idx == 2:
+            e = elect()
+            if e != 0:
+                q_tma_op.prefetch_descriptor()
+            if e != 0:
+                k_tma_op.prefetch_descriptor()
+            if e != 0:
+                k_rope_tma_op.prefetch_descriptor()
+            if e != 0:
+                v_tma_op.prefetch_descriptor()
 
         barrier()
 
@@ -564,7 +547,6 @@ struct SM100MLA[
                 ptr_tmem_addr[0],
                 warp_idx,
                 misc_mbars,
-                o_mbar,
                 pos.score_row,
                 seq_info,
                 mask,
@@ -593,7 +575,6 @@ struct SM100MLA[
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
-                o_mbar,
                 pos.score_row,
                 pos.num_keys,
                 mask,
@@ -614,7 +595,6 @@ struct SM100MLA[
 
                 Self.load(
                     misc_mbars,
-                    kv_pipeline,
                     pos.score_row,
                     pos.num_keys,
                     seq_info,
@@ -646,8 +626,6 @@ struct SM100MLA[
                 Self.mma(
                     ptr_tmem_addr[0],
                     misc_mbars,
-                    kv_pipeline,
-                    o_mbar,
                     pos.score_row,
                     pos.num_keys,
                     mask,
@@ -659,7 +637,6 @@ struct SM100MLA[
     fn correction(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
-        o_mbar: MBarType,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
@@ -672,7 +649,7 @@ struct SM100MLA[
 
         pipeline_c0 = mbars.consumer_c0()
         pipeline_c1 = mbars.consumer_c1()
-        pipeline_o = ConsumerPipeline[2](o_mbar)
+        pipeline_o = mbars.consumer_o()
 
         var iter_count: UInt32 = (
             mask.total_iters[Self.BM, Self.BN, Self.page_size](
@@ -800,7 +777,6 @@ struct SM100MLA[
         tmem_addr: UInt32,
         warp_idx: UInt32,
         mbars: Self.MiscMBarsType,
-        o_mbar: MBarType,
         score_row: UInt32,
         seq_info: SeqInfo,
         mask: Self.MaskType,
@@ -818,6 +794,8 @@ struct SM100MLA[
         sink_weights: Self.SinkType,
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
+        o_prod_mbar = mbars.mbar_base + Self.MiscMBarsType.O_producer_offset
+        o_cons_mbar = mbars.mbar_base + Self.MiscMBarsType.O_consumer_offset
         # FIXME: for depth 256
         var s_tmem: UInt32 = tmem_addr + UInt32(Self.config.TMEM_S0)
 
@@ -1241,7 +1219,7 @@ struct SM100MLA[
             size_of[Self.output_type]() == size_of[Self.qkv_type]()
         )
         if num_output_rows > 0:
-            o_mbar[warp_group_idx].wait(o_phase)  # consumer wait
+            o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
             comptime HalfBM = Self.BM // 2
@@ -1254,7 +1232,7 @@ struct SM100MLA[
                 o_smem + warp_group_idx * UInt32(HalfBM * Self.kv_depth),
                 o_tile,
                 ragged_tma_store,
-                o_mbar + 2 + warp_group_idx,  # consumer arrive
+                o_cons_mbar + warp_group_idx,  # consumer arrive
                 num_output_rows,
                 q_head_idx,
                 gmem_row + warp_group_idx * UInt32(HalfBM),
@@ -1422,7 +1400,6 @@ struct SM100MLA[
         KRopeType: MHAOperand
     ](
         mbars: Self.MiscMBarsType,
-        kv_pipeline_arg: Self.KVPipelineType,
         score_row: UInt32,
         num_keys: UInt32,
         seq_info: SeqInfo,
@@ -1479,6 +1456,8 @@ struct SM100MLA[
         comptime q_bytes = size_of[Self.qkv_type]() * q_elements
 
         kv_smem = q_smem + Self.config.BM * Self.config.padded_depth
+        # Construct KV pipeline from unified barrier storage
+        var kv_pipeline_arg = Self.KVPipelineType(mbars.get_kv_mbars())
         var pipeline_kv: KVPipeType = {kv_pipeline_arg, kv_smem}
 
         var mbark0: KVPipeType.KPairType
@@ -1649,8 +1628,6 @@ struct SM100MLA[
     fn mma(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
-        kv_pipeline_arg: Self.KVPipelineType,
-        o_mbar: MBarType,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
@@ -1661,15 +1638,19 @@ struct SM100MLA[
         o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
         o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
 
-        producer_s0 = mbars.producer_s0().mbar  # phase = 1
-        consumer_s0 = producer_s0 + 1
-        producer_s1 = mbars.producer_s1().mbar  # phase = 1
-        consumer_s1 = producer_s1 + 1
-        pipeline_o_initial = ProducerPipeline[2](o_mbar)  # phase = 1
-        producer_o0 = pipeline_o_initial.mbar
-        producer_o1 = producer_o0 + 1
-        consumer_o0 = producer_o1 + 1
-        consumer_o1 = consumer_o0 + 1
+        # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
+        var pipeline_s0 = mbars.producer_s0()
+        var pipeline_s1 = mbars.producer_s1()
+        # Keep consumer pointers for acquire operations (shared phase tracking)
+        consumer_s0 = pipeline_s0.consumer_mbar_base
+        consumer_s1 = pipeline_s1.consumer_mbar_base
+
+        # O pipelines: o0 and o1 alternate with different initial phases
+        var pipeline_o0 = mbars.producer_o0()
+        var pipeline_o1 = mbars.producer_o1()
+        # Keep consumer pointers for acquire operations (shared phase tracking)
+        consumer_o0 = pipeline_o0.consumer_mbar_base
+        consumer_o1 = pipeline_o1.consumer_mbar_base
 
         comptime q0_size = (Self.config.BM // 2) * Self.config.padded_depth
         comptime q0_bytes = UInt32(q0_size * size_of[Self.KVLUTType.dtype]())
@@ -1695,7 +1676,8 @@ struct SM100MLA[
             is_k_major=False,
         ](kv_smem)
 
-        var pipeline = kv_pipeline_arg
+        # Construct KV pipeline from unified barrier storage (consumer starts phase=0)
+        var pipeline = Self.KVPipelineType(mbars.get_kv_mbars())
 
         # We peel the first iteration, as we want to wait on q1
         var iter_count: UInt32 = (
@@ -1710,12 +1692,12 @@ struct SM100MLA[
         k0 = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
         e = elect()
         Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
-        elect_mma_arrive(producer_s0, e)
+        pipeline_s0.commit_mma(e)
 
         # Q_1 @ K_0'
         mbars.q1_wait_mbar()[0].wait()  # wait on Q1
         Self.UMMA0Type.mma(q1, k0, s1_tmem, elect=e, c_scale=0)
-        elect_mma_arrive(producer_s1, e)
+        pipeline_s1.commit_mma(e)
 
         pipeline.consumer_release[0](e)  # release K0, step to V state
 
@@ -1724,7 +1706,7 @@ struct SM100MLA[
         vlatest = v_smem_descriptor + full_kv_bytes * pipeline.state.index()
         _ = consumer_s0[].wait(0)
         Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0)
-        elect_mma_arrive(producer_o0, e)
+        pipeline_o0.commit_mma(e)
         var phase_s: UInt32 = 0
         var phase_o: UInt32 = 1
 
@@ -1740,7 +1722,7 @@ struct SM100MLA[
             pipeline.consumer_wait[0]()  # wait Kn
             kn = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
             Self.UMMA0Type.mma(q0, kn, s0_tmem, elect=e, c_scale=0)
-            elect_mma_arrive(producer_s0, e)
+            pipeline_s0.commit_mma(e)
 
             # O_1 + P_1 @ V_{n-1}
             _ = consumer_o1[].wait(phase_o)
@@ -1748,7 +1730,7 @@ struct SM100MLA[
             Self.UMMA1Type.mma(
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
             )
-            elect_mma_arrive(producer_o1, e)
+            pipeline_o1.commit_mma(e)
             phase_o = phase_s
             c_scale = 1
             # Release old V (deferred release, no step)
@@ -1756,7 +1738,7 @@ struct SM100MLA[
 
             # Q_1 @ K_n'
             Self.UMMA0Type.mma(q1, kn, s1_tmem, elect=e, c_scale=0)
-            elect_mma_arrive(producer_s1, e)
+            pipeline_s1.commit_mma(e)
             phase_s ^= 1
 
             pipeline.consumer_release[0](e)  # release K, step to V state
@@ -1767,12 +1749,12 @@ struct SM100MLA[
             _ = consumer_o0[].wait(phase_o)
             _ = consumer_s0[].wait(phase_s)
             Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1)
-            elect_mma_arrive(producer_o0, e)
+            pipeline_o0.commit_mma(e)
 
         _ = consumer_o1[].wait(phase_o)
         _ = consumer_s1[].wait(phase_s)
         Self.UMMA1Type.mma(s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale)
-        elect_mma_arrive(producer_o1, e)
+        pipeline_o1.commit_mma(e)
 
 
 @always_inline
