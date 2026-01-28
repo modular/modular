@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from random import random_si64, shuffle, seed
 from sys import align_of, size_of, argv
 
@@ -202,7 +202,7 @@ def test_matmul_sm100_epilogue[
         k_group_size=k_group_size,
     )
 
-    comptime optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
+    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 

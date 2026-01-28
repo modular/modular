@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import simd_width_of, size_of
 
@@ -66,8 +66,8 @@ struct MatmulTileWriter[
     wgmma_shape: IndexList[3],
     num_consumer: Int = 1,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     swapAB: Bool = False,

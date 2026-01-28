@@ -64,7 +64,7 @@ def create_text_context(
     )
 
 
-def create_paged_manager(
+def create_kv_cache(
     num_blocks: int,
     max_batch_size: int,
     max_seq_len: int,
@@ -130,7 +130,7 @@ def create_paged_scheduler(
     MAXPushQueue[TextContext],
 ]:
     # Create a paged manager that has one slot
-    paged_manager = create_paged_manager(
+    kv_cache = create_kv_cache(
         num_blocks=num_blocks,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
@@ -153,7 +153,7 @@ def create_paged_scheduler(
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
     )
-    token_pipeline = FakeTokenGeneratorPipeline(paged_manager, max_seq_len)
+    token_pipeline = FakeTokenGeneratorPipeline(kv_cache, max_seq_len)
     request_queue: queue.Queue[TextContext] = queue.Queue()
     response_queue: queue.Queue[
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
@@ -162,7 +162,7 @@ def create_paged_scheduler(
     scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
-        paged_manager=paged_manager,
+        kv_cache=kv_cache,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

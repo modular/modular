@@ -14,7 +14,7 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import OptionalReg
+from collections import Optional
 from math import ceil, fma
 from sys import align_of, simd_width_of, size_of
 from sys.info import CompilationTarget, is_gpu
@@ -1229,7 +1229,7 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[UnsafePointer[Scalar[Self.dtype]]] = None,
+        offset_ptr: Optional[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec = Self.io_spec,

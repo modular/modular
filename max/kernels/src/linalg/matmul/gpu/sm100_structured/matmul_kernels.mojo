@@ -31,7 +31,7 @@ The kernel implements a warp-specialized architecture:
 - Epilogue warps: Output from TMEM to GMEM via TileWriter
 """
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
@@ -548,7 +548,7 @@ struct BlackwellMatmulSM100Kernel[
     # Cluster shape (must match config, needed for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -1508,7 +1508,7 @@ struct BlackwellMatmulSM100FallbackKernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Simple fallback matmul kernel for SM100 (B200).
 

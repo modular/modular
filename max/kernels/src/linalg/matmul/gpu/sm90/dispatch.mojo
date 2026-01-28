@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import env_get_bool, env_get_int, size_of
 
@@ -54,8 +54,8 @@ fn matmul_dispatch_sm90[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
@@ -502,8 +502,8 @@ fn matmul_dispatch_sm90_fp8[
     b_type: DType,
     //,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
@@ -2154,8 +2154,8 @@ fn matmul_dispatch_sm90_bf16_fp32[
     b_type: DType,
     //,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from collections import OptionalReg
 from math import ceildiv, exp2, recip, align_up, align_down, gcd, iota
 from math.constants import log2e
@@ -34,7 +31,7 @@ from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import AddressSpace, external_memory, CacheEviction
 from gpu.compute.mma import MMAOperandDescriptor
 from gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
@@ -147,7 +144,7 @@ comptime SharedMemTensor[dtype: DType, layout: Layout] = LayoutTensor[
     alignment=128,
 ]
 comptime SharedMemPointer[type: AnyType] = UnsafePointer[
-    type, address_space = AddressSpace.SHARED
+    type, MutAnyOrigin, address_space = AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
@@ -483,7 +480,7 @@ struct TMemTile[
         comptime load_dtype = DType.uint32
         # alias load_dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
         var ptr: UnsafePointer[
-            Scalar[load_dtype], address_space = AddressSpace.LOCAL
+            Scalar[load_dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
         ]
 
         ptr = rebind[type_of(ptr)](dst.ptr)
@@ -1305,6 +1302,26 @@ fn add_ftz(
 
 
 @always_inline
+fn mul_ftz(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        mul.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
 fn fma_ftz(
     a: SIMD[DType.float32, 2],
     b: SIMD[DType.float32, 2],
@@ -1519,7 +1536,7 @@ fn mha_sm100_dispatch[
     comptime BM = fa4_config.BM
     comptime BN = fa4_config.BN
     comptime num_threads = fa4_config.num_threads
-    q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
+    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -1570,7 +1587,7 @@ fn mha_sm100_dispatch[
     if sink:
         comptime SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
-            rebind[UnsafePointer[Scalar[KVType.dtype]]](
+            rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
                 sink_weights.value().ptr
             )
         }
@@ -2576,16 +2593,14 @@ struct MBarPipeline[number_of_stages: Int](TrivialRegisterType):
 
 @always_inline
 fn apply_oob_mask[
-    dtype: DType,
     ScoreModType: ScoreModTrait,
-    simd_width: Int,
     //,
     *,
     use_score_mod: Bool,
     mask_strategy: MaskStrategy,
     apply_log2e_after_mask: Bool,
 ](
-    s_arg: SIMD[dtype, simd_width],
+    s_arg: SIMD[DType.float32, 2],
     score_mod: ScoreModType,
     *,
     prompt_idx: UInt32,
@@ -2595,12 +2610,12 @@ fn apply_oob_mask[
     num_keys: Int32,
     score_row: Int32,
     score_col: Int32,
-) -> SIMD[dtype, simd_width]:
-    s: SIMD[dtype, simd_width] = s_arg
+) -> SIMD[DType.float32, 2]:
+    s: SIMD[DType.float32, 2] = s_arg
 
     @parameter
     if use_score_mod:
-        s = (
+        s = mul_ftz(
             score_mod.score_mod(
                 IndexList[4, element_type = DType.uint32](
                     Int(prompt_idx),
@@ -2610,19 +2625,19 @@ fn apply_oob_mask[
                 ),
                 s,
                 Int(max_seq_len),
-            )
-            * log2e
+            ),
+            log2e,
         )
     elif apply_log2e_after_mask:
-        s *= log2e
+        s = mul_ftz(s, log2e)
 
     @parameter
     if MaskStrategy.OUT_OF_BOUNDS in mask_strategy:
         s = (
-            iota[DType.int32, simd_width](score_col)
+            iota[DType.int32, 2](score_col)
             .lt(num_keys)
             .select(s, MASK_VALUE)
-            # .select(s, min_or_neg_inf[dtype]())
+            # .select(s, min_or_neg_inf[DType.float32]())
         )
 
     return s
@@ -2630,7 +2645,6 @@ fn apply_oob_mask[
 
 @always_inline
 fn apply_mask[
-    dtype: DType,
     BN: Int,
     MaskType: MHAMask,
     ScoreModType: ScoreModTrait,
@@ -2639,10 +2653,10 @@ fn apply_mask[
     use_score_mod: Bool,
     mask_strategy: MaskStrategy,
 ](
-    srow: LocalTensor[dtype, Layout.row_major(BN)],
+    srow: LocalTensor[DType.float32, Layout.row_major(BN)],
     mask: MaskType,
     score_mod: ScoreModType,
-    scale_log2e: Scalar[dtype],
+    scale_log2e: Float32,
     *,
     prompt_idx: UInt32,
     q_head_idx: UInt32,
@@ -2651,7 +2665,8 @@ fn apply_mask[
     num_keys: Int32,
     score_row: Int32,
 ):
-    comptime simd_size = simd_width_of[dtype]()
+    comptime simd_size = 2
+    comptime F32x2 = SIMD[DType.float32, simd_size]
     vs = srow.vectorize[simd_size]()
 
     @parameter
@@ -2708,31 +2723,33 @@ fn apply_mask[
             for n in range(32 // simd_size):
                 comptime frag_col_simd = n + 32 * batch // simd_size
                 comptime frag_col = frag_col_simd * simd_size
-                var s = vs[frag_col_simd] * scale_log2e
+                var s = mul_ftz(rebind[F32x2](vs[frag_col_simd]), scale_log2e)
 
                 @parameter
                 for i in range(simd_size):
                     comptime midx = n * simd_size + i
                     comptime flag: UInt32 = 1 << midx
                     var in_bound: Bool = (mask_bits & flag) != UInt32(0)
-                    var val: Scalar[dtype] = s[i]
+                    var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
                 var score_col: Int32 = kv_tile_start_row + frag_col
-                vs[frag_col_simd] = apply_oob_mask[
-                    use_score_mod=use_score_mod,
-                    mask_strategy=mask_strategy,
-                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
-                ](
-                    s,
-                    score_mod,
-                    prompt_idx=prompt_idx,
-                    q_head_idx=q_head_idx,
-                    kv_tile_start_row=kv_tile_start_row,
-                    max_seq_len=max_seq_len,
-                    num_keys=num_keys,
-                    score_row=score_row,
-                    score_col=score_col,
+                vs[frag_col_simd] = rebind[vs.element_type](
+                    apply_oob_mask[
+                        use_score_mod=use_score_mod,
+                        mask_strategy=mask_strategy,
+                        apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                    ](
+                        s,
+                        score_mod,
+                        prompt_idx=prompt_idx,
+                        q_head_idx=q_head_idx,
+                        kv_tile_start_row=kv_tile_start_row,
+                        max_seq_len=max_seq_len,
+                        num_keys=num_keys,
+                        score_row=score_row,
+                        score_col=score_col,
+                    )
                 )
             n_valid = max(n_valid - 32, 0)
 
@@ -2742,7 +2759,7 @@ fn apply_mask[
         @parameter
         for n in range(block_size):
             # score_col = mask_frag_col + j * 8
-            var s = vs[n] * scale_log2e
+            var s = mul_ftz(rebind[F32x2](vs[n]), scale_log2e)
             comptime frag_col = simd_size * n
             var score_col: Int32 = kv_tile_start_row + frag_col
 
@@ -2758,20 +2775,22 @@ fn apply_mask[
                     s,
                 )
 
-            vs[n] = apply_oob_mask[
-                use_score_mod=use_score_mod,
-                mask_strategy=mask_strategy,
-                apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
-            ](
-                s,
-                score_mod,
-                prompt_idx=prompt_idx,
-                q_head_idx=q_head_idx,
-                kv_tile_start_row=kv_tile_start_row,
-                max_seq_len=max_seq_len,
-                num_keys=num_keys,
-                score_row=score_row,
-                score_col=score_col,
+            vs[n] = rebind[vs.element_type](
+                apply_oob_mask[
+                    use_score_mod=use_score_mod,
+                    mask_strategy=mask_strategy,
+                    apply_log2e_after_mask = MaskType.apply_log2e_after_mask,
+                ](
+                    s,
+                    score_mod,
+                    prompt_idx=prompt_idx,
+                    q_head_idx=q_head_idx,
+                    kv_tile_start_row=kv_tile_start_row,
+                    max_seq_len=max_seq_len,
+                    num_keys=num_keys,
+                    score_row=score_row,
+                    score_col=score_col,
+                )
             )
 
 
@@ -3878,21 +3897,23 @@ struct SM100MHA2Q[
                             mask_strategy = mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
-        var sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+        var sink_weights_ptr = UnsafePointer[
+            Scalar[Self.qkv_type], ImmutAnyOrigin
+        ]()
         var sink_weight: Scalar[Self.accum_type]
 
         @parameter
         if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[UnsafePointer[Scalar[Self.qkv_type]]](
-                sink_weights.value()
-            )
+            sink_weights_ptr = rebind[
+                UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
+            ](sink_weights.value())
             var head_idx: UInt32 = seq_info.head_idx
             sink_weight = (
                 sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
             )
             row_max = max(row_max, sink_weight)
         else:
-            sink_weights_ptr = UnsafePointer[Scalar[Self.qkv_type]]()
+            sink_weights_ptr = {}
             sink_weight = 0.0
 
         var row_sum: f32x2 = store_exp(row_max)
@@ -4254,7 +4275,7 @@ struct SM100MHA2Q[
             mbark0.mbar[].expect_bytes(qk_bytes)
         # copy q0
         if e != 0:
-            q_tma_op.async_copy(
+            q_tma_op.async_copy[eviction_policy = CacheEviction.EVICT_FIRST](
                 QType(q_smem),
                 mbark0.mbar[],
                 StaticTuple[UInt32, 3](0, q_head_idx, q_gmem_row),
@@ -4284,7 +4305,9 @@ struct SM100MHA2Q[
             if e != 0:
                 mbark.mbar[].expect_bytes(qk_bytes)
             if e != 0:
-                q_tma_op.async_copy(
+                q_tma_op.async_copy[
+                    eviction_policy = CacheEviction.EVICT_FIRST
+                ](
                     QType(q_smem + q_elements * qk_stage),
                     mbark.mbar[],
                     StaticTuple[UInt32, 3](d_idx, q_head_idx, q_gmem_row),

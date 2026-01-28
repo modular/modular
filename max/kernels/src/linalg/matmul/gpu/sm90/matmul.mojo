@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -107,8 +107,8 @@ fn warp_specialize_gemm_with_multicasting[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
@@ -179,8 +179,8 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
@@ -683,8 +683,8 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     splits: Int,
     raster_order: RasterOrder,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
 ](

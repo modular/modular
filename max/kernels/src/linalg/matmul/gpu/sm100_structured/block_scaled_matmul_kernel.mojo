@@ -38,7 +38,7 @@ Key structured patterns:
 - Automatic wait/step in context manager __enter__/__exit__
 """
 
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from memory import LegacyUnsafePointer, Pointer
 
@@ -147,7 +147,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,

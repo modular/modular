@@ -53,9 +53,7 @@ def get_cache_lengths_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[int]:
     return kv_tuple[1].to_numpy().tolist()
 
 
-def create_paged_manager(
-    num_blocks: int, page_size: int = 1
-) -> PagedKVCacheManager:
+def create_kv_cache(num_blocks: int, page_size: int = 1) -> PagedKVCacheManager:
     kv_params = KVCacheParams(
         dtype=DType.float32,
         num_layers=1,
@@ -81,7 +79,7 @@ def create_paged_manager(
 
 @pytest.mark.asyncio
 async def test_prefix_caching_basic() -> None:
-    kv_manager = create_paged_manager(num_blocks=128)
+    kv_manager = create_kv_cache(num_blocks=128)
 
     # Reserve a slot in the KV cache manager.
     initial_prompt_1 = [10, 11, 12, 13, 14]
@@ -154,7 +152,7 @@ async def test_prefix_caching_basic() -> None:
 
 @pytest.mark.asyncio
 async def test_prefix_caching_reset_prefix_cache() -> None:
-    kv_manager = create_paged_manager(num_blocks=128)
+    kv_manager = create_kv_cache(num_blocks=128)
     # This is a noop
     kv_manager.reset_prefix_cache()
 
@@ -188,7 +186,7 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_repeating_prompt() -> None:
-    kv_manager = create_paged_manager(num_blocks=128)
+    kv_manager = create_kv_cache(num_blocks=128)
 
     available_blocks = 128
 
@@ -228,7 +226,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
 async def test_prefix_caching_with_no_release() -> None:
     np.random.seed(12345)
 
-    kv_manager = create_paged_manager(num_blocks=128)
+    kv_manager = create_kv_cache(num_blocks=128)
 
     # Try to allocate more than 128 blocks.
     # We expect to run out of blocks here.
@@ -269,9 +267,7 @@ async def test_prefix_caching_with_random_prompts(
     np.random.seed(12345)
 
     num_blocks = 128
-    kv_manager = create_paged_manager(
-        num_blocks=num_blocks, page_size=page_size
-    )
+    kv_manager = create_kv_cache(num_blocks=num_blocks, page_size=page_size)
     available_slots = num_blocks * page_size
 
     # Try to assign and release more than 128 blocks.
@@ -334,7 +330,7 @@ async def test_prefix_caching_with_random_prompts(
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_num_steps_gt_1() -> None:
-    kv_manager = create_paged_manager(num_blocks=128)
+    kv_manager = create_kv_cache(num_blocks=128)
 
     # Reserve a slot in the KV cache manager.
     initial_prompt_1 = [10, 11, 12, 13, 14]
@@ -374,7 +370,7 @@ async def test_prefix_caching_with_num_steps_gt_1() -> None:
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_page_size_gt_1() -> None:
-    kv_manager = create_paged_manager(num_blocks=128, page_size=2)
+    kv_manager = create_kv_cache(num_blocks=128, page_size=2)
 
     # Seq 1: Prefill 10 - 14
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
@@ -414,7 +410,7 @@ async def test_prefix_caching_with_page_size_gt_1() -> None:
 
 @pytest.mark.asyncio
 async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
-    kv_manager = create_paged_manager(num_blocks=128, page_size=2)
+    kv_manager = create_kv_cache(num_blocks=128, page_size=2)
 
     # Seq 1: Prefill 10 - 14 and generate 15 - 17 in one pass
     batch = [create_text_context(np.array([10, 11, 12, 13, 14]))]
@@ -564,7 +560,7 @@ async def test_prefix_caching_grouped_prefixes(
     np.random.seed(12345)
 
     # evictions will not happen since we allocate so many blocks
-    kv_manager = create_paged_manager(num_blocks=10000, page_size=page_size)
+    kv_manager = create_kv_cache(num_blocks=10000, page_size=page_size)
     model = FakeModel(kv_manager)
 
     # generate a number of grouped prefixes:
@@ -710,7 +706,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
     2. The prompts are processed in chunks rather than all at once
     3. Sequences diverge at different points
     """
-    kv_manager = create_paged_manager(num_blocks=128, page_size=3)
+    kv_manager = create_kv_cache(num_blocks=128, page_size=3)
     model = FakeModel(kv_manager)
 
     # Define prompts for chunked prefill - use non-empty arrays
@@ -774,7 +770,7 @@ def run_and_check_num_cached_tokens(
 @pytest.mark.asyncio
 async def test_prefix_caching_with_images() -> None:
     IMG = 99
-    kv_manager = create_paged_manager(num_blocks=128, page_size=1)
+    kv_manager = create_kv_cache(num_blocks=128, page_size=1)
 
     vision_token_ids = [IMG]
 
@@ -862,7 +858,7 @@ async def test_prefix_caching_with_images() -> None:
 @pytest.mark.asyncio
 async def test_prefix_caching_with_images_and_page_size_gt_1() -> None:
     IMG = 99
-    kv_manager = create_paged_manager(num_blocks=128, page_size=4)
+    kv_manager = create_kv_cache(num_blocks=128, page_size=4)
     #   |    block 0     |      block 1     |      block 2     |
     #               |<--------- img0 ----------->|     |<-- img1 -->|
     tokens = np.array(
