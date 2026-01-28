@@ -109,5 +109,4 @@ def copy_files(srcs, **kwargs):
 def _noop(**_kwargs):
     pass
 
-mojo_kgen_lib = _noop
 modular_nanobind_extension = _noop
