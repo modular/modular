@@ -15,8 +15,7 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from max.entrypoints.diffusion import PixelGenerator, _PixelBatchResponse
-from max.experimental.realization_context import set_seed
+from max.entrypoints.diffusion import PixelGenerator
 from max.pipelines import PipelineConfig
 from PIL import Image
 
@@ -31,14 +30,13 @@ def main() -> None:
     args = parser.parse_args()
 
     model_path = args.model_path
-    set_seed(args.seed)
     pipeline_config = PipelineConfig(model_path=model_path)
     pipe = PixelGenerator(pipeline_config)
 
     prompt = "A cat holding a sign that says hello world"
     print(f"Prompt: {prompt}")
 
-    result: _PixelBatchResponse = pipe.generate(
+    result = pipe.generate(
         prompts=prompt,
         height=1024,
         width=1024,

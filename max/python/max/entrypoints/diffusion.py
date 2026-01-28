@@ -21,13 +21,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from threading import Event, Thread
 
+from max.pipelines import PixelContext, PixelGenerationPipeline
+from max.pipelines.lib.tokenizer import PixelGenerationTokenizer
 from max.interfaces import (
-    PixelContext,
     PixelGenerationInputs,
     PixelGenerationOutput,
-    PixelGenerationPipeline,
     PixelGenerationRequest,
-    PixelGenerationTokenizer,
     RequestID,
 )
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
