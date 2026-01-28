@@ -20,6 +20,7 @@ from math import (
     acos,
     atanh,
     ceil,
+    ceildiv,
     cos,
     erf,
     exp,
@@ -55,6 +56,7 @@ from builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm.reducescatter import reducescatter
+from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -9098,6 +9100,89 @@ struct DistributedAllGather:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.broadcast")
+struct DistributedBroadcast:
+    """Distributed broadcast: copy tensor from root GPU to all GPUs.
+
+    This op is called once per target GPU. Each instance receives:
+    - input: The source tensor from the root GPU (P2P accessible)
+    - output: The destination tensor on this GPU
+    - signal_buffers: Synchronization buffers for all participating GPUs
+    - device_ctx: Device context for this GPU
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Execute distributed broadcast operation.
+
+        Parameters:
+            dtype: Data type of the tensor.
+            rank: Tensor rank (number of dimensions).
+            root: Index of the root GPU (source of data).
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            output: Output tensor for this GPU.
+            input: Input tensor from root GPU (P2P accessible from all GPUs).
+            signal_buffers: Synchronization buffers for cross-GPU coordination.
+            device_ctx: Device context for this GPU.
+
+        Implementation Notes:
+            1. This op is called once per target GPU by the graph compiler.
+            2. All GPUs receive the same input tensor (from root) via P2P access.
+            3. Each op instance only writes to its assigned output tensor.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (MAX_GPUS).
+            - Requires P2P access between GPUs (NVLink or PCIe P2P).
+        """
+        comptime num_devices = signal_buffers.size
+        __comptime_assert (
+            root >= 0 and root < num_devices
+        ), "root GPU index must be in range [0, ngpus)"
+
+        # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
+        # 1-stage broadcast doesn't use payload at all (direct P2P from root).
+        # Use 2-stage requirement as upper bound.
+        var input_size_bytes = input.size() * size_of[dtype]()
+        var payload_size = ceildiv(input_size_bytes, num_devices)
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            broadcast[ngpus=num_devices](
+                in_buf,
+                out_buf,
+                rank_sigs,
+                device_ctx[],
+                root,
+            )
 
 
 @compiler.register("mo.distributed.matmul_allreduce")
