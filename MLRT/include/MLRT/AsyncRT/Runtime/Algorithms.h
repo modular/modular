@@ -38,6 +38,17 @@ inline static void await(const AsyncValueRef<T> &value) {
   await(ArrayRef<AnyAsyncValueRef>(value));
 }
 
+/// Error propagating variant of await functions.
+inline ErrorOrSuccess awaitOrError(MutableArrayRef<AnyAsyncValueRef> values) {
+  AsyncRT::await(values);
+
+  for (AnyAsyncValueRef &value : values)
+    if (value.isError())
+      return value.takeDiagnostic().getMessage().copy();
+
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // 'andThenSync/Async' for multiple values with heterogenous types.
 //===----------------------------------------------------------------------===//
