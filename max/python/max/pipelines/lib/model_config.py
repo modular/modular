@@ -92,7 +92,10 @@ class MAXModelConfig(MAXModelConfigBase):
     # asserts just to keep mypy happy.
     model_path: str = Field(
         default="",
-        description="repo_id of a Hugging Face model repository to use.",
+        description=(
+            "The repository ID of a Hugging Face model to use. "
+            "The `--model` option also works as an alias."
+        ),
     )
 
     served_model_name: str | None = Field(
