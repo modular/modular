@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -404,7 +404,7 @@ struct ConvTransposedPacked[
     filter_type: DType,
     output_type: DType,
     conv_attr: ConvInfoStatic[input_layout.rank() - 2],
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](ImplicitlyCopyable):
     var output: LayoutTensor[
         mut=True,
@@ -1557,7 +1557,7 @@ fn conv_transposed_cpu[
             filter_type,
             output_type,
             conv_attr,
-            OptionalReg[elementwise_epilogue_type](
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
         ].run(output, input, packed_filter, conv_shape)

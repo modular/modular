@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of
 from sys.info import (
@@ -245,7 +245,7 @@ fn _small_batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank],
     a_buf: NDBuffer[a_type, rank],
@@ -378,7 +378,7 @@ fn batched_matmul[
     *,
     transpose_a: Bool,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
@@ -441,7 +441,7 @@ fn _batched_matmul_cpu[
     //,
     *,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank],
@@ -598,7 +598,7 @@ fn _batched_matmul_cpu[
                 config,
                 transpose_b,
                 b_packed=False,
-                elementwise_lambda_fn = OptionalReg[
+                elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 saturated_vnni=saturated_vnni,
@@ -623,7 +623,7 @@ fn naive_batched_matmul_kernel[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c_tensor: LayoutTensor[c_type, c_layout, MutAnyOrigin],  # m
@@ -672,7 +672,7 @@ fn batched_matmul_kernel_gpu[
     layout_b: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_tensor: LayoutTensor[c_type, layout_c, MutAnyOrigin],  # m
     a_tensor: LayoutTensor[a_type, layout_a, MutAnyOrigin],  # m * k
@@ -743,7 +743,7 @@ fn batched_matmul_kernel_gpu[
             a.linear_idx_type,
             b.linear_idx_type,
             config,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -763,7 +763,7 @@ fn batched_matmul_kernel_gpu[
             a.linear_idx_type,
             b.linear_idx_type,
             config,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
@@ -790,7 +790,7 @@ fn _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
     a_buf: NDBuffer[a_type, rank, _, _, _],
@@ -1008,7 +1008,7 @@ fn batched_matmul[
     //,
     *,
     transpose_b: Bool,
-    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
@@ -1121,7 +1121,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -1195,7 +1195,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         num_threads=num_threads,
-        elementwise_lambda_fn = OptionalReg[matmul_elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
     ](
@@ -1225,7 +1225,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],

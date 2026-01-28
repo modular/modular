@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from sys import (
     env_get_bool,
@@ -363,7 +363,7 @@ fn bench_matmul[
                 var y = val * x
                 return y
 
-            comptime optional_lambda_fn = OptionalReg[
+            comptime optional_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 

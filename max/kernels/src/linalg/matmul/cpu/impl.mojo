@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
 from sys.info import align_of, simd_width_of
@@ -81,7 +81,7 @@ fn elementwise_epilogue_c_tile[
     c_shape: DimList,
     func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
         IndexList[2], SIMD[dtype, width]
-    ) capturing [_] -> None,
+    ) capturing -> None,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
@@ -414,7 +414,7 @@ struct TiledMatmul[
 @always_inline
 fn _small_matmul[
     transpose_b: Bool,
-    epilogue_wrapper: OptionalReg[elementwise_epilogue_type],
+    epilogue_wrapper: Optional[elementwise_epilogue_type],
 ](
     a: NDBuffer[_, 2, _, _],
     b: NDBuffer[_, 2, _, _],
@@ -510,7 +510,7 @@ fn _matmul_cpu_impl[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
@@ -681,7 +681,7 @@ fn matmul[
     *,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
 ](
@@ -777,7 +777,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -793,12 +793,13 @@ fn _submatmul_sequential_sync[
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter
         if elementwise_lambda_fn:
+            comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
                 c.type,
                 c.origin,
                 c.shape,
-                elementwise_lambda_fn.value(),
+                func,
             ](
                 offset,
                 shape,
@@ -829,7 +830,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],

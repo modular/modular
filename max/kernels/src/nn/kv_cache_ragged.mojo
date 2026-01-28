@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from sys.info import _current_target, simd_width_of
 from sys.intrinsics import _type_is_eq
 
@@ -1113,7 +1113,7 @@ fn _matmul_common[
     //,
     *,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     output_dtype: DType = dtype,
 ](
     hidden_state: LayoutTensor[
@@ -1167,7 +1167,7 @@ fn _qmatmul_common[
     *,
     group_size: Int,
     target: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -1213,7 +1213,7 @@ fn _matmul_blockwise_scaled_fp8_common[
     *,
     target: StaticString,
     scales_granularity_mnk: IndexList[3],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         a_type, address_space = AddressSpace.GENERIC, ...
@@ -2155,7 +2155,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 @always_inline
 fn _qmatmul_gguf_quantized_alloc_output[
     quantization_encoding: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         DType.float32, address_space = AddressSpace.GENERIC, ...
@@ -2190,7 +2190,7 @@ fn _qmatmul_gguf_quantized_alloc_output[
 @always_inline
 fn _qmatmul_gguf_quantized_common[
     quantization_encoding: StaticString,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     hidden_state: LayoutTensor[
         DType.float32, address_space = AddressSpace.GENERIC, ...

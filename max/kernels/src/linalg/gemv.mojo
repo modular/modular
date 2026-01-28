@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import align_up, ceildiv
 from sys import (
     has_amd_gpu_accelerator,
@@ -135,7 +135,7 @@ fn gemv_kernel[
     b_type: DType,
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -197,7 +197,7 @@ fn gemv_kernel_vector[
     *,
     simd_width: UInt,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -279,7 +279,7 @@ fn gemv_split_k[
     tile_m: UInt,
     tile_n: UInt,
     num_threads: UInt,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
@@ -452,7 +452,7 @@ fn gevm_kernel[
     b_type: DType,
     *,
     tile_size: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -512,7 +512,7 @@ fn gevm_kernel[
 @always_inline
 fn gemv_gpu_dispatch[
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     kernel_func: GEMVAlgorithm,
@@ -847,7 +847,7 @@ fn log_shape[
 @always_inline
 fn gemv_gpu[
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[rank=2, ...],
@@ -932,7 +932,7 @@ fn gemv[
     a_type: DType,
     b_size: Dim,
     b_type: DType,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
     a_buf: NDBuffer[a_type, 2, _, a_shape],

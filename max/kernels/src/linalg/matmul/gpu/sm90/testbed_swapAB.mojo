@@ -21,7 +21,7 @@ Both kernels compute: C[M,N] = A[M,K] @ B[N,K]^T
 The swapAB version just does it via: (B @ A^T)^T stored transposed = A @ B^T
 """
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import align_of
 
@@ -420,7 +420,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     use_vendor_reference: Bool = False,
     # Epilogue support
     default_epilogue: Bool = False,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
@@ -726,11 +726,11 @@ fn test_matmul_sm90_swapAB_comparison_v2[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    comptime elf_normal = OptionalReg[elementwise_epilogue_type](
+    comptime elf_normal = Optional[elementwise_epilogue_type](
         epilogue_fn_normal
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 
-    comptime elf_swapAB = OptionalReg[elementwise_epilogue_type](
+    comptime elf_swapAB = Optional[elementwise_epilogue_type](
         epilogue_fn_swapAB
     ) if default_epilogue and elementwise_compute_lambda_fn is None else None
 

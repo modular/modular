@@ -55,7 +55,7 @@ from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from utils.index import IndexList
 from sys import align_of, size_of
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace
@@ -632,8 +632,8 @@ struct RegisterToGMemWriter[
     wgmma_shape: IndexList[3],
     num_consumer: Int,
     N: Int,  # Matrix N dimension
-    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
-    compute_lambda_fn: OptionalReg[elementwise_compute_lambda_type] = None,
+    epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    compute_lambda_fn: Optional[elementwise_compute_lambda_type] = None,
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
     swapAB: Bool = False,
 ](RegTileWriter):

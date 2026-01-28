@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from io.io import _printf
 from math import ceildiv
 from os import abort
@@ -149,7 +149,7 @@ fn b2b_gemm[
     transpose_b: Bool,
     transpose_c: Bool,
     config: BackToBackMatmulConfig[d_type, in_type, transpose_b, transpose_c],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor[d_type, d_layout, MutAnyOrigin],
     A: LayoutTensor[in_type, a_layout, MutAnyOrigin],
@@ -583,7 +583,7 @@ fn multistage_b2b_gemm[
     config: BackToBackMatmulConfig[
         dst_type, src_type, transpose_b, transpose_c
     ],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     D: LayoutTensor,
     A: LayoutTensor,

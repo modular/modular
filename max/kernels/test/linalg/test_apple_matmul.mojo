@@ -16,7 +16,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 
 import benchmark
 from buffer import NDBuffer
@@ -102,7 +102,7 @@ def test_matmul[
     c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],

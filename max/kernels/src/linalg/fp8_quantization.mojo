@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of, has_nvidia_gpu_accelerator
@@ -622,7 +622,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     *,
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
@@ -737,7 +737,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     *,
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
@@ -853,7 +853,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     b_scale_layout: Layout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -983,7 +983,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1079,7 +1079,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     accum_type: DType,
     transpose_b: Bool = True,
     scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1238,7 +1238,7 @@ fn blockwise_scaled_fp8_with_epilogue[
     *,
     scales_granularity_mnk: IndexList[3],
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, _, _, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, _, _, address_space = AddressSpace.GENERIC, ...],

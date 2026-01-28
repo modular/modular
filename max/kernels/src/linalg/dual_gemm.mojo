@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv, exp
 from os import abort
 from sys import align_of, is_defined, simd_width_of
@@ -477,7 +477,7 @@ fn multistage_dual_gemm_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -801,7 +801,7 @@ fn multistage_dual_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
@@ -860,7 +860,7 @@ fn multistage_dual_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
     c: NDBuffer[c_type, 2, _, c_shape],
@@ -950,7 +950,7 @@ fn dual_gemm[
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -1196,7 +1196,7 @@ fn dual_gemv_kernel[
     tile_n: UInt,
     num_threads: UInt,
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
@@ -1335,7 +1335,7 @@ fn dual_gemv[
     //,
     *,
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],

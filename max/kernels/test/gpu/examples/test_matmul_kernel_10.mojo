@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import has_amd_gpu_accelerator
 
@@ -69,7 +69,7 @@ fn sgemm_warp_tiling_kernel[
     TM: Int,
     TN: Int,
     NUM_THREADS: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     mat_a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],

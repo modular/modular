@@ -51,7 +51,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.utils import elementwise_epilogue_type
 
 from utils import Index, IndexList
-from collections import OptionalReg
+from collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -553,7 +553,7 @@ fn bench_grouped_matmul[
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                         config=config,
-                        elementwise_lambda_fn = OptionalReg[
+                        elementwise_lambda_fn = Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](
@@ -623,7 +623,7 @@ fn bench_grouped_matmul[
 
                 else:
                     grouped_matmul[
-                        elementwise_lambda_fn = OptionalReg[
+                        elementwise_lambda_fn = Optional[
                             elementwise_epilogue_type
                         ](epilogue_fn) if has_epilogue else None,
                     ](

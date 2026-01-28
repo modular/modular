@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg, Dict
+from collections import Optional, OptionalReg, Dict
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -310,7 +310,7 @@ fn _reduce_output[
     dtype: DType,
     //,
     simd_size: Int,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     scratch: UnsafePointer[Scalar[dtype]],
     output: UnsafePointer[Scalar[dtype]],
@@ -380,7 +380,7 @@ struct ConvDirectNHWC[
     output_type: DType,
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[conv_attr_rank],
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](ImplicitlyCopyable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
@@ -2074,7 +2074,7 @@ fn conv1d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -2243,7 +2243,7 @@ fn conv2d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -2425,7 +2425,7 @@ fn conv3d_update_wo_tile[
     output_dt: DType,
     input_dt: DType,
     filter_dt: DType,
-    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](
     output: UnsafePointer[Scalar[output_dt]],
     input: UnsafePointer[Scalar[input_dt]],
@@ -3090,7 +3090,7 @@ fn conv_nhwc_direct[
             output_type,
             filter_packed,
             conv_info_static,
-            OptionalReg[elementwise_epilogue_type](
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
         ].run(

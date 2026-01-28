@@ -20,7 +20,7 @@ Usage:
     writer.write(smem.c_tiles(), stage, coord, shape, elect)
 """
 
-from collections import OptionalReg
+from collections import Optional
 from memory import Pointer
 from sys import simd_width_of
 
@@ -73,7 +73,7 @@ struct TileWriter[
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: Int,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,

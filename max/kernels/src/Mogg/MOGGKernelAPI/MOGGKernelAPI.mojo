@@ -15,7 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import (
     acos,
     atanh,
@@ -3809,11 +3809,11 @@ struct Matmul:
             transposed_a,
             transpose_b,
             packed_b,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 epilgue_fn
             ) if lambdas_have_fusion
             and not has_compute_lambda else None,
-            OptionalReg[matmul_elementwise_compute_lambda_type](
+            Optional[matmul_elementwise_compute_lambda_type](
                 output_compute_fn
             ) if lambdas_have_fusion
             and has_compute_lambda else None,
@@ -3869,7 +3869,7 @@ struct BatchMatmul:
         batched_matmul[
             transpose_a=transpose_a,
             transpose_b=transpose_b,
-            elementwise_epilogue_fn = OptionalReg[
+            elementwise_epilogue_fn = Optional[
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
