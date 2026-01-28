@@ -63,7 +63,7 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 # function in the test_package_trait package. The signatures of these closures
 # must match so that the closure trait is first loaded from the package.
 fn my_vectorize[
-    func: fn[x: Int, y: Int, z: Int] (idx: Int) unified -> None
+    func: fn[x: Int, y: Int, z: Int](idx: Int) unified -> None
 ](closure: func):
     closure[0, 1, 1](0)
 

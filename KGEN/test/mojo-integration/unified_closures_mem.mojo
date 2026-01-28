@@ -40,7 +40,7 @@ struct MovableMem(ImplicitlyCopyable):
         return self.str1 + self.str2
 
 
-fn takeIt[T: fn () unified -> String](state: T):
+fn takeIt[T: fn() unified -> String](state: T):
     print("captures: ", state())
 
 

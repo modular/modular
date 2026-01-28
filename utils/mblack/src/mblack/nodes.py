@@ -481,6 +481,11 @@ def whitespace(
     elif p.type == syms.metaparams:
         return NO
 
+    elif p.type == syms.functype:
+        # No space before brackets in function types (e.g., fn[x: Int]())
+        if t in OPENING_BRACKETS:
+            return NO
+
     return SPACE
 
 

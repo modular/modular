@@ -88,6 +88,7 @@ class _python_symbols(Symbols):
     flow_stmt: int
     for_stmt: int
     funcdef: int
+    functype: int
     global_stmt: int
     guard: int
     if_stmt: int

@@ -16,7 +16,7 @@ fn print_second_string(first: String, second: String) -> None:
 
 fn main():
     var optional_func: Optional[
-        fn (flags: String, args: String) -> None
+        fn(flags: String, args: String) -> None
     ] = print_second_string
     # CHECK: Received second
     optional_func.value()("first", "second")

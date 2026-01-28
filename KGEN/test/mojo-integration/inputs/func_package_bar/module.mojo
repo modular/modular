@@ -9,5 +9,5 @@ fn inner[T: AnyType](y: T):
     pass
 
 
-fn bar() -> fn (Int) -> None:
+fn bar() -> fn(Int) -> None:
     return inner[Int]

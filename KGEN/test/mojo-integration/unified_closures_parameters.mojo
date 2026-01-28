@@ -9,7 +9,7 @@ from sys import argv
 
 
 fn takeItParams[
-    UU: Trait, T: fn[U: Trait] (impl: U) unified -> Int, //
+    UU: Trait, T: fn[U: Trait](impl: U) unified -> Int, //
 ](state: T, x: UU):
     var product2 = state.__call__[UU](x)
     print(product2)
@@ -52,7 +52,7 @@ struct Parameter[*, base: ImplicitlyCopyable & Writable](Copyable):
         print(self.impl)
 
 
-fn takeIt[f: fn () unified -> None](impl: f):
+fn takeIt[f: fn() unified -> None](impl: f):
     impl()
 
 
