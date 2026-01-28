@@ -275,6 +275,14 @@ fn matmul_dispatch_sm100_fp8[
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
     var m = c.dim[0]()
 
+    if m <= 128:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
     @parameter
     @always_inline("nodebug")
     fn _dispatch[entry: TuningConfigSM100]() raises:
@@ -345,41 +353,6 @@ fn matmul_dispatch_sm100_fp8[
         if nk_idx_list:
             if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
-
-    @parameter
-    fn matmul_swapab[static_m: Int]() raises -> Int:
-        constrained[
-            static_m % 2 == 0,
-            "static_m must be even",
-        ]()
-        comptime block_tile_shape = Index(128, static_m // 2, BK)
-        comptime umma_shape = Index(
-            block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-        )
-        comptime cluster_shape = Index(2, 1, 1)
-        comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
-            cluster_shape=cluster_shape,
-            AB_swapped=True,
-        )
-        _matmul_dispatch_sm100[
-            transpose_b=transpose_b,
-            config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
-        ](c, a, b, ctx)
-        return DISPATCH_HIT
-
-    if m <= 128:
-        if m <= 16:
-            return matmul_swapab[16]()
-        elif m <= 32:
-            return matmul_swapab[32]()
-        elif m <= 64:
-            return matmul_swapab[64]()
-        else:
-            return matmul_swapab[128]()
 
     # gemma-3-27b-it-prefill (TP1)
     @parameter
