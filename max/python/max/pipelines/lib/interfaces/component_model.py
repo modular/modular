@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from max.pipelines.lib import SupportedEncoding
 
 
-class MaxModel(ABC):
-    """Base interface for pipeline models with weight-backed execution."""
+class ComponentModel(ABC):
+    """Base interface for component models with weight-backed execution."""
 
     def __init__(
         self,

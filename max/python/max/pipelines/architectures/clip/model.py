@@ -16,13 +16,13 @@ from max.driver import Device
 from max.engine import Model
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.max_model import MaxModel
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .clip import CLIPTextModel
 from .model_config import ClipConfig
 
 
-class ClipModel(MaxModel):
+class ClipModel(ComponentModel):
     config_name = ClipConfig.config_name
 
     def __init__(
