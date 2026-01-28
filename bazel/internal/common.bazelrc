@@ -145,6 +145,9 @@ common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
+build --modify_execution_info=CcLtoBackendCompile=+supports-path-mapping
+# TODO: This isn't supported by bazel yet
+# build --modify_execution_info=CppLTOIndexing=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
 build --modify_execution_info=CppModuleMap=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping

@@ -110,6 +110,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:use_module_maps",
             "//bazel/internal/cc-toolchain/features:parse_headers",
             "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
+            "@rules_cc//cc/toolchains/args/thin_lto:feature",
         ] + [
             "//bazel/internal/cc-toolchain/features:" + name
             for name in MARKER_FEATURES
