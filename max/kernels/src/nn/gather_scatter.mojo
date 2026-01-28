@@ -41,7 +41,8 @@ fn _unsafe_normalize_neg_index[
     dtype: DType, width: Int, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
-        idx.cast[out_type]() + dim_size, idx.cast[out_type]()
+        idx.cast[out_type]() + Scalar[out_type](dim_size),
+        idx.cast[out_type](),
     )
 
 
@@ -1035,10 +1036,9 @@ fn scatter_nd_generator[
                 @parameter
                 if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
-                    if (
-                        idx_on_axis < -input_ax_dim
-                        or idx_on_axis >= input_ax_dim
-                    ):
+                    if idx_on_axis < Scalar[indices_type](
+                        -input_ax_dim
+                    ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
                 output_index_tensor[dim] = Int(

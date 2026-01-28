@@ -49,7 +49,10 @@ fn _argsort_cpu[
     fn fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
+        indices.ptr.store(
+            offset[0],
+            iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+        )
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
@@ -218,7 +221,10 @@ fn _argsort_gpu[
         fn fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
-            indices.ptr.store(offset[0], iota[indices.dtype, width](offset[0]))
+            indices.ptr.store(
+                offset[0],
+                iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+            )
 
         elementwise[
             fill_indices_iota_no_padding,
@@ -266,7 +272,9 @@ fn _argsort_gpu[
     ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.ptr.store(i, iota[padded_indices.dtype, width](i))
+            padded_indices.ptr.store(
+                i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
+            )
             padded_input.ptr.store[alignment = padded_input.alignment](
                 i, input.ptr.load[width=width](i)
             )

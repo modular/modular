@@ -31,7 +31,7 @@ fn arange[
     step: Scalar[dtype],
     index: IndexList[1],
 ) -> SIMD[dtype, simd_width]:
-    return start + (iota[dtype, simd_width](index[0]) * step)
+    return start + (iota[dtype, simd_width](Scalar[dtype](index[0])) * step)
 
 
 @always_inline

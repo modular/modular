@@ -152,9 +152,9 @@ fn welford_warp_reduce[
 
     @parameter
     for mask in reversed(range(limit)):
-        var mean = warp.shuffle_down(res_mean, 1 << mask)
-        var m2 = warp.shuffle_down(res_m2, 1 << mask)
-        var count = warp.shuffle_down(res_count, 1 << mask)
+        var mean = warp.shuffle_down(res_mean, UInt32(1 << mask))
+        var m2 = warp.shuffle_down(res_m2, UInt32(1 << mask))
+        var count = warp.shuffle_down(res_count, UInt32(1 << mask))
         welford_combine(mean, m2, count, res_mean, res_m2, res_count)
 
 
@@ -568,8 +568,8 @@ fn _sum_to_mean[
 ](sum_val: Scalar[dtype], n: Int) -> Scalar[dtype]:
     @parameter
     if dtype.is_integral():
-        return sum_val // n
-    return sum_val / n
+        return sum_val // Scalar[dtype](n)
+    return sum_val / Scalar[dtype](n)
 
 
 fn layer_norm_cpu[
@@ -860,7 +860,7 @@ fn _rms_norm_warp_tiling_subkernel[
             thread_m2
         )
 
-    var norm_factor = rsqrt((row_m2 / num_cols) + epsilon)
+    var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
         var gamma_idx = gamma.runtime_layout(
@@ -1043,7 +1043,7 @@ fn _rms_norm_gpu_block_subkernel[
     var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
         thread_m2
     )
-    var norm_factor = rsqrt((row_m2 / num_cols) + eps_accum)
+    var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + eps_accum)
 
     # Need a pass again to perform in place normalization.
     for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
@@ -1807,7 +1807,7 @@ fn rms_norm_fused_residual_add_gpu[
                 attributes=pdl_launch_attributes(),
                 shared_mem_bytes=shared_mem_size,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    shared_mem_size
+                    UInt32(shared_mem_size)
                 ),
             )
 
@@ -1842,7 +1842,10 @@ fn rms_norm_fused_residual_add_gpu[
             attributes=pdl_launch_attributes(),
             shared_mem_bytes=shared_mem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
+                UInt32(
+                    ctx.default_device_info.shared_memory_per_multiprocessor
+                    - 4096
+                )
             ),
         )
 

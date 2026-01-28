@@ -197,7 +197,7 @@ fn top_k[
             k=k,
         )
     else:
-        if normalized_axis != input.rank - 1:
+        if normalized_axis != Scalar[DType.int](input.rank - 1):
             raise Error("axis other than -1 not supported on GPU")
         if not sorted:
             print(
@@ -688,8 +688,8 @@ fn _warp_reduce_topk[
         comptime shuffle_fn = xor_fn if broadcast else down_fn
 
         return TopK_2[T, largest](
-            u=shuffle_fn(v.u, offset),  # u is the value
-            p=Int(shuffle_fn(Int32(v.p), offset)),  # p is the index
+            u=shuffle_fn(v.u, UInt32(offset)),  # u is the value
+            p=Int(shuffle_fn(Int32(v.p), UInt32(offset))),  # p is the index
         )
 
     @parameter
@@ -1873,7 +1873,7 @@ fn apply_gumbel_noise_kernel[
 
             for i in range(tid_in_group, N // simd_width, group_size):
                 var rng_state = Random(
-                    seed=seed_val * N + i,
+                    seed=seed_val * UInt64(N) + UInt64(i),
                 )
                 var input_val: SIMD[dtype, simd_width]
                 if N % simd_width == 0:
@@ -1906,7 +1906,9 @@ fn apply_gumbel_noise_kernel[
             if N % simd_width != 0:
                 var N_res = N % simd_width
                 var rng_state = Random(
-                    seed=seed_val * N + (N - N_res) + tid_in_group,
+                    seed=seed_val * UInt64(N)
+                    + UInt64(N - N_res)
+                    + UInt64(tid_in_group),
                 )
                 if tid_in_group < N_res:
                     var input_val = ld_ptr.load(

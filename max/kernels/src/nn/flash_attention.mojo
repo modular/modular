@@ -504,12 +504,12 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         if use_apple_accelerate_lib[Self.dtype, Self.dtype, Self.dtype]():
             return _cblas_f32(
-                M,
-                N,
-                K,
-                a_stride,
-                align_up(N, Self.simd_width),
-                c_stride,
+                Int32(M),
+                Int32(N),
+                Int32(K),
+                Int32(a_stride),
+                Int32(align_up(N, Self.simd_width)),
+                Int32(c_stride),
                 Float32(1.0),
                 Float32(1.0) if accumulate else Float32(0.0),
                 rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),

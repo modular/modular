@@ -915,7 +915,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -1050,7 +1050,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -1236,7 +1236,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -1815,7 +1815,7 @@ fn _matmul_kv_cache_ragged_impl[
         batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         if idx[1] < Int(k_offset):
             # Write this element to the K cache.
@@ -2027,7 +2027,7 @@ fn _matmul_k_cache_ragged_impl[
         batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
 
@@ -2208,7 +2208,9 @@ fn _matmul_k_cache_ragged_scale_impl[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
 
@@ -2501,7 +2503,7 @@ fn _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
         batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         # Write this element to the K or V cache.
         cache = k_or_v_cache
@@ -3450,7 +3452,7 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         buffer_row_offsets_1d,
         cache_offsets_1d,
         k,
-        buffer_length_int,
+        Int32(buffer_length_int),
         k_latent_buffer,
         cuda_ctx,
     )
@@ -3711,13 +3713,13 @@ fn generic_kv_cache_radd_dispatch[
         __comptime_assert rank == 2, "Rank must be 2"
 
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
-        var corrected_token_idx = idx[0] + input_row_offsets[0]
+        var corrected_token_idx = UInt32(idx[0]) + input_row_offsets[0]
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, Int(corrected_token_idx)
         )
 
         # we also need to add the batch offset to get the actual index in the flattened batch
-        var corrected_batch_idx = batch_idx + batch_offset
+        var corrected_batch_idx = UInt32(batch_idx) + batch_offset
         var tok_idx = Int(corrected_token_idx - input_row_offsets[batch_idx])
 
         var cache: collection_t.CacheType
@@ -3797,7 +3799,7 @@ fn kv_cache_store_ragged[
             rebind[IndexList[3]](idx)
         )
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, idx[0])
-        var token_idx = Int(idx[0] - input_row_offsets[batch_idx])
+        var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
         var h_idx = idx[1]
         var hd_idx = idx[2]
         var cache_length = cache.cache_length(batch_idx)
@@ -3906,7 +3908,7 @@ fn kv_cache_2m_iadd_dispatch[
             row_idx = idx[0] - m
 
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
-        var tok_idx = Int(row_idx - input_row_offsets[batch_idx])
+        var tok_idx = Int(UInt32(row_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt

@@ -75,9 +75,9 @@ fn arg_nonzero[
                 @parameter
                 for k in range(input_buffer.rank):
                     out_indices[1] = k
-                    output_buffer[out_indices[0], out_indices[1]] = Int(
-                        coords[k]
-                    )
+                    output_buffer[
+                        out_indices[0], out_indices[1]
+                    ] = output_buffer.element_type(Int(coords[k]))
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
