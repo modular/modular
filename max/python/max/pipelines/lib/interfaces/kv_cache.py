@@ -15,12 +15,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.interfaces import Pipeline
 from max.kv_cache import (
     PagedKVCacheManager,
     estimate_kv_cache_size,
@@ -103,37 +102,3 @@ class KVCacheMixin(Protocol):
     ) -> KVCacheParams:
         """Returns the KV cache params for the pipeline model."""
         ...
-
-
-def get_kv_cache(
-    pipeline: Pipeline[Any, Any],
-) -> PagedKVCacheManager | None:
-    """Get the paged KV cache manager from a pipeline, if available.
-
-    Args:
-        pipeline: The pipeline to extract the KV cache manager from.
-
-    Returns:
-        The paged KV cache manager if available, None otherwise.
-    """
-    if hasattr(pipeline, "_pipeline_model") and hasattr(
-        pipeline._pipeline_model, "kv_manager"
-    ):
-        kv_manager = pipeline._pipeline_model.kv_manager
-        # Accept standard PagedKVCacheManager
-        if isinstance(kv_manager, PagedKVCacheManager):
-            return kv_manager
-        # Duck-type acceptance for multimodal managers exposing the same interface
-        required_attrs = [
-            "alloc",
-            "fetch",
-            "step",
-            "release",
-            "contains",
-            "device_tensors",
-            "total_num_pages",
-        ]
-        if all(hasattr(kv_manager, a) for a in required_attrs):
-            return kv_manager
-
-    return None

@@ -19,6 +19,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
+from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextContext
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.scheduler.text_generation_scheduler import (
@@ -81,6 +82,7 @@ def test_text_generation_scheduler__empty_batches() -> None:
         response_queue=response_queue,
         cancel_queue=cancel_queue,
         support_empty_batches=True,
+        kv_cache=DummyKVCache(),
     )
 
     print("Running iteration")

@@ -27,6 +27,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
+from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -98,6 +99,7 @@ def create_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        kv_cache=DummyKVCache(),
     )
 
     return (
@@ -470,6 +472,7 @@ def test_pipeline_exception_sends_error_to_client() -> None:
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
+        kv_cache=DummyKVCache(),
     )
 
     # Create a request and add to batch constructor
@@ -518,6 +521,7 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
         request_queue=queue.Queue(),
         response_queue=queue.Queue(),
         cancel_queue=queue.Queue(),
+        kv_cache=DummyKVCache(),
     )
 
 

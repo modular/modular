@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .paged_kv_cache import (
+    DummyKVCache,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -26,6 +27,7 @@ from .registry import (
 )
 
 __all__ = [
+    "DummyKVCache",
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",

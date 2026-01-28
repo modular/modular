@@ -28,7 +28,7 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_kv_cache
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -52,7 +52,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        kv_cache: PagedKVCacheManager | None = None,
+        kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -205,7 +205,7 @@ class TokenGenerationScheduler(Scheduler):
 
 
 def load_text_generation_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -218,14 +218,14 @@ def load_text_generation_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    kv_cache = get_kv_cache(pipeline)
-
     # Return Scheduler
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        kv_cache=kv_cache,
+        # For spec decoding, there may be multiple KVCaches. The scheduler
+        # arbitrarily uses either the draft or target one. The other kvcache is
+        # hidden from scheduler currently and managed by pipelines.
+        kv_cache=pipeline.kv_managers[0],
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

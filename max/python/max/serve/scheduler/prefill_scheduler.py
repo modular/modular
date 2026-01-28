@@ -32,7 +32,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_kv_cache
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.queue.zmq_queue import ClientIdentity
@@ -327,7 +327,7 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> PrefillScheduler:
@@ -336,18 +336,16 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
-    # Get Paged Manager
-    kv_cache = get_kv_cache(pipeline)
-
-    if kv_cache is None:
-        raise RuntimeError(
-            "A paged KV cache manager must be present to use the PrefillScheduler"
+    if len(pipeline.kv_managers) != 1:
+        raise ValueError(
+            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
+            f"{len(pipeline.kv_managers)}"
         )
 
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=kv_cache,
+        kv_cache=pipeline.kv_managers[0],
         dispatcher=PrefillDispatcherServerV2(
             bind_addr=settings.di_bind_address
         ),

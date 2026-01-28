@@ -21,8 +21,6 @@ from max.interfaces import (
     PipelineInputsType,
     PipelineOutputType,
     Scheduler,
-    TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
@@ -30,6 +28,7 @@ from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
     PipelineRole,
+    TextGenerationPipeline,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -126,12 +125,8 @@ def load_scheduler(
             kv_cache=kv_cache,
         )
     elif pipeline_config.enable_overlap_scheduler:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
         assert pipeline.__class__.__name__ == "OverlapTextGenerationPipeline"
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_overlap_text_generation_scheduler(
             text_pipeline,
             pipeline_config,
@@ -140,11 +135,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
             pipeline_config,
@@ -153,11 +144,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
             pipeline_config,
@@ -167,11 +154,7 @@ def load_scheduler(
             settings=settings,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(

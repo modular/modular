@@ -37,7 +37,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_kv_cache
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -412,7 +412,7 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -426,18 +426,16 @@ def load_decode_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    kv_cache = get_kv_cache(pipeline)
-
-    if kv_cache is None:
-        raise RuntimeError(
-            "A paged KV cache manager must be present to use the DecodeScheduler"
+    if len(pipeline.kv_managers) != 1:
+        raise ValueError(
+            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
+            f"{len(pipeline.kv_managers)}"
         )
 
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=kv_cache,
+        kv_cache=pipeline.kv_managers[0],
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

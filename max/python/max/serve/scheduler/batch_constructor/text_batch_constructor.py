@@ -344,7 +344,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        kv_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -738,18 +738,9 @@ class TextBatchConstructor:
     def _add_tg_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         replica_requests = self.replicas[replica_idx]
 
-        # If we do not have a paged cache, assume we can add all items
-        max_batch_size = self.scheduler_config.max_batch_size
-        if self.kv_cache is None:
-            tg_request_ids = tuple(replica_requests.tg_reqs.keys())
-            for request_id in tg_request_ids[:max_batch_size]:
-                ctx = replica_requests.tg_reqs[request_id]
-                batch.batch[request_id] = ctx
-
-            return
-
         # Add based on the oldest request, respecting KV cache limits and token budgets.
         candidate_ids = deque(replica_requests.tg_reqs.keys())
+        max_batch_size = self.scheduler_config.max_batch_size
         max_seq_len = self.scheduler_config.max_seq_len
         while len(batch) < max_batch_size and len(candidate_ids) > 0:
             # Pop the oldest request
