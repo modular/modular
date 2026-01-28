@@ -1,5 +1,5 @@
-// RUN: kgen %s -elaborate -S -o - -D bar -D foo | FileCheck %s
-// RUN: kgen %s -elaborate -S -o - -D bar | FileCheck %s --check-prefix=UNDEF
+// RUN: kgen %s -elaborate -S -o - -Dbar -D foo | FileCheck %s
+// RUN: kgen %s -elaborate -S -o - -Dbar | FileCheck %s --check-prefix=UNDEF
 
 kgen.generator export @main() -> i1 {
   // CHECK: constant: i1 = <1>
