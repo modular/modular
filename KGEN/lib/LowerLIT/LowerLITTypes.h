@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef KGEN_LOWERLIT_LOWERLITTYPES_H
+#define KGEN_LOWERLIT_LOWERLITTYPES_H
+
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 
@@ -68,3 +71,5 @@ LogicalResult lowerLITTypes(ModuleOp module, StructDecls &decls,
                             mlir::LockedSymbolTableCollection &symtab);
 
 } // namespace M::KGEN::LIT
+
+#endif // KGEN_LOWERLIT_LOWERLITTYPES_H
