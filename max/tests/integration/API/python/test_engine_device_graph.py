@@ -72,6 +72,84 @@ def test_execution_trace_capture_replay() -> None:
     )
 
 
+def test_same_shapes_different_input_buffers() -> None:
+    """Test that graphs captured with same shapes but different buffers are cached separately.
+
+    Without this fix, replaying with different buffers could incorrectly reuse
+    a cached graph that references the wrong memory.
+    """
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    # Create a simple graph that adds 10 to the input
+    with Graph(
+        "same_shapes_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 10)
+
+    model = session.load(graph)
+
+    # Create two input buffers with the same shape but different values and underlying memory
+    input_tensor1 = Buffer.from_numpy(
+        np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+    ).to(model.input_devices[0])
+    input_tensor2 = Buffer.from_numpy(
+        np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+    ).to(model.input_devices[0])
+
+    # Capture graphs with each input - these should create separate cached graphs
+    # because the buffer addresses are different (per commit a236dd8126)
+    (captured_output1,) = model.capture(input_tensor1)
+    (captured_output2,) = model.capture(input_tensor2)
+
+    # Replay both graphs to populate output buffers
+    model.replay(input_tensor1)
+    model.replay(input_tensor2)
+
+    # Verify each replay wrote to its own output buffer
+    np.testing.assert_allclose(
+        captured_output1.to_numpy(),
+        np.array([11.0, 12.0, 13.0, 14.0], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        captured_output2.to_numpy(),
+        np.array([15.0, 16.0, 17.0, 18.0], dtype=np.float32),
+    )
+
+    # Replay input1 again and verify only captured_output1 is updated
+    model.replay(input_tensor1)
+    np.testing.assert_allclose(
+        captured_output1.to_numpy(),
+        np.array([11.0, 12.0, 13.0, 14.0], dtype=np.float32),
+    )
+    # captured_output2 should remain unchanged
+    np.testing.assert_allclose(
+        captured_output2.to_numpy(),
+        np.array([15.0, 16.0, 17.0, 18.0], dtype=np.float32),
+    )
+
+    # Update input1 in-place and replay to verify the graph reads from the correct buffer
+    updated_values1 = Buffer.from_numpy(
+        np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+    ).to(model.input_devices[0])
+    input_tensor1.inplace_copy_from(updated_values1)
+
+    model.replay(input_tensor1)
+    np.testing.assert_allclose(
+        captured_output1.to_numpy(),
+        np.array([20.0, 30.0, 40.0, 50.0], dtype=np.float32),
+    )
+    # captured_output2 should still be unchanged
+    np.testing.assert_allclose(
+        captured_output2.to_numpy(),
+        np.array([15.0, 16.0, 17.0, 18.0], dtype=np.float32),
+    )
+
+
 def test_replay_with_external_allocations() -> None:
     if accelerator_count() == 0:
         pytest.skip("GPU not available")
