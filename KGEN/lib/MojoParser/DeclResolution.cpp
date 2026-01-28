@@ -2487,10 +2487,16 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 /// For a struct or trait declaration, parse an optional list of parent traits
 /// to inherit from. `immediateParents` will be populated with the smallest set
 /// of equivalent parent trait decls.
-static ParseResult
-parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
-                             StringRef declName, SharedState &shared,
-                             DenseSet<SymbolRefAttr> &immediateParents) {
+///
+/// For struct declarations with parameters already in scope, `traitConstraints`
+/// can be provided to collect emitted constraint expressions from `where`
+/// clauses for conditional conformance.
+/// Note: Trait declarations cannot have where clauses on their inheritance
+/// lists - only struct declarations support conditional conformance.
+static ParseResult parseOptionalInheritanceList(
+    ParserBase &p, ASTDecl &declScope, ASTDecl &decl, StringRef declName,
+    SharedState &shared, DenseSet<SymbolRefAttr> &immediateParents,
+    DenseMap<SymbolRefAttr, ConstraintAttr> *traitConstraints = nullptr) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
@@ -2519,6 +2525,30 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
         declScope.setErroneous();
         return success();
       }
+    }
+
+    // Parse and emit optional where clause for conditional conformance.
+    // Parameters must already be in scope in declScope for this to work.
+    ConstraintAttr constraint;
+    if (traitConstraints && p.consumeIfSoftIdentifier("where")) {
+      ExprNode *constraintExpr = nullptr;
+      if (p.parseExpression(constraintExpr, declScope.getIndentation()))
+        return failure();
+
+      IREmitter constraintEmitter(declScope, EC_Requires);
+      RValue propI1 = constraintEmitter.emitExprI1(constraintExpr, EC_Requires);
+      if (!propI1) {
+        constraintEmitter.emitError(loc,
+                                    "failed to emit constraint expression");
+        return failure();
+      }
+      PValue propVal = propI1.getIfPValue();
+      if (!propVal) {
+        constraintEmitter.emitErrorForDynamicValueInParameter(loc);
+        return failure();
+      }
+      constraint =
+          ConstraintAttr::get(propVal, shared.diags.translateLocation(loc));
     }
 
     // Successively flatten the parent list so we always have all the parents
@@ -2551,6 +2581,10 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       // Insert this `symbol` as an immediate parent. This must happen after the
       // loop, because this symbol itself is part of `canonicalParent` too.
       immediateParents.insert(symbol);
+
+      // Store the emitted constraint for this trait symbol.
+      if (traitConstraints && constraint)
+        (*traitConstraints)[symbol] = constraint;
     }
     return success();
   };
@@ -2735,24 +2769,32 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                           decl.getLoc(), decl.getParentDecl());
 
   ParsedParamList parsedParams;
-  DenseSet<SymbolRefAttr> immediateParents; // unused.
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
-      parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
-                                   shared, immediateParents) ||
-      p.parseToken(Token::colon, "expected ':' in struct definition") ||
-      decl.isErroneous())
+      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
 
+  // Parse parameters first so they're in scope for constraint emission
+  // in the inheritance list.
   std::optional<TypeCheckedParamList> paramSignatureOrError =
       TypeCheckedParamList::create(parsedParams, sigDecl);
   if (!paramSignatureOrError.has_value())
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
+
+  // Now parse the inheritance list. Parameters are in scope in sigDecl,
+  // so where clause constraints can be emitted immediately.
+  DenseSet<SymbolRefAttr> immediateParents; // unused.
+  DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
+  if (parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
+                                   shared, immediateParents,
+                                   &traitConstraints) ||
+      p.parseToken(Token::colon, "expected ':' in struct definition") ||
+      decl.isErroneous())
+    return failure();
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
@@ -2829,7 +2871,21 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     }
   }
 
-  structOp.setCanonicalTrait(getCanonicalTrait(parentTraits));
+  // Build canonical trait with constraints for conditional conformance.
+  // TODO: When conditional conformance is extended to struct extensions,
+  // consider extracting this logic into a shared helper function.
+  canonicalizeTraitCompositionSymbols(shared, parentTraits);
+  SmallVector<ConstraintAttr> constraintsArray;
+  constraintsArray.reserve(parentTraits.size());
+  for (SymbolRefAttr symbol : parentTraits) {
+    auto it = traitConstraints.find(symbol);
+    if (it != traitConstraints.end())
+      constraintsArray.push_back(it->second);
+    else
+      constraintsArray.push_back(getUnconditionalConstraint(getContext()));
+  }
+  structOp.setCanonicalTrait(
+      TraitType::get(getContext(), parentTraits, constraintsArray));
 
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
