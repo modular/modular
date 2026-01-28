@@ -93,26 +93,6 @@ def _resolve_user_provided_config_file_cli_arg(
     return preliminary_args.config_file, remaining_args
 
 
-# TODO: This needs to be temporarily named this way to avoid name conflicts
-# with the PipelineConfig class. Ideally this should just be that same class,
-# but we're still in the process of migrating PipelineConfig to pydantic and all.
-class BenchmarkPipelineConfig(ConfigFileModel):
-    """Configuration class for model options."""
-
-    model: str | None = Field(default=None)
-    """Name of the model. Required when running benchmark (must be provided via CLI or config)."""
-    weight_path: str | None = Field(default=None)
-    """Override the default weights file. Must be in GGUF format."""
-    lora_paths: str | None = Field(default=None)
-    """Comma-separated list of paths to LoRA adapters."""
-    quantization_encoding: str | None = Field(default="q4_k")
-    """Quantization encoding to benchmark."""
-    max_length: int | None = Field(default=None)
-    """Maximum length of the sequence."""
-    max_batch_size: int | None = Field(default=None)
-    """Maximum batch size to execute with the model."""
-
-
 class HardwareConfig(ConfigFileModel):
     """Configuration class for hardware options."""
 
