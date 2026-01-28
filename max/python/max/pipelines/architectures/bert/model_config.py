@@ -50,11 +50,18 @@ class BertModelConfig(ArchConfig):
         if len(pipeline_config.model.device_specs) != 1:
             raise ValueError("BERT model is only supported on a single device")
         device_spec = pipeline_config.model.device_specs[0]
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         return cls(
             dtype=quantization_encoding.dtype,
             device=DeviceRef(
                 device_type=device_spec.device_type, id=device_spec.id
             ),
             pool_embeddings=pipeline_config.pool_embeddings,
-            huggingface_config=pipeline_config.model.huggingface_config,
+            huggingface_config=huggingface_config,
         )

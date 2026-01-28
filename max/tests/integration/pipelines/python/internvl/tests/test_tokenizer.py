@@ -261,6 +261,7 @@ async def test_internvl_tokenizer_image_placement(
     )
 
     # Override max_dynamic_patch for this test (fixture sets it to 12 by default)
+    assert mock_pipeline_config.model.huggingface_config is not None
     mock_pipeline_config.model.huggingface_config.max_dynamic_patch = 1
 
     # Use the real tokenizer to exercise the processor logic, but with a mocked delegate.

@@ -68,6 +68,7 @@ def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
     pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     memory_estimated = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
@@ -90,6 +91,7 @@ def test_deepseekv3_memory_estimation() -> None:
 def test_deepseekv3_memory_estimation_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
     pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
@@ -111,6 +113,7 @@ def mock_weights_pipeline_config(
 ) -> NonCallableMock:
     """Create a mock pipeline config for estimate_weights_size tests."""
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()

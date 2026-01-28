@@ -246,6 +246,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert encoding is not None
         dtype = encoding.dtype.size_in_bytes
         config = model_config.huggingface_config
+        assert config is not None
         n_sparse_layers = (
             config.num_hidden_layers - config.first_k_dense_replace
         )

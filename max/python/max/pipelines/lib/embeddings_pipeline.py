@@ -94,10 +94,17 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
 
         # Load weights
         weights = load_weights(weight_paths)
+        huggingface_config = self._pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"Embeddings pipeline requires a HuggingFace config for '{self._pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=self._pipeline_config.model.huggingface_config,
+            huggingface_config=huggingface_config,
             encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.model.kv_cache,

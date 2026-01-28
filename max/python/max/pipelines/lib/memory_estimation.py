@@ -201,6 +201,12 @@ class MemoryEstimator:
         devices: list[Device],
     ) -> None:
         huggingface_config = model_config.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"Memory estimation requires a HuggingFace config for '{model_config.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model

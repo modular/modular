@@ -39,6 +39,7 @@ async def test_idefics3_tokenizer_image_token_indices() -> None:
     )
     # DummyPipelineConfig seeds a MagicMock HuggingFace config; set the
     # `image_token_id` that Idefics3Tokenizer reads.
+    assert pipeline_config.model.huggingface_config is not None
     pipeline_config.model.huggingface_config.image_token_id = 128257
     tokenizer = Idefics3Tokenizer(
         "HuggingFaceM4/Idefics3-8B-Llama3", pipeline_config=pipeline_config

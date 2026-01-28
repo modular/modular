@@ -126,6 +126,12 @@ class TextGenerationPipeline(
         self._pipeline_config = pipeline_config
         model_config = pipeline_config.model
         huggingface_config = model_config.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"Text generation pipeline requires a HuggingFace config for '{model_config.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
 
         self._devices = load_devices(model_config.device_specs)
         self._tokenizer = tokenizer

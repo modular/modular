@@ -114,9 +114,14 @@ class MistralConfig(ArchConfigWithKVCache):
         Returns:
             An initialized MistralConfig instance.
         """
-        return cls.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
-        )
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
 
     @classmethod
     def initialize_from_config(
