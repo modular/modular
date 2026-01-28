@@ -17,7 +17,6 @@ These APIs are imported automatically, just like builtins.
 
 
 from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
 from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (

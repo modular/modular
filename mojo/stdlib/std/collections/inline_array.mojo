@@ -36,7 +36,6 @@ import math
 from collections._index_normalization import normalize_index
 
 from builtin.device_passable import DevicePassable
-from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name

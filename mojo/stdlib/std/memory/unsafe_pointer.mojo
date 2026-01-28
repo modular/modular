@@ -23,7 +23,6 @@ structures.
 from sys import align_of, is_gpu, is_nvidia_gpu, size_of
 from sys.intrinsics import gather, scatter, strided_load, strided_store
 
-from builtin.rebind import downcast
 from builtin.format_int import _write_int
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic

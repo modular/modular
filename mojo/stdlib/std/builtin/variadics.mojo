@@ -16,7 +16,6 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
 from sys.intrinsics import _type_is_eq_parse_time
 
 

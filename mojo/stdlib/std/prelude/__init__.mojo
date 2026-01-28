@@ -88,6 +88,7 @@ from builtin.rebind import (
     rebind_var,
     trait_downcast,
     trait_downcast_var,
+    downcast,
 )
 from builtin.repr import Representable, repr
 from builtin.reversed import ReversibleRange, reversed

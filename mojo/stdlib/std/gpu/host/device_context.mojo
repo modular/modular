@@ -57,7 +57,6 @@ from gpu.host.compile import (
 )
 from memory import stack_allocation
 from memory.unsafe import bitcast
-from builtin.rebind import downcast
 
 from utils import Variant
 from utils._serialize import _serialize_elements

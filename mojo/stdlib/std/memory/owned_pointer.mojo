@@ -20,7 +20,6 @@ from memory import OwnedPointer
 """
 
 from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast, trait_downcast
 from format._utils import Repr, FormatStruct
 from reflection.type_info import _unqualified_type_name
 

@@ -13,7 +13,6 @@
 """Defines a Variant type."""
 
 from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
 from builtin.variadics import Variadic
 from os import abort
 from sys.intrinsics import _type_is_eq

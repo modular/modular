@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.intrinsics import _type_is_eq
-from builtin.rebind import downcast
 
 
 trait DevicePassable:
