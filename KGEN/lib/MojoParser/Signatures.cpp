@@ -34,20 +34,13 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-// Given a value of a well known type, extract the specified field.  This
-// returns null if the field doesn't exist.
-static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
-                                   SMLoc loc, SharedState &shared) {
-  // TODO: This is generating a StructExtractAttr the hard way.  It would be
-  // way nicer to form a call to `o.__mlir_origin__()` or something like we do
-  // for bools, but unfortunately that won't get inlined and simplified by the
-  // call emission because Origin is parametric.  Therefore it will break
-  // parameter inference.
+TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
+                                      SMLoc loc, SharedState &shared) {
   ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
   if (!typeDecl || !sugarIsa<LIT::StructType>(value.getType()))
     return {};
 
-  // Check to see if it has the expected field of Origin.
+  // Look up the field in the type.
   LookupResult lookup =
       shared.lookupAndResolveDecl(fieldName, loc, *typeDecl,
                                   /*searchParentScopes=*/false);
@@ -69,8 +62,13 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
 TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
                                    SharedState &shared) {
   // If this is a value of Origin struct type, process it.
+  // This is generating a StructExtractAttr the hard way.  It would be way nicer
+  // to form a call to `o.__mlir_origin__()` or something like we do for bools,
+  // but unfortunately that won't get inlined and simplified by the call
+  // emission because Origin is parametric.  Therefore it will break parameter
+  // inference.
   if (auto extractVal =
-          digOutSingleField(value, ORIGIN_FIELD_NAME, loc, shared))
+          extractStructField(value, ORIGIN_FIELD_NAME, loc, shared))
     value = extractVal;
 
   // A raw !lit.origin always works.
@@ -127,11 +125,11 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
     // Check to see if this is the well-known AddressSpace struct.  If so,
     // dig out the index from within it.
-    auto extractInt = digOutSingleField(value, "_value", loc, shared);
+    auto extractInt = ASTType::extractStructField(value, "_value", loc, shared);
     if (!extractInt)
       return {};
     auto extractIndex =
-        digOutSingleField(extractInt, "_mlir_value", loc, shared);
+        ASTType::extractStructField(extractInt, "_mlir_value", loc, shared);
     if (!extractIndex)
       return {};
     if (extractIndex.getType().isIndex())

@@ -1733,7 +1733,19 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
                                    boolDest);
   }
 
-  // Then we use __mlir_i1__ to convert to an i1 value.
+  // For stdlib Bool, directly extract the _mlir_value field instead of calling
+  // __mlir_i1__. This avoids unnecessary sugar wrapping that would show up in
+  // diagnostics.
+  ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
+  if (value.ir.getRValueType().isEqualCanon(boolType)) {
+    if (PValue pvalue = value.ir.getIfPValue()) {
+      if (auto extractVal = ASTType::extractStructField(
+              pvalue.get(), "_mlir_value", value.expr->getLoc(), shared))
+        return emitRValue({PValue(extractVal), value.expr}, context);
+    }
+  }
+
+  // For other types that implement __mlir_i1__, call the method.
   ValueDest boolDest(context);
   CValue litBoolCall = emitNamedMethodCall(
       "__mlir_i1__",

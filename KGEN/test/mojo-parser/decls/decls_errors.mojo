@@ -334,8 +334,7 @@ fn unfoldable_predicate(y: Int) -> Bool:
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
 fn unprovable_constraints[x: Int, y: Int]()
-  # FIXME(MOCO-3011): Constraint failures are printing desugared params
-  # expected-note @+1 {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 2), True)'}}
+  # expected-note @+1 {{constraint declared here evaluated to False, expected '(x > 1)'}}
   where x > 1
   # expected-note @+1 {{constraint declared here needs evidence for}}
   where unfoldable_predicate(y):
@@ -377,7 +376,7 @@ fn test_constraints():
   # expected-error @below {{invalid call to 'failing_constraint_with_depth': violated constraint}}
   failing_constraint_with_depth[1,2,3]()
 
-# expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 2), True)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
 # expected-note @below {{function declared here}}
 fn unprovable_param_constraints[x: Int where x > 1]():
   pass
@@ -390,7 +389,7 @@ fn test_param_constraints():
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
   # expected-note @below {{constraint declared here needs evidence for}}
-  # expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt a._mlir_value, 1), True)'}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
   a: Int where a > 0
 ]:
     pass
@@ -404,7 +403,7 @@ fn violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
 # expected-error @below {{default value violated constraint}}
-# expected-note @below {{constraint declared here evaluated to False, expected '(xor (lt x._mlir_value, 4), True)'}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
 fn violated_default_constraint[x: Int where x > 3 = 1]():
     pass
 

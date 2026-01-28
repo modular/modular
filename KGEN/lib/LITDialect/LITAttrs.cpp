@@ -1070,7 +1070,7 @@ LIT::StructExtractAttr::getFromBytecode(TypedAttr structValue, StringAttr field,
 
 TypedAttr LIT::StructExtractAttr::get(TypedAttr structValue,
                                       StructFieldOp fieldOp) {
-  auto structType = ::cast<StructType>(structValue.getType());
+  auto structType = sugarCast<StructType>(structValue.getType());
   ParameterEvaluator evaluator(fieldOp.getParentOp().getInputParams(),
                                structType.getParamValues());
   auto resultType = evaluator.getReboundType(fieldOp.getType());
@@ -1093,7 +1093,18 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
     // Return it if we found it.
     if (it != value.getValues().end()) {
       // Make sure type sugar on the field value doesn't break invariants.
-      return ParamOperatorAttr::getRebind(std::get<1>(*it), resultType);
+      TypedAttr result =
+          ParamOperatorAttr::getRebind(std::get<1>(*it), resultType);
+      // Maintain sugar by applying struct-extract on the sugared form too.
+      // Create it as an AlwaysInlineBuiltin sugar to indicate this is an
+      // internal transformation not meant to be printed as an "aka" in
+      // diagnostics.
+      if (auto sugarWrapper = dyn_cast<SugarAttr>(structValue)) {
+        result = SugarAttr::getAlwaysInlineBuiltin(
+            Base::get(context, sugarWrapper.getSugared(), field, resultType),
+            result);
+      }
+      return result;
     }
   }
 
