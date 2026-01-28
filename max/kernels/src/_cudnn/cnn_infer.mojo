@@ -386,7 +386,7 @@ struct cudnnFusedOpsConstParamLabel_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -509,7 +509,7 @@ struct cudnnReorderType_t(
     comptime CUDNN_NO_REORDER = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -648,7 +648,7 @@ struct cudnnFusedOps_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -718,7 +718,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
     comptime CUDNN_PTR_16B_ALIGNED = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -850,7 +850,7 @@ struct cudnnFusedOpsVariantParamLabel_t(
     comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1333,7 +1333,7 @@ struct cudnnConvolutionMode_t(
     comptime CUDNN_CROSS_CORRELATION = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

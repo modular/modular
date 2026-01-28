@@ -228,7 +228,7 @@ struct cudnnForwardMode_t(
     comptime CUDNN_FWD_MODE_TRAINING = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -785,7 +785,7 @@ struct cudnnSeqDataAxis_t(
     comptime CUDNN_SEQDATA_VECT_DIM = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

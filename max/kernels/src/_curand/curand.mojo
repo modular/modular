@@ -218,7 +218,7 @@ struct curandRngType(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -565,7 +565,7 @@ struct curandMethod(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CURAND_POISSON = Self(13)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -723,7 +723,7 @@ struct curandStatus(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CURAND_STATUS_INTERNAL_ERROR = Self(12)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -788,7 +788,7 @@ struct curandDirectionVectorSet(
     comptime CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1252,7 +1252,7 @@ struct curandOrdering(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CURAND_ORDERING_QUASI_DEFAULT = Self(5)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

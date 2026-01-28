@@ -85,7 +85,7 @@ fn compute_log_probabilities_1tok[
         lp_output_offsets.to_layout_tensor(), output_token_index
     )
     var reverse_index_in_seq = (
-        lp_output_offsets[batch_index + 1] - output_token_index - 1
+        lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1
     )
     var token_end_index = token_row_offsets[batch_index + 1]
     var sampled_token: Scalar[token_dtype]
@@ -112,12 +112,12 @@ fn compute_log_probabilities_1tok[
         post_heap_idx = 0
     else:
         var heap = FixedHeightMinHeap[token_dtype, logit_dtype, levels](
-            fill_k=vocab_size, fill_v=-inf[logit_dtype]()
+            fill_k=UInt32(vocab_size), fill_v=-inf[logit_dtype]()
         )
         for token_value in range(vocab_size):
             var logit_value = logits[logit_index, token_value]
             if logit_value > heap.v_array[0]:
-                heap.k_array[0] = token_value
+                heap.k_array[0] = UInt32(token_value)
                 heap.v_array[0] = logit_value
                 heap.heap_down()
         for i in range(heap.num_elements):

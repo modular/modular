@@ -414,7 +414,7 @@ struct Range:
         fn func[
             width: Int, element_alignment: Int
         ](idx: IndexList[1]) -> SIMD[dtype, width]:
-            return start + step * (iota[dtype, width](idx[0]))
+            return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
 
         foreach[
             func,
@@ -962,9 +962,9 @@ struct SqueezeShape:
         for input_shape_index in range(num_input_dims):
             if input_shape_copy[input_shape_index] == -1:
                 continue
-            output_shape[output_shape_index] = input_shape_copy[
-                input_shape_index
-            ]
+            output_shape[output_shape_index] = Scalar[dtype](
+                input_shape_copy[input_shape_index]
+            )
             output_shape_index += 1
 
     @staticmethod
