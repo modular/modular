@@ -28,7 +28,13 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu import global_idx, grid_dim, block_dim
 from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import arg_parse
+from internal_utils import (
+    arg_parse,
+    assert_almost_equal,
+    assert_with_measure,
+    pytorch_like_tolerances_for,
+)
+from internal_utils._measure import relative_difference
 from memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -172,6 +178,7 @@ fn bench_matmul[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
     init_type: InitializationType,
+    verify: Bool,
 ) raises:
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
@@ -200,6 +207,7 @@ fn bench_matmul[
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
+    var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](stride_c)
 
     # MXFP8 scale buffer allocation
     comptime scales_type = MXFP8_SF_DTYPE
@@ -311,6 +319,50 @@ fn bench_matmul[
         init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
         init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
 
+    # Helper to run vendor BLAS matmul - used by both benchmark and verification
+    @parameter
+    @__copy_capture(dynamic_a_scales_shape, dynamic_b_scales_shape)
+    fn run_vendor_blas(
+        ctx: DeviceContext,
+        tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
+        tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
+        tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
+    ) raises:
+        @parameter
+        if use_mxfp8_sf:
+            var a_scales_nd = NDBuffer[
+                scales_type, 5, MutAnyOrigin, static_a_scales_shape
+            ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
+            var b_scales_nd = NDBuffer[
+                scales_type, 5, MutAnyOrigin, static_b_scales_shape
+            ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
+
+            var a_tensor = from_ndbuffer_row_major(tensor_a)
+            var b_tensor = from_ndbuffer_row_major(tensor_b)
+            var c_tensor = from_ndbuffer_row_major(tensor_c)
+            var a_scales = from_ndbuffer_row_major(a_scales_nd)
+            var b_scales = from_ndbuffer_row_major(b_scales_nd)
+
+            vendor_blas.matmul[scales_type=scales_type](
+                ctx,
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                a_scales=a_scales,
+                b_scales=b_scales,
+                transpose_b=True,
+                c_row_major=True,
+            )
+        else:
+            vendor_blas.matmul[use_tf32=True](
+                ctx,
+                tensor_c,
+                tensor_a,
+                tensor_b,
+                c_row_major=True,
+                transpose_b=transpose_b,
+            )
+
     @parameter
     @__copy_capture(
         cache_a,
@@ -368,40 +420,8 @@ fn bench_matmul[
             ](test_lambda_add_coords_prod) if epilogue else None
 
             @parameter
-            if use_mxfp8_sf and use_vendor_blas:
-                # MXFP8 scaled matmul path via cuBLASLt
-                var a_scales_nd = NDBuffer[
-                    scales_type, 5, MutAnyOrigin, static_a_scales_shape
-                ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
-                var b_scales_nd = NDBuffer[
-                    scales_type, 5, MutAnyOrigin, static_b_scales_shape
-                ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
-
-                var a_tensor = from_ndbuffer_row_major(tensor_a)
-                var b_tensor = from_ndbuffer_row_major(tensor_b)
-                var c_tensor = from_ndbuffer_row_major(tensor_c)
-                var a_scales = from_ndbuffer_row_major(a_scales_nd)
-                var b_scales = from_ndbuffer_row_major(b_scales_nd)
-
-                vendor_blas.matmul[scales_type=scales_type](
-                    ctx,
-                    c_tensor,
-                    a_tensor,
-                    b_tensor,
-                    a_scales=a_scales,
-                    b_scales=b_scales,
-                    transpose_b=True,
-                    c_row_major=True,
-                )
-            elif use_vendor_blas:
-                vendor_blas.matmul[use_tf32=True](
-                    ctx,
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    c_row_major=True,
-                    transpose_b=transpose_b,
-                )
+            if use_vendor_blas:
+                run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c)
             else:
                 _matmul_gpu[
                     use_tensor_core=True,
@@ -434,6 +454,98 @@ fn bench_matmul[
         [flops],
     )
 
+    # Verification: compare our kernel output against vendor BLAS as reference.
+    # The benchmark already wrote our kernel's output to buffer_c at offset 0
+    # (iteration 0 uses offset 0), so we just need to run vendor BLAS once.
+    @parameter
+    if not use_vendor_blas and not epilogue:
+        if verify:
+            # Create tensors at offset 0 for verification
+            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
+                buffer_a.unsafe_ptr(), shape_a_dim
+            )
+            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
+                buffer_b.unsafe_ptr(), shape_b_dim
+            )
+            var tensor_c_ref = NDBuffer[
+                DType.bfloat16, 2, MutAnyOrigin, shape_c
+            ](buffer_c_ref.unsafe_ptr(), shape_c_dim)
+
+            # Run vendor BLAS to get reference output
+            run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c_ref)
+            ctx.synchronize()
+
+            # Copy results to host for comparison
+            # Create non-owning DeviceBuffers with exact size for the copy
+            var c_size = shape_c_dim[0] * shape_c_dim[1]
+            var c_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
+            var c_ref_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
+            var c_view = DeviceBuffer[DType.bfloat16](
+                ctx, buffer_c.unsafe_ptr(), c_size, owning=False
+            )
+            var c_ref_view = DeviceBuffer[DType.bfloat16](
+                ctx, buffer_c_ref.unsafe_ptr(), c_size, owning=False
+            )
+            ctx.enqueue_copy(c_host, c_view)
+            ctx.enqueue_copy(c_ref_host, c_ref_view)
+            ctx.synchronize()
+
+            # Sanity check: verify outputs match expected zero/non-zero state
+            fn is_all_zeros(
+                ptr: UnsafePointer[Scalar[DType.bfloat16]], size: Int
+            ) -> Bool:
+                for i in range(size):
+                    if ptr[i] != 0:
+                        return False
+                return True
+
+            var c_is_zeros = is_all_zeros(c_host, c_size)
+            var c_ref_is_zeros = is_all_zeros(c_ref_host, c_size)
+
+            if init_type == InitializationType.zero:
+                if not c_is_zeros:
+                    raise "matmul verification failed: kernel output should be all zeros for zero input"
+                if not c_ref_is_zeros:
+                    raise "matmul verification failed: vendor BLAS output should be all zeros for zero input"
+            else:
+                if c_is_zeros:
+                    raise "matmul verification failed: kernel output is all zeros"
+                if c_ref_is_zeros:
+                    raise "matmul verification failed: vendor BLAS output is all zeros"
+
+            # Verify using relative difference measure
+            assert_with_measure[relative_difference](
+                c_host,
+                c_ref_host,
+                c_size,
+                msg="matmul verification failed (relative_difference)",
+                threshold=0.001,
+            )
+
+            # Verify element-wise with dtype-appropriate tolerances
+            # float8 needs looser tolerances due to reduced precision
+            var rtol: Float64
+            var atol: Float64
+
+            @parameter
+            if dtype.is_float8():
+                rtol = 1e-2
+                atol = 1e-2
+            else:
+                rtol, atol = pytorch_like_tolerances_for[DType.bfloat16]()
+
+            assert_almost_equal(
+                c_host,
+                c_ref_host,
+                c_size,
+                msg="matmul verification failed",
+                rtol=rtol,
+                atol=atol,
+            )
+
+            c_host.free()
+            c_ref_host.free()
+
     # Cleanup host pointers
     a_host_ptr.free()
     b_host_ptr.free()
@@ -442,6 +554,7 @@ fn bench_matmul[
     _ = buffer_a^
     _ = buffer_b^
     _ = buffer_c^
+    _ = buffer_c_ref^
     _ = buffer_a_scales^
     _ = buffer_b_scales^
 
@@ -462,6 +575,7 @@ fn create_matmul_bench[
     n: ValOrDim,
     k: ValOrDim,
     init_type: InitializationType,
+    verify: Bool,
 ) raises:
     comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
@@ -489,6 +603,7 @@ fn create_matmul_bench[
         (m.value, k.value),
         dynamic_b_shape,
         init_type,
+        verify,
     )
 
 
@@ -504,6 +619,7 @@ def main():
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
+    var verify = arg_parse("verify", True)
     comptime cache_busting = True
     comptime transpose_b = True
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
@@ -529,6 +645,7 @@ def main():
             static[N](),
             static[K](),
             init_type,
+            verify,
         )
 
     m.dump_report()
