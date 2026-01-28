@@ -216,8 +216,8 @@ The following rules govern constraint satisfiability:
   ```mojo
   @register_passable
   trait T1: ...
-  @register_passable("trivial")
-  trait T2: ...
+
+  trait T2(TrivialRegisterType): ...
 
   T1 & T2  # struct must be register-passable-trivial.
   ```
