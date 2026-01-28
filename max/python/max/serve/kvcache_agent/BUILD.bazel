@@ -15,7 +15,7 @@ modular_py_library(
     deps = [
         requirement("grpcio"),  # NOTE: Order matters for PYTHONPATH nonsense
         ":kvcache_agent_proto_srcs",
-        "//max/python/max/serve/queue",
+        "//max/python/max/serve/worker_interface",
     ],
 )
 

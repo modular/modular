@@ -29,7 +29,6 @@ from max.interfaces import (
 from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.pipelines.core import TextContext
 from max.serve.config import generate_zmq_ipc_path
-from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
@@ -42,6 +41,7 @@ from max.serve.scheduler.di_dispatchers import (
     RequestType,
 )
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
+from max.serve.worker_interface.zmq_queue import ClientIdentity
 from tests.serve.scheduler.common import (
     FakeTokenGeneratorPipeline,
     PagedKVCacheManager,

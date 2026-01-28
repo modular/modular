@@ -34,7 +34,7 @@ from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
 from max.serve.config import Settings
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.worker_interface.worker_interface import ModelWorkerInterface
 
 from .audio_generation_scheduler import (
     AudioGenerationScheduler,
@@ -67,10 +67,10 @@ def load_scheduler(
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
-    scheduler_zmq_configs: SchedulerZmqConfigs,
+    model_worker_interface: ModelWorkerInterface,
 ) -> Scheduler:
     request_queue, response_queue, cancel_queue = (
-        scheduler_zmq_configs.model_worker_queues()
+        model_worker_interface.model_worker_queues()
     )
 
     if pipeline.__class__.__name__ == "EmbeddingsPipeline":

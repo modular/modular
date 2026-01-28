@@ -35,13 +35,13 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.queue.zmq_queue import (
+from max.serve.worker_interface.worker_interface import EngineQueue
+from max.serve.worker_interface.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
     ZmqPushSocket,
     generate_zmq_ipc_path,
 )
-from max.serve.scheduler.queues import EngineQueue
 from pytest_mock import MockerFixture
 
 

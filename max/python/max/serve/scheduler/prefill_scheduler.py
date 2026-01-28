@@ -35,12 +35,12 @@ from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
     PrefillResponse,
 )
+from max.serve.worker_interface.zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

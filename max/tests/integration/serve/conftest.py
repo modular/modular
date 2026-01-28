@@ -35,8 +35,8 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.telemetry.common import configure_metrics
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):

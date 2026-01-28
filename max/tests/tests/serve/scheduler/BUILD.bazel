@@ -56,8 +56,8 @@ modular_py_test(
         "//max/python/max/kv_cache",
         "//max/python/max/pipelines/core",
         "//max/python/max/serve:config",
-        "//max/python/max/serve/queue",
         "//max/python/max/serve/scheduler",
+        "//max/python/max/serve/worker_interface",
         requirement("numpy"),
     ],
 )

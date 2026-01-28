@@ -24,7 +24,7 @@ are multiple MAX Serve instances running on the same host.
 import queue
 
 from max.interfaces import get_blocking
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 ZMQ_RESET_PREFIX_CACHE_ENDPOINT = "reset_prefix_cache"
 

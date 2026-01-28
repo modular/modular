@@ -28,7 +28,7 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
     Field,
     ModelWrapValidatorHandler,

@@ -40,11 +40,14 @@ from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessManager, subprocess_manager
 from max.serve.scheduler import load_scheduler
-from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
+from max.serve.worker_interface.worker_interface import (
+    ModelWorkerInterface,
+    sleep_with_backoff,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -150,7 +153,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
     ) -> None:
         """Runs a model worker process.
 
@@ -187,7 +190,7 @@ class ModelWorker:
                 pipeline,
                 pipeline_config,
                 settings,
-                scheduler_zmq_configs,
+                model_worker_interface,
             )
 
             # Get the reset prefix cache backend.
@@ -242,7 +245,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -265,7 +268,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
-                    scheduler_zmq_configs,
+                    model_worker_interface,
                 )
             )
         except KeyboardInterrupt:
@@ -281,7 +284,7 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    scheduler_zmq_configs: SchedulerZmqConfigs,
+    model_worker_interface: ModelWorkerInterface,
 ) -> AsyncGenerator[ProcessManager]:
     """Starts a model worker and associated process.
 
@@ -310,7 +313,7 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
-            scheduler_zmq_configs,
+            model_worker_interface,
         )
 
         await proc.ready(alive, timeout=settings.mw_timeout_s)
