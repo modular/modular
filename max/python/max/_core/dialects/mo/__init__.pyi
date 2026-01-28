@@ -4769,6 +4769,25 @@ class PadRepeatOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class ParallelOp(max._core.Operation):
+    """
+    The `mo.parallel` operation takes a single "body" block, which is executed
+    in parallel for each set of inputs.
+
+    The results of the `mo.parallel` op are the operands of the
+    `mo.yield` op from each iteration, which must all have the same type.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        results: Sequence[max._core.Type],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+
 class PowOp(max._core.Operation):
     """
     Computes `x ** y`, where `x` and `y` are input tensors.
