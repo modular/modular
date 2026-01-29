@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Normalization layers for MAX neural networks."""
 
-from .group_norm import GroupNorm
-from .rms_norm import GemmaRMSNorm, RMSNorm, rms_norm
-
-__all__ = ["GemmaRMSNorm", "GroupNorm", "RMSNorm", "rms_norm"]
+from .attention import VAEAttention
+from .resnet import ResnetBlock2D
+from .upsampling import Upsample2D
