@@ -14,6 +14,8 @@
 
 This pipeline supports overlap scheduling where GPU execution is overlapped with
 python host logic.
+
+Note that this pipeline only supports num_steps=1.
 """
 
 from __future__ import annotations
@@ -42,7 +44,6 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 from .utils import (
-    calculate_num_steps,
     get_eos_tokens,
     get_weight_paths,
     update_context_and_prepare_responses,
@@ -158,6 +159,8 @@ class OverlapTextGenerationPipeline(
             )
         )
 
+        self._kv_manager = self._pipeline_model.kv_manager
+
     @property
     def pipeline_config(self) -> PipelineConfig:
         """Return the pipeline configuration."""
@@ -179,57 +182,7 @@ class OverlapTextGenerationPipeline(
         self,
     ) -> list[Any]:
         """Return the list of KV cache managers backing this pipeline."""
-        return [self._pipeline_model.kv_manager]
-
-    @traced
-    def prepare_batch(
-        self,
-        batches: list[list[TextGenerationContextType]],
-        num_steps: int,
-    ) -> tuple[
-        Any,
-        int,
-        list[TextGenerationContextType],
-    ]:
-        """Prepare model inputs and ancillary state for multi-step execution.
-
-        This flattens replica batches, ensures KV-cache reservations, clamps
-        ``num_steps`` per context, and builds initial model inputs.
-
-        Args:
-            batches: Per-replica list of contexts.
-            num_steps: Desired number of steps to run.
-
-        Returns:
-            A tuple of:
-                - ModelInputs: Prepared inputs for the first step.
-                - int: The clamped number of steps to run.
-                - list[TextGenerationContextType]: The flattened context batch.
-        """
-        for replica_batch in batches:
-            for context in replica_batch:
-                # Update num_steps.
-                num_steps = calculate_num_steps(
-                    context, num_steps, self._pipeline_model.max_seq_len
-                )
-
-        # Retrieve the KV Cache Inputs.
-        flat_batch = [context for batch in batches for context in batch]
-        kv_cache_inputs = self._pipeline_model.kv_manager.get_runtime_inputs(
-            batches, num_steps
-        )
-
-        replica_batches = batches
-        return (
-            self._pipeline_model.prepare_initial_token_inputs(
-                replica_batches=replica_batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
-            ),
-            num_steps,
-            flat_batch,
-        )
+        return [self._kv_manager]
 
     @traced
     def execute(
@@ -251,17 +204,28 @@ class OverlapTextGenerationPipeline(
 
         device0 = self._devices[0]
         pinned = not device0.is_host
-        # Prepare the batch.
-        model_inputs, num_steps, flat_batch = self.prepare_batch(
-            inputs.batches, inputs.num_steps
-        )
 
+        # Prepare the batch.
+        with Tracer("kv_manager.get_runtime_inputs"):
+            kv_cache_inputs = self._kv_manager.get_runtime_inputs(
+                inputs.batches, num_steps=1
+            )
+
+        with Tracer("prepare_initial_token_inputs"):
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=inputs.batches,
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=kv_cache_inputs
+                ),
+            )
+
+        flat_batch = inputs.flat_batch
         with Tracer("FusedSamplingProcessor"):
             sampling_processor = FusedSamplingProcessor(
                 sampler=self._sampler,
                 pipeline_config=self._pipeline_config,
                 context_batch=flat_batch,
-                num_steps=num_steps,
+                num_steps=1,
                 device=device0,
             )
 
@@ -281,7 +245,7 @@ class OverlapTextGenerationPipeline(
                 )
                 logger.error(
                     "Encountered an exception while executing batch: "
-                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}, {num_steps=:}"
+                    f"{batch_size=:}, {cache_tokens=:}, {input_tokens=:}"
                 )
                 raise  # re-raise the original exception
         assert model_outputs.logit_offsets is None
@@ -319,15 +283,17 @@ class OverlapTextGenerationPipeline(
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         # Update the context object.
-        res = update_context_and_prepare_responses(
-            generated_tokens_np,
-            flat_batch,
-            num_steps,
-        )
+        with Tracer("update_context_and_prepare_responses"):
+            res = update_context_and_prepare_responses(
+                generated_tokens_np,
+                flat_batch,
+                num_steps=1,
+            )
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(inputs.batches)
+        with Tracer("kv_manager.step"):
+            self._kv_manager.step(inputs.batches)
 
         return res
 
