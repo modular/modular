@@ -47,6 +47,7 @@ trait Equatable:
     (due to NaN semantics) or types requiring custom equality logic.
     """
 
+    @always_inline
     fn __eq__(self, other: Self) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
