@@ -12,8 +12,8 @@ fn f0(not_used: String, values: List[List[String]], i: Int) -> List[String]:
 
 
 fn main():
-    # CHECK: ['hello']
-    # CHECK-NEXT: ['world']
+    # CHECK: [hello]
+    # CHECK-NEXT: [world]
     comptime not_used = String("not_used")
     comptime res0 = f0(not_used, [["hello"], ["world"]], 0)
     print(materialize[res0.__str__()]())
