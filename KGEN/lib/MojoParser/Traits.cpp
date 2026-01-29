@@ -316,6 +316,11 @@ LogicalResult
 LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
                                std::optional<MojoInflightDiag> &diag,
                                ConformanceOp op) {
+  // If the conformance table already has witnesses, it was pre-built (e.g., for
+  // closure wrappers). Skip verification since conformance is already complete.
+  if (!op.getBody().front().empty())
+    return success();
+
   // Set up builder to insert witness entry. We install witness op in the
   // conformance op as we verifying such that get_witness will be folded
   // correctly by the evaluation context. This allows us to fold dependent decls

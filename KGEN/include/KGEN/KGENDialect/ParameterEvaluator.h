@@ -78,6 +78,20 @@ struct ResolvedStructHandle {
   StructInstanceOp instance = nullptr;
 };
 
+/// ResolvedAbstractStructHandle is a version of ResolvedStructHandle for ops
+/// that represent a kgen struct but do not have a LIT struct representation.
+/// Today that is the case for closures only.
+struct ResolvedAbstractStructHandle {
+  // Parameter values in the type attribute.
+  ArrayRef<TypedAttr> paramValues;
+  // Parameter values defined on the struct generator op.
+  ArrayRef<ParamDeclAttr> inputParams;
+  // Name of the abstract struct
+  StringAttr name;
+  // The generator operation.
+  StructGeneratorOp generatorOp = nullptr;
+};
+
 /// This class is used by ParameterEvaluator to evaluate
 /// ContextuallyEvaluatedAttrInterface instances, which are attributes whose
 /// evaluation may be context-dependent. Sub-classes can store state to help
@@ -129,7 +143,14 @@ protected:
   /// For now, this conformance op is always parametric (non-concrete).
   virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                                  StringAttr traitName);
+  /// Resolve an abstract struct handle from a type value. This is used for
+  /// types that don't have a LIT struct representation (e.g., closures).
+  virtual FailureOr<ResolvedAbstractStructHandle>
+  resolveAbstractStructHandle(TypedAttr typeValue);
 
+  /// Resolve the conformance op for an abstract struct and trait name.
+  virtual Operation *resolveConformanceForAbstractStruct(
+      const ResolvedAbstractStructHandle &handle, StringAttr traitName);
   /// Create an evaluator configured with the provided parameters.
   /// The evaluator type can depend on the context.
   virtual void

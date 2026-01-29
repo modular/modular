@@ -29,7 +29,6 @@ struct TopLevelTypes {
   Type copyFuncFieldType;
   Type delFuncFieldType;
 };
-
 class ClosureEmitter : public FunctionEmitter {
 public:
   ClosureEmitter(SharedState &shared);
