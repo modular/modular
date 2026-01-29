@@ -509,15 +509,18 @@ class Qwen3VLPipelineOracle(PipelineOracle):
     model_path: str
     """ID of the Hugging Face repository."""
 
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        device_encoding_map: dict[str, list[str]] | None = None,
+    ) -> None:
         super().__init__()
         self.model_path = model_path
+        self._device_encoding_map = device_encoding_map or {"gpu": ["bfloat16"]}
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
+        return self._device_encoding_map
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
@@ -568,12 +571,20 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision, trust_remote_code=True
         )
+        # For FP8 models, use bfloat16 as compute dtype since the FP8 weights
+        # are pre-quantized and have their own scale tensors.
+        if encoding == "float8_e4m3fn":
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = (
+                ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
+            )
         model = transformers.AutoModelForVision2Seq.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
+            torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
@@ -1203,6 +1214,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "Qwen/Qwen3-VL-4B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-4B-Instruct"
+    ),
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-4B-Instruct-FP8",
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",
