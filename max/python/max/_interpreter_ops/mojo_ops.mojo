@@ -17,29 +17,48 @@ from os import abort
 from python import PythonObject
 from python.bindings import PythonModuleBuilder
 from sys.info import simd_width_of
-from sys.intrinsics import llvm_intrinsic
 
 from algorithm.functional import elementwise, IndexList
-from math import (
-    atanh,
-    ceil,
-    cos,
-    erf,
-    exp,
-    floor,
-    rsqrt,
-    log,
-    log1p,
-    sin,
-    sqrt,
-    tanh,
-)
-from nn.activations import relu
 from reflection import get_base_type_name
 from tensor import (
     ElementwiseBinaryOp,
     ElementwiseBinaryComparisonOp,
     ElementwiseUnaryOp,
+)
+from MOGGKernelAPI.MOGGKernelAPI import (
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Max,
+    Min,
+    And,
+    Or,
+    Xor,
+    Equal,
+    Greater,
+    GreaterEqual,
+    NotEqual,
+    Negative,
+    Abs,
+    ReLU,
+    Ceil,
+    Floor,
+    Round,
+    Exp,
+    Log,
+    Log1p,
+    Sqrt,
+    Rsqrt,
+    Tanh,
+    ATanh,
+    Sin,
+    Cos,
+    Erf,
+    Trunc,
+    Not,
+    Select,
 )
 
 
@@ -497,336 +516,3 @@ fn unary_elementwise_op[
     elementwise[
         func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
     ](IndexList[1](size))
-
-
-# TODO(EMF-97): import from MOGGKernelAPI
-
-
-struct Add(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return lhs + rhs
-
-
-struct Sub(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return lhs - rhs
-
-
-struct Mul(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return lhs * rhs
-
-
-struct Div(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return lhs / rhs
-
-
-struct Mod(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return lhs % rhs
-
-
-struct Max(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return max(lhs, rhs)
-
-
-struct Min(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return min(lhs, rhs)
-
-
-struct And(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.and"
-        return lhs & rhs
-
-
-struct Or(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.or"
-        return lhs | rhs
-
-
-struct Xor(ElementwiseBinaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.xor"
-        return lhs ^ rhs
-
-
-struct Equal(ElementwiseBinaryComparisonOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-        DType.bool, width
-    ]:
-        return lhs.eq(rhs)
-
-
-struct Greater(ElementwiseBinaryComparisonOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-        DType.bool, width
-    ]:
-        return lhs.gt(rhs)
-
-
-struct GreaterEqual(ElementwiseBinaryComparisonOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-        DType.bool, width
-    ]:
-        return lhs.ge(rhs)
-
-
-struct NotEqual(ElementwiseBinaryComparisonOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-        DType.bool, width
-    ]:
-        return lhs.ne(rhs)
-
-
-# Unary elementwise operations
-
-
-struct Negative(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return -x
-
-
-struct ReLU(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return relu(x)
-
-
-struct Ceil(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return ceil(x)
-
-
-struct Floor(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return floor(x)
-
-
-struct Tanh(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return tanh(x)
-
-
-struct ATanh(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return atanh(x)
-
-
-struct Cos(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return cos(x)
-
-
-struct Sin(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return sin(x)
-
-
-struct Erf(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return erf(x)
-
-
-struct Exp(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return exp(x)
-
-
-struct Round(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return round(x)
-
-
-struct Sqrt(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return sqrt(x)
-
-
-struct Rsqrt(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return rsqrt(x)
-
-
-struct Select:
-    @staticmethod
-    fn elementwise[
-        cond_dtype: DType,
-        dtype: DType,
-        width: Int,
-    ](
-        cond: SIMD[cond_dtype, width],
-        tc: SIMD[dtype, width],
-        fc: SIMD[dtype, width],
-    ) -> SIMD[dtype, width]:
-        return cond.select(tc, fc)
-
-
-struct Trunc(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return llvm_intrinsic["llvm.trunc", type_of(x), has_side_effect=False](
-            x
-        )
-
-
-struct Log(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype.is_floating_point()
-        ), "dtype must be floating point"
-        return log(x)
-
-
-struct Log1p(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return log1p(x)
-
-
-struct Not(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.not"
-        return ~x
-
-
-struct Abs(ElementwiseUnaryOp):
-    @staticmethod
-    fn elementwise[
-        dtype: DType,
-        width: Int,
-    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return abs(x)
