@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, iota
 from random import random_float64
 
@@ -180,7 +179,7 @@ fn bench_topk_batched[
                 device_local_topk_idxs_lt,
                 device_out_vals_lt,
                 device_out_idxs_lt,
-                k=OptionalReg(
+                k=Optional(
                     LayoutTensor[
                         DType.int64,
                         Layout.row_major(UNKNOWN_VALUE),
@@ -258,7 +257,7 @@ fn bench_topk_batched[
             topk_idxs_cpu_lt,
             1,
             True,
-            k=OptionalReg(
+            k=Optional(
                 LayoutTensor[
                     DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),
@@ -424,7 +423,7 @@ fn bench_topk_multi_rank[
                 device_in_lt,
                 device_out_vals_lt,
                 device_out_idxs_lt,
-                k=OptionalReg(
+                k=Optional(
                     LayoutTensor[
                         DType.int64,
                         Layout.row_major(UNKNOWN_VALUE),
@@ -497,7 +496,7 @@ fn bench_topk_multi_rank[
             topk_idxs_cpu_lt,
             1,
             True,
-            k=OptionalReg(
+            k=Optional(
                 LayoutTensor[
                     DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),

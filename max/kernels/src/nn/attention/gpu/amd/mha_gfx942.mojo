@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
 
@@ -280,9 +279,9 @@ __extension Attention:
 
             comptime swizzle = Swizzle(2, 0, 2)
 
-            var num_b_rows = OptionalReg[Int](
+            var num_b_rows = Optional[Int](
                 kv_tile_num_rows
-            ) if not not_last_iter else None
+            ) if not not_last_iter else Optional[Int]()
 
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),

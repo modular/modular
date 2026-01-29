@@ -13,7 +13,6 @@
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
 from builtin.variadics import Variadic
-from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
 from sys import (
@@ -74,7 +73,7 @@ from builtin.debug_assert import ASSERT_MODE
 fn _compute_distribute_layout[
     data_layout: Layout,
     threads_layout: Layout,
-    axis: OptionalReg[Int] = None,
+    axis: Optional[Int] = None,
 ]() -> Layout:
     """Computes a layout for distributing threads across data.
 
@@ -106,7 +105,7 @@ fn _compute_distribute_layout[
 
 
 fn _project_on_axis[
-    axis: Int, submode_axis: OptionalReg[Int] = None
+    axis: Int, submode_axis: Optional[Int] = None
 ](t: IntTuple) -> IntTuple:
     """Projects an IntTuple onto a specific axis.
 
@@ -218,7 +217,7 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
 
 
 fn _distribute_is_masked[
-    layout: Layout, threads_layout: Layout, axis: OptionalReg[Int] = None
+    layout: Layout, threads_layout: Layout, axis: Optional[Int] = None
 ]() -> Bool:
     """Determines if a distributed layout requires masked access.
 
@@ -3918,7 +3917,7 @@ struct LayoutTensor[
 
     comptime DistributeType[
         threads_layout: Layout,
-        axis: OptionalReg[Int] = None,
+        axis: Optional[Int] = None,
     ] = LayoutTensor[
         Self.dtype,
         _compute_distribute_layout[
@@ -3950,9 +3949,9 @@ struct LayoutTensor[
     @always_inline
     fn distribute[
         threads_layout: Layout,
-        axis: OptionalReg[Int] = None,
-        swizzle: OptionalReg[Swizzle] = None,
-        submode_axis: OptionalReg[Int] = None,
+        axis: Optional[Int] = None,
+        swizzle: Optional[Swizzle] = None,
+        submode_axis: Optional[Int] = None,
     ](self, thread_id: UInt) -> Self.DistributeType[threads_layout, axis]:
         """Distribute tensor workload across multiple threads in a structured
         pattern.
@@ -4176,9 +4175,9 @@ struct LayoutTensor[
     @always_inline
     fn distribute_with_offset[
         threads_layout: Layout,
-        axis: OptionalReg[Int] = None,
-        swizzle: OptionalReg[Swizzle] = None,
-        submode_axis: OptionalReg[Int] = None,
+        axis: Optional[Int] = None,
+        swizzle: Optional[Swizzle] = None,
+        submode_axis: Optional[Int] = None,
     ](
         self,
         thread_id: UInt,
@@ -5511,7 +5510,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn copy_from_async[
         is_masked: Bool = False,
-        swizzle: OptionalReg[Swizzle] = None,
+        swizzle: Optional[Swizzle] = None,
         fill: Fill = Fill.NONE,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
@@ -6257,7 +6256,7 @@ fn _copy_dram_to_sram_validate_args(
 fn copy_dram_to_sram[
     src_thread_layout: Layout,
     dst_thread_layout: Layout = src_thread_layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
@@ -6409,7 +6408,7 @@ fn copy_dram_to_sram[
 fn copy_dram_to_sram[
     src_thread_layout: Layout,
     dst_thread_layout: Layout = src_thread_layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = src_thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
@@ -6614,7 +6613,7 @@ fn cp_async_k_major[
 @always_inline("nodebug")
 fn copy_dram_to_sram[
     thread_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
@@ -6676,7 +6675,7 @@ fn copy_dram_to_sram[
 @always_inline("nodebug")
 fn copy_dram_to_sram[
     thread_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
@@ -6858,7 +6857,7 @@ fn copy_dram_to_sram_async[
     )
 
     comptime swizzle_option = None if not swizzle else (
-        OptionalReg[Swizzle](
+        Optional[Swizzle](
             make_ldmatrix_swizzle[
                 dst.dtype, row_size, log2_floor(dst_fragments.element_size)
             ]()
@@ -6979,10 +6978,10 @@ Returns:
 @always_inline("nodebug")
 fn copy_sram_to_dram[
     thread_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     block_dim_count: Int = 1,
-    binary_op: OptionalReg[binary_op_type] = None,
+    binary_op: Optional[binary_op_type] = None,
 ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to DRAM (global
     memory).
@@ -7195,7 +7194,7 @@ fn copy_sram_to_dram[
 @always_inline("nodebug")
 fn copy_sram_to_local[
     src_warp_layout: Layout,
-    axis: OptionalReg[Int] = None,
+    axis: Optional[Int] = None,
 ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
     """Synchronously copy data from SRAM (shared memory) to local memory.
 
@@ -7547,7 +7546,7 @@ fn _copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor,
     buffer: AMDBufferResource,
-    offset: OptionalReg[UInt] = None,
+    offset: Optional[UInt] = None,
 ):
     __comptime_assert (
         is_amd_gpu()
@@ -7621,7 +7620,7 @@ fn copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor,
     src_base: LayoutTensor,
-    offset: OptionalReg[UInt] = None,
+    offset: Optional[UInt] = None,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7869,7 +7868,7 @@ fn copy_dram_to_local[
 @always_inline("nodebug")
 fn copy_local_to_shared[
     thread_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
     block_dim_count: Int = 1,
@@ -8171,7 +8170,7 @@ struct LayoutTensorIter[
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = align_of[dtype](),
     circular: Bool = False,
-    axis: OptionalReg[Int] = None,
+    axis: Optional[Int] = None,
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,

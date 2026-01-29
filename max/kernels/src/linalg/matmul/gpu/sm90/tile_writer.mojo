@@ -33,6 +33,7 @@ Two main traits abstract these writing mechanisms:
 from layout.tma_async import TMATensorTile
 from layout.layout_tensor import LayoutTensor, copy_sram_to_dram
 from gpu.memory import fence_async_view_proxy
+from collections import OptionalReg
 from ....structuring import (
     SharedMemBarrier,
     SMemBarrier,
@@ -55,7 +56,6 @@ from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from utils.index import IndexList
 from sys import align_of, size_of
-from collections import Optional, OptionalReg
 from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace

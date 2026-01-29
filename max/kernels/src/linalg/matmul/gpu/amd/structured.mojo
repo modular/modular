@@ -15,7 +15,6 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
-from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
 from itertools import product
@@ -255,7 +254,7 @@ struct AmdTileOperator[
     warp_block_layout_a: Layout,
     warp_block_layout_b: Layout,
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     transpose_b: Bool = True,
 ](TrivialRegisterType):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.

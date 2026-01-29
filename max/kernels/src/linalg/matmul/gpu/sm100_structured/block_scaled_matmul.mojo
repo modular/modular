@@ -17,7 +17,6 @@ Creates TMA descriptors for A, B, C and scaling factors (SFA, SFB),
 then launches the warp-specialized kernel.
 """
 
-from collections import Optional
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -131,7 +130,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
@@ -265,7 +264,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],

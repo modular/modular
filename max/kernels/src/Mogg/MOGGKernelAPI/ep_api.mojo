@@ -15,7 +15,6 @@
 Expert Parallelism (EP) Communication Kernel.
 """
 
-from collections import Optional, OptionalReg
 
 import compiler_internal as compiler
 from gpu.primitives.grid_controls import pdl_launch_attributes
@@ -24,6 +23,7 @@ from gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout
 from memory import LegacyUnsafePointer
 from utils.index import IndexList
+from collections import OptionalReg
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin

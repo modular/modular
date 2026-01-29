@@ -13,7 +13,7 @@
 """Provides the backend implementation for matmuls."""
 
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_up, ceildiv
 from sys.info import align_of, simd_width_of

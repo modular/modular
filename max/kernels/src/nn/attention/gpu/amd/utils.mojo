@@ -26,7 +26,6 @@ from memory import stack_allocation
 
 from utils import IndexList
 from utils.numerics import get_accum_type
-from collections import OptionalReg
 from layout.swizzle import Swizzle
 from gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
 from itertools import product
@@ -578,7 +577,7 @@ fn load_b_tr[
 
 @always_inline
 fn copy_dram_to_sram_lds[
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
     comptime thread_layout = Layout.row_major(16, 4)
     var worker_idx = lane_id()
@@ -682,7 +681,7 @@ fn copy_dram_to_sram_lds[
 
 @always_inline
 fn load_b_[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
@@ -725,7 +724,7 @@ fn load_b_[
 
 @always_inline
 fn load_b[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle]
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle]
 ](
     src: LayoutTensor,
     out res: LayoutTensor[

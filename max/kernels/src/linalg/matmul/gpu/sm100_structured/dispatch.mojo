@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import (
     align_of,

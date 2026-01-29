@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from sys import simd_width_of, size_of
@@ -29,6 +28,7 @@ from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple
+from collections import OptionalReg
 
 
 @always_inline
@@ -519,7 +519,7 @@ fn gather_elementwise_fn_wrapper[
             input_rank: Int, indices_rank: Int
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
-    error_index_fn: OptionalReg[error_index_fn_type] = None,
+    error_index_fn: Optional[error_index_fn_type] = None,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -656,7 +656,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        comptime error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = Optional[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 
@@ -773,7 +773,7 @@ fn gather[
         fn error_index_fn(val: Int):
             error_index = val
 
-        comptime error_fn = OptionalReg[error_index_fn_type](
+        comptime error_fn = Optional[error_index_fn_type](
             error_index_fn
         ) if is_cpu[target]() else None
 

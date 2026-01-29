@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -36,6 +35,7 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
+from collections import OptionalReg
 
 comptime logger = Logger()
 

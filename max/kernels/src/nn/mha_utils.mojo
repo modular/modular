@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import align_up, ceildiv
+from collections import OptionalReg
 from sys import (
     CompilationTarget,
     align_of,
@@ -754,7 +754,7 @@ fn _dispatch_score_mod[
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
 trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
-    comptime static_value: OptionalReg[Int]
+    comptime static_value: Optional[Int]
 
     fn as_uint32(self) -> UInt32:
         ...
@@ -765,7 +765,7 @@ trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
 struct StaticInt[value: Int](
     Defaultable, OptionallyStaticInt, TrivialRegisterType
 ):
-    comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
+    comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -782,7 +782,7 @@ struct StaticInt[value: Int](
 
 struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
     var value: UInt32
-    comptime static_value: OptionalReg[Int] = None
+    comptime static_value: Optional[Int] = None
 
     @always_inline("nodebug")
     fn __init__(out self, value: Int):

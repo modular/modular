@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import simd_width_of, size_of
 
@@ -32,6 +31,7 @@ from std.bit import log2_floor
 from utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from collections import OptionalReg
 from ....structuring import (
     SMemTile,
     RegTile,

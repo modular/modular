@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from itertools import product
 from math import ceildiv
 from sys import simd_width_of, llvm_intrinsic
@@ -215,7 +214,7 @@ struct KVBuffer[
     //,
     mma_shape: IndexList[3],
     k_group_size: Int,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -532,7 +531,7 @@ __extension Attention:
             mma_shape = Self.mma_shape,
             k_group_size = Self.k_group_size,
             swizzle = Swizzle(3, 0, 4) if Self.mma_shape[0]
-            == 32 else OptionalReg[Swizzle](None),
+            == 32 else Optional[Swizzle](None),
             BN = Int(Self.BN),
             WN = Int(Self.WN),
             BK = Int(Self.BK),

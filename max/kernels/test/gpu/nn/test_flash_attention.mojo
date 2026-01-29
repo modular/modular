@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import exp
 from random import rand, random_float64, seed
 from sys import argv, has_amd_gpu_accelerator
@@ -59,7 +58,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
 ](
     seq_len: Int,
@@ -373,7 +372,7 @@ fn test[
 
     @parameter
     fn get_rtol() -> Float64:
-        return 2e-2 if num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
@@ -616,7 +615,7 @@ fn test_context_encoding(ctx: DeviceContext) raises:
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int],
+    num_partitions: Optional[Int],
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
@@ -696,7 +695,7 @@ fn test_decoding[
 
 fn test_decoding_large_group[
     batch_size: Int,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     split_k: Bool = False,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:

@@ -263,7 +263,7 @@ fn run_producer[
     simd_width: Int,
     warps_processed_per_producer: Int,
     tile_count: Int,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
 ](
     matrix: GlobalTensor[dtype, layout],
     mut ring_buffer: RingBuffer,

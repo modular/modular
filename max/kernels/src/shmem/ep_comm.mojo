@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
+from collections import OptionalReg
 from gpu import (
     PDL,
     MAX_THREADS_PER_BLOCK_METADATA,

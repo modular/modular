@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from utils import StaticTuple
 from math import iota, ceildiv
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
+from collections import OptionalReg
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin

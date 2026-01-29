@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg, Dict
+from collections import Optional, Dict
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -3114,7 +3114,7 @@ fn conv2d_gpu_naive_nhwc_rscf[
     filter_type: DType,
     output_type: DType,
     block_size: Int,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type],
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],
@@ -3454,7 +3454,7 @@ fn conv_gpu[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type] = None,
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     filter_is_fcrs: Bool = False,
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
@@ -3731,7 +3731,7 @@ fn conv3d_gpu_naive_ndhwc_qrscf[
     filter_type: DType,
     output_type: DType,
     block_size: Int,
-    maybe_epilogue_func: OptionalReg[elementwise_simd_epilogue_type],
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type],
 ](
     input: LayoutTensor[input_type, input_layout, MutAnyOrigin],
     filter: LayoutTensor[filter_type, filter_layout, MutAnyOrigin],

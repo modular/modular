@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer as UnsafePointer
 from sys import align_of, simd_width_of, size_of
@@ -131,7 +130,7 @@ fn copy_accum_to_gmem[
     mma_shape: IndexList[3],
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -653,7 +652,7 @@ fn multi_stage_store_C[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
     num_output_warps: Int = 4,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,  # if false it will perform epilogue on data in shared memory
@@ -1154,12 +1153,12 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
@@ -1545,7 +1544,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     expert_n: Int,
     # Need because nvvm.cluster_dim only takes StaticTuple
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,

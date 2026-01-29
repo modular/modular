@@ -19,7 +19,6 @@ This module contains the CPU-side code for SM100 matrix multiplication:
 All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
 
-from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -70,7 +69,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
@@ -275,7 +274,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
@@ -373,7 +372,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-    max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
+    max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],

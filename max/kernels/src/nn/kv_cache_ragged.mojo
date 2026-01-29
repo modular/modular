@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from sys.info import _current_target, simd_width_of
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise, unswitch
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
+from collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

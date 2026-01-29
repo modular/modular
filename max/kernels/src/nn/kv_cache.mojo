@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
+from collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -279,8 +279,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     //,
     *,
     target: StaticString,
-    q_embed_fn: OptionalReg[embed_fn_type] = None,
-    k_embed_fn: OptionalReg[embed_fn_type] = None,
+    q_embed_fn: Optional[embed_fn_type] = None,
+    k_embed_fn: Optional[embed_fn_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...

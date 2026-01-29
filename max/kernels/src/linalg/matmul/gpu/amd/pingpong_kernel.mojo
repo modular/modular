@@ -134,7 +134,7 @@ struct TileLoaderLDS[
     src_layout: Layout,  # Full tensor layout (stride = shape[1])
     src_tile_layout: Layout,  # Tile shape for loading geometry
     num_loading_warps: Int,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
     load_width: Int = simd_width_of[dtype](),
     use_full_tile_width: Bool = False,  # FP8 row-major mode
 ](TrivialRegisterType):
@@ -422,7 +422,7 @@ fn load_lds_fragment[
     frag_element_layout: Layout,
     //,
     mma_access_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](
     smem_tile: SMemTile[
         dtype, smem_layout, element_layout=smem_element_layout, ...
@@ -627,7 +627,7 @@ struct MmaOp[
     MMA_N: Int,
     MMA_K: Int,
     alignment: Int,
-    swizzle: OptionalReg[Swizzle],  # Swizzle pattern (None if disabled)
+    swizzle: Optional[Swizzle],  # Swizzle pattern (None if disabled)
 ]:
     """Encapsulates MMA register tiles and operations for matrix multiplication.
 
@@ -935,9 +935,9 @@ struct TileBuffers[
     )
     comptime swizzle_shift = 4
 
-    comptime byte_swizzle = OptionalReg(
+    comptime byte_swizzle = Optional(
         Swizzle(Self.swizzle_log_tile, Self.swizzle_base, Self.swizzle_shift)
-    ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+    ) if Self.enable_swizzle else Optional[Swizzle]()
 
     # FP8 uses row-major LDS layout for correct partial block OOB handling
     comptime use_fp8_row_major = Self.in_type == DType.float8_e4m3fn
@@ -1468,9 +1468,9 @@ struct AMDPingPongMatmul[
         var m = Int(block_idx.y) * BM
 
         # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
-        comptime mma_swizzle = OptionalReg(
+        comptime mma_swizzle = Optional(
             make_mma_swizzle[in_type, MMA_M, MMA_K]()
-        ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+        ) if Self.enable_swizzle else Optional[Swizzle]()
 
         # MmaOp handles both BF16 and FP8 via dtype-aware mma_frag_width
         comptime MmaOpType = MmaOp[

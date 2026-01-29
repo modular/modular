@@ -31,7 +31,6 @@ The kernel implements a warp-specialized architecture:
 - Epilogue warps: Output from TMEM to GMEM via TileWriter
 """
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 

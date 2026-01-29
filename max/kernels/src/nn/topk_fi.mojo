@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from bit import log2_floor
-from collections import OptionalReg
 from gpu import (
     WARP_SIZE,
     barrier,
@@ -25,7 +24,7 @@ from gpu import (
 )
 from gpu.primitives import block, warp
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from layout import (
@@ -262,7 +261,7 @@ fn topk_mask_logits[
     logits: LayoutTensor[dtype, ...],
     masked_logits: LayoutTensor[mut=True, dtype, ...],
     top_k_val: Int,
-    top_k_arr: OptionalReg[
+    top_k_arr: Optional[
         LayoutTensor[
             out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -285,6 +284,14 @@ fn topk_mask_logits[
     # both max hardware vector size (16 bytes / element size) and dim d.
     var vec_size = gcd(16 // size_of[dtype](), d)
 
+    var top_k_buf: DeviceBuffer[out_idx_type]
+    if top_k_arr:
+        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+    else:
+        top_k_buf = DeviceBuffer[out_idx_type](
+            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+        )
+
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
         comptime kernel = TopKMaskLogitsKernel[
@@ -298,7 +305,7 @@ fn topk_mask_logits[
         ctx.enqueue_function[kernel, kernel](
             logits,
             masked_logits,
-            top_k_arr.value().to_device_buffer(ctx),
+            top_k_buf,
             top_k_val,
             d,
             grid_dim=batch_size,
@@ -764,12 +771,12 @@ fn topk_sampling_from_prob[
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
-    indices: OptionalReg[
+    indices: Optional[
         LayoutTensor[
             out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    top_k_arr: OptionalReg[
+    top_k_arr: Optional[
         LayoutTensor[
             out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -811,6 +818,21 @@ fn topk_sampling_from_prob[
     # both max hardware vector size (16 bytes / element size) and dim d.
     var vec_size = gcd(16 // size_of[dtype](), d)
 
+    var indices_buf: DeviceBuffer[out_idx_type]
+    if indices:
+        indices_buf = indices.value().to_device_buffer(ctx)
+    else:
+        indices_buf = DeviceBuffer[out_idx_type](
+            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+        )
+    var top_k_buf: DeviceBuffer[out_idx_type]
+    if top_k_arr:
+        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+    else:
+        top_k_buf = DeviceBuffer[out_idx_type](
+            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+        )
+
     @parameter
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKSamplingFromProbKernel[
@@ -825,8 +847,8 @@ fn topk_sampling_from_prob[
         ctx.enqueue_function[kernel, kernel](
             probs,
             output,
-            indices.value().to_device_buffer(ctx),
-            top_k_arr.value().to_device_buffer(ctx),
+            indices_buf,
+            top_k_buf,
             top_k_val,
             d,
             rng_seed,
@@ -1059,17 +1081,17 @@ fn topk_softmax_sample[
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
-    top_k_arr: OptionalReg[
+    top_k_arr: Optional[
         LayoutTensor[
             out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -1130,6 +1152,28 @@ fn topk_softmax_sample[
     var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
     var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
 
+    var top_k_buf: DeviceBuffer[out_idx_type]
+    if top_k_arr:
+        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+    else:
+        top_k_buf = DeviceBuffer[out_idx_type](
+            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
+        )
+    var temp_buf: DeviceBuffer[DType.float32]
+    if temperature:
+        temp_buf = temperature.value().to_device_buffer(ctx)
+    else:
+        temp_buf = DeviceBuffer[DType.float32](
+            ctx, UnsafePointer[Scalar[DType.float32]](), 0, owning=False
+        )
+    var seed_buf: DeviceBuffer[DType.uint64]
+    if seed:
+        seed_buf = seed.value().to_device_buffer(ctx)
+    else:
+        seed_buf = DeviceBuffer[DType.uint64](
+            ctx, UnsafePointer[Scalar[DType.uint64]](), 0, owning=False
+        )
+
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
         comptime kernel = TopKSoftmaxSampleKernel[
@@ -1143,12 +1187,12 @@ fn topk_softmax_sample[
         ctx.enqueue_function[kernel, kernel](
             logits,
             sampled_indices,
-            top_k_arr.value().to_device_buffer(ctx),
+            top_k_buf,
             top_k_val,
             temperature_val,
-            temperature.value().to_device_buffer(ctx),
+            temp_buf,
             seed_val,
-            seed.value().to_device_buffer(ctx),
+            seed_buf,
             d,
             grid_dim=batch_size,
             block_dim=block_size,

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from collections.string.string_slice import get_static_string
 from math import ceildiv
 from sys import simd_width_of, has_nvidia_gpu_accelerator
@@ -624,7 +623,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
-    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
     c: LayoutTensor[c_type, address_space = AddressSpace.GENERIC, ...],
     a: LayoutTensor[a_type, address_space = AddressSpace.GENERIC, ...],
@@ -739,7 +738,7 @@ fn naive_blockwise_scaled_fp8_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
-    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -854,7 +853,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -982,7 +981,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
-    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -1078,7 +1077,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     expert_ids_type: DType,
     accum_type: DType,
     transpose_b: Bool = True,
-    scales_granularity_mnk: OptionalReg[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[IndexList[3]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],

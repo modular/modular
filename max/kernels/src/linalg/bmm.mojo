@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of
 from sys.info import (

@@ -15,7 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from math import (
     acos,
     atanh,
@@ -5011,9 +5011,11 @@ struct ConvTranspose:
                 input.dtype,
                 filter.dtype,
                 output.dtype,
-                elementwise_epilogue = OptionalReg[
+                elementwise_epilogue = Optional[elementwise_simd_epilogue_type](
+                    output_fn
+                ) if lambdas_have_fusion else Optional[
                     elementwise_simd_epilogue_type
-                ](output_fn) if lambdas_have_fusion else None,
+                ](),
             ](
                 output.to_layout_tensor(),
                 input.to_layout_tensor(),
@@ -8613,7 +8615,7 @@ struct Struct_fused_token_sampling:
         var out_idxs_buf = out_idxs.to_layout_tensor()
         var k_lt = K.to_layout_tensor()
         comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-        var K_buf = OptionalReg(
+        var K_buf = Optional(
             LayoutTensor[DType.int64, layout_1d](
                 k_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8623,7 +8625,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var temp_lt = temperature.to_layout_tensor()
-        var temperature_buf = OptionalReg(
+        var temperature_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 temp_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8633,7 +8635,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var top_p_lt = top_p.to_layout_tensor()
-        var top_p_buf = OptionalReg(
+        var top_p_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 top_p_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8643,7 +8645,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var seed_lt = seed.to_layout_tensor()
-        var seed_buf = OptionalReg(
+        var seed_buf = Optional(
             LayoutTensor[DType.uint64, layout_1d](
                 seed_lt.ptr,
                 RuntimeLayout[layout_1d](

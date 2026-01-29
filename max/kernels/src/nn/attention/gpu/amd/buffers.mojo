@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, recip
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
@@ -164,7 +163,7 @@ struct KVBufferImpl[
     //,
     config: KVBufferConfig,
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -297,7 +296,7 @@ struct KVBufferImpl[
     fn __init__(
         out self,
         global_tile: Self.GlobalTensorType,
-        num_b_rows: OptionalReg[Int],
+        num_b_rows: Optional[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
@@ -379,7 +378,7 @@ struct KVBufferImpl[
 
 comptime KBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -402,7 +401,7 @@ comptime KBuffer[
 
 comptime VBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
