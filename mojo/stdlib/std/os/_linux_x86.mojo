@@ -78,7 +78,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         self.st_mtimespec = _CTimeSpec()
         self.st_ctimespec = _CTimeSpec()
         self.st_birthtimespec = _CTimeSpec()
-        self.unused = InlineArray[Int64, 3](0, 0, 0)
+        self.unused: InlineArray[Int64, 3] = [0, 0, 0]
 
     fn write_to(self, mut writer: Some[Writer]):
         # fmt: off

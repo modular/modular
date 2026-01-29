@@ -21,7 +21,7 @@ from testing import assert_equal, assert_true, assert_false, TestSuite
 def test_array_unsafe_get():
     # Negative indexing is undefined behavior with unsafe_get
     # so there are not test cases for it.
-    var arr = InlineArray[Int, 3](0, 0, 0)
+    var arr: InlineArray[Int, 3] = [0, 0, 0]
 
     assert_equal(arr.unsafe_get(0), 0)
     assert_equal(arr.unsafe_get(1), 0)
@@ -37,7 +37,7 @@ def test_array_unsafe_get():
 
 
 def test_array_int():
-    var arr = InlineArray[Int, 3](0, 0, 0)
+    var arr: InlineArray[Int, 3] = [0, 0, 0]
 
     assert_equal(arr[0], 0)
     assert_equal(arr[1], 0)
@@ -77,7 +77,7 @@ def test_array_int():
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
 
-    var arr3 = InlineArray[Int, 1](5)
+    var arr3: InlineArray[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
     def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
@@ -150,12 +150,12 @@ def test_array_str():
     assert_equal(arr2[2], "hi")
 
     # size 1 array to prevent regressions in the constructors
-    var arr3 = InlineArray[String, 1]("hi")
+    var arr3: InlineArray[String, 1] = ["hi"]
     assert_equal(arr3[0], "hi")
 
 
 def test_array_int_pointer():
-    var arr = InlineArray[Int, 3](0, 10, 20)
+    var arr: InlineArray[Int, 3] = [0, 10, 20]
 
     var ptr = arr.unsafe_ptr()
     assert_equal(ptr[0], 0)
@@ -213,7 +213,7 @@ def test_array_unsafe_assume_initialized_constructor_string():
 
 
 def test_array_contains():
-    var arr = InlineArray[String, 3]("hi", "hello", "hey")
+    var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
     assert_true("hi" in arr)
     assert_true(not "greetings" in arr)
 
@@ -223,12 +223,12 @@ def test_inline_array_runs_destructors():
     var destructor_recorder = List[Int]()
     var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
     comptime capacity = 32
-    var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
+    var inline_list: InlineArray[DelRecorder[ptr.origin], 4] = [
         DelRecorder(0, ptr),
         DelRecorder(10, ptr),
         DelRecorder(20, ptr),
         DelRecorder(30, ptr),
-    )
+    ]
     _ = inline_list
     # This is the last use of the inline list, so it should be destroyed here,
     # along with each element.
@@ -273,7 +273,7 @@ def test_move():
 
     # === 1. Check that the move constructor is called correctly. ===
 
-    var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
+    var arr: InlineArray[MoveCounter[Int], 3] = [{1}, {2}, {3}]
     var copied_arr = arr.copy()
 
     for i in range(len(arr)):
@@ -290,7 +290,7 @@ def test_move():
 
     # === 2. Check that the copy constructor is not called when moving. ===
 
-    var arr2 = InlineArray[CopyCounter[], 3]({}, {}, {})
+    var arr2: InlineArray[CopyCounter[], 3] = [{}, {}, {}]
     for i in range(len(arr2)):
         # The elements were moved into the array and not copied
         assert_equal(arr2[i].copy_count, 0)
@@ -306,7 +306,9 @@ def test_move():
     var del_counter = List[Int]()
     var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
     var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
-    var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
+    var arr3: InlineArray[DelRecorder[del_counter_ptr.origin], 1] = [
+        del_recorder
+    ]
 
     assert_equal(len(del_counter_ptr[]), 0)
 
@@ -324,7 +326,7 @@ def test_move():
 
 def test_str_and_repr():
     """Test __str__ and __repr__ methods."""
-    var array = InlineArray[Int, 3](1, 2, 3)
+    var array: InlineArray[Int, 3] = [1, 2, 3]
 
     # Test __str__ method
     var str_result = array.__str__()
@@ -341,12 +343,12 @@ def test_str_and_repr():
 def test_different_types():
     """Test with different element types."""
     # Test with String
-    var string_array = InlineArray[String, 2]("hello", "world")
+    var string_array: InlineArray[String, 2] = ["hello", "world"]
     var str_result = string_array.__str__()
     assert_equal(str_result, "InlineArray[String, 2]('hello', 'world')")
 
     # Test with single element
-    var single = InlineArray[Int, 1](42)
+    var single: InlineArray[Int, 1] = [42]
     var single_str = single.__str__()
     assert_equal(single_str, "InlineArray[Int, 1](42)")
 
@@ -363,14 +365,14 @@ def test_different_types():
 
 def test_write_to():
     """Test Writable trait implementation."""
-    var array = InlineArray[Int, 3](10, 20, 30)
+    var array: InlineArray[Int, 3] = [10, 20, 30]
     var output = String()
     array.write_to(output)
 
     assert_equal(output, "InlineArray[Int, 3](10, 20, 30)")
 
     # Test with different types
-    var string_array = InlineArray[String, 2]("hello", "world")
+    var string_array: InlineArray[String, 2] = ["hello", "world"]
     var string_output = String()
     string_array.write_to(string_output)
 

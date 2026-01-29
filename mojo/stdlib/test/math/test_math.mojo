@@ -523,7 +523,7 @@ def test_log1p():
 
 def test_gcd():
     var l = [2, 4, 6, 8, 16]
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(gcd(Span[Int](il)), 2)
     assert_equal(gcd(2, 4, 6, 8, 16), 2)
     assert_equal(gcd(l), 2)
@@ -556,7 +556,7 @@ def test_lcm():
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)
     assert_equal(lcm(-34, -56, -32), 3808)
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(lcm(Span[Int](il)), 48)
     assert_equal(lcm(345, 623, 364, 84, 93), 346475220)
     assert_equal(lcm(0, 0), 0)

@@ -171,7 +171,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout import LayoutTensor, Layout
     from layout.math import sum
 
-    data = InlineArray[Int32, 6](0, 1, 2, 3, 4, 5)
+    data: InlineArray[Int32, 6] = [0, 1, 2, 3, 4, 5]
     tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")

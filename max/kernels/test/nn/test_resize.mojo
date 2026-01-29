@@ -24,7 +24,7 @@ from testing import assert_almost_equal
 def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
-        var input_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
             input_stack
         )
@@ -48,9 +48,16 @@ def main():
 
     fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
-        var input_stack = InlineArray[Float32, 8](
-            Float32(1), 2, 3, 4, 5, 6, 7, 8
-        )
+        var input_stack: InlineArray[Float32, 8] = [
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
             input_stack
         )
@@ -74,7 +81,7 @@ def main():
 
     fn test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
             1,
             2,
@@ -91,7 +98,7 @@ def main():
             13,
             14,
             15,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
             input_stack
         )
@@ -115,7 +122,7 @@ def main():
 
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
-        var input_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
             input_stack
         )
@@ -139,7 +146,7 @@ def main():
 
     fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
             2,
             3,
@@ -156,7 +163,7 @@ def main():
             14,
             15,
             16,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
             input_stack
         )
@@ -180,7 +187,7 @@ def main():
 
     fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
             2,
             3,
@@ -197,7 +204,7 @@ def main():
             14,
             15,
             16,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
             input_stack
         )
@@ -221,7 +228,7 @@ def main():
 
     fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
             2,
             3,
@@ -238,7 +245,7 @@ def main():
             14,
             15,
             16,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
             input_stack
         )
@@ -262,7 +269,7 @@ def main():
 
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
-        var input_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
             input_stack
         )
@@ -277,7 +284,7 @@ def main():
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (4, 4), mode="bilinear")
         # print(y.flatten())
 
-        var reference_stack = InlineArray[Float32, 16](
+        var reference_stack: InlineArray[Float32, 16] = [
             Float32(1.0000),
             1.2500,
             1.7500,
@@ -294,7 +301,7 @@ def main():
             3.2500,
             3.7500,
             4.0000,
-        )
+        ]
 
         resize_linear[CoordinateTransformationMode.HalfPixel, False](
             input, output
@@ -311,7 +318,7 @@ def main():
 
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
-        var input_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
             input_stack
         )
@@ -326,7 +333,7 @@ def main():
         # y = torch.nn.functional.interpolate(
         # torch.Tensor(x), (4, 4), mode="bilinear", align_corners=True)
         # print(y.flatten())
-        var reference_stack = InlineArray[Float32, 16](
+        var reference_stack: InlineArray[Float32, 16] = [
             Float32(1.0000),
             1.3333,
             1.6667,
@@ -343,7 +350,7 @@ def main():
             3.3333,
             3.6667,
             4.0000,
-        )
+        ]
 
         resize_linear[CoordinateTransformationMode.AlignCorners, False](
             input, output
@@ -360,9 +367,16 @@ def main():
 
     fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
-        var input_stack = InlineArray[Float32, 8](
-            Float32(1), 2, 3, 4, 5, 6, 7, 8
-        )
+        var input_stack: InlineArray[Float32, 8] = [
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
             input_stack
         )
@@ -375,7 +389,10 @@ def main():
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
-        var reference_stack = InlineArray[Float32, 2](Float32(3.50000), 5.50000)
+        var reference_stack: InlineArray[Float32, 2] = [
+            Float32(3.50000),
+            5.50000,
+        ]
 
         resize_linear[CoordinateTransformationMode.HalfPixel, False](
             input, output
@@ -392,9 +409,16 @@ def main():
 
     fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
-        var input_stack = InlineArray[Float32, 8](
-            Float32(1), 2, 3, 4, 5, 6, 7, 8
-        )
+        var input_stack: InlineArray[Float32, 8] = [
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
             input_stack
         )
@@ -409,7 +433,7 @@ def main():
         #     torch.Tensor(x), (1, 2), mode="bilinear", align_corners=True
         # )
         # print(y.flatten())
-        var reference_stack = InlineArray[Float32, 2](Float32(1), 4)
+        var reference_stack: InlineArray[Float32, 2] = [Float32(1), 4]
 
         resize_linear[CoordinateTransformationMode.AlignCorners, False](
             input, output
@@ -426,7 +450,7 @@ def main():
 
     fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
             1,
             2,
@@ -443,7 +467,7 @@ def main():
             13,
             14,
             15,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 4, 2, 2)](
             input_stack
         )
@@ -460,7 +484,7 @@ def main():
         # )
         # print(y.flatten())
         # fmt: off
-        var reference_stack = InlineArray[Float32, 96](
+        var reference_stack: InlineArray[Float32, 96] = [
             Float32(0.00000),  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
             1.50000,  1.50000,  1.75000,  2.25000,  2.50000,  2.00000,  2.25000,
             2.75000,  3.00000,  2.00000,  2.25000,  2.75000,  3.00000,  2.50000,
@@ -475,7 +499,7 @@ def main():
             12.25000, 12.75000, 13.00000, 12.00000, 12.25000, 12.75000, 13.00000,
             12.50000, 12.75000, 13.25000, 13.50000, 13.50000, 13.75000, 14.25000,
             14.50000, 14.00000, 14.25000, 14.75000, 15.00000
-        )
+        ]
         # fmt: on
 
         resize_linear[CoordinateTransformationMode.HalfPixel, False](
@@ -493,7 +517,7 @@ def main():
 
     fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
-        var input_stack = InlineArray[Float32, 16](
+        var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
             1,
             2,
@@ -510,7 +534,7 @@ def main():
             13,
             14,
             15,
-        )
+        ]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
             input_stack
         )
@@ -526,9 +550,12 @@ def main():
         #     torch.Tensor(x), (2, 2), mode="bilinear", antialias=True
         # )
         # print(y.flatten())
-        var reference_stack = InlineArray[Float32, 4](
-            Float32(3.57143), 5.14286, 9.85714, 11.42857
-        )
+        var reference_stack: InlineArray[Float32, 4] = [
+            Float32(3.57143),
+            5.14286,
+            9.85714,
+            11.42857,
+        ]
 
         resize_linear[CoordinateTransformationMode.HalfPixel, True](
             input, output
@@ -545,7 +572,7 @@ def main():
 
     fn test_no_resize() raises:
         print("== test_no_resize")
-        var input_stack = InlineArray[Float32, 4](Float32(1), 1, 1, 1)
+        var input_stack: InlineArray[Float32, 4] = [Float32(1), 1, 1, 1]
         var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
             input_stack
         )
@@ -555,12 +582,12 @@ def main():
             output_stack
         )
 
-        var reference_stack = InlineArray[Float32, 4](
+        var reference_stack: InlineArray[Float32, 4] = [
             Float32(1.0000),
             1.0000,
             1.0000,
             1.0000,
-        )
+        ]
 
         resize_linear[CoordinateTransformationMode.HalfPixel, False](
             input, output

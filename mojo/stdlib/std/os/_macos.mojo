@@ -86,7 +86,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         self.st_flags = 0
         self.st_gen = 0
         self.st_lspare = 0
-        self.st_qspare = InlineArray[Int64, 2](0, 0)
+        self.st_qspare: InlineArray[Int64, 2] = [0, 0]
 
     fn write_to(self, mut writer: Some[Writer]):
         # fmt: off

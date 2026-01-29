@@ -37,7 +37,7 @@ def main():
         print("== test_scatternd")
         # data: 4x4x4 = 64 elements
         var data_ptr = UnsafePointer[Float32].alloc(64)
-        var data_vals = InlineArray[Float32, 64](
+        var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -102,7 +102,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
@@ -119,7 +119,7 @@ def main():
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
-        var updates_vals = InlineArray[Float32, 32](
+        var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -152,7 +152,7 @@ def main():
             4,
             4,
             4,
-        )
+        ]
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
@@ -165,7 +165,7 @@ def main():
         var output = LayoutTensor[DType.float32, output_layout](output_ptr)
 
         # expected output
-        var expected = InlineArray[Float32, 64](
+        var expected: InlineArray[Float32, 64] = [
             Float32(5),
             5,
             5,
@@ -230,7 +230,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
 
         scatter_nd_generator[
             DType.float32,
@@ -254,7 +254,7 @@ def main():
         print("== test_scatternd_add")
         # data: 4x4x4 = 64 elements
         var data_ptr = UnsafePointer[Float32].alloc(64)
-        var data_vals = InlineArray[Float32, 64](
+        var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -319,7 +319,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
@@ -336,7 +336,7 @@ def main():
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
-        var updates_vals = InlineArray[Float32, 32](
+        var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -369,7 +369,7 @@ def main():
             4,
             4,
             4,
-        )
+        ]
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
@@ -382,7 +382,7 @@ def main():
         var output = LayoutTensor[DType.float32, output_layout](output_ptr)
 
         # expected output (add reduction)
-        var expected = InlineArray[Float32, 64](
+        var expected: InlineArray[Float32, 64] = [
             Float32(7),
             8,
             9,
@@ -447,7 +447,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
 
         @always_inline
         @parameter
@@ -478,7 +478,7 @@ def main():
         print("== test_scatternd_max")
         # data: 4x4x4 = 64 elements
         var data_ptr = UnsafePointer[Float32].alloc(64)
-        var data_vals = InlineArray[Float32, 64](
+        var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -543,7 +543,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
@@ -560,7 +560,7 @@ def main():
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
-        var updates_vals = InlineArray[Float32, 32](
+        var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -593,7 +593,7 @@ def main():
             4,
             4,
             4,
-        )
+        ]
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
@@ -606,7 +606,7 @@ def main():
         var output = LayoutTensor[DType.float32, output_layout](output_ptr)
 
         # expected output (max reduction)
-        var expected = InlineArray[Float32, 64](
+        var expected: InlineArray[Float32, 64] = [
             Float32(5),
             5,
             5,
@@ -671,7 +671,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
 
         @always_inline
         @parameter
@@ -702,7 +702,7 @@ def main():
         print("== test_scatternd_min")
         # data: 4x4x4 = 64 elements
         var data_ptr = UnsafePointer[Float32].alloc(64)
-        var data_vals = InlineArray[Float32, 64](
+        var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -767,7 +767,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
@@ -784,7 +784,7 @@ def main():
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
-        var updates_vals = InlineArray[Float32, 32](
+        var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -817,7 +817,7 @@ def main():
             4,
             4,
             4,
-        )
+        ]
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
@@ -830,7 +830,7 @@ def main():
         var output = LayoutTensor[DType.float32, output_layout](output_ptr)
 
         # expected output (min reduction)
-        var expected = InlineArray[Float32, 64](
+        var expected: InlineArray[Float32, 64] = [
             Float32(1),
             1,
             1,
@@ -895,7 +895,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
 
         @always_inline
         @parameter
@@ -926,7 +926,7 @@ def main():
         print("== test_scatternd_multiply")
         # data: 4x4x4 = 64 elements
         var data_ptr = UnsafePointer[Float32].alloc(64)
-        var data_vals = InlineArray[Float32, 64](
+        var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
             3,
@@ -991,7 +991,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
@@ -1008,7 +1008,7 @@ def main():
 
         # updates: 2x4x4 = 32 elements
         var updates_ptr = UnsafePointer[Float32].alloc(32)
-        var updates_vals = InlineArray[Float32, 32](
+        var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
             5,
@@ -1041,7 +1041,7 @@ def main():
             4,
             4,
             4,
-        )
+        ]
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
@@ -1054,7 +1054,7 @@ def main():
         var output = LayoutTensor[DType.float32, output_layout](output_ptr)
 
         # expected output (multiply reduction)
-        var expected = InlineArray[Float32, 64](
+        var expected: InlineArray[Float32, 64] = [
             Float32(5),
             10,
             15,
@@ -1119,7 +1119,7 @@ def main():
             6,
             7,
             8,
-        )
+        ]
 
         @always_inline
         @parameter

@@ -29,6 +29,13 @@ what we publish.
 
 ### Library changes
 
+- `InlineArray` now requires explicitly using literals for construction. E.g.
+
+  ```Mojo
+  var a: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+  # instead of InlineArray[UInt8, 4](1, 2, 3, 4)
+  ```
+
 - The `__reversed__()` method on `String`, `StringSlice`, and `StringLiteral`
   has been deprecated in favor of the new `codepoints_reversed()` method. The
   new method name makes it explicit that iteration is over Unicode codepoints

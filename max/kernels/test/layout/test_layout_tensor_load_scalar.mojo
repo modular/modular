@@ -30,7 +30,7 @@ def main():
 fn test_load_scalar_static_layout() raises:
     """Test load_scalar with a static 2x3 row-major layout."""
     comptime layout = Layout.row_major(2, 3)
-    var storage = InlineArray[Float32, 6](0.0, 1.0, 2.0, 3.0, 4.0, 5.0)
+    var storage: InlineArray[Float32, 6] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 
     var tensor = LayoutTensor[DType.float32, layout](storage.unsafe_ptr())
 

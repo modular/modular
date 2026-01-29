@@ -330,7 +330,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             True if the value is contained in the list, False otherwise.
         """
 
-        comptime widths = InlineArray[Int, 6](256, 128, 64, 32, 16, 8)
+        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var processed = 0

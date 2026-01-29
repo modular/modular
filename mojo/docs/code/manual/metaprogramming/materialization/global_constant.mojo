@@ -15,9 +15,18 @@ from builtin.globals import global_constant
 
 
 fn use_lookup(idx: Int) -> Int64:
-    comptime numbers = InlineArray[Int64, 10](
-        1, 3, 14, 34, 63, 101, 148, 204, 269, 343
-    )
+    comptime numbers: InlineArray[Int64, 10] = [
+        1,
+        3,
+        14,
+        34,
+        63,
+        101,
+        148,
+        204,
+        269,
+        343,
+    ]
     ref lookup_table = global_constant[numbers]()
     if idx < len(lookup_table):
         return lookup_table[idx]

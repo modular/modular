@@ -23,7 +23,7 @@ comptime MAXIMUM_UINT64_AS_STRING = "18446744073709551615"
 comptime MANTISSA_EXPLICIT_BITS = 52
 comptime SMALLEST_POWER_OF_5 = -342
 
-comptime POWERS_OF_10 = InlineArray[Float64, 23](
+comptime POWERS_OF_10: InlineArray[Float64, 23] = [
     1,
     10,
     100,
@@ -47,11 +47,11 @@ comptime POWERS_OF_10 = InlineArray[Float64, 23](
     100000000000000000000,
     1000000000000000000000,
     10000000000000000000000,
-)
+]
 
 # fmt: off
 fn get_power_of_5(index: Int) -> UInt64:
-    comptime powers_of_5_table = InlineArray[ElementType=UInt64, size=1302](
+    comptime powers_of_5_table: InlineArray[ElementType=UInt64, size=1302] = [
         0xeef453d6923bd65a,0x113faa2906a13b3f,
         0x9558b4661b6565f8,0x4ac7ca59a424c507,
         0xbaaee17fa23ebf76,0x5d79bcf00d2df649,
@@ -703,6 +703,6 @@ fn get_power_of_5(index: Int) -> UInt64:
         0xb6472e511c81471d,0xe0133fe4adf8e952,
         0xe3d8f9e563a198e5,0x58180fddd97723a6,
         0x8e679c2f5e44ff8f,0x570f09eaa7ea7648,
-    )
+    ]
     return global_constant[powers_of_5_table]().unsafe_get(index)
 # fmt: on

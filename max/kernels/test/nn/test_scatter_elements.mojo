@@ -54,9 +54,17 @@ def main():
             output_ptr, IndexList[2](3, 3)
         )
 
-        var expected = InlineArray[Float32, 9](
-            Float32(2.0), 1.1, 0.0, 1.0, 0.0, 2.2, 0.0, 2.1, 1.2
-        )
+        var expected: InlineArray[Float32, 9] = [
+            Float32(2.0),
+            1.1,
+            0.0,
+            1.0,
+            0.0,
+            2.2,
+            0.0,
+            2.1,
+            1.2,
+        ]
 
         @always_inline
         @parameter
@@ -108,7 +116,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 3.0, 2.1, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            1.1,
+            3.0,
+            2.1,
+            5.0,
+        ]
 
         @always_inline
         @parameter
@@ -160,7 +174,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 1.1, 2.1, 4.0, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            1.1,
+            2.1,
+            4.0,
+            5.0,
+        ]
 
         @always_inline
         @parameter
@@ -212,7 +232,13 @@ def main():
             output_ptr, IndexList[2](1, 5)
         )
 
-        var expected = InlineArray[Float32, 5](Float32(1.0), 2.1, 3.0, 4.0, 5.0)
+        var expected: InlineArray[Float32, 5] = [
+            Float32(1.0),
+            2.1,
+            3.0,
+            4.0,
+            5.0,
+        ]
 
         @always_inline
         @parameter
