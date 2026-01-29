@@ -52,6 +52,9 @@ what we publish.
 - `String.resize` will now panic if `fill_byte` is >=128. Previously it would
   create invalid UTF-8.
 
+- The following types now correctly implement `write_repr_to`
+  - `List`, `Set`
+
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 

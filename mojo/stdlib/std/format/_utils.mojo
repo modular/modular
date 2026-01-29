@@ -27,6 +27,91 @@ from bit import byte_swap
 from memory import Span, bitcast, memcpy
 
 
+struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
+    """A writer that handles sequences of elements with separators.
+
+    This writer ensures separators are only inserted between elements, even
+    when an element's write_to() method calls write() multiple times.
+    """
+
+    var writer: Pointer[Self.W, Self.origin]
+    var is_first_element: Bool
+    var at_element_start: Bool
+    var sep: StaticString
+
+    fn __init__(out self, ref [Self.origin]writer: Self.W, sep: StaticString):
+        self.writer = Pointer(to=writer)
+        self.is_first_element = True
+        self.at_element_start = True
+        self.sep = sep
+
+    @always_inline
+    fn next_element(mut self):
+        """Mark the start of the next element in the sequence."""
+        self.at_element_start = True
+
+    @always_inline
+    fn write_string(mut self, string: StringSlice):
+        self.write(string)
+
+    @always_inline
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        if self.at_element_start:
+            if not self.is_first_element:
+                self.writer[].write_string(self.sep)
+            self.is_first_element = False
+            self.at_element_start = False
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self.writer[])
+
+
+# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
+@always_inline
+fn write_sequence_to[
+    W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
+](
+    mut writer: W,
+    open: StaticString = "[",
+    close: StaticString = "]",
+    sep: StaticString = ", ",
+):
+    """Writes a sequence of elements to a writer using a callback function.
+
+    This function writes elements by repeatedly calling the provided `ElementFn`
+    callback until it raises `StopIteration`. Each element is separated by the
+    specified separator, and the sequence is enclosed by opening and closing
+    delimiters.
+
+    This is useful for writing sequences where the elements are generated
+    dynamically (e.g., from an iterator) rather than being known at compile time.
+
+    Parameters:
+        W: The writer type. Must conform to `Writer`.
+        ElementFn: A callback function that writes a single element. It receives
+            a mutable writer and should raise `StopIteration` when the sequence
+            is exhausted.
+
+    Args:
+        writer: The writer to write to.
+        open: The opening delimiter (default: `"["`).
+        close: The closing delimiter (default: `"]"`).
+        sep: The separator between elements (default: `", "`).
+    """
+    writer.write_string(open)
+
+    var sequence_writer = _SequenceWriter(writer, sep)
+
+    while True:
+        try:
+            ElementFn(sequence_writer)
+            sequence_writer.next_element()
+        except:
+            break
+    writer.write_string(close)
+
+
 @always_inline
 fn write_sequence_to[
     *Ts: Writable,
@@ -231,6 +316,28 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
             args: The field values to write.
         """
         write_sequence_to(self._writer[], args, open="(", close=")")
+
+    # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
+    @always_inline
+    fn fields[FieldsFn: fn[T: Writer](mut T) capturing](self):
+        """Writes field values in parentheses using a callback function.
+
+        This overload is used when field values need to be generated dynamically
+        (e.g., from an iterator) rather than being known at compile time. The
+        callback function receives the writer and is responsible for writing all
+        field content between the opening and closing parentheses.
+
+        This is useful for writing collections or other types where the number of
+        fields isn't known at compile time or where you need custom control over
+        field formatting.
+
+        Parameters:
+            FieldsFn: A callback function that writes the field content. It
+                receives a mutable writer.
+        """
+        self._writer[].write_string("(")
+        FieldsFn(self._writer[])
+        self._writer[].write_string(")")
 
 
 comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
