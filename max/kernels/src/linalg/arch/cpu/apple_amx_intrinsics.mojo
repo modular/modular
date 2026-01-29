@@ -72,42 +72,42 @@ fn _clr():
 
 @always_inline
 fn ldx(gpr: Int):
-    _op_gpr[0](gpr)
+    _op_gpr[0](Int64(gpr))
 
 
 @always_inline
 fn ldy(gpr: Int):
-    _op_gpr[1](gpr)
+    _op_gpr[1](Int64(gpr))
 
 
 @always_inline
 fn stx(gpr: Int):
-    _op_gpr[2](gpr)
+    _op_gpr[2](Int64(gpr))
 
 
 @always_inline
 fn sty(gpr: Int):
-    _op_gpr[3](gpr)
+    _op_gpr[3](Int64(gpr))
 
 
 @always_inline
 fn ldz(gpr: Int):
-    _op_gpr[4](gpr)
+    _op_gpr[4](Int64(gpr))
 
 
 @always_inline
 fn stz(gpr: Int):
-    _op_gpr[5](gpr)
+    _op_gpr[5](Int64(gpr))
 
 
 @always_inline
 fn ldzi(gpr: Int):
-    _op_gpr[6](gpr)
+    _op_gpr[6](Int64(gpr))
 
 
 @always_inline
 fn stzi(gpr: Int):
-    _op_gpr[7](gpr)
+    _op_gpr[7](Int64(gpr))
 
 
 @always_inline
@@ -115,7 +115,7 @@ fn extrx(gpr: Int):
     """
     Extracts a row or moves it to x, result in amx0.
     """
-    _op_gpr[8](gpr)
+    _op_gpr[8](Int64(gpr))
 
 
 @always_inline
@@ -123,7 +123,7 @@ fn extry(gpr: Int):
     """
     Extracts a row or moves it to y, result in amx0.
     """
-    _op_gpr[9](gpr)
+    _op_gpr[9](Int64(gpr))
 
 
 @always_inline
@@ -131,7 +131,7 @@ fn fma64(gpr: Int):
     """
     Float64 matrix multiply and add.
     """
-    _op_gpr[10](gpr)
+    _op_gpr[10](Int64(gpr))
 
 
 @always_inline
@@ -139,7 +139,7 @@ fn fsm64(gpr: Int):
     """
     Float64 matrix multiply and subtract.
     """
-    _op_gpr[11](gpr)
+    _op_gpr[11](Int64(gpr))
 
 
 @always_inline
@@ -147,7 +147,7 @@ fn fma32(gpr: Int):
     """
     Float32 matrix multiply and add.
     """
-    _op_gpr[12](gpr)
+    _op_gpr[12](Int64(gpr))
 
 
 @always_inline
@@ -155,7 +155,7 @@ fn fsm32(gpr: Int):
     """
     Float32 matrix multiply and subtract.
     """
-    _op_gpr[13](gpr)
+    _op_gpr[13](Int64(gpr))
 
 
 @always_inline
@@ -163,7 +163,7 @@ fn mac16(gpr: Int):
     """
     SI16 matrix multiply and add.
     """
-    _op_gpr[14](gpr)
+    _op_gpr[14](Int64(gpr))
 
 
 @always_inline
@@ -171,7 +171,7 @@ fn fma16(gpr: Int):
     """
     Float16 matrix multiply and subtract.
     """
-    _op_gpr[15](gpr)
+    _op_gpr[15](Int64(gpr))
 
 
 @always_inline
@@ -179,7 +179,7 @@ fn fms16(gpr: Int):
     """
     Float16 matrix multiply and add.
     """
-    _op_gpr[16](gpr)
+    _op_gpr[16](Int64(gpr))
 
 
 @always_inline
@@ -187,7 +187,7 @@ fn vec_int__(gpr: Int):
     """
     Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
     """
-    _op_gpr[18](gpr)
+    _op_gpr[18](Int64(gpr))
 
 
 @always_inline
@@ -195,7 +195,7 @@ fn vecfp(gpr: Int):
     """
     Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
     """
-    _op_gpr[19](gpr)
+    _op_gpr[19](Int64(gpr))
 
 
 @always_inline
@@ -203,7 +203,7 @@ fn max_int__(gpr: Int):
     """
     UI16 matrix multiply.
     """
-    _op_gpr[20](gpr)
+    _op_gpr[20](Int64(gpr))
 
 
 @always_inline
@@ -211,12 +211,12 @@ fn matfp(gpr: Int):
     """
     Float16 matrix multiply.
     """
-    _op_gpr[21](gpr)
+    _op_gpr[21](Int64(gpr))
 
 
 @always_inline
 fn genlut(gpr: Int):
-    _op_gpr[22](gpr)
+    _op_gpr[22](Int64(gpr))
 
 
 # Apple.amx.LoadStore is a set of utilities that are thin wrappers around

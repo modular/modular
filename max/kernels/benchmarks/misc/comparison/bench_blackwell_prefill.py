@@ -86,6 +86,7 @@ def bench_flashinfer(
     dtype: torch.dtype,
     num_iters: int,
     backend: str = "cutlass",
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     if _flashinfer is None:
         print("flashinfer not available, skipping bench_flashinfer")
@@ -100,7 +101,8 @@ def bench_flashinfer(
     # Note: trtllm-gen backend doesn't support variable length yet
     if backend == "trtllm-gen":
         print(
-            "Warning: trtllm-gen backend doesn't support variable length yet, skipping..."
+            "Warning: trtllm-gen backend doesn't support variable length yet,"
+            " skipping..."
         )
         return None
 
@@ -154,6 +156,11 @@ def bench_flashinfer(
     else:  # auto
         kernel_name = "fmha"  # Generic pattern
 
+    if no_kineto:
+        run_kernel()
+        torch.cuda.synchronize()
+        return None
+
     # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup for CUTLASS
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
@@ -181,6 +188,7 @@ def bench_max(
     causal: bool,
     dtype: torch.dtype,
     num_iters: int,
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Benchmark MAX flash_attention_gpu kernel.
 
@@ -242,6 +250,11 @@ def bench_max(
         output = model.execute(q.detach(), k.detach(), v.detach())[0]
         return output
 
+    if no_kineto:
+        run_kernel()
+        torch.cuda.synchronize()
+        return None
+
     # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
@@ -269,6 +282,7 @@ def bench_tridao(
     causal: bool,
     dtype: torch.dtype,
     num_iters: int,
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     if _flash_attn_varlen_func is None:
         print("flash_attn not available, skipping bench_tridao")
@@ -308,6 +322,11 @@ def bench_tridao(
         )
         return out
 
+    if no_kineto:
+        run_kernel()
+        torch.cuda.synchronize()
+        return None
+
     # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
@@ -336,6 +355,7 @@ def bench_prefill(
     dtype: torch.dtype,
     engine: str,
     num_iters: int,
+    no_kineto: bool = False,
 ) -> tuple[float, int] | None:
     """Run all MHA prefill benchmarks and display results side-by-side.
 
@@ -351,7 +371,8 @@ def bench_prefill(
     """
     print("=" * 80)
     print(
-        f"MHA Prefill Benchmark (batch={batch_size}, seq_len={qkv_len}, heads={num_heads}, head_dim={head_dim}, causal={causal})"
+        f"MHA Prefill Benchmark (batch={batch_size}, seq_len={qkv_len},"
+        f" heads={num_heads}, head_dim={head_dim}, causal={causal})"
     )
     print("=" * 80)
 
@@ -370,6 +391,7 @@ def bench_prefill(
                     dtype,
                     num_iters,
                     backend="cutlass",
+                    no_kineto=no_kineto,
                 )
             except Exception as e:
                 print(f"FlashInfer benchmark failed: {e}")
@@ -386,6 +408,7 @@ def bench_prefill(
                     causal,
                     dtype,
                     num_iters,
+                    no_kineto,
                 )
             except Exception as e:
                 print(f"Tri Dao benchmark failed: {e}")
@@ -401,6 +424,7 @@ def bench_prefill(
                 causal,
                 dtype,
                 num_iters,
+                no_kineto,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -469,6 +493,11 @@ if __name__ == "__main__":
         default=100,
         help="Number of benchmark iterations",
     )
+    parser.add_argument(
+        "--no-kineto",
+        action="store_true",
+        help="Skip kineto timing (for ncu/nsys).",
+    )
     args, _ = parser.parse_known_args()
 
     dtype_map = {
@@ -489,9 +518,10 @@ if __name__ == "__main__":
         dtype=dtype_map[args.dtype],
         engine=args.engine,
         num_iters=args.num_iters,
+        no_kineto=args.no_kineto,
     )
 
-    if args.num_iters > 1:
+    if args.num_iters > 1 and not args.no_kineto:
         met_sec, flops = result if result else [0, 0]
         flops_per_sec = ThroughputMeasure(Bench.flops, flops)
         name = (

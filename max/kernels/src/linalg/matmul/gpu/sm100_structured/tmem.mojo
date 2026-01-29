@@ -37,11 +37,10 @@ from gpu.compute.arch.tcgen05 import (
 from linalg.structuring import SMemArray
 
 
-@register_passable("trivial")
 struct TmemAllocation[
     cta_group: Int,
     max_cols: Int = 512,
-]:
+](TrivialRegisterType):
     """Handle to allocated Tensor Memory.
 
     Lifecycle: allocate() → use → release_lock() → wait → deallocate()
@@ -62,7 +61,9 @@ struct TmemAllocation[
     @staticmethod
     fn allocate(smem_addr: Self.SmemAddrStorage) -> Self:
         """Allocate TMEM (MMA warp). Address stored in smem for epilogue."""
-        tcgen05_alloc[Self.cta_group](smem_addr.ptr, Self.max_cols)
+        tcgen05_alloc[Int32(Self.cta_group)](
+            smem_addr.ptr, UInt32(Self.max_cols)
+        )
         syncwarp()
         return Self(smem_addr.ptr[0])
 
@@ -73,11 +74,11 @@ struct TmemAllocation[
 
     fn release_lock(self):
         """Release allocation lock before waiting for epilogue."""
-        tcgen05_release_allocation_lock[Self.cta_group]()
+        tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
 
     fn deallocate(self):
         """Free TMEM after epilogue completion."""
-        tcgen05_dealloc[Self.cta_group](self.addr, Self.max_cols)
+        tcgen05_dealloc[Int32(Self.cta_group)](self.addr, UInt32(Self.max_cols))
 
 
 # TMEM Address Encoding (SM100 Blackwell)
@@ -95,8 +96,7 @@ struct TmemAllocation[
 comptime TMEM_LOWER_ROW_OFFSET: UInt32 = 16 << 16
 
 
-@register_passable("trivial")
-struct TmemAddress:
+struct TmemAddress(TrivialRegisterType):
     """Simple TMEM address wrapper for load/store operations.
 
     Encapsulates TMEM address encoding for accumulator fragment access.
@@ -238,13 +238,12 @@ struct TmemAddress:
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TmemTensor[
     dtype: DType,
     layout: Layout,
     *,
     cta_group: Int = 1,
-]:
+](TrivialRegisterType):
     """Typed tensor view over Tensor Memory (TMEM) for MMA accumulators.
 
     Provides a LayoutTensor-like abstraction for TMEM with:
@@ -461,7 +460,6 @@ struct TmemTensor[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TmemFragments[
     dtype: DType,
     frag_size: Int,
@@ -469,7 +467,7 @@ struct TmemFragments[
     is_lower_required: Bool = True,
     data_paths: Int = 16,
     bits: Int = 256,
-]:
+](TrivialRegisterType):
     """Paired upper/lower accumulator fragments from TMEM.
 
     Encapsulates the SM100 TMEM row-split hardware detail:
@@ -617,14 +615,13 @@ struct TmemFragments[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TmemArrayType[
     dtype: DType,
     layout: Layout,
     num_tiles: Int,
     *,
     cta_group: Int = 1,
-]:
+](TrivialRegisterType):
     """Array of tiles in Tensor Memory (TMEM).
 
     Similar to SMemArray but for TMEM-resident tiles. Provides indexed
@@ -667,7 +664,6 @@ struct TmemArrayType[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct BlockScaledTmem[
     # Accumulator configuration
     accum_dtype: DType,
@@ -681,7 +677,7 @@ struct BlockScaledTmem[
     *,
     cta_group: Int = 1,
     total_cols: Int = 512,
-]:
+](TrivialRegisterType):
     """TMEM region for block-scaled matmul with typed tile accessors.
 
     Manages the TMEM address space for block-scaled MMA operations,
@@ -812,12 +808,11 @@ struct BlockScaledTmem[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TmemStage[
     num_stages: Int,
     stage_stride: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """A pipeline stage within TMEM for accumulator buffering.
 
     Used by OutputTilePipeline to manage MMA→Epilogue synchronization.

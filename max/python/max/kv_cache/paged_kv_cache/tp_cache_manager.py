@@ -1,0 +1,423 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""PagedAttention-enabled KV cache for the Transformer leveraging the mo.opaque pattern."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Sequence
+
+import numpy as np
+from max.driver import Buffer, Device
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.interfaces import RequestID, TextGenerationContext
+from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import build_max_lengths_tensor
+from max.profiler import traced
+from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
+    MemoryTier,
+)
+from max.support.math import ceildiv
+
+from .block_copy_engine import BlockCopyEngine
+from .block_manager import BlockManager
+
+logger = logging.getLogger("max.pipelines")
+
+
+class _TPPagedKVCacheManager:
+    """Internal class used for managing KVCache blocks that supports tensor parallelism.
+
+    This class should not be used directly by scheduler/pipelines. Instead, we
+    should use the PagedKVCacheManager class instead.
+
+    This class does NOT support data parallelism.
+    """
+
+    page_size: int
+    """Number of tokens stored per block."""
+
+    total_num_pages: int
+    """Total number of logical pages (complete token slots) available.
+
+    In tensor parallelism, each page's KV data is sharded across all devices,
+    but this count represents complete logical pages (where all shards together
+    form one complete page of `page_size` tokens).
+    """
+
+    device_tensors: list[Buffer]
+    """List of tensors holding the KV cache blocks, one per device."""
+
+    host_tensors: list[Buffer] | None
+    """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
+
+    total_num_host_pages: int
+    """Total number of blocks allocated on the host for swapping (if enabled)."""
+
+    block_manager: BlockManager
+    """Manages allocation, eviction, and reuse of KV cache blocks."""
+
+    enable_prefix_caching: bool
+    """Flag indicating if prefix caching (block reuse) is enabled."""
+
+    enable_kvcache_swapping_to_host: bool
+    """Flag indicating if swapping blocks to host memory is enabled."""
+
+    @traced
+    def __init__(
+        self,
+        params: KVCacheParams,
+        total_num_pages: int,
+        total_num_host_pages: int,
+        devices: Sequence[Device],
+        session: InferenceSession,
+        enable_runtime_checks: bool = False,
+    ) -> None:
+        """Initialize the tensor-parallel paged KV cache manager.
+
+        Args:
+            params: The KVCacheParams for the given pipeline.
+            devices: The devices on which the manager will allocate memory.
+                For tensor parallelism, KV cache data is sharded across these devices.
+            session: The inference session to load ops from.
+            enable_runtime_checks: Whether to enable runtime correctness checks.
+        """
+        self.params = params
+        self.total_num_pages = total_num_pages
+        self.total_num_host_pages = total_num_host_pages
+        self.page_size = params.page_size
+        self.devices = devices
+        self.session = session
+
+        # Validate devices aligns with the n_devices in params
+        if len(devices) != params.n_devices:
+            raise ValueError(
+                "Number of devices provided in KVCacheParams does not match the number of devices initialized in the _TPPagedKVCacheManager"
+            )
+
+        if params.data_parallel_degree > 1:
+            raise ValueError(
+                "_TPPagedKVCacheManager does not support data parallelism."
+            )
+
+        # Track the set of requests that are currently claimed.
+        self._claimed_requests: set[RequestID] = set()
+
+        # Whether prefix caching is enabled.
+        self.enable_prefix_caching = self.params.enable_prefix_caching
+
+        # Whether kvcache swapping to host is enabled
+        self.enable_kvcache_swapping_to_host = (
+            self.params.enable_kvcache_swapping_to_host
+        )
+
+        if (
+            self.enable_kvcache_swapping_to_host
+            and not self.enable_prefix_caching
+        ):
+            raise ValueError(
+                "KVCache swapping to host is only supported when prefix caching is enabled"
+            )
+
+        # Initialize the block buffers for each device.
+        self.device_tensors = []
+        for device in self.devices:
+            # Zero-initializing GPU device tensors does not introduce significant latency.
+            # Memory is initialized because OOB TMA reads of uninitialized memory on GPU can result in NaNs in downstream kernels.
+            self.device_tensors.append(
+                Buffer.zeros(
+                    shape=[total_num_pages, *params.shape_per_block],
+                    dtype=self.params.dtype,
+                    device=device,
+                )
+            )
+
+        self.host_tensors = None
+        if params.enable_kvcache_swapping_to_host:
+            self.host_tensors = []
+            # Construct host tensors for each device.
+            for dev in devices:
+                if dev.is_host:
+                    raise ValueError(
+                        "Host device detected. Paging to host is not supported when executing on CPU."
+                    )
+                # Initializing the CPU host tensors introduces significant latency, and it's not expected that this memory will be accessed via TMA operations.
+                self.host_tensors.append(
+                    Buffer(
+                        shape=[total_num_host_pages, *params.shape_per_block],
+                        dtype=self.params.dtype,
+                        device=dev,
+                        pinned=True,
+                    )
+                )
+
+        # Initialize block copy engine.
+        self.block_copy_engine: BlockCopyEngine | None = None
+        if self.enable_prefix_caching:
+            self.block_copy_engine = BlockCopyEngine(
+                block_size=self.page_size,
+                num_device_blocks=self.total_num_pages,
+                device_tensors=self.device_tensors,
+                num_host_blocks=self.total_num_host_pages,
+                host_tensors=self.host_tensors,
+            )
+
+        # Initialize block manager
+        device_memory_tier = (
+            MemoryTier.MEMORY_TIER_CPU
+            if devices[0].is_host
+            else MemoryTier.MEMORY_TIER_GPU
+        )
+        self.block_manager = BlockManager(
+            device_memory_tier=device_memory_tier,
+            total_num_blocks=self.total_num_pages,
+            total_num_host_blocks=self.total_num_host_pages,
+            block_size=self.page_size,
+            block_copy_engine=self.block_copy_engine,
+            enable_prefix_caching=self.params.enable_prefix_caching,
+            enable_runtime_checks=enable_runtime_checks,
+        )
+
+    @traced
+    def _does_req_need_more_blocks(
+        self, ctx: TextGenerationContext, num_steps: int
+    ) -> bool:
+        """Determines if a request needs additional blocks."""
+        seq_len = len(ctx.tokens) + num_steps - 1
+        num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
+        return seq_len > num_blocks * self.page_size
+
+    @traced
+    def get_pct_used_blocks_after_allocation(
+        self, ctx: TextGenerationContext, num_steps: int = 1
+    ) -> float:
+        """Get the percentage of blocks used after allocating for a request."""
+        num_needed_blocks = (
+            self.num_used_pages
+            + self.block_manager.num_blocks_to_allocate(ctx, num_steps)
+        )
+        assert self.num_pages > 0
+        return min(
+            1.0,
+            num_needed_blocks / self.num_pages,
+        )
+
+    @traced
+    def alloc(self, data: TextGenerationContext, num_steps: int = 1) -> None:
+        """Allocates blocks for a request to run for N steps.
+
+        This method allocates blocks needed by a request to run for N steps.
+        When prefix caching is enabled, some of the allocated blocks may be
+        retrieved from the prefix cache.
+
+        Args:
+            data: The text generation context for the request. The request ID
+                must already be assigned to a replica via `claim`.
+            num_steps: The number of steps to reserve blocks for. Default: 1.
+
+        Raises:
+            InsufficientBlocksError: If there are insufficient free blocks to
+            satisfy the allocation.
+        """
+        self.block_manager.reuse_blocks_from_prefix_cache(data)
+        self.block_manager.allocate_new_blocks(data, num_steps)
+
+    @traced
+    def get_runtime_inputs(
+        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+    ) -> Sequence[RaggedKVCacheInputs]:
+        """Get the graph inputs for a batch of requests.
+
+        This method will raise a RuntimeError if any request has insufficient blocks
+        already allocated to it to run for the given number of steps.
+
+        Args:
+            batch: Batch of requests
+            num_steps: Number of steps to run for
+        """
+
+        if self.block_copy_engine is not None:
+            self.block_copy_engine.wait_for_completion()
+
+        max_seq_len = -1
+        for batch_idx, ctx in enumerate(batch):  # noqa: B007
+            # Allocate blocks for request if we need more.
+            if self._does_req_need_more_blocks(ctx, num_steps):
+                raise ValueError(
+                    f"Called fetch with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
+                )
+
+            # Compute the total sequence length
+            seq_len = len(ctx.tokens) + num_steps - 1
+            max_seq_len = max(max_seq_len, seq_len)
+
+        max_total_num_pages = ceildiv(max_seq_len, self.page_size)
+        batch_size = len(batch)
+
+        # Allocate the kvcache runtime inputs on pinned memory for faster h2d
+        # transfer speeds. If kvcache is on host, then fall back to normal
+        # pageable memory. We initialize these empty max tensors by exporting
+        # to numpy over dlpack and using numpy methods.
+        device0 = self.devices[0]
+        pinned = not device0.is_host
+
+        # Allocate the lookup table buffer.
+        # [0, total_num_pages) are the valid block ids and total_num_pages
+        # denotes an unassigned block.
+        lut_table = Buffer(
+            shape=(batch_size, max_total_num_pages),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+        lut_table_np = lut_table.to_numpy()
+        lut_table_np.fill(self.total_num_pages)
+
+        # Allocate cache length buffer.
+        cache_lengths = Buffer(
+            shape=(batch_size,),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+        cache_lengths_np = cache_lengths.to_numpy()
+
+        # Update cache_lengths and max_lengths.
+        max_prompt_len = 0
+        max_cached_len = 0
+        for batch_idx, ctx in enumerate(batch):
+            # Get the blocks for this request.
+            blocks = self.block_manager.get_req_blocks(ctx.request_id)
+
+            # Sanity check that we have enough blocks.
+            seq_len = len(ctx.tokens) + num_steps - 1
+            num_required_blocks = ceildiv(seq_len, self.page_size)
+            assert len(blocks) >= num_required_blocks
+            if len(blocks) > num_required_blocks:
+                blocks = blocks[:num_required_blocks]
+
+            # Vectorized assignment of block indices to lookup table
+            lut_table_np[batch_idx, : len(blocks)] = np.array(
+                blocks, dtype=np.uint32
+            )
+
+            # Get the existing cache length for this sequence.
+            cache_length = ctx.tokens.processed_length
+            cache_lengths_np[batch_idx] = cache_length
+
+            # Update the maximum lengths seen so far.
+            prompt_tokens = ctx.tokens.active_length
+            max_prompt_len = max(max_prompt_len, prompt_tokens)
+            max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
+
+        self.block_manager.eagerly_offload_recently_committed_blocks()
+
+        # Build a tensor of maximum lengths. Each step slices the first row to
+        # advance to the values for the next row. This should not be allocated
+        # on pinned memory since it is exclusively accessed on the CPU and never
+        # copied to the GPU.
+        max_lengths_host = build_max_lengths_tensor(
+            num_steps, max_prompt_len, max_cached_len
+        )
+
+        ret_list = []
+        for i, device in enumerate(self.devices):
+            ret_list.append(
+                RaggedKVCacheInputs(
+                    blocks=self.device_tensors[i],
+                    cache_lengths=cache_lengths.to(device=device),
+                    lookup_table=lut_table.to(device=device),
+                    max_lengths=max_lengths_host,
+                )
+            )
+
+        return ret_list
+
+    def release(self, request_id: RequestID) -> None:
+        """Release the sequence associated with :obj:`request_id`, marking this sequence as complete.
+        This returns the sequence ID back to the available pool of cache memory,
+        allowing it to be reused when a new sequence is claimed.
+        """
+        if request_id not in self._claimed_requests:
+            raise ValueError(
+                f"Attempted to release request ID {request_id} but it is not claimed"
+            )
+
+        self._claimed_requests.remove(request_id)
+
+        # Call the block manager release method with the request_id
+        self.block_manager.release(request_id)
+
+    @traced
+    def step(self, batch: Sequence[TextGenerationContext]) -> None:
+        """Commit new tokens into the prefix cache.
+
+        This is a no-op if prefix caching is disabled.
+        """
+        for ctx in batch:
+            # We possibly commit new blocks into the prefix cache.
+            self.block_manager.step(ctx)
+
+    @property
+    def num_pages(self) -> int:
+        return self.total_num_pages
+
+    @property
+    def num_used_pages(self) -> int:
+        """Get the set of used blocks."""
+        free_blocks = self.block_manager.device_block_pool.free_blocks
+        return self.total_num_pages - len(free_blocks)
+
+    @property
+    def num_host_pages(self) -> int:
+        return self.total_num_host_pages
+
+    @property
+    def num_used_host_pages(self) -> int:
+        if self.block_manager.host_block_pool is None:
+            return 0
+        return len(self.block_manager.host_block_pool.hash_to_committed_block)
+
+    def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
+        """Get the block ids for a request."""
+        return self.block_manager.get_req_blocks(request_id)
+
+    def claim(self, request_id: RequestID) -> None:
+        """Reserve a sequence ID for the given request ID."""
+        if request_id in self._claimed_requests:
+            raise ValueError(f"Request ID {request_id} is already claimed")
+        self._claimed_requests.add(request_id)
+
+    def contains(self, request_id: RequestID) -> bool:
+        """Check if the given request ID is currently active in the cache.
+
+        Args:
+            request_id: The request ID to check for.
+
+        Returns:
+            True if the request ID is active in the cache, False otherwise.
+        """
+        return request_id in self._claimed_requests
+
+    @property
+    def metrics(self) -> KVCacheMetrics:
+        return self.block_manager.metrics
+
+    def reset_metrics(self) -> None:
+        self.block_manager.reset_metrics()
+
+    def reset_prefix_cache(self) -> None:
+        self.block_manager.reset_prefix_cache()

@@ -67,10 +67,9 @@ fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
     return _int_type_of_width[bitwidth]()
 
 
-@register_passable("trivial")
 struct RuntimeTuple[
     S: IntTuple = UNKNOWN_VALUE, /, *, element_type: DType = DType.int64
-](Defaultable, Intable, Sized, Stringable, Writable):
+](Defaultable, Intable, Sized, Stringable, TrivialRegisterType, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
     RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
     tuple-like data structures, typically used for tensor shapes, indices, and coordinates
@@ -175,13 +174,13 @@ struct RuntimeTuple[
         Returns:
             The integer value of this RuntimeTuple.
         """
-        comptime comptime_value: Scalar[Self.element_type] = Self.S.value()
+        comptime comptime_value = Scalar[Self.element_type](Self.S.value())
 
         @parameter
         if comptime_value != UNKNOWN_VALUE:
             return comptime_value
         else:
-            return self.value[0]
+            return Scalar[Self.element_type](self.value[0])
 
     @always_inline
     fn __getitem__[
@@ -587,7 +586,9 @@ fn crd2idx[
             r += crd2idx[out_type=out_type](crd[i], shape[i], stride[i])
         return r
     else:
-        var int_crd: Scalar[out_type] = 0 if len(crd) == 0 else Int(crd)
+        var int_crd: Scalar[out_type] = Scalar[out_type](
+            0 if len(crd) == 0 else Int(crd)
+        )
 
         @parameter
         if shape_t.is_tuple():  # "int" tuple tuple
@@ -604,7 +605,7 @@ fn crd2idx[
                 result += crd2idx[crd_t, out_type=out_type](
                     RuntimeTuple[crd_t, ...](quotient), shape[i], stride[i]
                 )
-                int_crd = divisor
+                int_crd = Scalar[out_type](divisor)
             # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
             return result + crd2idx[crd_t, out_type=out_type](
                 RuntimeTuple[crd_t, ...](Int(int_crd)),
@@ -612,7 +613,7 @@ fn crd2idx[
                 stride[last_elem_idx],
             )
         else:  # "int" "int" "int"
-            return int_crd * Int(stride)
+            return int_crd * Scalar[out_type](Int(stride))
 
 
 # TODO: This isn't necessarily needed. We need to revisit and simplify

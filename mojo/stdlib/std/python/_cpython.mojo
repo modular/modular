@@ -71,8 +71,8 @@ comptime Py_TPFLAGS_TYPE_SUBCLASS = c_ulong(1 << 31)
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
 # ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunction
-comptime PyCFunction = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
-comptime PyCFunctionWithKeywords = fn (
+comptime PyCFunction = fn(PyObjectPtr, PyObjectPtr) -> PyObjectPtr
+comptime PyCFunctionWithKeywords = fn(
     PyObjectPtr, PyObjectPtr, PyObjectPtr
 ) -> PyObjectPtr
 
@@ -85,8 +85,7 @@ comptime METH_STATIC = 0x20
 
 # GIL
 @fieldwise_init
-@register_passable("trivial")
-struct PyGILState_STATE:
+struct PyGILState_STATE(TrivialRegisterType):
     """Represents the state of the Python Global Interpreter Lock (GIL).
 
     This struct is used to store and manage the state of the GIL, which is
@@ -122,7 +121,6 @@ struct PyThreadState:
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct PyObjectPtr(
     Boolable,
     Defaultable,
@@ -130,6 +128,7 @@ struct PyObjectPtr(
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Equivalent to `PyObject*` in C.
@@ -355,7 +354,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func[PyCFunction]
         )
 
-        var flags = (
+        var flags = c_int(
             METH_VARARGS
             | (METH_STATIC if static_method else 0)
             | (METH_KEYWORDS if with_kwargs else 0)
@@ -391,8 +390,7 @@ struct PyTypeObject:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PyType_Spec:
+struct PyType_Spec(TrivialRegisterType):
     """Structure defining a type's behavior.
 
     References:
@@ -415,17 +413,17 @@ comptime Py_tp_repr = 66
 
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
-comptime destructor = fn (PyObjectPtr) -> None
+comptime destructor = fn(PyObjectPtr) -> None
 """`typedef void (*destructor)(PyObject*)`."""
-comptime reprfunc = fn (PyObjectPtr) -> PyObjectPtr
+comptime reprfunc = fn(PyObjectPtr) -> PyObjectPtr
 """`typedef PyObject *(*reprfunc)(PyObject*)`."""
-comptime Typed_initproc = fn (
+comptime Typed_initproc = fn(
     PyObjectPtr,
     PyObjectPtr,
     PyObjectPtr,  # NULL if no keyword arguments were passed
 ) -> c_int
 """`typedef int (*initproc)(PyObject*, PyObject*, PyObject*)`."""
-comptime Typed_newfunc = fn (
+comptime Typed_newfunc = fn(
     PyTypeObjectPtr,
     PyObjectPtr,
     PyObjectPtr,
@@ -434,8 +432,7 @@ comptime Typed_newfunc = fn (
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PyType_Slot(ImplicitlyCopyable):
+struct PyType_Slot(TrivialRegisterType):
     """Structure defining optional functionality of a type, containing a slot ID
     and a value pointer.
 
@@ -561,7 +558,7 @@ struct PyModuleDef_Base(
     """The initial segment of every `PyObject` in CPython."""
 
     # TODO(MOCO-1138): This is a C ABI function pointer, not Mojo a function.
-    comptime _init_fn_type = fn () -> PyObjectPtr
+    comptime _init_fn_type = fn() -> PyObjectPtr
     var init_fn: Self._init_fn_type
     """The function used to re-initialize the module."""
 
@@ -664,22 +661,22 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
     by a `{0, NULL}` entry."""
 
     # TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
-    comptime _visitproc_fn_type = fn (
+    comptime _visitproc_fn_type = fn(
         PyObjectPtr, OpaquePointer[MutAnyOrigin]
     ) -> c_int
-    comptime _traverse_fn_type = fn (
+    comptime _traverse_fn_type = fn(
         PyObjectPtr, Self._visitproc_fn_type, OpaquePointer[MutAnyOrigin]
     ) -> c_int
     var traverse_fn: Self._traverse_fn_type
     """A traversal function to call during GC traversal of the module object,
     or `NULL` if not needed."""
 
-    comptime _clear_fn_type = fn (PyObjectPtr) -> c_int
+    comptime _clear_fn_type = fn(PyObjectPtr) -> c_int
     var clear_fn: Self._clear_fn_type
     """A clear function to call during GC clearing of the module object,
     or `NULL` if not needed."""
 
-    comptime _free_fn_type = fn (OpaquePointer[MutAnyOrigin]) -> OpaquePointer[
+    comptime _free_fn_type = fn(OpaquePointer[MutAnyOrigin]) -> OpaquePointer[
         MutAnyOrigin
     ]
     var free_fn: Self._free_fn_type
@@ -769,12 +766,12 @@ struct ExternalFunction[
 comptime PyRun_SimpleString = ExternalFunction[
     "PyRun_SimpleString",
     # int PyRun_SimpleString(const char *command)
-    fn (UnsafePointer[c_char, ImmutAnyOrigin]) -> c_int,
+    fn(UnsafePointer[c_char, ImmutAnyOrigin]) -> c_int,
 ]
 comptime PyRun_String = ExternalFunction[
     "PyRun_String",
     # PyObject *PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
-    fn (
+    fn(
         UnsafePointer[c_char, ImmutAnyOrigin],
         c_int,
         PyObjectPtr,
@@ -784,7 +781,7 @@ comptime PyRun_String = ExternalFunction[
 comptime Py_CompileString = ExternalFunction[
     "Py_CompileString",
     # PyObject *Py_CompileString(const char *str, const char *filename, int start)
-    fn (
+    fn(
         UnsafePointer[c_char, ImmutAnyOrigin],
         UnsafePointer[c_char, ImmutAnyOrigin],
         c_int,
@@ -793,24 +790,24 @@ comptime Py_CompileString = ExternalFunction[
 comptime PyEval_EvalCode = ExternalFunction[
     "PyEval_EvalCode",
     # PyObject *PyEval_EvalCode(PyObject *co, PyObject *globals, PyObject *locals)
-    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Reference Counting
 comptime Py_NewRef = ExternalFunction[
     "Py_NewRef",
     # PyObject *Py_NewRef(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime Py_IncRef = ExternalFunction[
     "Py_IncRef",
     # void Py_IncRef(PyObject *o)
-    fn (PyObjectPtr) -> None,
+    fn(PyObjectPtr) -> None,
 ]
 comptime Py_DecRef = ExternalFunction[
     "Py_DecRef",
     # void Py_DecRef(PyObject *o)
-    fn (PyObjectPtr) -> None,
+    fn(PyObjectPtr) -> None,
 ]
 
 # Exception Handling
@@ -818,34 +815,34 @@ comptime Py_DecRef = ExternalFunction[
 comptime PyErr_Clear = ExternalFunction[
     "PyErr_Clear",
     # void PyErr_Clear()
-    fn () -> None,
+    fn() -> None,
 ]
 # - Raising exceptions
 comptime PyErr_SetString = ExternalFunction[
     "PyErr_SetString",
     # void PyErr_SetString(PyObject *type, const char *message)
-    fn (PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> None,
+    fn(PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> None,
 ]
 comptime PyErr_SetNone = ExternalFunction[
     "PyErr_SetNone",
     # void PyErr_SetNone(PyObject *type)
-    fn (PyObjectPtr) -> None,
+    fn(PyObjectPtr) -> None,
 ]
 # - Querying the error indicator
 comptime PyErr_Occurred = ExternalFunction[
     "PyErr_Occurred",
     # PyObject *PyErr_Occurred()
-    fn () -> PyObjectPtr,
+    fn() -> PyObjectPtr,
 ]
 comptime PyErr_GetRaisedException = ExternalFunction[
     "PyErr_GetRaisedException",
     # PyObject *PyErr_GetRaisedException()
-    fn () -> PyObjectPtr,
+    fn() -> PyObjectPtr,
 ]
 comptime PyErr_Fetch = ExternalFunction[
     "PyErr_Fetch",
     # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
-    fn (
+    fn(
         UnsafePointer[PyObjectPtr, MutAnyOrigin],
         UnsafePointer[PyObjectPtr, MutAnyOrigin],
         UnsafePointer[PyObjectPtr, MutAnyOrigin],
@@ -856,34 +853,34 @@ comptime PyErr_Fetch = ExternalFunction[
 comptime PyEval_SaveThread = ExternalFunction[
     "PyEval_SaveThread",
     # PyThreadState *PyEval_SaveThread()
-    fn () -> UnsafePointer[PyThreadState, MutAnyOrigin],
+    fn() -> UnsafePointer[PyThreadState, MutAnyOrigin],
 ]
 comptime PyEval_RestoreThread = ExternalFunction[
     "PyEval_RestoreThread",
     # void PyEval_RestoreThread(PyThreadState *tstate)
-    fn (UnsafePointer[PyThreadState, MutAnyOrigin]) -> None,
+    fn(UnsafePointer[PyThreadState, MutAnyOrigin]) -> None,
 ]
 comptime PyGILState_Ensure = ExternalFunction[
     "PyGILState_Ensure",
     # PyGILState_STATE PyGILState_Ensure()
-    fn () -> PyGILState_STATE,
+    fn() -> PyGILState_STATE,
 ]
 comptime PyGILState_Release = ExternalFunction[
     "PyGILState_Release",
     # void PyGILState_Release(PyGILState_STATE)
-    fn (PyGILState_STATE) -> None,
+    fn(PyGILState_STATE) -> None,
 ]
 
 # Importing Modules
 comptime PyImport_ImportModule = ExternalFunction[
     "PyImport_ImportModule",
     # PyObject *PyImport_ImportModule(const char *name)
-    fn (UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
+    fn(UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
 ]
 comptime PyImport_AddModule = ExternalFunction[
     "PyImport_AddModule",
     # PyObject *PyImport_AddModule(const char *name)
-    fn (UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
+    fn(UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
 ]
 
 # Abstract Objects Layer
@@ -891,17 +888,17 @@ comptime PyImport_AddModule = ExternalFunction[
 comptime PyObject_HasAttrString = ExternalFunction[
     "PyObject_HasAttrString",
     # int PyObject_HasAttrString(PyObject *o, const char *attr_name)
-    fn (PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> c_int,
+    fn(PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> c_int,
 ]
 comptime PyObject_GetAttrString = ExternalFunction[
     "PyObject_GetAttrString",
     # PyObject *PyObject_GetAttrString(PyObject *o, const char *attr_name)
-    fn (PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
+    fn(PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]) -> PyObjectPtr,
 ]
 comptime PyObject_SetAttrString = ExternalFunction[
     "PyObject_SetAttrString",
     # int PyObject_SetAttrString(PyObject *o, const char *attr_name, PyObject *v)
-    fn (
+    fn(
         PyObjectPtr,
         UnsafePointer[c_char, ImmutAnyOrigin],
         PyObjectPtr,
@@ -910,78 +907,78 @@ comptime PyObject_SetAttrString = ExternalFunction[
 comptime PyObject_Str = ExternalFunction[
     "PyObject_Str",
     # PyObject *PyObject_Str(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyObject_Hash = ExternalFunction[
     "PyObject_Hash",
     # Py_hash_t PyObject_Hash(PyObject *o)
-    fn (PyObjectPtr) -> Py_hash_t,
+    fn(PyObjectPtr) -> Py_hash_t,
 ]
 comptime PyObject_IsTrue = ExternalFunction[
     "PyObject_IsTrue",
     # int PyObject_IsTrue(PyObject *o)
-    fn (PyObjectPtr) -> c_int,
+    fn(PyObjectPtr) -> c_int,
 ]
 comptime PyObject_Type = ExternalFunction[
     "PyObject_Type",
     # PyTypeObject *PyObject_Type(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyObject_Length = ExternalFunction[
     "PyObject_Length",
     # Py_ssize_t PyObject_Length(PyObject *o)
-    fn (PyObjectPtr) -> Py_ssize_t,
+    fn(PyObjectPtr) -> Py_ssize_t,
 ]
 comptime PyObject_GetItem = ExternalFunction[
     "PyObject_GetItem",
     # PyObject *PyObject_GetItem(PyObject *o, PyObject *key)
-    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyObject_SetItem = ExternalFunction[
     "PyObject_SetItem",
     # int PyObject_SetItem(PyObject *o, PyObject *key, PyObject *v)
-    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
 ]
 comptime PyObject_GetIter = ExternalFunction[
     "PyObject_GetIter",
     # PyObject *PyObject_GetIter(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Call Protocol
 comptime PyObject_Call = ExternalFunction[
     "PyObject_Call",
     # PyObject *PyObject_Call(PyObject *callable, PyObject *args, PyObject *kwargs)
-    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyObject_CallObject = ExternalFunction[
     "PyObject_CallObject",
     # PyObject *PyObject_CallObject(PyObject *callable, PyObject *args)
-    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Number Protocol
 comptime PyNumber_Long = ExternalFunction[
     "PyNumber_Long",
     # PyObject *PyNumber_Long(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyNumber_Float = ExternalFunction[
     "PyNumber_Float",
     # PyObject *PyNumber_Float(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Iterator Protocol
 comptime PyIter_Check = ExternalFunction[
     "PyIter_Check",
     # int PyIter_Check(PyObject *o)
-    fn (PyObjectPtr) -> c_int,
+    fn(PyObjectPtr) -> c_int,
 ]
 comptime PyIter_Next = ExternalFunction[
     "PyIter_Next",
     # PyObject *PyIter_Next(PyObject *o)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Concrete Objects Layer
@@ -989,70 +986,70 @@ comptime PyIter_Next = ExternalFunction[
 comptime PyType_GenericAlloc = ExternalFunction[
     "PyType_GenericAlloc",
     # PyObject *PyType_GenericAlloc(PyTypeObject *type, Py_ssize_t nitems)
-    fn (PyTypeObjectPtr, Py_ssize_t) -> PyObjectPtr,
+    fn(PyTypeObjectPtr, Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyType_GetName = ExternalFunction[
     "PyType_GetName",
     # PyObject *PyType_GetName(PyTypeObject *type)
-    fn (PyTypeObjectPtr) -> PyObjectPtr,
+    fn(PyTypeObjectPtr) -> PyObjectPtr,
 ]
 comptime PyType_FromSpec = ExternalFunction[
     "PyType_FromSpec",
     # PyObject *PyType_FromSpec(PyType_Spec *spec)
-    fn (UnsafePointer[PyType_Spec, MutAnyOrigin]) -> PyObjectPtr,
+    fn(UnsafePointer[PyType_Spec, MutAnyOrigin]) -> PyObjectPtr,
 ]
 comptime PyType_GetFlags = ExternalFunction[
     "PyType_GetFlags",
     # unsigned long PyType_GetFlags(PyTypeObject *type)
-    fn (PyTypeObjectPtr) -> c_ulong,
+    fn(PyTypeObjectPtr) -> c_ulong,
 ]
 comptime PyType_IsSubtype = ExternalFunction[
     "PyType_IsSubtype",
     # int PyType_IsSubtype(PyTypeObject *a, PyTypeObject *b)
-    fn (PyTypeObjectPtr, PyTypeObjectPtr) -> c_int,
+    fn(PyTypeObjectPtr, PyTypeObjectPtr) -> c_int,
 ]
 
 # Integer Objects
 comptime PyLong_FromSsize_t = ExternalFunction[
     "PyLong_FromSsize_t",
     # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
-    fn (Py_ssize_t) -> PyObjectPtr,
+    fn(Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyLong_FromSize_t = ExternalFunction[
     "PyLong_FromSize_t",
     # PyObject *PyLong_FromSize_t(size_t v)
-    fn (c_size_t) -> PyObjectPtr,
+    fn(c_size_t) -> PyObjectPtr,
 ]
 comptime PyLong_AsSsize_t = ExternalFunction[
     "PyLong_AsSsize_t",
     # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
-    fn (PyObjectPtr) -> Py_ssize_t,
+    fn(PyObjectPtr) -> Py_ssize_t,
 ]
 
 # Boolean Objects
 comptime PyBool_FromLong = ExternalFunction[
     "PyBool_FromLong",
     # PyObject *PyBool_FromLong(long v)
-    fn (c_long) -> PyObjectPtr,
+    fn(c_long) -> PyObjectPtr,
 ]
 
 # Floating-Point Objects
 comptime PyFloat_FromDouble = ExternalFunction[
     "PyFloat_FromDouble",
     # PyObject *PyFloat_FromDouble(double v)
-    fn (c_double) -> PyObjectPtr,
+    fn(c_double) -> PyObjectPtr,
 ]
 comptime PyFloat_AsDouble = ExternalFunction[
     "PyFloat_AsDouble",
     # double PyFloat_AsDouble(PyObject *pyfloat)
-    fn (PyObjectPtr) -> c_double,
+    fn(PyObjectPtr) -> c_double,
 ]
 
 # Unicode Objects and Codecs
 comptime PyUnicode_DecodeUTF8 = ExternalFunction[
     "PyUnicode_DecodeUTF8",
     # PyObject *PyUnicode_DecodeUTF8(const char *str, Py_ssize_t size, const char *errors)
-    fn (
+    fn(
         UnsafePointer[c_char, ImmutAnyOrigin],
         Py_ssize_t,
         UnsafePointer[c_char, ImmutAnyOrigin],
@@ -1061,7 +1058,7 @@ comptime PyUnicode_DecodeUTF8 = ExternalFunction[
 comptime PyUnicode_AsUTF8AndSize = ExternalFunction[
     "PyUnicode_AsUTF8AndSize",
     # const char *PyUnicode_AsUTF8AndSize(PyObject *unicode, Py_ssize_t *size)
-    fn (
+    fn(
         PyObjectPtr,
         UnsafePointer[Py_ssize_t, MutAnyOrigin],
     ) -> UnsafePointer[c_char, ImmutAnyOrigin],
@@ -1071,56 +1068,56 @@ comptime PyUnicode_AsUTF8AndSize = ExternalFunction[
 comptime PyTuple_New = ExternalFunction[
     "PyTuple_New",
     # PyObject *PyTuple_New(Py_ssize_t len)
-    fn (Py_ssize_t) -> PyObjectPtr,
+    fn(Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyTuple_GetItem = ExternalFunction[
     "PyTuple_GetItem",
     # PyObject *PyTuple_GetItem(PyObject *p, Py_ssize_t pos)
-    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+    fn(PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyTuple_SetItem = ExternalFunction[
     "PyTuple_SetItem",
     # int PyTuple_SetItem(PyObject *p, Py_ssize_t pos, PyObject *o)
-    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
 # List Objects
 comptime PyList_New = ExternalFunction[
     "PyList_New",
     # PyObject *PyList_New(Py_ssize_t len)
-    fn (Py_ssize_t) -> PyObjectPtr,
+    fn(Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyList_GetItem = ExternalFunction[
     "PyList_GetItem",
     # PyObject *PyList_GetItem(PyObject *list, Py_ssize_t index)
-    fn (PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
+    fn(PyObjectPtr, Py_ssize_t) -> PyObjectPtr,
 ]
 comptime PyList_SetItem = ExternalFunction[
     "PyList_SetItem",
     # int PyList_SetItem(PyObject *list, Py_ssize_t index, PyObject *item)
-    fn (PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, Py_ssize_t, PyObjectPtr) -> c_int,
 ]
 
 # Dictionary Objects
 comptime PyDict_New = ExternalFunction[
     "PyDict_New",
     # PyObject *PyDict_New()
-    fn () -> PyObjectPtr,
+    fn() -> PyObjectPtr,
 ]
 comptime PyDict_SetItem = ExternalFunction[
     "PyDict_SetItem",
     # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
-    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, PyObjectPtr, PyObjectPtr) -> c_int,
 ]
 comptime PyDict_GetItemWithError = ExternalFunction[
     "PyDict_GetItemWithError",
     # PyObject *PyDict_GetItemWithError(PyObject *p, PyObject *key)
-    fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyDict_Next = ExternalFunction[
     "PyDict_Next",
     # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
-    fn (
+    fn(
         PyObjectPtr,
         UnsafePointer[Py_ssize_t, MutAnyOrigin],
         UnsafePointer[PyObjectPtr, MutAnyOrigin],
@@ -1132,34 +1129,34 @@ comptime PyDict_Next = ExternalFunction[
 comptime PySet_New = ExternalFunction[
     "PySet_New",
     # PyObject *PySet_New(PyObject *iterable)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PySet_Add = ExternalFunction[
     "PySet_Add",
     # int PySet_Add(PyObject *set, PyObject *key)
-    fn (PyObjectPtr, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, PyObjectPtr) -> c_int,
 ]
 
 # Module Objects
 comptime PyModule_GetDict = ExternalFunction[
     "PyModule_GetDict",
     # PyObject *PyModule_GetDict(PyObject *module)
-    fn (PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr) -> PyObjectPtr,
 ]
 comptime PyModule_Create2 = ExternalFunction[
     "PyModule_Create2",
     # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
-    fn (UnsafePointer[PyModuleDef, MutAnyOrigin], c_int) -> PyObjectPtr,
+    fn(UnsafePointer[PyModuleDef, MutAnyOrigin], c_int) -> PyObjectPtr,
 ]
 comptime PyModule_AddFunctions = ExternalFunction[
     "PyModule_AddFunctions",
     # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
-    fn (PyObjectPtr, UnsafePointer[PyMethodDef, MutAnyOrigin]) -> c_int,
+    fn(PyObjectPtr, UnsafePointer[PyMethodDef, MutAnyOrigin]) -> c_int,
 ]
 comptime PyModule_AddObjectRef = ExternalFunction[
     "PyModule_AddObjectRef",
     # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
-    fn (
+    fn(
         PyObjectPtr,
         UnsafePointer[c_char, ImmutAnyOrigin],
         PyObjectPtr,
@@ -1170,7 +1167,7 @@ comptime PyModule_AddObjectRef = ExternalFunction[
 comptime PySlice_New = ExternalFunction[
     "PySlice_New",
     # PyObject *PySlice_New(PyObject *start, PyObject *stop, PyObject *step)
-    fn (PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
+    fn(PyObjectPtr, PyObjectPtr, PyObjectPtr) -> PyObjectPtr,
 ]
 
 # Capsules
@@ -1181,7 +1178,7 @@ comptime PyCapsule_Destructor = (
 comptime PyCapsule_New = ExternalFunction[
     "PyCapsule_New",
     # PyObject *PyCapsule_New(void *pointer, const char *name, PyCapsule_Destructor destructor)
-    fn (
+    fn(
         OpaquePointer[MutAnyOrigin],
         UnsafePointer[c_char, ImmutAnyOrigin],
         PyCapsule_Destructor,
@@ -1190,7 +1187,7 @@ comptime PyCapsule_New = ExternalFunction[
 comptime PyCapsule_GetPointer = ExternalFunction[
     "PyCapsule_GetPointer",
     # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
-    fn (
+    fn(
         PyObjectPtr, UnsafePointer[c_char, ImmutAnyOrigin]
     ) -> OpaquePointer[MutAnyOrigin],
 ]
@@ -1199,7 +1196,7 @@ comptime PyCapsule_GetPointer = ExternalFunction[
 comptime PyObject_Free = ExternalFunction[
     "PyObject_Free",
     # void PyObject_Free(void *p)
-    fn (OpaquePointer[MutAnyOrigin]) -> None,
+    fn(OpaquePointer[MutAnyOrigin]) -> None,
 ]
 
 # Object Implementation Support
@@ -1207,7 +1204,7 @@ comptime PyObject_Free = ExternalFunction[
 comptime Py_Is = ExternalFunction[
     "Py_Is",
     # int Py_Is(PyObject *x, PyObject *y)
-    fn (PyObjectPtr, PyObjectPtr) -> c_int,
+    fn(PyObjectPtr, PyObjectPtr) -> c_int,
 ]
 
 

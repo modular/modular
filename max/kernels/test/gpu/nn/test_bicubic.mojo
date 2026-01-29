@@ -548,7 +548,7 @@ fn test_bicubic_kernel[
         for h in range(10):  # 10 rows in output
             for w in range(10):  # 10 columns in output
                 var actual = Float64(output_host[0, c, h, w])
-                var expected = Float64(expected_values[c][h][w])
+                var expected: Float64 = expected_values[c][h][w]
 
                 # Check if values are close within tolerance using isclose from math module
                 var is_match = isclose(

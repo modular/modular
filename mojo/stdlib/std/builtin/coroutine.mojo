@@ -27,7 +27,7 @@ comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @always_inline
-fn _suspend_async[body: fn (AnyCoroutine) capturing -> None]():
+fn _suspend_async[body: fn(AnyCoroutine) capturing -> None]():
     __mlir_region await_body(hdl: __mlir_type.`!co.routine`):
         body(hdl)
         __mlir_op.`co.suspend.end`()
@@ -40,8 +40,7 @@ fn _suspend_async[body: fn (AnyCoroutine) capturing -> None]():
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct _CoroutineContext:
+struct _CoroutineContext(TrivialRegisterType):
     """The default context for a Coroutine, capturing the resume function
     callback and parent Coroutine. The resume function will typically just
     resume the parent. May be overwritten by other context types with different
@@ -49,16 +48,16 @@ struct _CoroutineContext:
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    comptime _resume_fn_type = fn (AnyCoroutine) -> None
+    comptime _resume_fn_type = fn(AnyCoroutine) -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine
 
 
 @always_inline
-fn _coro_get_resume_fn(handle: AnyCoroutine) -> fn (AnyCoroutine) -> None:
+fn _coro_get_resume_fn(handle: AnyCoroutine) -> fn(AnyCoroutine) -> None:
     """This function is a generic coroutine resume function."""
-    return __mlir_op.`co.resume`[_type= fn (AnyCoroutine) -> None](handle)
+    return __mlir_op.`co.resume`[_type= fn(AnyCoroutine) -> None](handle)
 
 
 @always_inline

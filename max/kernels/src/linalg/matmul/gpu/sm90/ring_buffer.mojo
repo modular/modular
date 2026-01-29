@@ -54,11 +54,10 @@ from ....structuring import NVIDIASharedMemoryManager
 # loads tiles into shared memory while multiple consumer warp groups process them
 
 
-@register_passable("trivial")
 struct ProducerTiles[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Context manager for producer access to ring buffer tiles.
 
     This struct provides safe access to a single tile slot in the ring buffer
@@ -91,11 +90,10 @@ struct ProducerTiles[
         self.ring_buffer_ptr[].enqueue_tile()
 
 
-@register_passable("trivial")
 struct ConsumerTiles[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Context manager for consumer access to ring buffer tiles.
 
     This struct provides safe access to a single tile slot in the ring buffer
@@ -128,11 +126,10 @@ struct ConsumerTiles[
         self.ring_buffer_ptr[].release_slot(self.read_idx)
 
 
-@register_passable("trivial")
 struct RingBufferConsumer[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Consumer view of the ring buffer.
 
     This struct provides the consumer interface to the ring buffer, allowing
@@ -162,11 +159,10 @@ struct RingBufferConsumer[
         return {self.ring_buffer_ptr}
 
 
-@register_passable("trivial")
 struct RingBufferProducer[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
-]:
+](TrivialRegisterType):
     """Producer view of the ring buffer.
 
     This struct provides the producer interface to the ring buffer, allowing
@@ -308,11 +304,11 @@ struct RingBuffer[
                 # Full barrier: expects arrivals from producer threads
                 # For async_copy, all threads in warp group participate
                 self.full_mbar[i][].init(
-                    1 if Self.tma_transfer else WARPGROUP_SIZE
+                    1 if Self.tma_transfer else Int32(WARPGROUP_SIZE)
                 )
                 # Empty barrier: expects arrivals from all consumers across cluster
                 self.empty_mbar[i][].init(
-                    Self.num_consumers * Self.cluster_size
+                    Int32(Self.num_consumers * Self.cluster_size)
                 )
 
     fn __enter__(mut self) -> Self:
@@ -343,7 +339,7 @@ struct RingBuffer[
         if Self.tma_transfer:
             # For TMA transfers, set expected bytes for the barrier
             comptime expected_bytes = Self.get_expected_bytes()
-            self.full_mbar[Int(write_idx)][].expect_bytes(expected_bytes)
+            self.full_mbar[Int(write_idx)][].expect_bytes(Int32(expected_bytes))
         return write_idx
 
     @always_inline
@@ -356,7 +352,7 @@ struct RingBuffer[
             Tuple of (barrier, a_tile, b_tile) for the producer to use.
         """
         var barrier_slot = self.get_slot()
-        var smem_pipeline_slot = barrier_slot * Self.k_group_size
+        var smem_pipeline_slot = barrier_slot * UInt32(Self.k_group_size)
         return (
             self.full_mbar[barrier_slot],
             self.a_tiles.slice[Self.k_group_size](Int(smem_pipeline_slot)),
@@ -406,7 +402,7 @@ struct RingBuffer[
             Tuple of (read_idx, a_tile, b_tile) for the consumer to process.
         """
         var read_idx = self.get_tile()
-        var smem_pipeline_slot = read_idx * Self.k_group_size
+        var smem_pipeline_slot = read_idx * UInt32(Self.k_group_size)
 
         return (
             read_idx,

@@ -43,8 +43,7 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _fdopen[mode: StaticString = "a"]:
+struct _fdopen[mode: StaticString = "a"](TrivialRegisterType):
     var handle: FILE_ptr
 
     fn __init__(out self, stream_id: FileDescriptor):
@@ -55,7 +54,7 @@ struct _fdopen[mode: StaticString = "a"]:
         """
 
         self.handle = fdopen(
-            dup(stream_id.value),
+            dup(Int32(stream_id.value)),
             # Guarantee this is nul terminated.
             get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
         )
@@ -253,7 +252,7 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = len(VariadicList(types))
+            comptime args_len = Variadic.size(types)
 
             var message = printf_begin()
             message = printf_append_string_n(
@@ -273,7 +272,7 @@ fn _printf[
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
-                    num_args,
+                    UInt32(num_args),
                     arguments[0],
                     arguments[1],
                     arguments[2],

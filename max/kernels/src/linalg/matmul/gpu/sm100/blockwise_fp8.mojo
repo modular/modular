@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv, gcd
 from sys import align_of, size_of
 
@@ -86,7 +86,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -297,7 +297,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     for k_iter in range(num_iters):
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             a_tma_op.async_copy_3d(
                 a_smem_tile_3D_view,
@@ -358,7 +358,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 dtype=accum_type,
                 pack=False,
                 width=temp_cfrags_size,
-            ](tmem_addr + ld_iter * 8 * repeat)
+            ](tmem_addr + UInt32(ld_iter * 8 * repeat))
             tcgen05_load_wait()  # wait for the load to finish
 
             var b_scale: Scalar[b_scales_type]
@@ -460,7 +460,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
-                    if m < M and n < N:
+                    if m < UInt32(M) and n < UInt32(N):
                         var c_mn = SIMD[accum_type, 2](
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
@@ -505,7 +505,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -571,7 +571,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],
@@ -766,5 +766,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )

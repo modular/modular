@@ -14,7 +14,7 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import OptionalReg
+from collections import Optional
 from math import ceil, fma
 from sys import align_of, simd_width_of, size_of
 from sys.info import CompilationTarget, is_gpu
@@ -651,7 +651,6 @@ comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct ManagedTensorSlice[
     mut: Bool,
     input: IO,
@@ -661,7 +660,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, ImplicitlyCopyable, Stringable, Writable):
+](DevicePassable, Stringable, TrivialRegisterType, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -1230,7 +1229,7 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[UnsafePointer[Scalar[Self.dtype]]] = None,
+        offset_ptr: Optional[UnsafePointer[Scalar[Self.dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec = Self.io_spec,
@@ -1312,7 +1311,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout._layout.Layout(shape_tuple^, stride_tuple^),
+            layout._layout.Layout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):
@@ -1412,7 +1411,6 @@ comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct VariadicTensors[
     mut: Bool,
     input: IO,
@@ -1423,7 +1421,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](ImplicitlyCopyable, Sized):
+](Sized, TrivialRegisterType):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
@@ -1513,7 +1511,7 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int, element_alignment: Int] (
+    func: fn[width: Int, element_alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     *,
@@ -1569,8 +1567,8 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: fn[width: Int] (IndexList[rank]) capturing [_] -> None,
+    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    out_func: fn[width: Int](IndexList[rank]) capturing[_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1620,7 +1618,7 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),

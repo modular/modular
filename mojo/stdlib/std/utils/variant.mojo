@@ -159,7 +159,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         comptime idx = Self._check[T]()
-        self._get_discr() = idx
+        self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
     fn __copyinit__(out self, other: Self):
@@ -173,7 +173,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -183,7 +183,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, Copyable]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
                 return
 
@@ -197,7 +197,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -207,7 +207,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, Movable]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 # Calls the correct __moveinit__
                 self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
                 return
@@ -216,7 +216,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """Destroy the variant."""
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -226,7 +226,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, ImplicitlyDestructible]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 self._get_ptr[T]().destroy_pointee()
                 return
 
@@ -318,7 +318,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """
         debug_assert(self.isa[T](), "taking wrong type")
         # don't call the variant's deleter later
-        self._get_discr() = Self._sentinel
+        self._get_discr() = UInt8(Self._sentinel)
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
@@ -402,7 +402,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             True if the variant contains the requested type.
         """
         comptime idx = Self._check[T]()
-        return self._get_discr() == idx
+        return self._get_discr() == UInt8(idx)
 
     fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
         """Get the value out of the variant as a type-checked type.
@@ -427,7 +427,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     @staticmethod
     fn _check[T: AnyType]() -> Int:
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
@@ -463,7 +463,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         return Self._check[T]() != Self._sentinel
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    fn destroy_with[T: AnyType](deinit self, destroy_func: fn (var T)):
+    fn destroy_with[T: AnyType](deinit self, destroy_func: fn(var T)):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 

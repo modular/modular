@@ -336,6 +336,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
+        assert config is not None
 
         # Extract vision config parameters
         vision_config = config.vision_config

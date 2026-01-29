@@ -523,7 +523,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 mma_op.mma(
                     a_tile,
                     b_tile,
-                    accum_tensor.offset(),
+                    UInt32(accum_tensor.offset()),
                     init_c=True,
                 )
 
@@ -583,8 +583,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         var c_tiles = smem.c_tiles()
         var a_scales_tiles = smem.a_scales_tiles()
 
-        var input_barriers = smem.tma_mma_mbars()
-        var accum_barriers = smem.accum_mbars()
+        var input_barriers = smem.input_barriers()
+        var accum_barriers = smem.accum_barriers()
         var clc_full = smem.clc_mbars_full()
         var clc_empty = smem.clc_mbars_empty()
         var clc_throttle = smem.clc_throttle_mbars()
@@ -610,33 +610,35 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             Self.InputTilePipeline.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1
-                + Self.CLUSTER_SIZE * (Self.EPILOGUE_THREADS // 32),
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                    + Self.CLUSTER_SIZE * (Self.EPILOGUE_THREADS // 32)
+                ),
             )
 
             ProducerConsumerPipeline[Self.config.num_accum_pipeline_stages](
                 accum_barriers.ptr
             ).init_mbars(
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             Self.Scheduler.init_throttle_barriers(
                 clc_throttle.ptr,
-                Self.clc_throttle_producer_arv_count,
-                Self.clc_throttle_consumer_arv_count,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
             )
 
-            smem.tmem_dealloc_mbar().ptr[].init(
-                Self.EPILOGUE_THREADS * Self.cta_group
+            smem.tmem_dealloc().ptr[].init(
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
             @parameter
             for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -702,8 +704,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var mma_ctx = Self.MmaCtx.create(
                 smem.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc_mbar(),
-                ctx.mma_complete_mask,
+                smem.tmem_dealloc(),
+                UInt16(ctx.mma_complete_mask),
             )
 
             with mma_ctx:  # TMEM lifecycle
@@ -711,7 +713,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                     with work_iter.wait_and_advance():  # blocks on CLC
                         if ctx.elect_one_cta:
                             with input_pipeline.consumer() as consumer:
-                                for i in range(num_iters):
+                                for _ in range(num_iters):
                                     with mma_ctx.per_k_stage() as mma_stage:
                                         var accum = Self.AccumTensor(
                                             mma_stage.tmem.offset()
@@ -729,8 +731,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var epi_ctx = Self.EpilogueCtx.create(
                 smem.tmem_addr(),
                 accum_barriers,
-                smem.tmem_dealloc_mbar(),
-                ctx.mma_complete_mask,
+                smem.tmem_dealloc(),
+                UInt16(ctx.mma_complete_mask),
             )
 
             with epi_ctx:
@@ -751,7 +753,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                                     problem_shape=problem_shape,
                                 )
 
-                        named_barrier[Self.num_output_warps * WARP_SIZE]()
+                        named_barrier[
+                            Int32(Self.num_output_warps * WARP_SIZE)
+                        ]()
 
                         Self.TileWriterType.write(
                             accum,

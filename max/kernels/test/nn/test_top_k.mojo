@@ -56,18 +56,16 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 fn test_case_sampling[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     K: Int,
     axis: Int,
     input_shape: IndexList[rank],
     temperature: Scalar[dtype] = 1,
 ) raises:
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(input_shape))
-    )
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(product(input_shape))
     comptime layout = Layout.row_major[rank]()
     var input = LayoutTensor[dtype, layout](
         input_ptr, RuntimeLayout[layout].row_major(input_shape)
@@ -88,11 +86,9 @@ fn test_case_sampling[
         output_idxs_shape = IndexList[rank](input_shape[0], input_shape[1], 1)
 
     var output_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(output_shape))
+        product(output_shape)
     )
-    var output_idxs_ptr = UnsafePointer[Int64].alloc(
-        Int(product(output_idxs_shape))
-    )
+    var output_idxs_ptr = UnsafePointer[Int64].alloc(product(output_idxs_shape))
     var out_vals = LayoutTensor[dtype, layout](
         output_vals_ptr, RuntimeLayout[layout].row_major(output_shape)
     )
@@ -161,9 +157,9 @@ fn test_case_sampling[
 fn test_case[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, dtype](input_shape)

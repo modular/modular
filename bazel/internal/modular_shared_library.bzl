@@ -2,10 +2,10 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
-load("@build_bazel_rules_android//:link_hack.bzl", "link_hack")  # See link_hack.bzl for details
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+load("//tools/build_defs/cc:link_hack.bzl", "link_hack")  # See link_hack.bzl for details
 load(":modular_clang_tidy_test.bzl", "modular_clang_tidy_test")
 load(":modular_strip_binary.bzl", "register_strip_action")
 

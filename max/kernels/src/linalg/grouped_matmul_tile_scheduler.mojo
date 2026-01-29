@@ -21,8 +21,7 @@ from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable):
+struct RasterOrder(TrivialRegisterType):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -38,8 +37,7 @@ struct RasterOrder(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -91,7 +89,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # For simplicity, we always assume M is the static dimension here, because 2SM
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
-@register_passable("trivial")
 struct TileScheduler[
     offsets_layout: Layout,
     //,
@@ -104,7 +101,7 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-]:
+](TrivialRegisterType):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
         DType.uint32, Self.offsets_layout, MutAnyOrigin
@@ -121,8 +118,8 @@ struct TileScheduler[
     )
     var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-    comptime num_static_dim_blocks: UInt32 = ceildiv(
-        Self.static_MN, Self.tile_shape[Self.static_dim]
+    comptime num_static_dim_blocks: UInt32 = UInt32(
+        ceildiv(Self.static_MN, Self.tile_shape[Self.static_dim])
     )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
@@ -183,7 +180,7 @@ struct TileScheduler[
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= self.num_active_experts:
+            if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 

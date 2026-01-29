@@ -76,13 +76,13 @@ def dump_kv_cache_to_torch(
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
     torch_dtype = cache.params.dtype.to_torch()
-    device_tensor = cache._replica_managers[0].device_tensors[device_id]
+    device_tensor = cache.get_device_tensors(replica_idx=0)[device_id]
     device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
     device_tensor_torch = device_tensor_torch[:, key_or_value, :, :, :, :]
 
     results = []
     for ctx in batch:
-        req_blocks = cache.get_req_blocks(ctx.request_id)
+        req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
         seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
@@ -154,12 +154,12 @@ def run_kv_cache_2m_iadd(
     batch = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
-        kv_manager.claim(context.request_id)
-        kv_manager.alloc(context, num_steps=1)
+        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)
-    cache_tensor = kv_manager._replica_managers[0].device_tensors[0]
+    cache_tensor = kv_manager.get_device_tensors(replica_idx=0)[0]
     cache_tensor.inplace_copy_from(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )

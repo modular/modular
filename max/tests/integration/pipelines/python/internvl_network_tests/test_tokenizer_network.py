@@ -14,24 +14,44 @@
 """Tests for InternVL tokenizer that require network access."""
 
 import io
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
-from max import pipelines
-from max.driver import DeviceSpec
 from max.interfaces import (
     RequestID,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines import PipelineConfig
-from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.architectures.internvl.tokenizer import (
+    InternVLProcessor,
+    InternVLTokenizer,
+)
 from PIL import Image
 from pytest_mock import MockerFixture
-from test_common.mocks import mock_estimate_memory_footprint
+from transformers import AutoConfig
+
+
+def _create_mock_pipeline_config(model_path: str) -> MagicMock:
+    """Create a mock PipelineConfig with real HuggingFace config."""
+    hf_config: Any = AutoConfig.from_pretrained(
+        model_path, trust_remote_code=True
+    )
+
+    mock_kv_cache = MagicMock()
+    mock_kv_cache.enable_prefix_caching = False
+
+    mock_model = MagicMock()
+    mock_model.huggingface_config = hf_config
+    mock_model.vision_config_overrides = {}
+    mock_model.kv_cache = mock_kv_cache
+
+    pipeline_config = MagicMock()
+    pipeline_config.model = mock_model
+    return pipeline_config
 
 
 @pytest.mark.asyncio
-@mock_estimate_memory_footprint
 async def test_internvl_tokenizer_with_image() -> None:
     """Test InternVL tokenizer adds image tokens correctly."""
     model_id = "OpenGVLab/InternVL3-1B-Instruct"
@@ -44,13 +64,12 @@ async def test_internvl_tokenizer_with_image() -> None:
     Image.new("RGB", (448, 448), color="red").save(img_buffer, format="PNG")
     test_image = img_buffer.getvalue()
 
-    # Get tokenizer
-    config = PipelineConfig(
+    # Create tokenizer with mock pipeline config.
+    max_tokenizer = InternVLTokenizer(
         model_path=model_id,
+        pipeline_config=_create_mock_pipeline_config(model_id),
         trust_remote_code=True,
-        device_specs=[DeviceSpec.accelerator()],
     )
-    max_tokenizer, _ = pipelines.PIPELINE_REGISTRY.retrieve_factory(config)
 
     # Note: We don't compare with HF tokenizer for image inputs because InternVL's
     # image token handling differs between implementations. In HF, the image tokens
@@ -91,7 +110,6 @@ async def test_internvl_tokenizer_with_image() -> None:
 
 
 @pytest.mark.asyncio
-@mock_estimate_memory_footprint
 async def test_internvl_tokenizer_apply_chat_template(
     mocker: MockerFixture,
 ) -> None:
@@ -151,7 +169,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     assert isinstance(called_messages[0]["content"], str)
     assert (
         called_messages[0]["content"]
-        == "What is this? <image> , what is this  <image>"
+        == "What is this? <|image|> , what is this  <|image|>"
     )
 
     # Verify result.
@@ -165,7 +183,7 @@ async def test_internvl_tokenizer_apply_chat_template(
         )
     ]
 
-    result2 = processor.apply_chat_template(
+    processor.apply_chat_template(
         [msg.model_dump() for msg in text_only_messages],
         tokenize=False,
         add_generation_prompt=True,
@@ -178,7 +196,7 @@ async def test_internvl_tokenizer_apply_chat_template(
     # Test with multiple text parts in content.
     mock_tokenizer.apply_chat_template.reset_mock()
     mock_tokenizer.apply_chat_template.return_value = (
-        "User: Hello <image> world"
+        "User: Hello <|image|> world"
     )
 
     multi_text_messages = [
@@ -194,11 +212,11 @@ async def test_internvl_tokenizer_apply_chat_template(
         )
     ]
 
-    result3 = processor.apply_chat_template(
+    processor.apply_chat_template(
         [msg.model_dump() for msg in multi_text_messages],
         tokenize=False,
         add_generation_prompt=True,
     )
 
     called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]
-    assert called_messages3[0]["content"] == "Hello <image> world"
+    assert called_messages3[0]["content"] == "Hello <|image|> world"

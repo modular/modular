@@ -14,7 +14,7 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
+from collections import Optional
 from sys import size_of
 
 from gpu.host import DeviceContext
@@ -127,7 +127,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
-        epilogue_fn = OptionalReg[elementwise_epilogue_type](
+        epilogue_fn = Optional[elementwise_epilogue_type](
             epilogue_plus_one
         ) if test_epilogue else None,
     ]
@@ -217,7 +217,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     fn run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
         _concat_gpu[
-            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+            epilogue_fn = Optional[elementwise_epilogue_type](
                 epilogue_plus_one
             ) if test_epilogue else None
         ](

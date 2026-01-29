@@ -76,8 +76,8 @@ fn _get_w_and_q_from_float_string(
     exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
-    significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
+    significand = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
     comptime array_ptr = Pointer[
         type_of(exponent), origin_of(exponent, significand)
@@ -118,7 +118,9 @@ fn _get_w_and_q_from_float_string(
             if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent.copy()
-                exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+                exponent = InlineArray[Byte, CONTAINER_SIZE](
+                    fill=Byte(ord("0"))
+                )
                 prt_to_array = array_ptr(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
@@ -145,11 +147,11 @@ fn _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent.copy()
-        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
 
-    exponent_as_integer = (
-        exponent_multiplier * to_integer(exponent) - additional_exponent
-    )
+    exponent_as_integer = UInt64(exponent_multiplier) * to_integer(
+        exponent
+    ) - UInt64(additional_exponent)
     significand_as_integer = to_integer(significand)
     return (significand_as_integer, Int64(exponent_as_integer))
 
@@ -167,7 +169,7 @@ fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
 # Powers of 10 and integers below 2**53 are exactly representable as Float64.
 # Thus any operation done on them must be exact.
 fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
-    return w <= 2**53 and (Int64(-22) <= q <= Int64(22))
+    return w <= UInt64(2**53) and (Int64(-22) <= q <= Int64(22))
 
 
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
@@ -274,7 +276,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     m //= 2
 
     # Step 20
-    if m == 2**53:
+    if m == UInt64(2**53):
         m //= 2
         p = p + 1
 
@@ -286,7 +288,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     return create_float64(m, p)
 
 
-comptime _ascii_lower: Byte = ord("A") ^ ord("a")
+comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 
 
 @always_inline

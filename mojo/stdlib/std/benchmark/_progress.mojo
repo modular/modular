@@ -83,7 +83,7 @@ struct Progress(ImplicitlyCopyable):
     @always_inline("nodebug")
     fn __init__(out self, start: Int, end: Int, step: Int = 1):
         self._range = _StridedRange(start, end, step)
-        self._percentage = Float64(1) / len(self._range)
+        self._percentage = Float64(1) / Float64(len(self._range))
         self._term_dims = _get_terminal_size()
         print("")
 
@@ -99,7 +99,7 @@ struct Progress(ImplicitlyCopyable):
             i = self._range.__next__()
 
         var width = self._term_dims[0]
-        var blocks_to_print = Int(i * width * self._percentage) + 1
+        var blocks_to_print = Int(Float64(i * width) * self._percentage) + 1
         var placeholders_to_print = max(width - blocks_to_print, 0)
 
         _del()

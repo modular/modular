@@ -148,8 +148,7 @@ from utils.numerics import max_finite, min_finite
 # Batch
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-@register_passable("trivial")
-struct Batch(ImplicitlyCopyable):
+struct Batch(TrivialRegisterType):
     """
     A batch of benchmarks, the benchmark.run() function works out how many
     iterations to run in each batch based the how long the previous iterations
@@ -173,7 +172,7 @@ struct Batch(ImplicitlyCopyable):
         Returns:
             The average duration of the batch.
         """
-        return self.duration / self.iterations / Unit._divisor(unit)
+        return self.duration / self.iterations / Float64(Unit._divisor(unit))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -265,7 +264,7 @@ struct Report(Copyable, Defaultable):
         Returns:
             The average duration of all benchmark runs.
         """
-        return self.duration(unit) / self.iters()
+        return self.duration(unit) / Float64(self.iters())
 
     fn min(self, unit: String = Unit.s) -> Float64:
         """
@@ -367,8 +366,9 @@ struct Report(Copyable, Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
+struct _RunOptions[timing_fn: fn(num_iters: Int) raises capturing[_] -> Int](
+    TrivialRegisterType
+):
     var num_warmup_iters: Int
     var max_iters: Int
     var min_runtime_secs: Float64
@@ -397,7 +397,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
 
 @always_inline
 fn run[
-    *, func1: fn () raises -> None
+    *, func1: fn() raises -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -452,7 +452,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func2: fn () -> None
+    *, func2: fn() -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -498,7 +498,7 @@ fn run[
 
 @always_inline
 fn run[
-    func3: fn () raises capturing [_] -> None
+    func3: fn() raises capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -553,7 +553,7 @@ fn run[
 
 @always_inline
 fn run[
-    *, func4: fn () capturing [_] -> None
+    *, func4: fn() capturing[_] -> None
 ](
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
@@ -631,22 +631,27 @@ fn _run_impl(opts: _RunOptions) raises -> Report:
             # zero.
             if prev_dur > 0:
                 # Propose batch size which lasts at least min_time_ns or opts.max_iters
-                n = opts.max_iters
+                n = Float64(opts.max_iters)
                 if min_time_ns > 0:
-                    n = 1.2 * min_time_ns * prev_iters / Float64(prev_dur)
+                    n = (
+                        1.2
+                        * Float64(min_time_ns)
+                        * Float64(prev_iters)
+                        / Float64(prev_dur)
+                    )
 
             # We should not grow too fast, so we cap it to only 10x the growth
             # from the prior iteration. Fast growth can happen when the function
             # is too fast.
-            n = min(n, 10 * prev_iters)
+            n = min(n, Float64(10 * prev_iters))
             # We have to increase the batchSize each time. So, we make sure we
             # advance the number of iterations regardless of the prior logic.
-            n = max(n, prev_iters + 1)
+            n = max(n, Float64(prev_iters + 1))
             # The batch size should not be larger than 1.0e9.
             n = min(n, 1.0e9)
             # Process at least one batch. i.e. Ensure n does not exceed opts.max_iters on the first iteration
             if total_iters == 0:
-                n = min(n, opts.max_iters)
+                n = min(n, Float64(opts.max_iters))
 
         # Respect hard limit of opts.max_iters if min_time_ns has elapsed
         if (
@@ -678,7 +683,7 @@ fn _is_significant_measurement(
         return True
 
     # This measurement occurred in the last 10% of the run.
-    if Float64(idx + 1) > 0.9 * num_batches:
+    if Float64(idx + 1) > 0.9 * Float64(num_batches):
         return True
 
     # Otherwise the result is not statistically significant.
@@ -687,7 +692,7 @@ fn _is_significant_measurement(
 
 @always_inline
 fn _run_impl_fixed[
-    timing_fn: fn (num_iters: Int) raises capturing [_] -> Int
+    timing_fn: fn(num_iters: Int) raises capturing[_] -> Int
 ](fixed_iterations: Int) raises -> Report:
     # Only run 'timing_fn' for the fixed number of iterations and return the report.
     var report = Report()

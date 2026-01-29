@@ -16,12 +16,12 @@
 import enum
 import inspect
 import os
+import types
 from collections.abc import Mapping, Sequence
 from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-import typing_extensions
 from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
@@ -212,7 +212,7 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, *inputs: Buffer) -> None:
+    def capture(self, *inputs: Buffer) -> list[Buffer]:
         """
         Capture execution into a device graph for the given inputs.
 
@@ -222,22 +222,16 @@ class Model:
         phases are safe to capture (e.g. decode-only in serving).
         """
 
-    def debug_verify_replay(self, *inputs: Buffer) -> None:
-        """Verify inputs match the captured graph's baseline trace."""
-
     def replay(self, *inputs: Buffer) -> None:
         """Replay the captured device graph for these inputs."""
 
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
-    def _capture(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
-        """Capture execution into a device graph."""
-
-    def _debug_verify_replay(
+    def _capture(
         self, inputs: Sequence[max._core.driver.Buffer]
-    ) -> None:
-        """Verify inputs match captured graph's baseline trace."""
+    ) -> list[max._core.driver.Buffer]:
+        """Capture execution into a device graph."""
 
     def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
         """Replay the captured device graph."""
@@ -266,7 +260,7 @@ class InferenceSession:
     ) -> Model: ...
     def compile_from_object(
         self,
-        model: typing_extensions.CapsuleType,
+        model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
     ) -> Model: ...

@@ -1129,5 +1129,35 @@ def test_merge():
     _ = cond(True, a, b)
 
 
+def test_string_slice_codepoint_slices_reversed():
+    # Test ASCII
+    var s: StaticString = "xyz"
+    var iter = s.codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "z")
+    assert_equal(iter.__next__(), "y")
+    assert_equal(iter.__next__(), "x")
+
+    # Test concatenation
+    s = "abc"
+    var concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    s = "hello🌍"
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "🌍olleh")
+
+    # Test empty string
+    s = ""
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

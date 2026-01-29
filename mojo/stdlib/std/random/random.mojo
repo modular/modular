@@ -109,10 +109,10 @@ fn randint[
     @parameter
     if dtype.is_signed():
         for si in range(size):
-            ptr[si] = random_si64(low, high).cast[dtype]()
+            ptr[si] = random_si64(Int64(low), Int64(high)).cast[dtype]()
     else:
         for ui in range(size):
-            ptr[ui] = random_ui64(low, high).cast[dtype]()
+            ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
 
 
 fn rand[
@@ -143,7 +143,7 @@ fn rand[
     @parameter
     if dtype.is_floating_point():
         if scale_val >= 0:
-            var scale_double: Float64 = 1 << scale_val
+            var scale_double: Float64 = Float64(1 << scale_val)
             for i in range(size):
                 var rnd = random_float64(min, max)
                 ptr[i] = (floor(rnd * scale_double) / scale_double).cast[
@@ -234,5 +234,5 @@ fn shuffle[T: Copyable, //](mut list: List[T]):
         T: The type of element in the List.
     """
     for i in reversed(range(len(list))):
-        var j = Int(random_ui64(0, i))
+        var j = Int(random_ui64(0, UInt64(i)))
         list.swap_elements(i, j)

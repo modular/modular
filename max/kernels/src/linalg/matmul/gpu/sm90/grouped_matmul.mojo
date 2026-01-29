@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from sys import simd_width_of, size_of
 
@@ -89,7 +89,7 @@ fn grouped_matmul_sm90[
     config: MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -108,9 +108,9 @@ fn grouped_matmul_sm90[
     comptime K = b.shape.get[2]()
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -215,5 +215,7 @@ fn grouped_matmul_sm90[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )

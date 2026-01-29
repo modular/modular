@@ -48,3 +48,27 @@ modular_py_test(
         requirement("pytest-asyncio"),
     ],
 )
+
+modular_py_test(
+    name = "test_pixel_tokenizer",
+    size = "large",
+    srcs = [
+        "test_pixel_tokenizer.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

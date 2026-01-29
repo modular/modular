@@ -59,7 +59,7 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -232,7 +232,7 @@ fn print_test_case(test_case: TestCase):
 
 
 fn test_case_sampling[
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -438,7 +438,7 @@ fn test_case_sampling[
 fn test_toppminp_gpu[
     dtype: DType,
     out_idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
@@ -462,7 +462,7 @@ fn test_toppminp_gpu[
 
 fn test_all_out_idx_types[
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
@@ -472,7 +472,7 @@ fn test_all_out_idx_types[
 
 
 fn test_all_types[
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:

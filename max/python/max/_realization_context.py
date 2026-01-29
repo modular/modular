@@ -45,6 +45,7 @@ in another Graph API usage.
 
 from __future__ import annotations
 
+import os
 import weakref
 from contextvars import ContextVar
 from types import TracebackType
@@ -69,6 +70,22 @@ Ex = TypeVar("Ex", bound=BaseException)
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
 _MLIR_CONTEXT: mlir.Context | None = None
+
+# Environment variable to control interpreter usage
+_USE_INTERPRETER_ENV_VAR = "MAX_USE_INTERPRETER"
+
+
+def _default_use_interpreter() -> bool:
+    """Get the default value for use_interpreter from environment.
+
+    Checks the MAX_USE_INTERPRETER environment variable. Set to "1" or "true"
+    (case-insensitive) to enable the interpreter by default.
+
+    Returns:
+        True if interpreter should be used by default, False otherwise.
+    """
+    env_value = os.environ.get(_USE_INTERPRETER_ENV_VAR, "").lower()
+    return env_value in ("1", "true")
 
 
 def seed() -> Tensor:
@@ -147,7 +164,10 @@ class EagerRealizationContext(RealizationContext):
     #: Unrealized values
     unrealized: list[weakref.ref[Tensor]]
 
-    def __init__(self):
+    def __init__(self, use_interpreter: bool | None = None):
+        if use_interpreter is None:
+            use_interpreter = _default_use_interpreter()
+        self._use_interpreter = use_interpreter
         self.sources = {}
         self.source_values = {}
         self.unrealized = []
@@ -219,12 +239,24 @@ class EagerRealizationContext(RealizationContext):
 
         outputs, graph = self.finalize_graph()
 
-        # Compile and execute graph
-        model = _session().load(graph)
-        # Inputs may have been removed by optimization
-        inputs = [self.sources[input._mlir_value] for input in graph.inputs]
-        # This will become an await when `model` supports it
-        results = model(*(input.driver_tensor for input in inputs))
+        # Execute graph via interpreter or compilation
+        if self._use_interpreter:
+            # Lazy import to avoid circular dependency
+            from ._interpreter import MOInterpreter
+
+            interp = MOInterpreter(devices=_session().devices)
+            inputs = [self.sources[input._mlir_value] for input in graph.inputs]
+            results = interp.execute(
+                graph,
+                [inp.driver_tensor for inp in inputs],
+            )
+        else:
+            # Compile and execute graph
+            model = _session().load(graph)
+            # Inputs may have been removed by optimization
+            inputs = [self.sources[input._mlir_value] for input in graph.inputs]
+            # This will become an await when `model` supports it
+            results = model(*(input.driver_tensor for input in inputs))
 
         # Update tensors to realized
         for tensor, storage in zip(outputs, results, strict=True):

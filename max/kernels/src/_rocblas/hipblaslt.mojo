@@ -34,8 +34,7 @@ comptime hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Status(Equatable, Writable):
+struct Status(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -50,7 +49,7 @@ struct Status(Equatable, Writable):
     comptime INVALID_ENUM = Self(10)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -91,8 +90,7 @@ struct Status(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipDataType_t:
+struct hipDataType_t(TrivialRegisterType):
     var _value: Int32
     comptime R_32F = Self(0)
     comptime R_64F = Self(1)
@@ -105,7 +103,7 @@ struct hipDataType_t:
     comptime R_8F_E5M2_FNUZ = Self(1001)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -115,8 +113,7 @@ struct hipDataType_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasComputeType_t:
+struct hipblasComputeType_t(TrivialRegisterType):
     var _value: Int32
     comptime COMPUTE_16F = Self(0)
     comptime COMPUTE_16F_PEDANTIC = Self(1)
@@ -124,7 +121,7 @@ struct hipblasComputeType_t:
     comptime COMPUTE_32F_PEDANTIC = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -134,15 +131,14 @@ struct hipblasComputeType_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasOperation_t:
+struct hipblasOperation_t(TrivialRegisterType):
     var _value: Int32
     comptime OP_N = Self(111)
     comptime OP_T = Self(112)
     comptime OP_C = Self(113)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -152,8 +148,7 @@ struct hipblasOperation_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtOrder_t:
+struct hipblasLtOrder_t(TrivialRegisterType):
     var _value: Int32
     comptime COL = Self(0)
     comptime ROW = Self(1)
@@ -163,7 +158,7 @@ struct hipblasLtOrder_t:
     comptime COL16_4R2 = Self(103)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -173,14 +168,13 @@ struct hipblasLtOrder_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtMatmulDescAttributes_t:
+struct hipblasLtMatmulDescAttributes_t(TrivialRegisterType):
     var _value: Int32
     comptime TRANSA = Self(0)
     comptime TRANSB = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -190,8 +184,7 @@ struct hipblasLtMatmulDescAttributes_t:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct hipblasLtMatmulLayoutAttribute_t:
+struct hipblasLtMatmulLayoutAttribute_t(TrivialRegisterType):
     var _value: Int32
     comptime BATCH_COUNT = Self(0)
     comptime STRIDED_BATCH_OFFSET = Self(1)
@@ -202,7 +195,7 @@ struct hipblasLtMatmulLayoutAttribute_t:
     comptime LD = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -211,8 +204,7 @@ struct hipblasLtMatmulLayoutAttribute_t:
         return not (self == other)
 
 
-@register_passable("trivial")
-struct hipblasLtMatmulAlgo_t(Defaultable):
+struct hipblasLtMatmulAlgo_t(Defaultable, TrivialRegisterType):
     var data: StaticTuple[UInt8, 16]
     var maxWorkspaceBytes: Int
 
@@ -221,8 +213,7 @@ struct hipblasLtMatmulAlgo_t(Defaultable):
         self.maxWorkspaceBytes = 0
 
 
-@register_passable("trivial")
-struct hipblasLtMatmulHeuristicResult_t(Defaultable):
+struct hipblasLtMatmulHeuristicResult_t(Defaultable, TrivialRegisterType):
     var algo: hipblasLtMatmulAlgo_t
     var workspaceSize: Int
     var state: Status
@@ -274,13 +265,13 @@ fn hipblasLtCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtCreate",
-        fn (UnsafePointer[hipblasLtHandle_t]) -> Status,
+        fn(UnsafePointer[hipblasLtHandle_t]) -> Status,
     ]()(light_handle)
 
 
 fn hipblasLtDestroy(light_handle: hipblasLtHandle_t) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtDestroy", fn (hipblasLtHandle_t) -> Status
+        "hipblasLtDestroy", fn(hipblasLtHandle_t) -> Status
     ]()(light_handle)
 
 
@@ -291,7 +282,7 @@ fn hipblasLtMatmulDescCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulDescCreate",
-        fn (
+        fn(
             UnsafePointer[hipblasLtMatmulDesc_t],
             hipblasComputeType_t,
             hipDataType_t,
@@ -307,7 +298,7 @@ fn hipblasLtMatmulDescSetAttribute(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulDescSetAttribute",
-        fn (
+        fn(
             hipblasLtMatmulDesc_t,
             hipblasLtMatmulDescAttributes_t,
             OpaquePointer,
@@ -320,7 +311,7 @@ fn hipblasLtMatmulDescDestroy(
     matmul_desc: hipblasLtMatmulDesc_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatmulDescDestroy", fn (hipblasLtMatmulDesc_t) -> Status
+        "hipblasLtMatmulDescDestroy", fn(hipblasLtMatmulDesc_t) -> Status
     ]()(matmul_desc)
 
 
@@ -333,7 +324,7 @@ fn hipblasLtMatrixLayoutCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatrixLayoutCreate",
-        fn (
+        fn(
             UnsafePointer[hipblasLtMatrixLayout_t],
             hipDataType_t,
             UInt64,
@@ -351,7 +342,7 @@ fn hipblasLtMatrixLayoutSetAttribute(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatrixLayoutSetAttribute",
-        fn (
+        fn(
             hipblasLtMatrixLayout_t,
             hipblasLtMatmulLayoutAttribute_t,
             OpaquePointer,
@@ -364,7 +355,7 @@ fn hipblasLtMatrixLayoutDestroy(
     mat_layout: hipblasLtMatrixLayout_t,
 ) raises -> Status:
     return _get_dylib_function[
-        "hipblasLtMatrixLayoutDestroy", fn (hipblasLtMatrixLayout_t) -> Status
+        "hipblasLtMatrixLayoutDestroy", fn(hipblasLtMatrixLayout_t) -> Status
     ]()(mat_layout)
 
 
@@ -373,7 +364,7 @@ fn hipblasLtMatmulPreferenceCreate(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceCreate",
-        fn (UnsafePointer[hipblasLtMatmulPreference_t]) -> Status,
+        fn(UnsafePointer[hipblasLtMatmulPreference_t]) -> Status,
     ]()(pref)
 
 
@@ -391,7 +382,7 @@ fn hipblasLtMatmulAlgoGetHeuristic(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulAlgoGetHeuristic",
-        fn (
+        fn(
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
             hipblasLtMatrixLayout_t,
@@ -422,7 +413,7 @@ fn hipblasLtMatmulPreferenceDestroy(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmulPreferenceDestroy",
-        fn (hipblasLtMatmulPreference_t) -> Status,
+        fn(hipblasLtMatmulPreference_t) -> Status,
     ]()(pref)
 
 
@@ -446,7 +437,7 @@ fn hipblasLtMatmul(
 ) raises -> Status:
     return _get_dylib_function[
         "hipblasLtMatmul",
-        fn (
+        fn(
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
             OpaquePointer,

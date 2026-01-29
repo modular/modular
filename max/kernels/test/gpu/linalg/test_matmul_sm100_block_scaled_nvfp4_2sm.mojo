@@ -73,7 +73,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](
+    ctx: DeviceContext,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+    alpha: Float32 = 1.0,
+):
     var M = m.value
     var N = n.value
     var K = k.value
@@ -115,6 +121,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             k_group_size,
             " SF_VECTOR_SIZE=",
             SF_VECTOR_SIZE,
+            " alpha=",
+            alpha,
         )
     )
 
@@ -194,15 +202,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -345,6 +353,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         a_scales_tensor,
         b_scales_tensor,
         ctx,
+        alpha=alpha,
     )
 
     vendor_blas.matmul(
@@ -356,6 +365,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         b_scales=b_scales_tensor,
         transpose_b=transpose_b,
         c_row_major=True,
+        alpha=alpha,
     )
 
     ctx.synchronize()
@@ -425,6 +435,7 @@ def main():
                     dynamic(1000),
                     static[1024](),
                     static[1024 + 32](),
+                    alpha=0.5,
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -445,6 +456,7 @@ def main():
                     dynamic(512),
                     static[4096](),
                     static[1024 + 32](),
+                    alpha=0.135,
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -526,4 +538,45 @@ def main():
                     dynamic(1),
                     static[576](),
                     static[7168](),
+                )
+
+                # swapAB tests
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(16),
+                    static[1024](),
+                    static[1024 + 32](),
+                )
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
                 )

@@ -23,8 +23,7 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable):
+struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -49,13 +48,9 @@ struct RasterOrder(Hashable, ImplicitlyCopyable, Stringable, Writable):
         else:
             writer.write("rasterM")
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        hasher.update(self._value)
-
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -111,8 +106,7 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MatmulSchedule(ImplicitlyCopyable):
+struct MatmulSchedule(TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(0)
@@ -134,7 +128,6 @@ struct MatmulSchedule(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct TileScheduler[
     problem_shape: IndexList[3],
     tile_shape: IndexList[3],
@@ -142,7 +135,7 @@ struct TileScheduler[
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
-]:
+](TrivialRegisterType):
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
@@ -151,7 +144,7 @@ struct TileScheduler[
         Self.tile_shape[1] * Self.grid_shape[0],
     )
     # This has to match the grid dimension for the kernel launch.
-    comptime num_grids: UInt32 = Self.grid_shape[0] * Self.grid_shape[1]
+    comptime num_grids: UInt32 = UInt32(Self.grid_shape[0] * Self.grid_shape[1])
     var idx: UInt32
     var prob_shape: IndexList[3]  # M x N x K
     var num_waves_m: UInt32
@@ -164,8 +157,8 @@ struct TileScheduler[
     var num_blocks: UInt32  # Total number of blocks for non-masked types
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
-    comptime kNumNBlocks: UInt32 = ceildiv(
-        Self.problem_shape[1], Self.tile_shape[1]
+    comptime kNumNBlocks: UInt32 = UInt32(
+        ceildiv(Self.problem_shape[1], Self.tile_shape[1])
     )
 
     @always_inline
@@ -187,12 +180,18 @@ struct TileScheduler[
             ]()
 
         self.prob_shape = prob_shape
-        self.num_waves_m = ceildiv(self.prob_shape[0], Self.wave_shape[0])
-        self.num_waves_n = ceildiv(self.prob_shape[1], Self.wave_shape[1])
+        self.num_waves_m = UInt32(
+            ceildiv(self.prob_shape[0], Self.wave_shape[0])
+        )
+        self.num_waves_n = UInt32(
+            ceildiv(self.prob_shape[1], Self.wave_shape[1])
+        )
         self.log_num_waves_n = FastDiv[DType.uint32](Int(self.num_waves_n))
 
         self.current_iter = -1
-        self.num_aligned_m_blocks = ceildiv(prob_shape[0], Self.tile_shape[0])
+        self.num_aligned_m_blocks = UInt32(
+            ceildiv(prob_shape[0], Self.tile_shape[0])
+        )
         self.num_blocks = self.num_aligned_m_blocks * Self.kNumNBlocks
 
         @parameter
@@ -212,14 +211,14 @@ struct TileScheduler[
             var m_block_idx: UInt32 = 0
             var n_block_idx: UInt32 = 0
             var is_valid = self._get_next_block(m_block_idx, n_block_idx)
-            var m = UInt(m_block_idx * Self.tile_shape[0])
-            var n = UInt(n_block_idx * Self.tile_shape[1])
+            var m = UInt(m_block_idx * UInt32(Self.tile_shape[0]))
+            var n = UInt(n_block_idx * UInt32(Self.tile_shape[1]))
 
             return WorkInfo(
                 UInt32(m),
                 UInt32(n),
                 0,
-                ceildiv(Self.problem_shape[2], Self.tile_shape[2]),
+                UInt32(ceildiv(Self.problem_shape[2], Self.tile_shape[2])),
                 is_valid,
             )
         else:
@@ -231,7 +230,7 @@ struct TileScheduler[
                 UInt32(m),
                 UInt32(n),
                 0,
-                ceildiv(self.prob_shape[2], Self.tile_shape[2]),
+                UInt32(ceildiv(self.prob_shape[2], Self.tile_shape[2])),
                 is_valid,
             )
 
@@ -282,23 +281,29 @@ struct TileScheduler[
         comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
         comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
 
-        num_waves_executed = Int(self.idx) / log_num_grids
-        idx_in_wave = Int(self.idx) % log_num_grids
+        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        num_waves_executed_m = Int(num_waves_executed) / self.log_num_waves_n
-        num_waves_executed_n = Int(num_waves_executed) % self.log_num_waves_n
+        num_waves_executed = FastUInt(Int(self.idx)) / log_num_grids
+        idx_in_wave = FastUInt(Int(self.idx)) % log_num_grids
+
+        num_waves_executed_m = (
+            FastUInt(Int(num_waves_executed)) / self.log_num_waves_n
+        )
+        num_waves_executed_n = (
+            FastUInt(Int(num_waves_executed)) % self.log_num_waves_n
+        )
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
         # submatrix in C.
-        wave_m = num_waves_executed_m * Self.wave_shape[0]
-        wave_n = num_waves_executed_n * Self.wave_shape[1]
+        wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
+        wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
 
-        m_in_wave = Int(idx_in_wave) / log_grid_shape
-        n_in_wave = Int(idx_in_wave) % log_grid_shape
+        m_in_wave = FastUInt(Int(idx_in_wave)) / log_grid_shape
+        n_in_wave = FastUInt(Int(idx_in_wave)) % log_grid_shape
 
         return (
-            UInt(wave_m + m_in_wave * Self.tile_shape[0]),
-            UInt(wave_n + n_in_wave * Self.tile_shape[1]),
+            UInt(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
+            UInt(wave_n + n_in_wave * FastUInt(Self.tile_shape[1])),
         )
 
     @always_inline
@@ -314,14 +319,14 @@ struct TileScheduler[
         var n_block_idx: UInt32 = 0
         var is_valid = self._get_next_block(m_block_idx, n_block_idx)
 
-        var m = UInt(m_block_idx * Self.tile_shape[0])
-        var n = UInt(n_block_idx * Self.tile_shape[1])
+        var m = UInt(m_block_idx * UInt32(Self.tile_shape[0]))
+        var n = UInt(n_block_idx * UInt32(Self.tile_shape[1]))
         # Only support K starting from 0 for now.
         return WorkInfo(
             UInt32(m),
             UInt32(n),
             0,
-            ceildiv(Self.problem_shape[2], Self.tile_shape[2]),
+            UInt32(ceildiv(Self.problem_shape[2], Self.tile_shape[2])),
             is_valid,
         )
 
@@ -343,9 +348,9 @@ struct TileScheduler[
         var primary_num_blocks = num_m_blocks
         comptime secondary_num_blocks = Self.kNumNBlocks
         comptime num_blocks_per_group = secondary_num_blocks * Self.kNum1DBlocksPerGroup
-        var group_idx = block_idx / num_blocks_per_group
+        var group_idx = UInt32(block_idx) / num_blocks_per_group
         var first_block_idx = group_idx * Self.kNum1DBlocksPerGroup
-        var in_group_idx = block_idx % num_blocks_per_group
+        var in_group_idx = UInt32(block_idx) % num_blocks_per_group
         var num_blocks_in_group = min(
             Self.kNum1DBlocksPerGroup, primary_num_blocks - first_block_idx
         )

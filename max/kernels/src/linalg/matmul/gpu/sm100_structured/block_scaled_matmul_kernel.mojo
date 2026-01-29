@@ -38,7 +38,7 @@ Key structured patterns:
 - Automatic wait/step in context manager __enter__/__exit__
 """
 
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv
 from memory import LegacyUnsafePointer, Pointer
 
@@ -147,7 +147,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -509,7 +509,9 @@ struct BlackwellBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
                     ),
@@ -520,7 +522,9 @@ struct BlackwellBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
@@ -612,6 +616,7 @@ struct BlackwellBlockScaledMatmulKernel[
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
         M: UInt32,
         N: UInt32,
+        alpha: Float32,
     ):
         """Execute epilogue to store accumulated results to global memory.
 
@@ -631,6 +636,7 @@ struct BlackwellBlockScaledMatmulKernel[
             work_tile_coord: (m, n, k_start) coordinates.
             M: Problem M dimension.
             N: Problem N dimension.
+            alpha: Tensor scale factor (scalar).
         """
         # Use BlockScaledTileWriter for structured epilogue
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
@@ -639,6 +645,7 @@ struct BlackwellBlockScaledMatmulKernel[
             stage,
             work_tile_coord,
             (M, N),
+            alpha,
         )
 
     # ========== Compile-Time Validation ==========
@@ -680,6 +687,7 @@ struct BlackwellBlockScaledMatmulKernel[
         sfb_tma_op: TMATensorTile[
             Self.sfb_dtype, Self.sfb_layout, Self.sfb_desc_layout
         ],
+        alpha: Float32,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -702,8 +710,8 @@ struct BlackwellBlockScaledMatmulKernel[
         var sfb_tiles = smem.sfb_tiles()
 
         # Get typed barrier arrays from SMEM accessors
-        var input_barriers = smem.tma_mma_mbars()
-        var accum_barriers = smem.accum_mbars()
+        var input_barriers = smem.input_barriers()
+        var accum_barriers = smem.accum_barriers()
         var clc_full = smem.clc_mbars_full()
         var clc_empty = smem.clc_mbars_empty()
         var clc_throttle = smem.clc_throttle_mbars()
@@ -738,33 +746,35 @@ struct BlackwellBlockScaledMatmulKernel[
             Self.InputTilePipeline.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
             # Initialize output pipeline barriers (using static method)
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
             # Initialize throttle barriers via scheduler
             Self.Scheduler.init_throttle_barriers(
                 clc_throttle.ptr,
-                Self.clc_throttle_producer_arv_count,
-                Self.clc_throttle_consumer_arv_count,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
             smem.tmem_dealloc().ptr[].init(
-                Self.EPILOGUE_THREADS * Self.cta_group
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
             # Initialize CLC barriers
             @parameter
             for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -783,7 +793,7 @@ struct BlackwellBlockScaledMatmulKernel[
         # ctx.rank_m, ctx.rank_n, ctx.peer_cta_coord
         # ctx.a_multicast_mask, ctx.b_multicast_mask, ctx.mma_complete_mask
 
-        var num_iters: UInt32 = ceildiv(mnk[2], Self.BK)
+        var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
         var tmem_addr: UInt32 = 0
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
@@ -859,7 +869,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        accum_barriers, tmem, ctx.mma_complete_mask
+                        accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                     ),
                     Self.TmemDealloc(smem.tmem_dealloc()),
                 )
@@ -911,7 +921,7 @@ struct BlackwellBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -921,7 +931,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 while work_iter.has_work():
                     with work_iter.next() as current:
-                        with MatmulProfilerType[3](workspace, tile_idx):
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
                                 Self.epilogue(
                                     c_tiles,
@@ -934,6 +944,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                     ),
                                     M=mnk[0],
                                     N=mnk[1],
+                                    alpha=alpha,
                                 )
 
                     tile_idx += 1

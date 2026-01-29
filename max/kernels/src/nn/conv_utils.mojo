@@ -28,14 +28,14 @@ from .image import Image2DLayout
 
 
 # Elementwise epilogue signature
-comptime elementwise_epilogue_type = fn[rank: Int] (
+comptime elementwise_epilogue_type = fn[rank: Int](
     coords: IndexList[rank],
     f_size: Int,
 ) capturing -> None
 
 comptime elementwise_simd_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int
-] (IndexList[rank], SIMD[dtype, width]) capturing -> None
+](IndexList[rank], SIMD[dtype, width]) capturing -> None
 
 
 # ===----------------------------------------------------------------------=== #
@@ -44,8 +44,7 @@ comptime elementwise_simd_epilogue_type = fn[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ConvShape[rank: Int](ImplicitlyCopyable):
+struct ConvShape[rank: Int](TrivialRegisterType):
     """A shape struct describing the convolution dimensions."""
 
     var n: Int  # Input batch size.
@@ -655,8 +654,7 @@ fn get_micro_kernel_shape[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ConvPartition(ImplicitlyCopyable):
+struct ConvPartition(TrivialRegisterType):
     """Work range for a partition."""
 
     # Batch and group dims are merged into one.
@@ -850,8 +848,7 @@ fn get_partition(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ConvAlgorithm(ImplicitlyCopyable):
+struct ConvAlgorithm(TrivialRegisterType):
     var value: Int
     comptime Default = ConvAlgorithm(0)  # statically unknown layout.
     comptime Im2Col = ConvAlgorithm(1)  # channels first layout.

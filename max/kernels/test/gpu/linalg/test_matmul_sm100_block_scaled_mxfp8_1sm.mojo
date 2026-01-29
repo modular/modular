@@ -198,15 +198,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     var a_scales_total = (
-        Int(ceildiv(m.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(m.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        Int(ceildiv(n.value, SF_MN_GROUP_SIZE))
-        * Int(ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K))
+        ceildiv(n.value, SF_MN_GROUP_SIZE)
+        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -545,4 +545,43 @@ def main():
                     dynamic(1),
                     static[576](),
                     static[7168](),
+                )
+
+                # swapAB tests
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                ](
+                    ctx,
+                    dynamic(16),
+                    static[1024](),
+                    static[1024 + 16](),
+                )
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                ](
+                    ctx,
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
                 )

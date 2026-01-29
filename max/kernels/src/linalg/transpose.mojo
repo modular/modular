@@ -918,7 +918,9 @@ fn _fill_strides[
         comptime axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
-        var curr_axis_stride = next_axis_stride * next_axis_dim
+        var curr_axis_stride = next_axis_stride * Scalar[DType.int](
+            next_axis_dim
+        )
         strides[axis] = curr_axis_stride
 
 
@@ -943,7 +945,9 @@ fn _fill_strides[
         comptime axis = buf.rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
-        var curr_axis_stride = next_axis_stride * next_axis_dim
+        var curr_axis_stride = next_axis_stride * type_of(next_axis_stride)(
+            next_axis_dim
+        )
         strides[axis] = curr_axis_stride
 
 

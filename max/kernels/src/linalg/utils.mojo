@@ -29,11 +29,11 @@ from utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
+](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime elementwise_compute_lambda_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -65,8 +65,7 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-@register_passable("trivial")
-struct MicroKernelShape(ImplicitlyCopyable):
+struct MicroKernelShape(TrivialRegisterType):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -79,8 +78,7 @@ struct MicroKernelShape(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct GemmShape(ImplicitlyCopyable):
+struct GemmShape(TrivialRegisterType):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -673,7 +671,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () raises capturing [_] -> None,
+    func: fn[x: Bool]() raises capturing[_] -> None,
 ](m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
@@ -682,7 +680,7 @@ fn dispatch_get_kernel_type[
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () capturing [_] -> None,
+    func: fn[x: Bool]() capturing[_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()
@@ -730,8 +728,7 @@ fn packA_i8mm[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct InnerKernelID(ImplicitlyCopyable):
+struct InnerKernelID(TrivialRegisterType):
     comptime DEFAULT = InnerKernelID(0)
     comptime VNNI = InnerKernelID(1)
     comptime NEON = InnerKernelID(2)

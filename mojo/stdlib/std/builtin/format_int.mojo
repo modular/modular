@@ -307,8 +307,8 @@ fn _write_int[
 
     @parameter
     fn process_digits[
-        get_digit_value: fn (Scalar[dtype]) -> Scalar[dtype],
-        div_fn: fn (Scalar[dtype]) -> Scalar[dtype],
+        get_digit_value: fn(Scalar[dtype]) -> Scalar[dtype],
+        div_fn: fn(Scalar[dtype]) -> Scalar[dtype],
     ]():
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
@@ -333,19 +333,19 @@ fn _write_int[
     if remaining_int >= 0:
 
         fn pos_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value % radix
+            return value % Scalar[dtype](radix)
 
         fn floor_div(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value / radix
+            return value / Scalar[dtype](radix)
 
         process_digits[pos_digit_value, floor_div]()
     else:
 
         fn neg_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
-            return abs(value % -radix)
+            return abs(value % Scalar[dtype](-radix))
 
         fn ceil_div(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value.__ceildiv__(radix)
+            return value.__ceildiv__(Scalar[dtype](radix))
 
         process_digits[neg_digit_value, ceil_div]()
 

@@ -394,6 +394,142 @@ def fused_qkv_ragged_matmul_scaled_float8(
     )[0].tensor
 
 
+def fused_qkv_ragged_matmul_scaled_float4(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    tensor_sf: float | TensorValue,
+    kv_scales: TensorValue | None = None,
+    sf_vector_size: int = 16,
+    _output_dim: int | None = None,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with scaled float4 input and weights.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: TensorValue representing the weight tensor with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim, K=hidden_dim].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of attention heads.
+        input_scale: TensorValue representing the input scale tensor. Shape
+            for blockwise scaling is 5D e.g., [2, 3, 32, 4, 4].
+        weight_scale: TensorValue representing the weight scale tensor. Shape
+            for blockwise scaling is 5D e.g., [2, 34, 32, 4, 4]
+        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
+        kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.dtype != wqkv.dtype:
+        raise ValueError(
+            "expected input and wqkv to have the same dtype, but got"
+            f" {input.dtype} and {wqkv.dtype}, respectively."
+        )
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    # Device check - all tensors must be on the same device
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            f"expected all tensors to be on the same device as input ({input.device}), "
+            f"but got:\n"
+            f"  wqkv={wqkv.device}\n"
+            f"  input_row_offsets={input_row_offsets.device}\n"
+            f"  input_scale={input_scale.device}\n"
+            f"  weight_scale={weight_scale.device}"
+        )
+
+    # layer_idx must be a scalar on CPU as it's used for indexing
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            f"expected layer_idx to be on CPU device, but got {layer_idx.device}"
+        )
+
+    # tensor_sf must be a scalar on CPU as it's used for per-tensor scaling
+    if isinstance(tensor_sf, float):
+        tensor_sf = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    elif isinstance(tensor_sf, TensorValue):
+        tensor_sf = (
+            tensor_sf.cast(DType.float32).to(DeviceRef.CPU()).reshape(())
+        )
+    else:
+        raise ValueError(
+            "tensor_sf must be either float or a float32 CPU tensor of rank 0."
+        )
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.uint8,
+        "scale_type": DType.float8_e4m3fn,
+        "kv_type": kv_params.dtype,
+        "SF_VECTOR_SIZE": sf_vector_size,
+    }
+
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.float4"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection,
+        layer_idx,
+    ]
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def unfused_qkv_ragged_matmul_gguf_quantized(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -2557,6 +2693,189 @@ def grouped_matmul_ragged(
                 device=hidden_states.device,
             ),
         ],
+    )[0].tensor
+
+    return output
+
+
+def grouped_dynamic_scaled_nvfp4_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_scales: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+    tokens_padded_per_expert: bool = False,
+) -> TensorValue:
+    """Performs grouped NVFP4 matmul for MoE layers.
+
+    Performs a grouped matmul with NVFP4 (4-bit) quantized inputs and weights.
+    The inputs are packed as uint8 (2 NVFP4 values per byte) with float8_e4m3fn
+    scaling factors. NVFP4 uses fixed 1D block scaling with 16 elements per
+    scale factor along the K dimension.
+
+    ``hidden_states`` and ``expert_start_indices`` together implement the ragged
+    tensor representation for variable-length expert inputs.
+
+    Args:
+        hidden_states: The input activations with shape ``[total_tokens, K/2]``
+            where K is the unpacked hidden dimension. Dtype must be uint8
+            (packed NVFP4).
+        weight: The expert weights with shape ``[num_experts, N, K/2]``.
+            Dtype must be uint8 (packed NVFP4).
+        a_scales: Scaling factors for inputs with shape
+            ``[num_scale_rows, K_groups, 32, 4, 4]``. Dtype must be float8_e4m3fn.
+        b_scales: Scaling factors for weights with shape
+            ``[num_experts, N_groups, K_groups, 32, 4, 4]``. Dtype must be
+            float8_e4m3fn.
+        expert_start_indices: Indices indicating where each expert's tokens
+            start in ``hidden_states``.
+        expert_ids: The expert ID for each group.
+        expert_scales: Per-expert scaling factors with shape ``[num_experts]``.
+            Dtype must be float32. Multiplied with the matmul output in the
+            epilogue.
+        expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
+            num_active_experts].
+        out_type: Output dtype. Defaults to bfloat16.
+        tokens_padded_per_expert: If True, tokens per expert are padded for
+            alignment. Defaults to False.
+
+    Returns:
+        The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
+    """
+
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    weight_k = weight.shape[2]
+    hidden_k = hidden_states.shape[1]
+    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            "expected weight is of shape [num_experts, *, "
+            f"{hidden_k}] but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != DType.uint8) or (weight.dtype != DType.uint8):
+        raise TypeError(
+            "hidden_states and weight dtypes must be uint8 for NVFP4, but got "
+            f"{hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if (a_scales.dtype != b_scales.dtype) or (
+        a_scales.dtype != DType.float8_e4m3fn
+    ):
+        raise TypeError(
+            "a_scales and b_scales dtypes must be float8_e4m3fn for NVFP4, "
+            f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got"
+            f" {expert_start_indices.rank}"
+        )
+
+    if a_scales.rank != 5 or b_scales.rank != 6:
+        raise ValueError(
+            "expected a_scales of rank 5 and b_scales of rank 6 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    if expert_scales.dtype != DType.float32:
+        raise TypeError(
+            f"expert_scales dtype must be float32, but got {expert_scales.dtype}"
+        )
+    if expert_scales.rank != 1:
+        raise ValueError(
+            f"expected expert_scales of rank 1 but got {expert_scales.rank}"
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_VECTOR_SIZE = 16
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * SF_VECTOR_SIZE
+
+    a_scales_dim_1 = ceildiv(hidden_states.shape[1] * 2, Dim(SF_K_GROUP_SIZE))
+    if (
+        a_scales.shape[1] != a_scales_dim_1
+        or a_scales.shape[2] != SF_ATOM_M[0]
+        or a_scales.shape[3] != SF_ATOM_M[1]
+        or a_scales.shape[4] != SF_ATOM_K
+    ):
+        raise ValueError(
+            "a_scales shape must be "
+            f"[*, {a_scales_dim_1}, {SF_ATOM_M[0]}, {SF_ATOM_M[1]}, {SF_ATOM_K}]"
+            f" but got {a_scales.shape}"
+        )
+
+    b_scales_dim_1 = ceildiv(weight.shape[1], Dim(SF_MN_GROUP_SIZE))
+    b_scales_dim_2 = ceildiv(weight.shape[2] * 2, Dim(SF_K_GROUP_SIZE))
+    if (
+        b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != b_scales_dim_1
+        or b_scales.shape[2] != b_scales_dim_2
+        or b_scales.shape[3] != SF_ATOM_M[0]
+        or b_scales.shape[4] != SF_ATOM_M[1]
+        or b_scales.shape[5] != SF_ATOM_K
+    ):
+        raise ValueError(
+            "b_scales shape must be "
+            f"[{weight.shape[0]}, {b_scales_dim_1}, {b_scales_dim_2}, "
+            f"{SF_ATOM_M[0]}, {SF_ATOM_M[1]}, {SF_ATOM_K}] but got {b_scales.shape}"
+        )
+
+    a_scale_offsets = ops.constant(
+        0, dtype=DType.uint32, device=hidden_states.device
+    ).broadcast_to([expert_ids.shape[0]])
+
+    output = ops.custom(
+        "mo.grouped.matmul.dynamic.scaled.nvfp4",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            a_scale_offsets,
+            expert_scales,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            "tokens_padded_per_expert": tokens_padded_per_expert,
+        },
     )[0].tensor
 
     return output

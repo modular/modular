@@ -31,13 +31,13 @@ comptime cufftHandle = ffi.c_uint
 
 fn cufftCreate(handle: UnsafePointer[cufftHandle]) raises -> Status:
     return _get_dylib_function[
-        "cufftCreate", fn (UnsafePointer[cufftHandle]) -> Status
+        "cufftCreate", fn(UnsafePointer[cufftHandle]) -> Status
     ]()(handle)
 
 
 fn cufftGetVersion(version: UnsafePointer[ffi.c_int]) raises -> Status:
     return _get_dylib_function[
-        "cufftGetVersion", fn (UnsafePointer[ffi.c_int]) -> Status
+        "cufftGetVersion", fn(UnsafePointer[ffi.c_int]) -> Status
     ]()(version)
 
 
@@ -49,7 +49,7 @@ fn cufftExecZ2Z(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecZ2Z",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ComplexFloat64],
             UnsafePointer[ComplexFloat64],
@@ -66,7 +66,7 @@ fn cufftExecC2C(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecC2C",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ComplexFloat32],
             UnsafePointer[ComplexFloat32],
@@ -82,7 +82,7 @@ fn cufftExecR2C(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecR2C",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ffi.c_float],
             UnsafePointer[ComplexFloat32],
@@ -94,7 +94,7 @@ fn cufftSetWorkArea(
     plan: cufftHandle, work_area: OpaquePointer
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftSetWorkArea", fn (cufftHandle, OpaquePointer) -> Status
+        "cufftSetWorkArea", fn(cufftHandle, OpaquePointer) -> Status
     ]()(plan, work_area)
 
 
@@ -106,7 +106,7 @@ fn cufftPlan1d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan1d",
-        fn (UnsafePointer[cufftHandle], ffi.c_int, Type, ffi.c_int) -> Status,
+        fn(UnsafePointer[cufftHandle], ffi.c_int, Type, ffi.c_int) -> Status,
     ]()(plan, nx, type, batch)
 
 
@@ -119,7 +119,7 @@ fn cufftMakePlan2d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan2d",
-        fn (
+        fn(
             cufftHandle, ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]
         ) -> Status,
     ]()(plan, nx, ny, type, work_size)
@@ -130,7 +130,7 @@ fn cufftSetPlanPropertyInt64(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftSetPlanPropertyInt64",
-        fn (cufftHandle, Property, ffi.c_long_long) -> Status,
+        fn(cufftHandle, Property, ffi.c_long_long) -> Status,
     ]()(plan, property, input_value_int)
 
 
@@ -139,7 +139,7 @@ fn cufftPlan2d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan2d",
-        fn (UnsafePointer[cufftHandle], ffi.c_int, ffi.c_int, Type) -> Status,
+        fn(UnsafePointer[cufftHandle], ffi.c_int, ffi.c_int, Type) -> Status,
     ]()(plan, nx, ny, type)
 
 
@@ -152,7 +152,7 @@ fn cufftMakePlan1d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan1d",
-        fn (
+        fn(
             cufftHandle, ffi.c_int, Type, ffi.c_int, UnsafePointer[Int]
         ) -> Status,
     ]()(plan, nx, type, batch, work_size)
@@ -165,7 +165,7 @@ fn cufftExecC2R(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecC2R",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ComplexFloat32],
             UnsafePointer[ffi.c_float],
@@ -189,7 +189,7 @@ fn cufftMakePlanMany(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlanMany",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             UnsafePointer[ffi.c_int],
@@ -223,7 +223,7 @@ fn cufftSetAutoAllocation(
     plan: cufftHandle, auto_allocate: ffi.c_int
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftSetAutoAllocation", fn (cufftHandle, ffi.c_int) -> Status
+        "cufftSetAutoAllocation", fn(cufftHandle, ffi.c_int) -> Status
     ]()(plan, auto_allocate)
 
 
@@ -232,7 +232,7 @@ fn cufftEstimate1d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate1d",
-        fn (ffi.c_int, Type, ffi.c_int, UnsafePointer[Int]) -> Status,
+        fn(ffi.c_int, Type, ffi.c_int, UnsafePointer[Int]) -> Status,
     ]()(nx, type, batch, work_size)
 
 
@@ -240,7 +240,7 @@ fn cufftGetSize(
     handle: cufftHandle, work_size: UnsafePointer[Int]
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftGetSize", fn (cufftHandle, UnsafePointer[Int]) -> Status
+        "cufftGetSize", fn(cufftHandle, UnsafePointer[Int]) -> Status
     ]()(handle, work_size)
 
 
@@ -251,7 +251,7 @@ fn cufftExecZ2D(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecZ2D",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ComplexFloat64],
             UnsafePointer[ffi.c_double],
@@ -264,13 +264,13 @@ fn cufftEstimate2d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate2d",
-        fn (ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]) -> Status,
+        fn(ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]) -> Status,
     ]()(nx, ny, type, work_size)
 
 
 fn cufftSetStream(plan: cufftHandle, stream: CUstream) raises -> Status:
     return _get_dylib_function[
-        "cufftSetStream", fn (cufftHandle, CUstream) -> Status
+        "cufftSetStream", fn(cufftHandle, CUstream) -> Status
     ]()(plan, stream)
 
 
@@ -290,7 +290,7 @@ fn cufftMakePlanMany64(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlanMany64",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             UnsafePointer[ffi.c_long_long],
@@ -329,7 +329,7 @@ fn cufftGetSize1d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize1d",
-        fn (
+        fn(
             cufftHandle, ffi.c_int, Type, ffi.c_int, UnsafePointer[Int]
         ) -> Status,
     ]()(handle, nx, type, batch, work_size)
@@ -345,7 +345,7 @@ fn cufftMakePlan3d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftMakePlan3d",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             ffi.c_int,
@@ -372,7 +372,7 @@ fn cufftGetSizeMany(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSizeMany",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             UnsafePointer[ffi.c_int],
@@ -411,7 +411,7 @@ fn cufftPlan3d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlan3d",
-        fn (
+        fn(
             UnsafePointer[cufftHandle], ffi.c_int, ffi.c_int, ffi.c_int, Type
         ) -> Status,
     ]()(plan, nx, ny, nz, type)
@@ -432,7 +432,7 @@ fn cufftPlanMany(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftPlanMany",
-        fn (
+        fn(
             UnsafePointer[cufftHandle],
             ffi.c_int,
             UnsafePointer[ffi.c_int],
@@ -464,7 +464,7 @@ fn cufftResetPlanProperty(
     plan: cufftHandle, property: Property
 ) raises -> Status:
     return _get_dylib_function[
-        "cufftResetPlanProperty", fn (cufftHandle, Property) -> Status
+        "cufftResetPlanProperty", fn(cufftHandle, Property) -> Status
     ]()(plan, property)
 
 
@@ -478,7 +478,7 @@ fn cufftGetSize3d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize3d",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             ffi.c_int,
@@ -494,7 +494,7 @@ fn cufftGetProperty(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetProperty",
-        fn (LibraryProperty, UnsafePointer[ffi.c_int]) -> Status,
+        fn(LibraryProperty, UnsafePointer[ffi.c_int]) -> Status,
     ]()(type, value)
 
 
@@ -514,7 +514,7 @@ fn cufftGetSizeMany64(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSizeMany64",
-        fn (
+        fn(
             cufftHandle,
             ffi.c_int,
             UnsafePointer[ffi.c_long_long],
@@ -545,7 +545,7 @@ fn cufftGetSizeMany64(
 
 
 fn cufftDestroy(plan: cufftHandle) raises -> Status:
-    return _get_dylib_function["cufftDestroy", fn (cufftHandle) -> Status]()(
+    return _get_dylib_function["cufftDestroy", fn(cufftHandle) -> Status]()(
         plan
     )
 
@@ -565,7 +565,7 @@ fn cufftEstimateMany(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimateMany",
-        fn (
+        fn(
             ffi.c_int,
             UnsafePointer[ffi.c_int],
             UnsafePointer[ffi.c_int],
@@ -600,7 +600,7 @@ fn cufftExecD2Z(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftExecD2Z",
-        fn (
+        fn(
             cufftHandle,
             UnsafePointer[ffi.c_double],
             UnsafePointer[ComplexFloat64],
@@ -617,9 +617,7 @@ fn cufftEstimate3d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftEstimate3d",
-        fn (
-            ffi.c_int, ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]
-        ) -> Status,
+        fn(ffi.c_int, ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]) -> Status,
     ]()(nx, ny, nz, type, work_size)
 
 
@@ -632,7 +630,7 @@ fn cufftGetSize2d(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetSize2d",
-        fn (
+        fn(
             cufftHandle, ffi.c_int, ffi.c_int, Type, UnsafePointer[Int]
         ) -> Status,
     ]()(handle, nx, ny, type, work_size)
@@ -645,5 +643,5 @@ fn cufftGetPlanPropertyInt64(
 ) raises -> Status:
     return _get_dylib_function[
         "cufftGetPlanPropertyInt64",
-        fn (cufftHandle, Property, UnsafePointer[ffi.c_long_long]) -> Status,
+        fn(cufftHandle, Property, UnsafePointer[ffi.c_long_long]) -> Status,
     ]()(plan, property, return_ptr_value)

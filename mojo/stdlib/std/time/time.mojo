@@ -51,8 +51,7 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _CTimeSpec(Defaultable, ImplicitlyCopyable, Stringable, Writable):
+struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterType, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -248,7 +247,7 @@ fn monotonic() -> UInt:
 
 @always_inline
 @parameter
-fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
+fn time_function[func: fn() raises capturing[_] -> None]() raises -> UInt:
     """Measures the time spent in the function.
 
     Parameters:
@@ -268,7 +267,7 @@ fn time_function[func: fn () raises capturing [_] -> None]() raises -> UInt:
 
 @always_inline
 @parameter
-fn time_function[func: fn () capturing [_] -> None]() -> UInt:
+fn time_function[func: fn() capturing[_] -> None]() -> UInt:
     """Measures the time spent in the function.
 
     Parameters:

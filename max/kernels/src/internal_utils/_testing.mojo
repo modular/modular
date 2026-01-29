@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
+from collections import Optional
 from math import exp2
 
 import testing
@@ -91,7 +91,7 @@ fn assert_almost_equal[
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
     atol: Float64 = 1e-08,
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
@@ -157,7 +157,7 @@ fn assert_equal[
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
 ) raises:
     """Assert that two buffers are element-wise exactly equal.
 
@@ -204,7 +204,7 @@ fn assert_equal[
 fn assert_with_measure[
     dtype: DType,
     //,
-    measure: fn[dtype: DType] (
+    measure: fn[dtype: DType](
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
@@ -215,8 +215,8 @@ fn assert_with_measure[
     num_elements: Int,
     msg: String = "",
     *,
-    location: OptionalReg[SourceLocation] = None,
-    threshold: OptionalReg[Float64] = None,
+    location: Optional[SourceLocation] = None,
+    threshold: Optional[Float64] = None,
 ) raises:
     """Assert that a custom measure between two buffers is below a threshold.
 
@@ -250,9 +250,9 @@ fn assert_with_measure[
         )
         ```
     """
-    comptime sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
-        DType.float64
-    ]()
+    comptime sqrt_eps = exp2(
+        -0.5 * Float64(FPUtils[dtype].mantissa_width())
+    ).cast[DType.float64]()
     var m = measure(
         x.address_space_cast[AddressSpace.GENERIC](),
         y.address_space_cast[AddressSpace.GENERIC](),

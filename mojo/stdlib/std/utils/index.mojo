@@ -56,7 +56,7 @@ fn _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 fn _int_tuple_binary_apply[
-    binary_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -80,12 +80,17 @@ fn _int_tuple_binary_apply[
     for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](binary_fn[a.element_type](a_elem, b_elem))
+        c.__setitem__[i](
+            binary_fn[a.element_type](
+                Scalar[a.element_type](a_elem),
+                Scalar[a.element_type](b_elem),
+            )
+        )
 
 
 @always_inline
 fn _int_tuple_compare[
-    comp_fn: fn[dtype: DType] (Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: fn[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -109,14 +114,19 @@ fn _int_tuple_compare[
     for i in range(a.size):
         var a_elem = a.__getitem__[i]()
         var b_elem = b.__getitem__[i]()
-        c.__setitem__[i](comp_fn[a.element_type](a_elem, b_elem))
+        c.__setitem__[i](
+            comp_fn[a.element_type](
+                Scalar[a.element_type](a_elem),
+                Scalar[a.element_type](b_elem),
+            )
+        )
 
     return c
 
 
 @always_inline
 fn _bool_tuple_reduce[
-    reduce_fn: fn (Bool, Bool) -> Bool,
+    reduce_fn: fn(Bool, Bool) -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.
@@ -158,7 +168,6 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-@register_passable("trivial")
 struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Comparable,
     Defaultable,
@@ -167,6 +176,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     ImplicitlyCopyable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A base struct that implements size agnostic index functions.
@@ -328,7 +338,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             val: The value to store.
         """
-        self.data.__setitem__[idx](val)
+        self.data.__setitem__[idx](Scalar[Self.element_type](val))
 
     @always_inline("nodebug")
     fn __setitem__[idx: Int](mut self, val: Self._int_type):
@@ -350,7 +360,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             idx: The element index.
             val: The value to store.
         """
-        self.data[idx] = val
+        self.data[idx] = Scalar[Self.element_type](val)
 
     @always_inline("nodebug")
     fn as_tuple(self) -> StaticTuple[Int, Self.size]:

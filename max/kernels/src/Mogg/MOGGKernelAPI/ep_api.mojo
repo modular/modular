@@ -15,7 +15,7 @@
 Expert Parallelism (EP) Communication Kernel.
 """
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 
 import compiler_internal as compiler
 from gpu.primitives.grid_controls import pdl_launch_attributes
@@ -2138,9 +2138,9 @@ struct Struct_ep_combine_wait:
             combine_msg_size,
             max_token_per_rank,
             router_weights_wrapper = OptionalReg[
-                fn (Int, Int) capturing -> Float32
+                fn(Int, Int) capturing -> Float32
             ](router_weights_fn),
-            elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+            elementwise_lambda_fn = Optional[elementwise_epilogue_type](
                 output_fn
             ) if lambdas_have_fusion else None,
         ]
@@ -2306,10 +2306,10 @@ struct Struct_ep_combine:
             max_token_per_rank,
             n_gpus_per_node,
             router_weights_wrapper = OptionalReg[
-                fn (Int, Int) capturing -> Float32
+                fn(Int, Int) capturing -> Float32
             ](router_weights_fn),
             fused_shared_expert=fused_shared_expert,
-            epilogue_fn = OptionalReg[elementwise_epilogue_type](
+            epilogue_fn = Optional[elementwise_epilogue_type](
                 output_fn
             ) if lambdas_have_fusion else None,
         ]

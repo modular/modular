@@ -365,35 +365,35 @@ fn nvshmemx_hostlib_init_attr(
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        fn (UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
+        fn(UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
     ]()(flags, attr)
 
 
 fn nvshmemx_hostlib_finalize():
     _get_nvshmem_function[
         "nvshmemx_hostlib_finalize",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
 fn nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
-        fn (CUmodule) -> c_int,
+        fn(CUmodule) -> c_int,
     ]()(module)
 
 
 fn nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_finalize",
-        fn (CUmodule) -> c_int,
+        fn(CUmodule) -> c_int,
     ]()(module)
 
 
 fn nvshmemx_init_status() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_init_status",
-        fn () -> c_int,
+        fn() -> c_int,
     ]()()
 
 
@@ -404,7 +404,7 @@ fn nvshmem_my_pe() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_my_pe",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -415,7 +415,7 @@ fn nvshmem_n_pes() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_n_pes",
-            fn () -> c_int,
+            fn() -> c_int,
         ]()()
 
 
@@ -430,7 +430,7 @@ fn nvshmem_malloc[
 ](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        fn (c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        fn(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
 
@@ -441,7 +441,7 @@ fn nvshmem_calloc[
 ]:
     return _get_nvshmem_function[
         "nvshmem_calloc",
-        fn (
+        fn(
             c_size_t, c_size_t
         ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
@@ -452,7 +452,7 @@ fn nvshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        fn (type_of(ptr)) -> NoneType,
+        fn(type_of(ptr)) -> NoneType,
     ]()(ptr)
 
 
@@ -465,14 +465,14 @@ fn nvshmem_free[
 fn nvshmem_team_my_pe(team: c_int) -> c_int:
     return _get_nvshmem_function[
         "nvshmem_team_my_pe",
-        fn (c_int) -> c_int,
+        fn(c_int) -> c_int,
     ]()(team)
 
 
 fn nvshmemx_team_init() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_team_init",
-        fn () -> c_int,
+        fn() -> c_int,
     ]()()
 
 
@@ -604,7 +604,7 @@ fn nvshmem_put_signal_nbi[
 fn nvshmem_sync_all():
     _get_nvshmem_function[
         "nvshmem_sync_all",
-        fn () -> NoneType,
+        fn() -> NoneType,
     ]()()
 
 
@@ -615,14 +615,14 @@ fn nvshmem_barrier_all():
     else:
         _get_nvshmem_function[
             "nvshmem_barrier_all",
-            fn () -> NoneType,
+            fn() -> NoneType,
         ]()()
 
 
 fn nvshmemx_barrier_all_on_stream(stream: CUstream):
     _get_nvshmem_function[
         "nvshmemx_barrier_all_on_stream",
-        fn (CUstream) -> NoneType,
+        fn(CUstream) -> NoneType,
     ]()(stream)
 
 

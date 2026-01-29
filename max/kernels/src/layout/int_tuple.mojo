@@ -79,8 +79,8 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
 
 
 fn _get_index_type(layout: Layout) -> DType:
-    """Returns int32 if layout size fits in uint32 range, int64 otherwise."""
-    if layout.cosize() < Int(max_finite[DType.uint32]()):
+    """Returns int32 if layout size fits in int32 range, int64 otherwise."""
+    if layout.cosize() <= Int(max_finite[DType.int32]()):
         return DType.int32
 
     return DType.int64
@@ -269,8 +269,9 @@ that are not known at compile time or have not been specified.
 """
 
 
-@register_passable("trivial")
-struct _IntTupleIter[origin: ImmutOrigin](Iterable, Iterator):
+struct _IntTupleIter[origin: ImmutOrigin](
+    Iterable, Iterator, TrivialRegisterType
+):
     """Iterator for traversing elements of an IntTuple."""
 
     comptime IteratorType[
@@ -1489,7 +1490,7 @@ fn is_tuple(t: IntTuple) -> Bool:
 
 
 fn reduce[
-    reducer: fn (a: Int, b: IntTuple) capturing [_] -> Int
+    reducer: fn(a: Int, b: IntTuple) capturing[_] -> Int
 ](t: IntTuple, initializer: Int) -> Int:
     """Apply a reduction function to an `IntTuple` with an initial value.
 
@@ -1646,7 +1647,7 @@ fn to_unknown(t: IntTuple) -> IntTuple:
 
 @always_inline
 fn _merge[
-    cmp: fn (IntTuple, IntTuple) -> Bool,
+    cmp: fn(IntTuple, IntTuple) -> Bool,
 ](left: IntTuple, right: IntTuple) -> IntTuple:
     var result = IntTuple()
     var i = 0
@@ -1667,7 +1668,7 @@ fn _merge[
 
 
 fn sorted[
-    cmp: fn (IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
+    cmp: fn(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
 
@@ -1768,7 +1769,7 @@ fn tuple_max(t: IntTuple) -> Int:
     return reduce[reducer](t, int_min_val)
 
 
-fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
+fn apply[func: fn(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each integer value in an `IntTuple`.
 
     This function recursively applies the given function to each integer value
@@ -1792,7 +1793,7 @@ fn apply[func: fn (Int) capturing [_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
-fn shallow_apply[func: fn (IntTuple) -> Int](t: IntTuple) -> IntTuple:
+fn shallow_apply[func: fn(IntTuple) -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each top-level element of an `IntTuple`.
 
     Unlike `apply()`, this function only operates on the immediate children
@@ -1815,7 +1816,7 @@ fn shallow_apply[func: fn (IntTuple) -> Int](t: IntTuple) -> IntTuple:
 
 @always_inline("nodebug")
 fn apply_zip[
-    func: fn (IntTuple, IntTuple) -> IntTuple
+    func: fn(IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a function to pairs of elements from two `IntTuple`s.
 
@@ -1840,7 +1841,7 @@ fn apply_zip[
 
 @always_inline("nodebug")
 fn apply_zip[
-    func: fn (IntTuple, IntTuple) capturing [_] -> IntTuple
+    func: fn(IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a capturing function to pairs of elements from two `IntTuple`s.
 
@@ -1864,7 +1865,7 @@ fn apply_zip[
 
 @always_inline("nodebug")
 fn apply_zip[
-    func: fn (IntTuple, IntTuple, IntTuple) -> IntTuple
+    func: fn(IntTuple, IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a function to triplets of elements from three `IntTuple`s.
 
@@ -1890,7 +1891,7 @@ fn apply_zip[
 
 @always_inline("nodebug")
 fn apply_zip[
-    func: fn (IntTuple, IntTuple, IntTuple) capturing [_] -> IntTuple
+    func: fn(IntTuple, IntTuple, IntTuple) capturing[_] -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a capturing function to triplets of elements from three `IntTuple`s.
 
@@ -2095,7 +2096,7 @@ fn congruent(a: IntTuple, b: IntTuple) -> Bool:
 
 
 fn apply_predicate[
-    predicate: fn (IntTuple, IntTuple) -> Bool
+    predicate: fn(IntTuple, IntTuple) -> Bool
 ](a: IntTuple, b: IntTuple) -> Bool:
     """Apply a predicate function recursively to two `IntTuple`s.
 

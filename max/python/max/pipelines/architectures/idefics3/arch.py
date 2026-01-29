@@ -18,6 +18,7 @@ from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import Idefics3Model
+from .model_config import Idefics3Config
 from .tokenizer import Idefics3Tokenizer
 
 idefics3_arch = SupportedArchitecture(
@@ -36,4 +37,5 @@ idefics3_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
         "enable_prefix_caching": False,
     },
+    config=Idefics3Config,
 )

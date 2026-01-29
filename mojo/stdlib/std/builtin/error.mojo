@@ -144,7 +144,7 @@ struct _TypeErasedWriter(Writer):
     var _writer: OpaquePointer[MutAnyOrigin]
     """Opaque pointer to the concrete writer instance."""
 
-    var _write_fn: fn (OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
+    var _write_fn: fn(OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
     """Function pointer specialized for the concrete writer type that calls the
     writer's `write_string` method."""
 
@@ -188,9 +188,8 @@ struct _TypeErasedWriter(Writer):
         writer.bitcast[W]()[].write_string(string)
 
 
-@register_passable("trivial")
 @fieldwise_init
-struct _VTableErrorOp(Equatable, ImplicitlyCopyable, Movable):
+struct _VTableErrorOp(Equatable, TrivialRegisterType):
     """Operation codes for vtable dispatch.
 
     These discriminator values tell the vtable which operation to perform on
@@ -202,10 +201,6 @@ struct _VTableErrorOp(Equatable, ImplicitlyCopyable, Movable):
     comptime DEL: Self = Self(0)
     comptime COPY: Self = Self(1)
     comptime WRITE_TO: Self = Self(2)
-
-    @always_inline
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
 
 
 fn _make_opaque[T: AnyType, //](ref t: T) -> OpaquePointer[MutAnyOrigin]:
@@ -249,7 +244,7 @@ struct _TypeErasedError(Copyable, Writable):
     var _error: Self._ErrorArcPointer
     """Type-erased `ArcPointer[T]` holding the actual error data."""
 
-    var _vtable: fn (
+    var _vtable: fn(
         _VTableErrorOp,
         Self._VTableInput,
         Self._VTableOutput,

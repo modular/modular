@@ -243,7 +243,7 @@ fn sqrt[
 
         @parameter
         for i in range(width):
-            res[i] = sqrt(Int(x[i]))
+            res[i] = Scalar[dtype](sqrt(Int(x[i])))
         return res
     elif is_nvidia_gpu():
 
@@ -472,7 +472,12 @@ fn _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
     ](xc)
     return type_of(x)(
         from_bits=r.to_bits[u32]()
-        + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
+        + (
+            m.cast[u32]()
+            << SIMD[DType.uint32, x.size](
+                FPUtils[DType.float32].mantissa_width()
+            )
+        )
     )
 
 
@@ -535,9 +540,14 @@ fn _ldexp_impl[
         return res
 
     comptime integral_type = FPUtils[dtype].integral_type
-    var m = exp.cast[integral_type]() + FPUtils[dtype].exponent_bias()
+    var m = exp.cast[integral_type]() + SIMD[integral_type, width](
+        FPUtils[dtype].exponent_bias()
+    )
 
-    return x * type_of(x)(from_bits=m << FPUtils[dtype].mantissa_width())
+    return x * type_of(x)(
+        from_bits=m
+        << SIMD[integral_type, width](FPUtils[dtype].mantissa_width())
+    )
 
 
 @always_inline
@@ -739,12 +749,12 @@ fn _exp2_approx_f32[
     # --- Kernel ---------------------------------------------------------------
 
     # 1) clamp in float
-    var x_min = max(x, EXP2_MIN_INPUT)
+    var x_min = max(x, SIMD[DType.float32, W](EXP2_MIN_INPUT))
 
     # 2) bias trick: vi = round(x_min) in float via +bias then −bias
     # (works for |x| < 2^23; we use 1.5*2^23 to behave well around 0 and negatives)
-    var vb = x_min + ROUND_BIAS_F32
-    var vi = vb + NEG_ROUND_BIAS_F32
+    var vb = x_min + SIMD[DType.float32, W](ROUND_BIAS_F32)
+    var vi = vb + SIMD[DType.float32, W](NEG_ROUND_BIAS_F32)
 
     # 3) fractional part in [−0.5, 0.5] without extra clamp
     var r = x_min - vi
@@ -877,7 +887,10 @@ fn frexp[
     var x_int = x._to_bits_signed()
     var selector = x.ne(zero)
     var exp = selector.select(
-        (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
+        (
+            ((mask1 & x_int) >> type_of(x_int)(mantissa_width))
+            - type_of(x_int)(exponent_bias)
+        ).cast[dtype](),
         zero,
     )
     var frac = selector.select(T(from_bits=x_int & ~mask1 | mask2), zero)
@@ -1325,7 +1338,7 @@ fn iota[
 
         @parameter
         for i in range(width):
-            step[i] = i
+            step[i] = Scalar[step_dtype](i)
     else:
         step = llvm_intrinsic[
             "llvm.stepvector", SIMD[step_dtype, width], has_side_effect=False
@@ -1356,7 +1369,7 @@ fn iota[
 
     @always_inline
     fn fill[width: Int](i: Int) unified {var offset, var buff}:
-        buff.store(i, iota[dtype, width](offset + i))
+        buff.store(i, iota[dtype, width](Scalar[dtype](offset + i)))
 
     vectorize[simd_width_of[dtype]()](len, fill)
 
@@ -2474,7 +2487,7 @@ fn _cbrtf(x: Float32) -> Float32:
 
     # Scale q by 2^(qu - 2048) to reconstruct proper exponent
     # Subtract 2048 to compensate for the 6144 offset used earlier
-    q = ldexp(q, qu - 2048)
+    q = ldexp(q, Int32(qu - 2048))
 
     # Apply sign to correction factor (cube root preserves sign)
     q = copysign(q, x)

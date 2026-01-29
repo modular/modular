@@ -41,7 +41,7 @@ from .layout import Layout as LegacyLayout
 struct Layout[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
-](ImplicitlyCopyable):
+](ImplicitlyCopyable, TrivialRegisterType):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -242,10 +242,14 @@ fn row_major(
                     shape[idx + 1].value() * strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](RuntimeInt[StrideType.DTYPE](stride_val))
+                    rebind[StrideType](
+                        RuntimeInt[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
                 )
 
-    return Layout(shape^, Coord(strides^))
+    return Layout(shape, Coord(strides^))
 
 
 fn row_major[
@@ -256,4 +260,4 @@ fn row_major[
 ]:
     var shape: Coord[*_IntToComptimeInt[*idxs]]
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(shape))
-    return row_major(shape^)
+    return row_major(shape)

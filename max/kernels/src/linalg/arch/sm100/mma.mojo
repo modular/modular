@@ -46,8 +46,7 @@ fn extract_first_2_modes[l: Layout]() -> Layout:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct Major:
+struct Major(TrivialRegisterType):
     var val: Int
 
     comptime K = Major(0)
@@ -148,7 +147,6 @@ fn smem_descriptor[
     ](ptr)
 
 
-@register_passable("trivial")
 struct MmaOpSM100_SS[
     c_type: DType,
     a_type: DType,
@@ -163,7 +161,7 @@ struct MmaOpSM100_SS[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
-](Defaultable):
+](Defaultable, TrivialRegisterType):
     var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
     var mask: UInt16
 
@@ -262,7 +260,9 @@ struct MmaOpSM100_SS[
                 Self.b_type
             ]()
 
-            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
+            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
+                1
+            )
 
             mma[Self.cta_group](
                 a_desc + a_offset,
@@ -306,7 +306,6 @@ struct MmaOpSM100_SS[
         return UMMAKind(-1)
 
 
-@register_passable("trivial")
 struct MmaOpSM100_BlockScaled_SS[
     c_type: DType,
     a_type: DType,
@@ -324,7 +323,7 @@ struct MmaOpSM100_BlockScaled_SS[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
-](Defaultable):
+](Defaultable, TrivialRegisterType):
     var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
 
@@ -458,14 +457,16 @@ struct MmaOpSM100_BlockScaled_SS[
                 Self.b_type
             ]()
 
-            var c_scale: UInt32 = 0 if (init_c and k == 0) else 1
+            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
+                1
+            )
 
             @parameter
             if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
                 comptime sf_idx = k // Self.mma_shape[2]
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
-                ].update_desc_with_sf_id[sf_idx](
+                ].update_desc_with_sf_id[UInt32(sf_idx)](
                     self.idesc,
                 )
                 mma[Self.cta_group](
@@ -495,8 +496,8 @@ struct MmaOpSM100_BlockScaled_SS[
                     b_desc + b_offset,
                     c_tmem,
                     self.idesc,
-                    sfa_tmem + sf_idx * (SF_MN_GROUP_SIZE // 32),
-                    sfb_tmem + sf_idx * (SF_MN_GROUP_SIZE // 32),
+                    sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    sfb_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
                     c_scale=c_scale,
                 )
 
@@ -536,14 +537,14 @@ struct MmaOpSM100_BlockScaled_SS[
             comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
             var sf_tmem_addr = (
                 sf_tmem
-                + i * (SF_MN_GROUP_SIZE // 32)
-                + tile_k_idx * (SF_MN_GROUP_SIZE // 32)
+                + UInt32(i * (SF_MN_GROUP_SIZE // 32))
+                + UInt32(tile_k_idx * (SF_MN_GROUP_SIZE // 32))
             )
             var sf_desc = MMASmemDescriptor.create[
                 8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
             ](sf_smem.ptr + sf_offset)
             tcgen05_cp[
-                cta_group = Self.cta_group,
+                cta_group = Int32(Self.cta_group),
                 datapaths=32,
                 bits=128,
                 multicast="warpx4",

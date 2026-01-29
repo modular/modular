@@ -20,7 +20,7 @@ Usage:
     writer.write(smem.c_tiles(), stage, coord, shape, elect)
 """
 
-from collections import OptionalReg
+from collections import Optional
 from memory import Pointer
 from sys import simd_width_of
 
@@ -52,7 +52,6 @@ from .tile_writer import (
 from .tmem import TmemArrayType
 
 
-@register_passable("trivial")
 struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
@@ -74,11 +73,11 @@ struct TileWriter[
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: Int,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
-]:
+](TrivialRegisterType):
     """Output tile writer for SM100 matmul epilogue.
 
     Stores pointer to TMA descriptor. SMEM tiles passed per-call.
