@@ -1112,9 +1112,9 @@ def test_indexing():
 def test_string_codepoints_iter():
     var s = "abc"
     var iter = s.codepoints()
-    assert_equal(iter.__next__(), Codepoint.ord("a"))
-    assert_equal(iter.__next__(), Codepoint.ord("b"))
-    assert_equal(iter.__next__(), Codepoint.ord("c"))
+    assert_equal(iter.__next__(), Codepoint("a"))
+    assert_equal(iter.__next__(), Codepoint("b"))
+    assert_equal(iter.__next__(), Codepoint("c"))
     with assert_raises():
         _ = iter.__next__()  # raises StopIteration
 
@@ -1794,15 +1794,15 @@ def test_from_utf8():
 
 def test_append_codepoint():
     var s = String()
-    s.append(Codepoint.ord("a"))
+    s.append(Codepoint("a"))
     assert_equal(s, "a")
     assert_equal(s.byte_length(), 1)
 
-    s.append(Codepoint.ord("€"))
+    s.append(Codepoint("€"))
     assert_equal(s, "a€")
     assert_equal(s.byte_length(), 4)
 
-    s.append(Codepoint.ord("🔥"))
+    s.append(Codepoint("🔥"))
     assert_equal(s, "a€🔥")
     assert_equal(s.byte_length(), 8)
 
