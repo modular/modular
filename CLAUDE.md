@@ -31,30 +31,15 @@ All builds use the `./bazelw` wrapper from the repository root:
 ./bazelw test //...
 ./bazelw test //max/kernels/test/linalg:test_matmul
 
-# Run tests with specific test arguments
-./bazelw test --test_arg=-k --test_arg=test_attention //max/tests/...
-
 # Find targets
 ./bazelw query '//max/...'
-./bazelw query 'tests(//...)'
-
-# Format code before committing
-./bazelw run format
-```
-
-### Remote GPU Testing
-
-```bash
-# Run tests on NVIDIA H100
-bt-h100 //max/tests/integration/pipelines/python/llama3:tests_gpu
-
-# Run tests on NVIDIA B200
-bt-b200 //max/tests/integration/pipelines/python/llama3:tests_gpu
+./bazelw query 'tests(//...)' 
 ```
 
 ### Pixi Environment Management
 
-Many directories include `pixi.toml` files for environment management:
+Many directories include `pixi.toml` files for environment management. Use Pixi
+when present:
 
 ```bash
 # Install Pixi environment (run once per directory)
@@ -69,30 +54,31 @@ pixi run mojo format ./
 # Use predefined tasks from pixi.toml
 pixi run main              # Run main example
 pixi run test              # Run tests
+pixi run hello             # Run hello.mojo
+
+# Common Pixi tasks available in different directories:
+# - /mojo/: build, tests, examples, benchmarks
+# - /max/: llama3, mistral, generate, serve
+# - /examples/*/: main, test, hello, dev-server, format
 
 # List available tasks
 pixi task list
-
-# Install pre-commit hooks (recommended)
-pixi x pre-commit install
 ```
 
 ### MAX Server Commands
 
 ```bash
-# Install MAX nightly via pip
+# Install the MAX nightly within a Python virtual environment using pip
 pip install modular --extra-index-url https://whl.modular.com/nightly/simple/
+
+# Install MAX globally using Pixi, an alternative to the above
+pixi global install -c conda-forge -c https://conda.modular.com/max-nightly
 
 # Start OpenAI-compatible server
 max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
 
-# Run pipelines via Bazel during development
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
-  --model modularai/Llama-3.1-8B-Instruct-GGUF \
-  --prompt "Hello, world!"
-
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
-  --model modularai/Llama-3.1-8B-Instruct-GGUF
+# Run with Docker
+docker run --gpus=1 -p 8000:8000 docker.modular.com/modular/max-nvidia-full:latest --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
 ## High-Level Architecture
@@ -108,10 +94,11 @@ modular/
 │   └── integration-test/    # Integration tests
 ├── max/                     # MAX framework
 │   ├── kernels/             # High-performance Mojo kernels (GPU/CPU)
-│   ├── python/max/serve/    # Python inference server (OpenAI-compatible)
-│   ├── python/max/pipelines/# Model architectures (Python)
-│   └── python/max/nn/       # Neural network operators (Python)
+│   ├── serve/               # Python inference server (OpenAI-compatible)
+│   ├── pipelines/           # Model architectures (Python)
+│   └── nn/                  # Neural network operators (Python)
 ├── examples/                # Usage examples
+├── benchmark/               # Benchmarking tools
 └── bazel/                   # Build system configuration
 ```
 
@@ -119,7 +106,7 @@ modular/
 
 1. **Language Separation**:
    - Low-level performance kernels in Mojo (`max/kernels/`)
-   - High-level orchestration in Python (`max/python/max/`)
+   - High-level orchestration in Python (`max/serve/`, `max/pipelines/`)
 
 2. **Hardware Abstraction**:
    - Platform-specific optimizations via dispatch tables
@@ -127,13 +114,14 @@ modular/
    - Device-agnostic APIs with hardware-specific implementations
 
 3. **Memory Management**:
-   - Device contexts for GPU memory management (`DeviceContext` APIs)
+   - Device contexts for GPU memory management
    - Host/Device buffer abstractions
    - Careful lifetime management in Mojo code
 
 4. **Testing Philosophy**:
    - Tests mirror source structure
    - Use `lit` tool with FileCheck validation
+   - Hardware-specific test configurations
    - Migrating to `testing` module assertions
 
 ## Development Workflow
@@ -160,7 +148,8 @@ modular/
 ### Code Style
 
 - Use `mojo format` for Mojo code
-- Run `./bazelw run format` before committing
+- Follow existing patterns in the codebase
+- Add docstrings to public APIs
 - Sign commits with `git commit -s`
 
 ### Performance Development
@@ -183,38 +172,29 @@ python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yam
 - Avoid deprecated types like `Tensor` (use modern alternatives)
 - Follow value semantics and ownership conventions
 - Use `Reference` types with explicit lifetimes in APIs
-- Always check function return values for errors
 
 ### MAX Kernel Development
 
 - Fine-grained control over memory layout and parallelism
 - Hardware-specific optimizations (tensor cores, SIMD)
+- Vendor library integration when beneficial
+- Performance improvements must include benchmarks
+
+### Common Pitfalls
+
+- Always check Mojo function return values for errors
 - Ensure coalesced memory access patterns on GPU
 - Minimize CPU-GPU synchronization points
 - Avoid global state in kernels
-- Performance improvements must include benchmarks
+- Never commit secrets or large binary files
 
-### macOS Development
+### Environment Variables
 
-- Requires Xcode 16.0+ and macOS 15.0+
-- May need to run: `xcodebuild -downloadComponent MetalToolchain`
+Many benchmarks and tests use environment variables:
 
-### Contributing New Model Architectures
-
-1. Create new directory in `max/python/max/pipelines/architectures/`
-2. Implement: `model.py`, `model_config.py`, `arch.py`, `weight_adapters.py`
-3. Register with `@register_pipelines_model("your-model", provider="your-org")`
-4. Validate accuracy using lm-eval:
-   ```bash
-   # Start model server
-   max serve --model-path your-org/your-model-name
-
-   # Run evaluation
-   uvx --from 'lm-eval[api]' lm_eval \
-     --model local-chat-completions \
-     --tasks gsm8k_cot_llama \
-     --model_args model=your-org/your-model-name,base_url=http://127.0.0.1:8000/v1/chat/completions
-   ```
+- `env_get_int[param_name]=value`
+- `env_get_bool[flag_name]=true/false`
+- `env_get_dtype[type]=float16/float32`
 
 ## Contributing Areas
 
@@ -228,7 +208,7 @@ Other areas are not open for external contributions.
 ## Platform Support
 
 - Linux: x86_64, aarch64
-- macOS: ARM64 (Apple Silicon) - Xcode 16.0+, macOS 15.0+
+- macOS: ARM64 (Apple Silicon)
 - Windows: Not currently supported
 
 ## LLM-friendly Documentation
@@ -238,23 +218,26 @@ Other areas are not open for external contributions.
 - Python API docs: <https://docs.modular.com/llms-python.txt>
 - Comprehensive docs: <https://docs.modular.com/llms-full.txt>
 
-## Git Commit Style
+## Git commit style
 
-- **Atomic Commits:** Keep commits small and focused on a single logical change.
-- **Descriptive Messages:** Explain the *why*, not just the *what*. Use imperative mood.
-- **Commit titles:** Use `[Stdlib]`, `[Kernel]`, or `[GPU]` tags as appropriate.
-- Wrap messages with `BEGIN_PUBLIC` and `END_PUBLIC`.
-- Sign commits with `git commit -s`.
-
-Example:
+- **Atomic Commits:** Keep commits small and focused. Each commit should
+address a single, logical change. This makes it easier to understand the
+history and revert changes if needed.
+- **Descriptive Commit Messages:** Write clear, concise, and informative commit
+messages. Explain the *why* behind the change, not just *what* was changed. Use
+a consistent format (e.g., imperative mood: "Fix bug", "Add feature").
+- **Commit titles:** git commit titles should have the `[Stdlib]` or `[Kernel]`
+depending on whether the kernel is modified and if they are modifying GPU
+functions then they should use `[GPU]` tag as well.
+- The commit messages should be surrounded by BEGIN_PUBLIC and END_PUBLIC
+- Here is an example template a git commit
 
 ```git
-[Kernels] Add fused attention kernel
+[Kernels] Some new feature
 
 BEGIN_PUBLIC
-[Kernels] Add fused attention kernel
+[Kernels] Some new feature
 
-This adds a fused multi-head attention kernel to improve inference
-performance by reducing memory bandwidth requirements.
+This add a new feature for [xyz] to enable [abc]
 END_PUBLIC
 ```
