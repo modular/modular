@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from max import functional as F
 from max.driver import Device
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.max_model import MaxModel
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.tensor import Tensor
 
 from .model_config import AutoencoderKLConfigBase
@@ -25,7 +26,7 @@ from .model_config import AutoencoderKLConfigBase
 TConfig = TypeVar("TConfig", bound=AutoencoderKLConfigBase)
 
 
-class BaseAutoencoderModel(MaxModel):
+class BaseAutoencoderModel(ComponentModel):
     """Base class for autoencoder models with shared logic.
 
     This base class provides common functionality for loading and running
@@ -35,7 +36,7 @@ class BaseAutoencoderModel(MaxModel):
 
     def __init__(
         self,
-        config: dict,
+        config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
@@ -53,15 +54,18 @@ class BaseAutoencoderModel(MaxModel):
             autoencoder_class: Autoencoder class to use (e.g., AutoencoderKL).
         """
         super().__init__(config, encoding, devices, weights)
-        self.config = config_class.generate(config, encoding, devices)
+        self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
         self.load_model()
 
-    def load_model(self) -> None:
+    def load_model(self) -> Callable[..., Any]:
         """Load and compile the decoder model.
 
         Extracts decoder weights from the full model weights and compiles
         the decoder for inference.
+
+        Returns:
+            Compiled model callable.
         """
         state_dict = {
             key.removeprefix("decoder."): value.data()
@@ -75,6 +79,7 @@ class BaseAutoencoderModel(MaxModel):
         self.model = autoencoder.decoder.compile(
             *autoencoder.decoder.input_types(), weights=state_dict
         )
+        return self.model
 
     def decode(self, *args, **kwargs) -> Tensor:
         """Decode latents to images using compiled decoder.

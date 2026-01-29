@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from .... import functional as F
-from ....driver import CPU
-from ....dtype import DType
-from ....tensor import Tensor
-from ..module import Module
+from max import functional as F
+from max.driver import CPU
+from max.dtype import DType
+from max.nn.module import Module
+from max.tensor import Tensor
 
 
 def group_norm(
@@ -157,6 +157,8 @@ class GroupNorm(Module[[Tensor], Tensor]):
             )
 
         if self.affine:
+            if self.weight is None or self.bias is None:
+                raise ValueError("weight and bias must be set when affine=True")
             weight = self.weight
             bias = self.bias
         else:

@@ -16,14 +16,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ... import functional as F
-from ... import random
-from ...driver import Accelerator, accelerator_api
-from ...dtype import DType
-from ...graph import DeviceRef
-from ...graph.type import FilterLayout
-from ...tensor import Tensor
-from .module import Module
+from max import functional as F
+from max import random
+from max.driver import Accelerator, accelerator_api
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.graph.type import FilterLayout
+from max.nn.module import Module
+from max.tensor import Tensor
 
 
 class Conv2d(Module[[Tensor], Tensor]):

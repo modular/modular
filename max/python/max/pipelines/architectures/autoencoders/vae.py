@@ -22,7 +22,7 @@ from max.tensor import Tensor
 from .layers import ResnetBlock2D, Upsample2D, VAEAttention
 
 
-class UpDecoderBlock2D(Module[[Tensor], Tensor]):
+class UpDecoderBlock2D(Module[[Tensor, Tensor | None], Tensor]):
     """Upsampling decoder block for 2D VAE.
 
     This module consists of multiple ResNet blocks followed by an optional
@@ -101,7 +101,9 @@ class UpDecoderBlock2D(Module[[Tensor], Tensor]):
                 device=device,
                 dtype=dtype,
             )
-            self.upsamplers = ModuleList([upsampler])
+            self.upsamplers: ModuleList[Upsample2D] | None = ModuleList(
+                [upsampler]
+            )
         else:
             self.upsamplers = None
 
@@ -129,7 +131,7 @@ class UpDecoderBlock2D(Module[[Tensor], Tensor]):
         return hidden_states
 
 
-class MidBlock2D(Module[[Tensor], Tensor]):
+class MidBlock2D(Module[[Tensor, Tensor | None], Tensor]):
     """Middle block for 2D VAE.
 
     This module processes features at the middle of the VAE architecture,
@@ -175,7 +177,7 @@ class MidBlock2D(Module[[Tensor], Tensor]):
         """
         super().__init__()
         resnets_list = []
-        attentions_list = []
+        attentions_list: list[VAEAttention | None] = []
 
         resnet = ResnetBlock2D(
             in_channels=in_channels,
@@ -229,7 +231,9 @@ class MidBlock2D(Module[[Tensor], Tensor]):
                 attn for attn in attentions_list if attn is not None
             ]
             if non_none_attentions:
-                self.attentions = ModuleList(non_none_attentions)
+                self.attentions: ModuleList[VAEAttention] | None = ModuleList(
+                    non_none_attentions
+                )
                 self.attention_indices = {
                     i
                     for i, attn in enumerate(attentions_list)
@@ -279,7 +283,7 @@ class DecoderOutput:
     commit_loss: Tensor | None = None
 
 
-class Decoder(Module[[Tensor], Tensor]):
+class Decoder(Module[[Tensor, Tensor | None], Tensor]):
     """VAE decoder for generating images from latent representations.
 
     This decoder progressively upsamples latent features through multiple
@@ -464,6 +468,10 @@ class Decoder(Module[[Tensor], Tensor]):
         Returns:
             Tuple of TensorType specifications for decoder input.
         """
+        if self.dtype is None:
+            raise ValueError("dtype must be set for input_types")
+        if self.device is None:
+            raise ValueError("device must be set for input_types")
         latent_type = TensorType(
             self.dtype,
             shape=[

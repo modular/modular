@@ -18,7 +18,7 @@ from max.nn import Conv2d, GroupNorm, Module
 from max.tensor import Tensor
 
 
-class ResnetBlock2D(Module[[Tensor], Tensor]):
+class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
     """Residual block for 2D VAE decoder.
 
     This module implements a residual block with two convolutional layers,

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.driver import Device
 from max.graph.weights import Weights
@@ -24,7 +24,7 @@ from .model_config import AutoencoderKLConfig
 from .vae import Decoder
 
 
-class AutoencoderKL(Module[[Tensor], Tensor]):
+class AutoencoderKL(Module[[Tensor, Tensor | None], Tensor]):
     r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images."""
 
     def __init__(
@@ -41,8 +41,8 @@ class AutoencoderKL(Module[[Tensor], Tensor]):
         self.decoder = Decoder(
             in_channels=config.latent_channels,
             out_channels=config.out_channels,
-            up_block_types=config.up_block_types,
-            block_out_channels=config.block_out_channels,
+            up_block_types=tuple(config.up_block_types),
+            block_out_channels=tuple(config.block_out_channels),
             layers_per_block=config.layers_per_block,
             norm_num_groups=config.norm_num_groups,
             act_fn=config.act_fn,
@@ -77,7 +77,7 @@ class AutoencoderKLModel(BaseAutoencoderModel):
 
     def __init__(
         self,
-        config: dict,
+        config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,

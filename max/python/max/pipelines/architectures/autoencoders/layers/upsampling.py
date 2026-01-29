@@ -159,7 +159,7 @@ class Upsample2D(Module[[Tensor], Tensor]):
             Upsampled tensor, optionally convolved.
         """
         if self.interpolate:
-            x = interpolate_2d_nearest(x, scale_factor=2)
+            x = interpolate_2d_nearest(x, scale_factor=2)  # type: ignore[assignment]
 
         if self.use_conv and self.conv is not None:
             x = self.conv(x)
