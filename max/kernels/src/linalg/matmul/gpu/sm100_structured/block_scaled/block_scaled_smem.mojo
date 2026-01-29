@@ -11,15 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Shared memory layout for blockwise FP8 SM100 matmul.
+"""Shared memory layout for block-scaled SM100 matmul.
 
-This module provides the SMEM struct for blockwise FP8 matmul kernels where:
-- A-scales are loaded via TMA and stored in SMEM (1D: 1 x BM per stage)
-- B-scales are read directly from global memory (not stored in SMEM)
-- Scaling is applied post-MMA in CUDA cores, not within the MMA unit
-
-Unlike block-scaled matmul, blockwise FP8 uses register-based accumulation
-across K iterations, with scales applied per-iteration.
+Extends standard SMEM with scaling factor tile storage (SFA, SFB) following
+MXFP8 layout conventions. Also includes all pipeline barriers and TMEM state.
 """
 
 from gpu.memory import AddressSpace
@@ -28,35 +23,39 @@ from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
+    tile_sf_layout_k_major,
 )
 
-from .config import MatmulConfig
-from .pipeline_storage import (
+from linalg.fp4_utils import (
+    SF_MN_GROUP_SIZE,
+    SF_ATOM_M,
+    SF_ATOM_K,
+)
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.pipeline_storage import (
     InputPipelineStorage,
     OutputPipelineStorage,
     ClcPipelineStorage,
     TmemDeallocStorage,
-    BlockwiseFP8TileStorage,
+    BlockScaledTileStorage,
 )
-from .tile_pipeline import BlockwiseFP8TilePayload
+from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
 from linalg.structuring import SMemTileArray, SMemArray
 
 
-struct BlockwiseFP8Smem[
+struct BlockScaledSmem[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_scales_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
     transpose_b: Bool,
     *,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ],
 ]:
-    """SMEM struct for blockwise FP8 matmul: A/B tiles, A-scales, C output, barriers.
-
-    Key differences from BlockScaledSmem:
-    - A-scales stored in SMEM (1D: 1 x BM per pipeline stage)
-    - No B-scales in SMEM (read from global memory during epilogue)
-    - Used with register-based accumulation pattern
+    """SMEM struct containing A/B tiles, scaling factors, C output, and barriers.
     """
 
     # ========== Derived Constants ==========
@@ -73,7 +72,7 @@ struct BlockwiseFP8Smem[
     comptime num_group_pipeline_stages = (
         Self.num_pipeline_stages // Self.config.k_group_size
     )
-    comptime num_output_stages = Self.config.num_output_stages
+    comptime num_output_stages: Int = Self.config.num_output_stages
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_clc_pipeline_stages: Int = Self.config.num_clc_pipeline_stages
 
@@ -90,20 +89,36 @@ struct BlockwiseFP8Smem[
 
     comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
-    # A-scales layout: 1D row vector with BM elements (one scale per row)
-    comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
+    # SF_K_GROUP_SIZE = SF_ATOM_K * vec_sf_size
+    # This determines how many K elements each scaling factor covers
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * Self.config.vec_sf_size
+
+    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
+    comptime sfa_smem_layout = tile_sf_layout_k_major[
+        Self.BM,
+        Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
+        Self.config.vec_sf_size,
+    ]()
+
+    comptime sfb_smem_layout = tile_sf_layout_k_major[
+        Self.MMA_N,
+        Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
+        Self.config.vec_sf_size,
+    ]()
 
     # ========== Tile Storage (Single Source of Truth) ==========
-    # Combined storage preserves SMEM layout: a, b, c, a_scales
-    comptime Tiles = BlockwiseFP8TileStorage[
+    # Combined storage preserves SMEM layout: a, b, c, sfa, sfb
+    comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
-        Self.a_scales_type,
+        Self.sfa_dtype,
+        Self.sfb_dtype,
         Self.a_smem_layout,
         Self.b_smem_layout,
         Self.c_smem_layout,
-        Self.a_scales_smem_layout,
+        Self.sfa_smem_layout,
+        Self.sfb_smem_layout,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -112,7 +127,8 @@ struct BlockwiseFP8Smem[
     comptime ATileArray = Self.Tiles.ATileArray
     comptime BTileArray = Self.Tiles.BTileArray
     comptime CTileArray = Self.Tiles.CTileArray
-    comptime AScalesTileArray = Self.Tiles.AScalesTileArray
+    comptime SFATileArray = Self.Tiles.SFATileArray
+    comptime SFBTileArray = Self.Tiles.SFBTileArray
 
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
@@ -131,19 +147,25 @@ struct BlockwiseFP8Smem[
         return self.tiles.c_tiles()
 
     @always_inline
-    fn a_scales_tiles(ref [AddressSpace.SHARED]self) -> Self.AScalesTileArray:
-        return self.tiles.a_scales_tiles()
+    fn sfa_tiles(ref [AddressSpace.SHARED]self) -> Self.SFATileArray:
+        return self.tiles.sfa_tiles()
+
+    @always_inline
+    fn sfb_tiles(ref [AddressSpace.SHARED]self) -> Self.SFBTileArray:
+        return self.tiles.sfb_tiles()
 
     # ========== Pipeline Storage (Embedded) ==========
     comptime InputPipeline = InputPipelineStorage[
         Self.num_group_pipeline_stages,
-        BlockwiseFP8TilePayload[
+        BlockScaledTilePayload[
             Self.a_type,
             Self.b_type,
-            Self.a_scales_type,
+            Self.sfa_dtype,
+            Self.sfb_dtype,
             Self.a_smem_layout,
             Self.b_smem_layout,
-            Self.a_scales_smem_layout,
+            Self.sfa_smem_layout,
+            Self.sfb_smem_layout,
             Self.num_pipeline_stages,
         ],
     ]
@@ -215,10 +237,9 @@ struct BlockwiseFP8Smem[
 
     @staticmethod
     @always_inline
-    fn a_scales_pipeline_size() -> Int:
-        """Total size of A-scales tiles for all pipeline stages (in elements).
-        """
-        return Self.AScalesTileArray.num_elements
+    fn sf_pipeline_size() -> Int:
+        """Total size of SFA+SFB tiles for all pipeline stages (in elements)."""
+        return Self.SFATileArray.num_elements + Self.SFBTileArray.num_elements
 
     @staticmethod
     @always_inline
@@ -229,9 +250,77 @@ struct BlockwiseFP8Smem[
     @staticmethod
     @always_inline
     fn total_tile_size() -> Int:
-        """Total tile storage size (A+B+A-scales+C) in elements."""
+        """Total tile storage size (A+B+SFA+SFB+C) in elements."""
         return (
             Self.ab_pipeline_size()
-            + Self.a_scales_pipeline_size()
+            + Self.sf_pipeline_size()
             + Self.c_output_size()
         )
+
+
+# =============================================================================
+# Helper Functions for Scaling Factor SMEM Layout
+# =============================================================================
+
+
+@always_inline
+fn get_sfa_smem_layout[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    transpose_b: Bool,
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ],
+]() -> Layout:
+    """Get the SMEM layout for A scaling factors."""
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
+    return tile_sf_layout_k_major[
+        config.block_tile_shape[0],
+        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
+        config.vec_sf_size,
+    ]()
+
+
+@always_inline
+fn get_sfb_smem_layout[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    sfa_dtype: DType,
+    sfb_dtype: DType,
+    transpose_b: Bool,
+    config: BlockScaledMatmulConfig[
+        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
+    ],
+]() -> Layout:
+    """Get the SMEM layout for B scaling factors."""
+    comptime SF_K_GROUP_SIZE = SF_ATOM_K * config.vec_sf_size
+    return tile_sf_layout_k_major[
+        config.mma_shape[1],
+        SF_K_GROUP_SIZE * config.num_sf_k_tiles,
+        config.vec_sf_size,
+    ]()
+
+
+# =============================================================================
+# TMEM Column Calculations for Scaling Factors
+# =============================================================================
+
+
+@always_inline
+fn get_sfa_num_cols[
+    config: BlockScaledMatmulConfig,
+]() -> Int:
+    """Get the number of TMEM columns needed for A scaling factors."""
+    return config.block_tile_shape[0] // 32
+
+
+@always_inline
+fn get_sfb_num_cols[
+    config: BlockScaledMatmulConfig,
+]() -> Int:
+    """Get the number of TMEM columns needed for B scaling factors."""
+    return config.mma_shape[1] // 32

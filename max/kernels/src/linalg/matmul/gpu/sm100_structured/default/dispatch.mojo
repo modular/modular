@@ -31,16 +31,20 @@ from logger import Logger
 
 from utils.index import Index, IndexList
 
-from ....utils import (
+from .....utils import (
     GemmShape,
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
-from .config import MatmulConfig, build_configs, choose_config
-from .. import matmul_kernel_naive, gemv_gpu, multistage_gemm
-from ...vendor.matmul import matmul as matmul_vendor
-from ..tile_scheduler import RasterOrder
+from .....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
+from ..structured_kernels.config import (
+    MatmulConfig,
+    build_configs,
+    choose_config,
+)
+from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
+from ....vendor.matmul import matmul as matmul_vendor
+from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,

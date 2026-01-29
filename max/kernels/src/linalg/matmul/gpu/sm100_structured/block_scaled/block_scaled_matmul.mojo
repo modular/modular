@@ -37,7 +37,7 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from .config import BlockScaledMatmulConfig
+from ..structured_kernels.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulWarpSpecializationWorkSpaceManager
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

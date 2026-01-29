@@ -16,7 +16,7 @@ This module re-exports pipeline types from sm100_structured for backward
 compatibility. New code should import directly from sm100_structured.pipeline.
 """
 
-from ..sm100_structured.pipeline import (
+from ..sm100_structured.structured_kernels.pipeline import (
     ProducerConsumerPipeline,
     MbarPtr,
 )

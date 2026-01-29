@@ -29,12 +29,12 @@ from layout.tma_async import create_tensor_tile, create_tma_tile
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from .config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig
 from .blockwise_fp8_smem import BlockwiseFP8Smem
 from .blockwise_fp8_matmul_kernel import BlackwellBlockwiseFP8MatmulKernel
 
 # Legacy kernel for fallback via -D USE_LEGACY_BLOCKWISE_FP8=True
-from ..sm100.warp_specialized_blockwise_fp8 import (
+from ...sm100.warp_specialized_blockwise_fp8 import (
     sm100_warp_specialized_blockwise_fp8,
 )
 

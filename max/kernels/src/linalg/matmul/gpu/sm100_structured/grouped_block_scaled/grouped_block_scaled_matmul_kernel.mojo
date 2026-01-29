@@ -62,7 +62,7 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.matmul.gpu.sm100_structured.grouped_tile_scheduler import (
+from .grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
     GroupedWorkIterator,
@@ -70,42 +70,44 @@ from linalg.matmul.gpu.sm100_structured.grouped_tile_scheduler import (
     GroupedCLCSchedulerIterator,
 )
 from linalg.structuring import SMemPtr
-from linalg.matmul.gpu.sm100_structured.config import BlockScaledMatmulConfig
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_smem import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
+)
+from .grouped_block_scaled_smem import (
     GroupedBlockScaledSmem,
 )
-from linalg.matmul.gpu.sm100_structured.block_scaled_smem import (
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_smem import (
     BlockScaledSmem,
 )
-from linalg.matmul.gpu.sm100_structured.matmul_kernels import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
 )
-from linalg.matmul.gpu.sm100_structured.tile_pipeline import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
     BlockScaledTilePayload,
     OutputTilePipeline,
 )
-from linalg.matmul.gpu.sm100_structured.tmem import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     BlockScaledTmem,
     TmemAllocation,
 )
-from linalg.matmul.gpu.sm100_structured.barriers import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
     TmemDeallocBarrier,
     WarpGroupBarrier,
 )
-from linalg.matmul.gpu.sm100_structured.warp_context import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
 )
-from linalg.matmul.gpu.sm100_structured.output_writer import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     TileWriter,
 )
 
 # Import working TileScheduler for minimal 2SM kernel (proven working pattern)
-from linalg.matmul.gpu.sm100_structured.tile_scheduler import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler import (
     TileScheduler as WorkingTileScheduler,
 )
 

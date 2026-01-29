@@ -41,16 +41,16 @@ from linalg.structuring import SMemTileArray
 
 from utils.index import IndexList
 
-from .barriers import WarpGroupBarrier
-from .tile_pipeline import OutputStage
-from .tile_writer import (
+from ..structured_kernels.barriers import WarpGroupBarrier
+from ..structured_kernels.tile_pipeline import OutputStage
+from ..structured_kernels.tile_writer import (
     AccumBarrier,
     TMEMToSMemWriter,
     TMAStoreCoords,
     TMAStoreExecutor,
     tma_wait_pipelined,
 )
-from .tmem import TmemArrayType
+from ..structured_kernels.tmem import TmemArrayType
 
 
 struct BlockScaledTileWriter[

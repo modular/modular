@@ -10,15 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""SM100 matmul configuration - re-exports from sm100_structured.
-
-This module re-exports configuration types from sm100_structured for backward
-compatibility. New code should import directly from sm100_structured.config.
-"""
-
-from ..sm100_structured.structured_kernels.config import (
-    MatmulConfig,
-    BlockScaledMatmulConfig,
-    choose_config,
-    build_configs,
-)
+"""Blockwise FP8 matmul kernel for SM100."""

@@ -72,24 +72,29 @@ from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
-from .config import MatmulConfig
-from .pipeline import ProducerConsumerPipeline
+from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
-from .matmul_kernels import WarpRole, KernelContext
+from ..structured_kernels.kernel_common import WarpRole, KernelContext
 from .blockwise_fp8_smem import BlockwiseFP8Smem
-from .tile_pipeline import (
+from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
     BlockwiseFP8TilePayload,
 )
-from .tile_scheduler import TileScheduler as StructuredTileScheduler
-from .tile_loader import TileLoaderTMA, ScalesTileLoader
-from .tmem import TmemAllocation, TmemTensor
-from .barriers import TmemDeallocBarrier
-from .warp_context import MmaWarpContext, EpilogueWarpContext
-from .tile_pipeline import OutputTilePipeline
+from ..structured_kernels.tile_scheduler import (
+    TileScheduler as StructuredTileScheduler,
+)
+from ..structured_kernels.tile_loader import TileLoaderTMA, ScalesTileLoader
+from ..structured_kernels.tmem import TmemAllocation, TmemTensor
+from ..structured_kernels.barriers import TmemDeallocBarrier
+from ..structured_kernels.warp_context import (
+    MmaWarpContext,
+    EpilogueWarpContext,
+)
+from ..structured_kernels.tile_pipeline import OutputTilePipeline
 
 # Blockwise FP8 specific components
 from .blockwise_fp8_accumulator import (

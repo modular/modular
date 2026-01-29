@@ -39,8 +39,8 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from .config import MatmulConfig
-from .tile_scheduler_splitk import (
+from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.tile_scheduler_splitk import (
     get_required_locks_buffer_size_bytes,
     get_num_tiles,
 )

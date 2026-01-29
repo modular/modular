@@ -56,8 +56,10 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from linalg.matmul.gpu.sm100_structured.config import BlockScaledMatmulConfig
-from linalg.matmul.gpu.sm100_structured.grouped_tile_scheduler import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
+)
+from .grouped_tile_scheduler import (
     GroupedTileScheduler,
 )
 from linalg.fp4_utils import (
@@ -68,19 +70,19 @@ from linalg.fp4_utils import (
 )
 
 # Grouped kernel and SMEM
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_matmul_kernel import (
+from .grouped_block_scaled_matmul_kernel import (
     GroupedBlockScaledMatmulKernel,
     GroupedTensormapManager,
 )
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_smem import (
+from .grouped_block_scaled_smem import (
     GroupedBlockScaledSmem,
 )
-from linalg.matmul.gpu.sm100_structured.block_scaled_smem import (
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_smem import (
     BlockScaledSmem,
 )
 
 # Import working kernel's conversion functions for comparison
-from linalg.matmul.gpu.sm100_structured.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     _reshape_to_3d as working_reshape_to_3d,
     _convert_input_to_batched_tensor as working_convert_to_batched,
 )

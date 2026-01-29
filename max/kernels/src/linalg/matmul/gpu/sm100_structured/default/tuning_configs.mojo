@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ..tile_scheduler import RasterOrder
+from ...tile_scheduler import RasterOrder
 from internal_utils import Table, TuningConfig
 
 

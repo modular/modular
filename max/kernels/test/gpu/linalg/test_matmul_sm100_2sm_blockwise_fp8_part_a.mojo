@@ -14,7 +14,9 @@
 
 from math import ceildiv
 from sys import argv, size_of
-from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+)
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
@@ -31,7 +33,7 @@ from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from linalg.matmul.gpu.sm100_structured.blockwise_fp8_matmul import (
+from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
 

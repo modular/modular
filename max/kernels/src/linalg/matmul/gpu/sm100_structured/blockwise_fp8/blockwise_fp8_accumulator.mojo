@@ -35,9 +35,9 @@ from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
 from linalg.structuring import RegTile, SMemTile, SMemTileArray
-from .pipeline import ProducerConsumerPipeline
-from .tile_pipeline import OutputStage, EpilogueKStage
-from .tmem import TmemAddress, TmemFragments
+from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
+from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
 
 # =============================================================================

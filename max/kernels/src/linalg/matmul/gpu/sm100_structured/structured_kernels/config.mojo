@@ -27,7 +27,7 @@ from layout.tensor_core import get_mma_shape
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 from utils.math import align_down
-from ..tile_scheduler import RasterOrder
+from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_K_GROUP_SIZE,

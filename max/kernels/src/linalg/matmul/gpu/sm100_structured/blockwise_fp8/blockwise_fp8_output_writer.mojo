@@ -28,7 +28,7 @@ from layout.tma_async import TMATensorTile
 from utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
-from .tile_writer import store_fragment_to_smem
+from ..structured_kernels.tile_writer import store_fragment_to_smem
 from linalg.structuring import SMemTileArray
 
 

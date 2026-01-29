@@ -94,23 +94,28 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from .config import BlockScaledMatmulConfig
+from ..structured_kernels.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Structured kernel imports
-from .matmul_kernels import WarpRole, KernelContext
+from ..structured_kernels.kernel_common import WarpRole, KernelContext
 from .block_scaled_smem import BlockScaledSmem
-from .tile_pipeline import (
+from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
     BlockScaledTilePayload,
 )
-from .tile_scheduler import TileScheduler as StructuredTileScheduler
-from .tmem import TmemAllocation
-from .tile_pipeline import OutputTilePipeline
-from .barriers import TmemDeallocBarrier, WarpGroupBarrier
-from .warp_context import MmaWarpContext, EpilogueWarpContext
+from ..structured_kernels.tile_scheduler import (
+    TileScheduler as StructuredTileScheduler,
+)
+from ..structured_kernels.tmem import TmemAllocation
+from ..structured_kernels.tile_pipeline import OutputTilePipeline
+from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.warp_context import (
+    MmaWarpContext,
+    EpilogueWarpContext,
+)
 
 # Block-scaled output writer for epilogue
 from .block_scaled_output_writer import BlockScaledTileWriter

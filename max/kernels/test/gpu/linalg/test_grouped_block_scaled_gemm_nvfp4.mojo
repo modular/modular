@@ -34,7 +34,7 @@ from testing import testing
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
-from linalg.matmul.gpu.sm100_structured.grouped_tile_scheduler import (
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
     GroupedWorkIterator,
