@@ -121,8 +121,6 @@ from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
-from pathlib import Path
-
 comptime logger = Logger()
 
 comptime LocalTensor[
@@ -1257,6 +1255,11 @@ fn elect() -> Int32:
         Int32,
         constraints="=r,r",
     ](-1)
+
+
+@always_inline
+fn llvm_opaque_tid() -> UInt32:
+    return inlined_assembly["mov.u32 $0, %tid.x;", UInt32, constraints="=r"]()
 
 
 @always_inline
@@ -3329,8 +3332,8 @@ struct SM100MHA2Q[
                 mask,
             )
         else:
-            warpgroup_reg_dealloc[num_reg_other]()
             if warp_idx == 13:  # produce
+                warpgroup_reg_dealloc[num_reg_other]()
                 var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
                     batch_size, max_seq_len, valid_length, partition
                 )
@@ -3361,6 +3364,7 @@ struct SM100MHA2Q[
                 )
 
             elif warp_idx == 12:  # Q @ K', P @ V
+                warpgroup_reg_dealloc[num_reg_other]()
                 var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
                     batch_size, max_seq_len, valid_length, partition
                 )
@@ -3388,6 +3392,8 @@ struct SM100MHA2Q[
                     pos.num_keys,
                     mask,
                 )
+            else:
+                warpgroup_reg_dealloc[24]()
 
     @staticmethod
     @always_inline
@@ -3554,9 +3560,6 @@ struct SM100MHA2Q[
         sink_weights: Self.SinkType,
     ):
         var tmem_addr: UInt32 = Self.get_tmem_ptr(mbars)[]
-        var correction_smem_arg: SharedMemPointer[
-            Scalar[Self.accum_type]
-        ] = Self.get_correction_smem(mbars)
         var o_smem: SharedMemPointer[
             Scalar[Self.output_type]
         ] = Self.get_q_smem(mbars).bitcast[Scalar[Self.output_type]]()
@@ -3568,7 +3571,8 @@ struct SM100MHA2Q[
         )
         var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
 
-        var tid = UInt32(thread_idx.x)
+        # var tid = UInt32(thread_idx.x)
+        var tid = llvm_opaque_tid()
         var row = tid % 128
         var warp_idx: UInt32 = warp.broadcast(tid // 32)
         var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
@@ -3595,7 +3599,7 @@ struct SM100MHA2Q[
 
         var q_head_idx: UInt32 = seq_info.head_idx
         var scale_log2e: Scalar[Self.accum_type] = scale
-        var correction_smem = correction_smem_arg + tid
+        var correction_smem = Self.get_correction_smem(mbars) + tid
 
         @parameter
         if not (Self.use_score_mod or Self.MaskType.apply_log2e_after_mask):
@@ -3886,6 +3890,7 @@ struct SM100MHA2Q[
             tcgen05_store_wait()
             tcgen05_fence_before()
             pipeline_s.release[Self.config.num_pv_stages - 1]()
+            pipeline_c.acquire()
             # now we can sum the remaining elements of `acc`
             var acc0: f32x2 = rebind[f32x2](vs[batch_size // 2])
             var acc1: f32x2 = rebind[f32x2](vs[batch_size // 2 + 1])
@@ -4027,7 +4032,6 @@ struct SM100MHA2Q[
                     else:
                         row_max = new_row_max
                         correction = exp2(diff)
-                    pipeline_c.acquire()
                     correction_smem[] = correction
                     pipeline_c.commit()
                     # update s->p
@@ -4072,7 +4076,6 @@ struct SM100MHA2Q[
                 else:
                     row_max = new_row_max
                     correction = exp2(diff)
-                pipeline_c.acquire()
                 correction_smem[] = correction
                 pipeline_c.commit()
                 # update s->p
@@ -4168,11 +4171,9 @@ struct SM100MHA2Q[
                 if i == 0:
                     pipeline_c0.wait()
                     c_scalar = correction_smem_0[0]
-                    pipeline_c0.release()
                 else:
                     pipeline_c1.wait()
                     c_scalar = correction_smem_1[0]
-                    pipeline_c1.release()
 
                 change = _vote_nvidia_helper(c_scalar < 1.0) != 0
                 pipeline_o.wait()
@@ -4257,6 +4258,12 @@ struct SM100MHA2Q[
                     tcgen05_store_wait()
                     tcgen05_fence_before()
                 pipeline_o.release()
+
+                @parameter
+                if i == 0:
+                    pipeline_c0.release()
+                else:
+                    pipeline_c1.release()
 
     @staticmethod
     @always_inline
