@@ -18,6 +18,7 @@ from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import InternVLModel
+from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
 
 internvl_arch = SupportedArchitecture(
@@ -35,4 +36,5 @@ internvl_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
+    config=InternVLConfig,
 )

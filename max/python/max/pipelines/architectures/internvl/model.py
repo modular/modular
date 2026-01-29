@@ -388,15 +388,12 @@ class InternVLModel(
         )
 
         # Generate InternVL config from HuggingFace config
-        internvl_config = InternVLConfig.generate(
-            pipeline_config=self.pipeline_config,
+        internvl_config = InternVLConfig.initialize(self.pipeline_config)
+        internvl_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
             vision_state_dict=vision_model_weights_dict,
             dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
 
