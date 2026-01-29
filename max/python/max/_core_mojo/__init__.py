@@ -15,7 +15,6 @@ import os
 import sys
 from typing import Any
 
-# Install mojo import hook
 import mojo.importer
 import numpy as np
 import numpy.typing as npt

@@ -1706,7 +1706,9 @@ fn _load_tr16_b64_row[
         # Convert element offset to byte offset, swizzle, convert back
         var byte_offset = Int(offset) * size_of[tile.dtype]()
         var swizzled_bytes = swizzle.value()(byte_offset)
-        offset = swizzled_bytes // size_of[tile.dtype]()
+        offset = Scalar[tile.linear_idx_type](
+            swizzled_bytes // size_of[tile.dtype]()
+        )
 
     var ptr = tile.ptr + offset
     return ds_read_tr16_b64(ptr)

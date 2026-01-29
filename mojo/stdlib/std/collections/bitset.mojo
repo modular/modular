@@ -186,7 +186,7 @@ struct BitSet[size: Int](
         """
         _check_index_bounds["set"](idx, Self.size)
         var w = _word_index(idx)
-        self._words.unsafe_get(w) |= _bit_mask(idx)
+        self._words.unsafe_get(w) |= Int64(_bit_mask(idx))
 
     @always_inline
     fn clear(mut self, idx: Int):
@@ -200,7 +200,7 @@ struct BitSet[size: Int](
         """
         _check_index_bounds["clearing"](idx, Self.size)
         var w = _word_index(idx)
-        self._words.unsafe_get(w) &= ~_bit_mask(idx)
+        self._words.unsafe_get(w) &= Int64(~_bit_mask(idx))
 
     @always_inline
     fn toggle(mut self, idx: Int):
@@ -215,7 +215,7 @@ struct BitSet[size: Int](
         """
         _check_index_bounds["toggling"](idx, Self.size)
         var w = _word_index(idx)
-        self._words.unsafe_get(w) ^= _bit_mask(idx)
+        self._words.unsafe_get(w) ^= Int64(_bit_mask(idx))
 
     @always_inline
     fn test(self, idx: Int) -> Bool:
@@ -232,7 +232,7 @@ struct BitSet[size: Int](
         """
         _check_index_bounds["testing"](idx, Self.size)
         var w = _word_index(idx)
-        return (self._words.unsafe_get(w) & _bit_mask(idx)) != 0
+        return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 
     fn clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.
@@ -263,7 +263,7 @@ struct BitSet[size: Int](
     @always_inline
     @staticmethod
     fn _vectorize_apply[
-        func: fn[simd_width: Int] (
+        func: fn[simd_width: Int](
             SIMD[DType.int64, simd_width],
             SIMD[DType.int64, simd_width],
         ) capturing -> SIMD[DType.int64, simd_width],
@@ -441,10 +441,10 @@ struct BitSet[size: Int](
                 var bit_pos = pop_count(rightmost_bit - 1)
 
                 # Write the absolute bit index
-                var abs_idx = bit_idx_base + bit_pos
+                var abs_idx = Int64(bit_idx_base) + bit_pos
 
                 # Skip bits that would be beyond the maximum size
-                if abs_idx >= Self.size:
+                if abs_idx >= Int64(Self.size):
                     break
 
                 if not first:

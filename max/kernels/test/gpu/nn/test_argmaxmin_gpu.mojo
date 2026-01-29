@@ -35,9 +35,9 @@ from utils.index import IndexList
 fn test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     largest: Bool = True,
     rank: Int = 2,
 ](
@@ -155,9 +155,9 @@ fn test_argmaxmin_gpu[
 
 fn _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
     test_argmaxmin_gpu[
@@ -173,9 +173,9 @@ fn _test_argmaxmin_gpu_helper_2[
 
 fn test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=True](ctx)

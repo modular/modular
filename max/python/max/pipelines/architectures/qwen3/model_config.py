@@ -15,19 +15,19 @@
 from __future__ import annotations
 
 import math
-from typing import Literal
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
+from typing_extensions import Self, override
 
 from ..llama3.model_config import Llama3Config
 
 
+@dataclass(kw_only=True)
 class Qwen3Config(Llama3Config):
     """Implementation of MAXModelConfig for Qwen3 models.
 
@@ -96,53 +96,54 @@ class Qwen3Config(Llama3Config):
             math.sqrt(1.0 / float(huggingface_config.head_dim)),
         )
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> Qwen3Config:
-        """Generate a Qwen3Config from the provided parameters.
-
-        This method largely delegates to Llama3Config but ensures
-        the correct attention_multiplier calculation using Qwen3's head_dim.
-        - GGUF is not currently supported for Qwen3.
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes a Qwen3Config instance from pipeline configuration.
 
         Args:
-            pipeline_config: Pipeline configuration.
-            huggingface_config: HuggingFace model configuration.
-            state_dict: Model state dictionary.
-            dtype: Model data type.
-            n_devices: Number of devices.
-            cache_dtype: KV cache data type.
-            kv_cache_config: KV cache configuration.
-            return_logits: Return logits configuration.
-            norm_method: Normalization method.
-            attention_bias: Whether to use attention bias.
+            pipeline_config: The MAX Engine pipeline configuration.
 
         Returns:
-            Configured Qwen3Config instance.
+            An initialized Qwen3Config instance.
         """
-        # Call the parent generate method to get most of the configuration
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
+
+    @override
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        """Initializes a Qwen3Config instance from pipeline and HuggingFace configs.
+
+        This method creates a config instance with all fields that can be determined
+        from the pipeline configuration, without needing the state_dict.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+            huggingface_config: The HuggingFace model configuration.
+
+        Returns:
+            An initialized Qwen3Config instance.
+        """
+        # Get base config from Llama3Config
         base_config = Llama3Config.initialize_from_config(
             pipeline_config, huggingface_config
         )
-        base_config.finalize(
-            huggingface_config=huggingface_config,
-            state_dict=state_dict,
-            return_logits=return_logits,
-            return_hidden_states=return_hidden_states,
-            norm_method=norm_method,
-            attention_bias=attention_bias,
-        )
+
+        kv_cache_config = pipeline_config.model.kv_cache
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must not be None")
+        cache_dtype = quantization_encoding.cache_dtype
+        n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -163,7 +164,7 @@ class Qwen3Config(Llama3Config):
         )
 
         # Return a new Qwen3Config with the corrected parameters
-        return Qwen3Config(
+        return cls(
             hidden_size=base_config.hidden_size,
             num_attention_heads=base_config.num_attention_heads,
             num_key_value_heads=base_config.num_key_value_heads,
@@ -177,22 +178,13 @@ class Qwen3Config(Llama3Config):
             dtype=base_config.dtype,
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
-            return_logits=base_config.return_logits,
-            return_hidden_states=base_config.return_hidden_states,
             max_seq_len=base_config.max_seq_len,
             kv_params=qwen3_kv_params,  # Use Qwen3-specific KV params
-            norm_method=base_config.norm_method,
-            norm_dtype=base_config.norm_dtype,
-            attention_bias=base_config.attention_bias,
-            tie_word_embeddings=base_config.tie_word_embeddings,
-            stacked_mlp=base_config.stacked_mlp,
-            stacked_qkv=base_config.stacked_qkv,
             attention_multiplier=qwen3_attention_multiplier,  # Use Qwen3-specific attention multiplier
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
-            float8_config=base_config.float8_config,
             use_subgraphs=base_config.use_subgraphs,
             dist_gemm_config=base_config.dist_gemm_config,
         )

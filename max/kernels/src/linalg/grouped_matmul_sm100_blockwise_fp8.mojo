@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from math import align_up, ceildiv, gcd
 from sys import align_of, size_of, simd_width_of
 from gpu.host.info import B200, H100
@@ -107,7 +107,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: UInt = 128,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
@@ -154,7 +154,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     __comptime_assert expert_vec.size == 1
     var expert = expert_vec[0]
 
-    b_start_row = expert * N
+    b_start_row = expert * Int32(N)
 
     m_start = block_idx.y * UInt(BM)
     n_start = block_idx.x * UInt(BN)
@@ -318,7 +318,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
 
     for k_iter in range(num_iters):
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var k_start = Int(k_iter) * BK
             a_tma_op.async_copy(
@@ -361,11 +361,11 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 dtype=accum_type,
                 pack=False,
                 width=temp_cfrags_size,
-            ](tmem_addr + ld_iter * 8 * repeat)
+            ](tmem_addr + UInt32(ld_iter * 8 * repeat))
             tcgen05_load_wait()  # wait for the load to finish
 
             var b_scale: Scalar[accum_type]
-            b_scale_m_offset = UInt(expert * b_scales_n)
+            b_scale_m_offset = UInt(expert * Int32(b_scales_n))
 
             @parameter
             if BN != BK:
@@ -434,7 +434,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     )
 
     var c_by_expert = c_gmem_type(
-        c.ptr + a_start_row * N, c_gmem_runtime_layout
+        c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
     )
 
     ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
@@ -484,7 +484,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
-                    if m < M and n < N:
+                    if m < M and n < UInt32(N):
                         var c_mn = SIMD[accum_type, 2](
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
@@ -521,7 +521,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],
@@ -661,7 +661,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
         ),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -790,14 +792,11 @@ fn load_AB[
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
-    var b_gmem_slice_coord_vec = (
-        type_of(expert_id)(
-            peer_cta_coord[1] * UInt(b_tma_rows)
-            + peer_cta_coord[0] * UInt(BN)
-            + work_tile_coord[1]
-        )
-        + expert_id * scheduler.static_MN
-    )
+    var b_gmem_slice_coord_vec = type_of(expert_id)(
+        peer_cta_coord[1] * UInt(b_tma_rows)
+        + peer_cta_coord[0] * UInt(BN)
+        + work_tile_coord[1]
+    ) + expert_id * type_of(expert_id)(scheduler.static_MN)
     __comptime_assert b_gmem_slice_coord_vec.size == 1
     var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
 
@@ -815,7 +814,7 @@ fn load_AB[
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
@@ -1013,7 +1012,7 @@ fn multi_stage_reg_epilogue[
                     var input_crd = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE, j), element_type = DType.uint32
                     ](Int(thread_idx.x), j)
-                    var linear_idx = zipped_rt(input_crd) * simd_size
+                    var linear_idx = zipped_rt(input_crd) * UInt32(simd_size)
                     var linear_tup = RuntimeTuple[
                         IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
                     ](Int(linear_idx))
@@ -1182,7 +1181,7 @@ fn promote_accumulators[
 
         var global_bn_start = bn
         var begin_n = min(BK - Int(global_bn_start % UInt(BK)), MMA_N)
-        var end_n = min(N - Int32(global_bn_start), MMA_N)
+        var end_n = min(N - Int32(global_bn_start), Int32(MMA_N))
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
@@ -1212,14 +1211,20 @@ fn promote_accumulators[
 
         # prefetch b scales
         b_scale_0 = rebind[Scalar[accum_type]](
-            b_scales[b_scale_m_offset + b_scale_idx0, k_iter].cast[accum_type]()
+            b_scales[
+                b_scale_m_offset + type_of(b_scale_m_offset)(b_scale_idx0),
+                k_iter,
+            ].cast[accum_type]()
         )
         # this mean in this block we have two scale_b
         if b_scale_next_n < MMA_N:
             b_scale_1 = rebind[Scalar[accum_type]](
-                b_scales[b_scale_m_offset + b_scale_idx0 + 1, k_iter].cast[
-                    accum_type
-                ]()
+                b_scales[
+                    b_scale_m_offset
+                    + type_of(b_scale_m_offset)(b_scale_idx0)
+                    + 1,
+                    k_iter,
+                ].cast[accum_type]()
             )
         else:
             b_scale_1 = 0.0
@@ -1319,7 +1324,7 @@ fn promote_accumulators[
 
     @parameter
     for stage in range(num_stages):
-        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -1641,27 +1646,29 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         load_mma_pipeline.init_mbars(
             Int32(1),
-            config.cluster_shape[0] // config.cta_group
-            + config.cluster_shape[1]
-            - 1
-            + CLUSTER_SIZE * (EPILOGUE_THREADS // 32),
+            Int32(
+                config.cluster_shape[0] // config.cta_group
+                + config.cluster_shape[1]
+                - 1
+                + CLUSTER_SIZE * (EPILOGUE_THREADS // 32)
+            ),
         )
 
         mma_output_pipeline.init_mbars(
             accum_pipeline_producer_arv_count,
-            accum_pipeline_consumer_arv_count,
+            Int32(accum_pipeline_consumer_arv_count),
         )
         load_clc_pipeline.init_mbars(
-            clc_throttle_producer_arv_count,
-            clc_throttle_consumer_arv_count,
+            Int32(clc_throttle_producer_arv_count),
+            Int32(clc_throttle_consumer_arv_count),
         )
 
-        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
+        tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * config.cta_group))
 
     @parameter
     for i in range(config.num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
-        clc_empty_mbar[i].init(clc_consumer_arv_count)
+        clc_empty_mbar[i].init(Int32(clc_consumer_arv_count))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -1732,12 +1739,12 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
     @parameter
     for i in range(CLUSTER_M // config.cta_group):
-        b_multicast_mask |= 1 << (i * config.cta_group)
+        b_multicast_mask |= UInt16(1 << (i * config.cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -1793,10 +1800,10 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             load_mma_pipeline.producer_step()
 
     if WarpRole.is_mma():
-        tcgen05_alloc[config.cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(config.cta_group)](ptr_tmem_addr, max_tmem_cols)
         syncwarp()
         # non blocking, arrives and proceeds
-        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
         tmem_addr = ptr_tmem_addr[0]
 
@@ -1817,7 +1824,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     )
                     mma_output_pipeline.wait_consumer()
                     var tmem_offset = tmem_addr + (
-                        mma_output_mma_stage * stage_stride_cols
+                        mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
                     consumer_main_loop[
@@ -1852,21 +1859,21 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                                 mma_output_pipeline.producer_mbar(
                                     mma_output_mma_stage
                                 ),
-                                mma_complete_mask,
+                                UInt16(mma_complete_mask),
                             )
                     mma_output_pipeline.producer_step()
 
             work_info = next_work_info
 
-        tcgen05_release_allocation_lock[config.cta_group]()
+        tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
         # wait for epilogue to finish
         tmem_dealloc_mbar[].wait()
 
-        tcgen05_dealloc[config.cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
-        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         tmem_addr = ptr_tmem_addr[0]
 
         while not work_info.is_done():
@@ -1937,7 +1944,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 mma_output_pipeline.consumer_step()
 
             # TODO (KERN-2081): investigate why this barrier is needed and if we can move/remove it
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
             # wait for CUDA core promotion to finish and store result
             # scheduler fetch next work
@@ -1991,7 +1998,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],
@@ -2181,9 +2188,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config=config,
         num_pipeline_stages=max_pipeline_stages,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         expert_n=expert_n,
         expert_ids_layout=expert_ids_layout,
@@ -2200,7 +2207,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime cluster_shape = config.cluster_shape
 
     # TODO
-    var problem_shape = StaticTuple[Int32, 3](max_num_tokens_per_expert, N, K)
+    var problem_shape = StaticTuple[Int32, 3](
+        Int32(max_num_tokens_per_expert), Int32(N), Int32(K)
+    )
 
     ctx.enqueue_function[kernel, kernel, dump_asm=False](
         num_active_experts,
@@ -2218,7 +2227,9 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
 

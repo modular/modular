@@ -253,10 +253,19 @@ class SpeculativeDecodingPipelineBase(
             ),
         )
 
+        # Validate that target model has HuggingFace config
+        target_hf_config = self.pipeline_config.model.huggingface_config
+        if target_hf_config is None:
+            raise ValueError(
+                f"Speculative decoding requires a HuggingFace config for the target model, "
+                f"but could not load config for '{self.pipeline_config.model.model_path}'. "
+                "Please ensure the target model is a standard Transformers model with a valid config.json."
+            )
+
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
             self.pipeline_config,
-            huggingface_config=self.pipeline_config.model.huggingface_config,
+            huggingface_config=target_hf_config,
         )
 
         # Load draft model
@@ -265,21 +274,21 @@ class SpeculativeDecodingPipelineBase(
         draft_session = InferenceSession(devices=self.draft_devices)
         self.pipeline_config.configure_session(draft_session)
 
-        assert self.pipeline_config.draft_model is not None
+        if self.pipeline_config.draft_model is None:
+            raise ValueError("Draft model is required for speculative decoding")
         draft_config = self.pipeline_config.draft_model.huggingface_config
-
-        if hasattr(self.pipeline_config.model.huggingface_config, "vocab_size"):
-            self.vocab_size = (
-                self.pipeline_config.model.huggingface_config.vocab_size
+        if draft_config is None:
+            raise ValueError(
+                f"Speculative decoding requires a HuggingFace config for the draft model, "
+                f"but could not load config for '{self.pipeline_config.draft_model.model_path}'. "
+                "Please ensure the draft model is a standard Transformers model with a valid config.json."
             )
-        elif hasattr(
-            self.pipeline_config.model.huggingface_config, "text_config"
-        ):
-            if hasattr(
-                self.pipeline_config.model.huggingface_config.text_config,
-                "vocab_size",
-            ):
-                self.vocab_size = self.pipeline_config.model.huggingface_config.text_config.vocab_size
+
+        if hasattr(target_hf_config, "vocab_size"):
+            self.vocab_size = target_hf_config.vocab_size
+        elif hasattr(target_hf_config, "text_config"):
+            if hasattr(target_hf_config.text_config, "vocab_size"):
+                self.vocab_size = target_hf_config.text_config.vocab_size
             else:
                 raise ValueError(
                     "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
@@ -647,5 +656,5 @@ class SpeculativeDecodingPipelineBase(
         doesn't know about.
         """
         # Release draft model KV cache (scheduler doesn't manage this)
-        self._draft_model.kv_manager.release(request_id)
+        self._draft_model.kv_manager.release(request_id, replica_idx=0)
         # Target model KV cache is released by scheduler via batch_constructor

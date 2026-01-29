@@ -14,12 +14,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import types
 from collections.abc import Generator, Mapping, Sequence
 from typing import Annotated, Any, overload
 
 import max._core.dtype
 import numpy
-import typing_extensions
 from numpy.typing import NDArray
 
 class Device:
@@ -498,6 +498,72 @@ class Buffer:
     def contiguous(self) -> Buffer:
         """Creates a contiguous copy of the buffer."""
 
+    def disable_auto_sync(self) -> None:
+        """
+        Disables automatic synchronization for asynchronous operations on this buffer.
+
+        .. caution::
+          This is an experimental feature that may be unstable. It also
+          requires special care from the user to ensure proper synchronization.
+
+        By default, certain operations on buffers cause synchronization, such
+        as when trying to access a buffer on the host through `to_numpy`.
+        However the default synchronization is quite conservative and often
+        ends up waiting on more than what is strictly needed.
+
+        This function disables the default synchronization method and enables
+        `mark_as_ready()`, which allows for a finer control of what is waited on
+        when a buffer needs to be synchronized.
+
+        .. code-block:: python
+
+            # Assuming we have 3 buffers of the same sizes, a, b and c
+
+            # Default case with auto-synchronization
+            a.to(b) # 1
+            a.to(c) # 2
+
+            # Will wait on 1 and 2
+            b.to_numpy()
+
+            # Disabled synchronization
+            a.disable_auto_sync()
+            a.to(b) # 1
+            a.to(c) # 2
+
+            # Doesn't wait on 1 or 2, data in b could be invalid
+            b.to_numpy()
+
+            # Disabled synchronization with mark_as_ready
+            a.disable_auto_sync()
+            a.to(b) # 1
+            b.mark_as_ready()
+            a.to(c) # 2
+
+            # Wait on 1 but not on 2
+            b.to_numpy()
+        """
+
+    def mark_as_ready(self) -> None:
+        """
+        Establishes a synchronization point for buffers with disabled auto-sync.
+
+        .. caution::
+          This is an experimental feature that may be unstable. It also
+          requires special care from the user to ensure proper synchronization.
+
+        This method can only be called on buffers with disabled synchronization
+        through `disable_auto_sync()`.
+
+        It instructs max that whenever it needs to wait on this buffer it
+        should only wait to the point where this was called.
+
+        It can be called multiple times, but it will override a previous
+        synchronization point with the new one.
+
+        Refer to the `disable_auto_sync()` documentation for more details and examples.
+        """
+
     @overload
     def copy(self, stream: DeviceStream) -> Buffer:
         """
@@ -675,6 +741,7 @@ class Buffer:
         shape: Sequence[int],
         dtype: max._core.dtype.DType,
         device: Device | None = None,
+        pinned: bool = False,
     ) -> Buffer:
         """
         Allocates a buffer with all elements initialized to zero.
@@ -684,6 +751,8 @@ class Buffer:
             dtype (DType): The data type of the buffer.
             device (Device, optional): The device to allocate the buffer on.
                 Defaults to None (CPU).
+            pinned (bool, optional): If True, allocate pinned host memory for
+                non-CPU devices. Defaults to False.
 
         Returns:
             Buffer: A new buffer filled with zeros.
@@ -691,7 +760,7 @@ class Buffer:
 
     def __dlpack__(
         self, *, stream: int | None = None, **kwargs
-    ) -> typing_extensions.CapsuleType:
+    ) -> types.CapsuleType:
         """Implements part of the dlpack contract."""
 
     def __dlpack_device__(self) -> tuple:
@@ -717,7 +786,7 @@ class Buffer:
     @overload
     @staticmethod
     def _from_dlpack(
-        arg0: typing_extensions.CapsuleType, arg1: Device, arg2: int, /
+        arg0: types.CapsuleType, arg1: Device, arg2: int, /
     ) -> Buffer: ...
     def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(

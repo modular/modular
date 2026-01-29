@@ -141,7 +141,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         if i % 3 != 0:
             group_of_3_bytes += 1
 
-        result[i] = group_of_3_bytes * 4
+        result[i] = UInt8(group_of_3_bytes * 4)
     return result
 
 
@@ -176,7 +176,9 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
         else:
             incomplete_groups_of_6_bits = 1
 
-        result[i] = complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        result[i] = UInt8(
+            complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        )
     return result
 
 

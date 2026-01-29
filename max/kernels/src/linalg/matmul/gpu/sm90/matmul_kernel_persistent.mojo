@@ -30,7 +30,9 @@ from .matmul_kernels import find_K_alignment_upto_16B, HopperMatmulSM90Kernel
 __extension HopperMatmulSM90Kernel:
     @staticmethod
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(num_threads)
+        ),
         `nvvm.cluster_dim`=cluster_shape,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -128,8 +130,8 @@ __extension HopperMatmulSM90Kernel:
                         consumer,
                     )
 
-                    var block_y = UInt(ceildiv(work_info.m, Self.BM))
-                    var block_x = UInt(ceildiv(work_info.n, Self.BN))
+                    var block_y = UInt(ceildiv(work_info.m, UInt32(Self.BM)))
+                    var block_x = UInt(ceildiv(work_info.n, UInt32(Self.BN)))
                     var output_reg_tile = (
                         final_c_reg_tile if a_type
                         == DType.float8_e4m3fn else c_reg_tile
@@ -152,7 +154,9 @@ __extension HopperMatmulSM90Kernel:
 
     @staticmethod
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads),
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(num_threads)
+        ),
         `nvvm.cluster_dim`=cluster_shape,
     )
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)

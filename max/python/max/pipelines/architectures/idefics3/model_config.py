@@ -23,8 +23,10 @@ from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, MAXModelConfigBase, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
+from typing_extensions import Self, override
 
 
 @dataclass
@@ -73,29 +75,29 @@ class Idefics3VisionConfig:
     text_config_hidden_size: int
     """Hidden size from the text config for modality projection."""
 
-    @staticmethod
-    def generate(
-        vision_config: AutoConfig,
-        dtype: DType,
-        scale_factor: int,
+    @classmethod
+    def initialize_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
         text_config_hidden_size: int,
     ) -> Idefics3VisionConfig:
-        """Generate Idefics3VisionConfig from HuggingFace vision config.
+        """Initialize Idefics3VisionConfig from HuggingFace config."""
 
-        Args:
-            vision_config: HuggingFace vision configuration object.
-            dtype: Data type for the vision model.
-            scale_factor: Scale factor for pixel shuffle operation in the connector.
-            text_config_hidden_size: Hidden size from the text config for modality projection.
+        quantization_encoding = pipeline_config.model.quantization_encoding
+        if quantization_encoding is None:
+            raise ValueError("quantization_encoding must be set")
+        dtype = quantization_encoding.dtype
 
-        Returns:
-            Configured Idefics3VisionConfig instance.
-        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError("vision_config not found in huggingface_config")
+        scale_factor = getattr(huggingface_config, "scale_factor", 2)
+
         num_attention_heads = vision_config.num_attention_heads
         hidden_size = vision_config.hidden_size
         head_dim = hidden_size // num_attention_heads
-
-        return Idefics3VisionConfig(
+        return cls(
             dtype=dtype,
             hidden_size=hidden_size,
             intermediate_size=vision_config.intermediate_size,
@@ -115,7 +117,8 @@ class Idefics3VisionConfig:
         )
 
 
-class Idefics3Config(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class Idefics3Config(ArchConfigWithKVCache):
     """Configuration for Idefics3 models."""
 
     devices: list[DeviceRef]
@@ -145,15 +148,13 @@ class Idefics3Config(MAXModelConfigBase):
         total_patches = patches_per_side * patches_per_side
         return total_patches // (self.scale_factor * self.scale_factor)
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Returns a dictionary describing the configuration parameters."""
-        return {
-            "scale_factor": "Factor by which spatial resolution is reduced in pixel shuffle",
-            "image_token_id": "Special token ID representing image patches in text sequence",
-            "vision_config": "Configuration for the SigLIP-based vision encoder",
-            "text_config": "Configuration for the Llama3-based text model",
-        }
+    def get_kv_params(self) -> KVCacheParams:
+        """Returns the KV cache parameters from the embedded text config."""
+        return self.text_config.get_kv_params()
+
+    def get_max_seq_len(self) -> int:
+        """Returns the maximum sequence length from the embedded text config."""
+        return self.text_config.get_max_seq_len()
 
     @staticmethod
     def construct_kv_params(
@@ -198,59 +199,38 @@ class Idefics3Config(MAXModelConfigBase):
             huggingface_config=text_config,
         )
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        llm_state_dict: dict[str, WeightData],
-        dtype: DType,
-        devices: list[DeviceRef],
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
-    ) -> Idefics3Config:
-        """Generate Idefics3Config from pipeline and HuggingFace configs.
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes an Idefics3Config instance from pipeline configuration.
 
         Args:
-            pipeline_config: Pipeline configuration.
-            huggingface_config: HuggingFace model configuration.
-            llm_state_dict: Model weights dictionary.
-            dtype: Data type for model parameters.
-            devices: Devices to use for the model.
-            cache_dtype: KV cache data type.
-            kv_cache_config: KV cache configuration.
-            return_logits: Return logits configuration.
-            norm_method: Normalization method.
+            pipeline_config: The MAX Engine pipeline configuration.
 
         Returns:
-            Configured Idefics3Config instance.
+            An Idefics3Config instance with fields initialized from config.
         """
-        # Create Llama3Config from the text config first to get the hidden size
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+
+        # Create Llama3Config from the text config
         hf_text_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
         text_config = Llama3Config.initialize_from_config(
             pipeline_config, hf_text_config
         )
-        text_config.finalize(
-            huggingface_config=hf_text_config,
-            state_dict=llm_state_dict,
-            norm_method=norm_method,
-            attention_bias=False,
-            return_logits=return_logits,
+
+        vision_config = Idefics3VisionConfig.initialize_from_config(
+            pipeline_config, huggingface_config, text_config.hidden_size
         )
 
-        # Create Idefics3VisionConfig from the vision config
-        hf_vision_config = getattr(huggingface_config, "vision_config", None)
-        if hf_vision_config is None:
-            raise ValueError("vision_config not found in huggingface_config")
-        scale_factor = getattr(huggingface_config, "scale_factor", 2)
-        vision_config = Idefics3VisionConfig.generate(
-            hf_vision_config, dtype, scale_factor, text_config.hidden_size
-        )
-
-        return Idefics3Config(
+        return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
                 for spec in pipeline_config.model.device_specs
@@ -264,4 +244,32 @@ class Idefics3Config(MAXModelConfigBase):
             vision_config=vision_config,
             # Text model configuration (Llama3-based)
             text_config=text_config,
+        )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        llm_state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+    ) -> None:
+        """Finalize the Idefics3Config instance with state_dict dependent fields.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+            llm_state_dict: Language model weights dictionary.
+            dtype: Data type for model parameters.
+            return_logits: Return logits configuration.
+            norm_method: Normalization method.
+        """
+        # Finalize text config
+        hf_text_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
+        self.text_config.finalize(
+            huggingface_config=hf_text_config,
+            state_dict=llm_state_dict,
+            norm_method=norm_method,
+            attention_bias=False,
+            return_logits=return_logits,
         )

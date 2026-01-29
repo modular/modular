@@ -19,7 +19,7 @@ This module contains the CPU-side code for SM100 matrix multiplication:
 All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -65,7 +65,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -188,9 +188,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
         transpose_b,
         config=config,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -208,8 +208,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], cluster_shape[0]),
-        ceildiv(grid_dim[1], cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], cluster_shape[1])),
         1,
     )
 
@@ -219,7 +219,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
     comptime scheduler_warps = 1
     comptime epilogue_warps = 4
 
-    var mnk = StaticTuple[UInt32, 3](M, N, K)
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
@@ -246,7 +246,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized[
             32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
         ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(b200_smem)
+        ),
         attributes=pdl_launch_attributes(pdl_level),
     )
 
@@ -268,7 +270,7 @@ fn blackwell_matmul_tma_umma_warp_specialized[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -367,7 +369,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     transpose_b: Bool,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
@@ -489,9 +491,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
         transpose_b,
         config=config,
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         register_based_epilogue=register_based_epilogue,
@@ -508,8 +510,8 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], cluster_shape[0]),
-        ceildiv(grid_dim[1], cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], cluster_shape[1])),
         1,
     )
 
@@ -519,7 +521,7 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
     comptime scheduler_warps = 1
     comptime epilogue_warps = 4
 
-    var mnk = StaticTuple[UInt32, 3](M, N, K)
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     var workspace: Span[UInt64, MutAnyOrigin]
 
@@ -576,7 +578,9 @@ fn _blackwell_matmul_tma_umma_warp_specialized_split_k[
             32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
         ),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(b200_smem),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(b200_smem)
+        ),
     )
 
     _ = reduction_workspace^
@@ -603,7 +607,7 @@ fn matmul_sm100_fallback[
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
     a: LayoutTensor[a_type, a_layout, ...],
@@ -666,5 +670,7 @@ fn matmul_sm100_fallback[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )

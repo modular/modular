@@ -14,8 +14,7 @@
 from os import abort
 
 
-@register_passable("trivial")
-struct Result(Equatable, Writable):
+struct Result(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -29,7 +28,7 @@ struct Result(Equatable, Writable):
     comptime LICENSE_ERROR = Self(16)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

@@ -296,7 +296,7 @@ fn mla_prefill_branch_fp8[
         buffer_row_offsets,
         cache_offsets,
         k_cache,
-        buffer_length,
+        Int32(buffer_length),
         k_latent,
         ctx,
     )

@@ -110,7 +110,7 @@ fn kernel_atomic[
     output[] = load_acquire[memory=memory](ptr)
 
 
-fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
+fn parametric[f: fn(UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
     f(ptr)
 
 

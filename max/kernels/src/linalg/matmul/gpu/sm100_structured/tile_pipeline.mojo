@@ -20,7 +20,7 @@ in context managers for safety and clarity.
 Key Abstractions
 ----------------
 - InputTilePipeline[Payload]: Generic pipeline with payload abstraction
-- TilePipeline: Standard pipeline with explicit A/B tile types  
+- TilePipeline: Standard pipeline with explicit A/B tile types
 - OutputTilePipeline: TMEM accumulator stages for MMA→Epilogue pipeline
 
 Naming Conventions
@@ -86,14 +86,12 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 # ============================================================================
 
 
-@register_passable("trivial")
-trait TilePayload:
-    """Trait for tile payload types. Must be @register_passable("trivial")."""
+trait TilePayload(TrivialRegisterType):
+    """Trait for tile payload types. Must be extend TrivialRegisterType."""
 
     pass
 
 
-@register_passable("trivial")
 struct StandardTilePayload[
     a_type: DType,
     b_type: DType,
@@ -125,7 +123,7 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (self.a_tiles[idx], self.b_tiles[idx])
 
     @always_inline
@@ -133,17 +131,16 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
-@register_passable("trivial")
 struct BlockScaledTilePayload[
     a_type: DType,
     b_type: DType,
@@ -205,7 +202,7 @@ struct BlockScaledTilePayload[
         Self.ATile, Self.BTile, Self.SFATile, Self.SFBTile
     ]:
         """Get A, B, SFA, SFB tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -218,31 +215,30 @@ struct BlockScaledTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfa_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFATile:
         """Get SFA tile at the specified stage and k-group index."""
-        return self.sfa_tiles[stage * k_group_size + k_idx]
+        return self.sfa_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfb_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFBTile:
         """Get SFB tile at the specified stage and k-group index."""
-        return self.sfb_tiles[stage * k_group_size + k_idx]
+        return self.sfb_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
-@register_passable("trivial")
 struct BlockwiseFP8TilePayload[
     a_type: DType,
     b_type: DType,
@@ -251,7 +247,7 @@ struct BlockwiseFP8TilePayload[
     b_tile_layout: Layout,
     a_scales_tile_layout: Layout,
     num_pipeline_stages: Int,
-](TilePayload):
+](TilePayload, TrivialRegisterType):
     """Tile payload for blockwise FP8 matmul (A, B, A-scales tiles).
 
     Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.
@@ -296,7 +292,7 @@ struct BlockwiseFP8TilePayload[
         Self.ATile, Self.BTile, Self.AScalesTile
     ]:
         """Get A, B, A-scales tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -308,21 +304,21 @@ struct BlockwiseFP8TilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_a_scales_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
         """Get A-scales tile at the specified stage and k-group index."""
-        return self.a_scales_tiles[stage * k_group_size + k_idx]
+        return self.a_scales_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 # ============================================================================
@@ -330,12 +326,11 @@ struct BlockwiseFP8TilePayload[
 # ============================================================================
 
 
-@register_passable("trivial")
 struct InputTilePipeline[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Tile pipeline with configurable payload type.
 
     Separates synchronization from tile storage. The Payload parameter
@@ -431,13 +426,12 @@ struct InputTilePipeline[
 # ============================================================================
 
 
-@register_passable("trivial")
 struct InputProducerStage[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Producer stage context manager. Released on scope exit."""
 
     comptime PipelineType = InputTilePipeline[
@@ -480,7 +474,7 @@ struct InputProducerStage[
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -488,13 +482,12 @@ struct InputProducerStage[
         return self._barrier
 
 
-@register_passable("trivial")
 struct InputConsumerStage[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Consumer stage context manager. Released on scope exit."""
 
     comptime PipelineType = InputTilePipeline[
@@ -546,13 +539,12 @@ struct InputConsumerStage[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct InputProducer[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Producer view for TMA Load warp. Use acquire() to get stages."""
 
     comptime PipelineType = InputTilePipeline[
@@ -592,13 +584,12 @@ struct InputProducer[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct InputConsumer[
     origin: MutOrigin,
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Consumer view for MMA warp. Use acquire() to get stages."""
 
     comptime PipelineType = InputTilePipeline[
@@ -633,7 +624,6 @@ struct InputConsumer[
 # ============================================================================
 
 
-@register_passable("trivial")
 struct TilePipeline[
     a_type: DType,
     b_type: DType,
@@ -642,7 +632,7 @@ struct TilePipeline[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Staged tile storage with producer-consumer synchronization for SM100.
 
     Manages a fixed set of pipeline stages (not a FIFO queue) where:
@@ -787,7 +777,6 @@ struct TilePipeline[
         return self.pipeline.consumer_mbar(stage)
 
 
-@register_passable("trivial")
 struct StandardProducerStage[
     origin: MutOrigin,
     a_type: DType,
@@ -797,7 +786,7 @@ struct StandardProducerStage[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Context manager for producer tile access with encapsulated stage indexing.
     """
 
@@ -847,23 +836,27 @@ struct StandardProducerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -876,7 +869,6 @@ struct StandardProducerStage[
         return self._stage
 
 
-@register_passable("trivial")
 struct StandardConsumerStage[
     origin: MutOrigin,
     a_type: DType,
@@ -886,7 +878,7 @@ struct StandardConsumerStage[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Context manager for consumer tile access with encapsulated stage indexing.
     """
 
@@ -936,18 +928,22 @@ struct StandardConsumerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn mbar(self) -> MbarPtr:
@@ -961,7 +957,6 @@ struct StandardConsumerStage[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct StandardTileProducer[
     origin: MutOrigin,
     a_type: DType,
@@ -971,7 +966,7 @@ struct StandardTileProducer[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Producer view for TMA Load warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
@@ -1030,7 +1025,6 @@ struct StandardTileProducer[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct StandardTileConsumer[
     origin: MutOrigin,
     a_type: DType,
@@ -1040,7 +1034,7 @@ struct StandardTileConsumer[
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Consumer view for MMA warp (standard tile pipeline)."""
 
     comptime TilePipelineType = TilePipeline[
@@ -1089,12 +1083,11 @@ struct StandardTileConsumer[
         )
 
 
-@register_passable("trivial")
 struct OutputStage[
     num_stages: Int,
     stage_stride: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Acquired output stage with TMEM handle and pipeline reference."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
@@ -1140,12 +1133,11 @@ struct OutputStage[
         return Self(stage_index, tmem, pipeline)
 
 
-@register_passable("trivial")
 struct OutputTilePipeline[
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Pipeline for MMA→Epilogue TMEM stage synchronization."""
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_stages]
@@ -1305,13 +1297,12 @@ struct OutputTilePipeline[
         return EpilogueKContext(Pointer(to=self), Pointer(to=input_pipeline))
 
 
-@register_passable("trivial")
 struct OutputProducer[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Producer view for MMA warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
@@ -1347,13 +1338,12 @@ struct OutputProducer[
         self.pipeline_ptr[].release_from_mma(self.stage)
 
 
-@register_passable("trivial")
 struct OutputConsumer[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Consumer view for epilogue warp (output pipeline)."""
 
     comptime TilePipelineType = OutputTilePipeline[
@@ -1387,13 +1377,12 @@ struct OutputConsumer[
 # signal after each K iteration rather than once per tile (e.g., blockwise FP8).
 
 
-@register_passable("trivial")
 struct OutputKPipeline[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Per-K-iteration view of OutputTilePipeline.
 
     Unlike standard producer()/consumer() which signal once per tile (after
@@ -1454,13 +1443,12 @@ struct OutputKPipeline[
         return PerKConsumerStage(self.pipeline_ptr)
 
 
-@register_passable("trivial")
 struct MmaKStage[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Per-K stage context for MMA warp in blockwise FP8.
 
     __enter__: Acquires stage, waits for epilogue to release previous stage
@@ -1500,13 +1488,12 @@ struct MmaKStage[
         self.pipeline_ptr[].release_from_mma(self.stage)
 
 
-@register_passable("trivial")
 struct PerKConsumerStage[
     origin: MutOrigin,
     num_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
-]:
+](TrivialRegisterType):
     """Context manager for per-K epilogue consumption.
 
     __enter__: Acquires stage, waits for MMA to complete this K iteration
@@ -1570,13 +1557,12 @@ struct PerKConsumerStage[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct EpilogueKStage[
     num_output_stages: Int,
     stage_stride_cols: Int,
     cta_group: Int,
     num_input_stages: Int,
-]:
+](TrivialRegisterType):
     """Per-K stage for epilogue warp in blockwise FP8.
 
     Returned from `EpilogueKContext.__enter__()`. Bundles:
@@ -1623,7 +1609,6 @@ struct EpilogueKStage[
 # =============================================================================
 
 
-@register_passable("trivial")
 struct EpilogueKContext[
     origin: MutOrigin,
     input_origin: MutOrigin,
@@ -1631,7 +1616,7 @@ struct EpilogueKContext[
     stage_stride_cols: Int,
     cta_group: Int,
     num_input_stages: Int,
-]:
+](TrivialRegisterType):
     """Per-K context manager for epilogue warp in blockwise FP8.
 
     Bundles output pipeline (MMA→Epilogue sync) and input pipeline (A-scales)

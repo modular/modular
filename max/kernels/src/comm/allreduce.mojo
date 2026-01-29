@@ -124,7 +124,7 @@ from gpu.memory import CacheOperation
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from collections.optional import OptionalReg
+from collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
@@ -143,7 +143,7 @@ from .device_query import get_sm_version, _dispatch_max_num_blocks
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 fn _naive_reduce_kernel[
@@ -336,7 +336,7 @@ fn _allreduce_naive_single[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _allreduce_2stage_kernel[
     dtype: DType,
@@ -497,7 +497,7 @@ fn _allreduce_2stage_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _allreduce_1stage_kernel[
     dtype: DType,
@@ -749,7 +749,7 @@ fn allreduce[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -1070,7 +1070,7 @@ fn allreduce_2stage_quickreduce_tile[
         if thread_idx.x < UInt(ngpus):
             store_release(
                 flag_buf[thread_idx.x] + comm_flags0_offset + my_rank,
-                flag_color,
+                UInt32(flag_color),
             )
         # No additional barrier: the next phase waits on all flags and then
         # synchronizes the block.
@@ -1086,7 +1086,7 @@ fn allreduce_2stage_quickreduce_tile[
             for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags0_offset + r,
-                    flag_color,
+                    UInt32(flag_color),
                 )
         barrier()
 
@@ -1124,7 +1124,7 @@ fn allreduce_2stage_quickreduce_tile[
         if thread_idx.x < UInt(ngpus):
             store_release(
                 flag_buf[thread_idx.x] + comm_flags1_offset + my_rank,
-                flag_color,
+                UInt32(flag_color),
             )
         # No additional barrier: thread 0 will wait on all flags below and
         # a barrier after the wait will synchronize the block.
@@ -1135,7 +1135,7 @@ fn allreduce_2stage_quickreduce_tile[
             for r in range(ngpus):
                 wait_for_flag(
                     flag_buf[my_rank] + comm_flags1_offset + r,
-                    flag_color,
+                    UInt32(flag_color),
                 )
         barrier()
 
@@ -1160,7 +1160,7 @@ fn allreduce_2stage_quickreduce_tile[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn allreduce_2stage_quickreduce[
     dtype: DType,

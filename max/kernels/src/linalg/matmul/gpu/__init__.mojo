@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import align_down, ceildiv
 from sys import (
     align_of,
@@ -76,7 +76,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: UnsafePointer[Scalar[c_type]],
@@ -198,7 +198,7 @@ fn matmul_kernel_naive[
     b_layout: Layout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
@@ -372,8 +372,8 @@ fn _matmul_gpu[
     //,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     config: OptionalReg[
@@ -449,9 +449,7 @@ fn _matmul_gpu[
                 coords, rebind[SIMD[c.type, _width]](output)
             )
 
-    comptime elementwise_lambda_wrapper = OptionalReg[
-        elementwise_epilogue_type
-    ](
+    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
         compute_lambda_wrapper
     ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
@@ -697,7 +695,7 @@ fn _matmul_gpu[
 
                         @parameter
                         for M in Ms:
-                            if M <= m:
+                            if M <= Int32(m):
                                 comptime key = String(
                                     M, "_", static_N, "_", static_K
                                 )
@@ -802,7 +800,7 @@ fn split_k_reduce[
     work_space_type: DType,
     c_layout: Layout,
     work_space_layout: Layout,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[mut=True, c_type, c_layout],
     work_space: LayoutTensor[work_space_type, work_space_layout],
@@ -853,7 +851,7 @@ fn multistage_gemm[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],
@@ -926,7 +924,7 @@ fn multistage_gemm[
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )
 
@@ -942,7 +940,7 @@ fn multistage_gemm[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],
@@ -1019,7 +1017,7 @@ fn multistage_gemm[
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    runtime_config.shared_mem_usage()
+                    UInt32(runtime_config.shared_mem_usage())
                 ),
             )
 
@@ -1087,6 +1085,6 @@ fn multistage_gemm[
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                UInt32(config.shared_mem_usage())
             ),
         )

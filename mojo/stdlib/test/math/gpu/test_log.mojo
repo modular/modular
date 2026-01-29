@@ -23,7 +23,7 @@ from utils import IndexList
 
 
 def run_elementwise[
-    dtype: DType, log_fn: fn (x: SIMD) -> type_of(x)
+    dtype: DType, log_fn: fn(x: SIMD) -> type_of(x)
 ](ctx: DeviceContext):
     comptime length = 8192
 

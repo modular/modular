@@ -53,22 +53,21 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 
 
 # Compile time Tensor information
-@register_passable("trivial")
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     # Represents the DimList type (not accessible from KGEN tests).
-    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+    comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]
     ) capturing -> SIMD[Self.dtype, simd_width]
-    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
+    comptime out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank], SIMD[Self.dtype, simd_width]
     ) capturing -> None
 
     comptime out_compute_lambda_t = fn[
         simd_width: Int, element_alignment: Int = 1
-    ] (IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
+    ](IndexList[Self.rank], SIMD[Self.dtype, simd_width]) capturing -> SIMD[
         Self.dtype, simd_width
     ]
 

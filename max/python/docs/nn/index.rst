@@ -10,56 +10,47 @@ MAX Neural Network API
 
 APIs to build neural network components for deep learning models with Python.
 
-Modules
-=======
+The MAX neural network API provides two namespaces:
 
-* :code_link:`/max/api/python/nn/clamp|clamp`
-* :code_link:`/max/api/python/nn/conv|conv`
-* :code_link:`/max/api/python/nn/conv_transpose|conv_transpose`
-* :code_link:`/max/api/python/nn/embedding|embedding`
-* :code_link:`/max/api/python/nn/float8_config|float8_config`
-* :code_link:`/max/api/python/nn/hooks|hooks`
-* :code_link:`/max/api/python/nn/kernels|kernels`
-* :code_link:`/max/api/python/nn/layer|layer`
-* :code_link:`/max/api/python/nn/linear|linear`
-* :code_link:`/max/api/python/nn/moe|moe`
-* :code_link:`/max/api/python/nn/module_v3|module_v3`
-* :code_link:`/max/api/python/nn/norm|norm`
-* :code_link:`/max/api/python/nn/rotary_embedding|rotary_embedding`
-* :code_link:`/max/api/python/nn/sampling|sampling`
-* :code_link:`/max/api/python/nn/sequential|sequential`
+- **max.nn**: Eager-style execution.
+- **max.nn.legacy**: Legacy graph-based API (for backward compatibility).
 
+For functional operations like relu, softmax, and more, see the
+:code_link:`/max/api/python/functional|functional` module.
 
-Packages
+Core API
 ========
 
-* :code_link:`/max/api/python/nn/attention|attention`
-* :code_link:`/max/api/python/nn/comm|comm`
-* :code_link:`/max/api/python/nn/kv_cache|kv_cache`
-* :code_link:`/max/api/python/nn/lora|lora`
-* :code_link:`/max/api/python/nn/transformer|transformer`
+Use these modules for all models. They provide eager-style execution with
+PyTorch-style syntax.
+
+* :code_link:`/max/api/python/nn/Embedding|Embedding`: Vector embedding layer for token representation.
+* :code_link:`/max/api/python/nn/Linear|Linear`: Linear transformation layer with weights and bias.
+* :code_link:`/max/api/python/nn/module|module`: Base class for all neural network modules.
+* :code_link:`/max/api/python/nn/norm|norm`: Normalization layers for training stability.
+* :code_link:`/max/api/python/nn/rope|rope`: Rotary position embeddings for sequence models.
+* :code_link:`/max/api/python/nn/sequential|sequential`: Containers for composing modules sequentially.
+
+Legacy API
+==========
+
+.. note::
+   The legacy API remains available for backward compatibility. For all new models,
+   use the `max.nn` API.
+
+The legacy API provides graph-based layer implementations. See the full
+reference:
+
+* :code_link:`/max/api/python/nn/legacy|legacy`: Neural network legacy API documentation.
 
 
 .. toctree::
    :hidden:
 
-   clamp
-   comm/index.rst
-   conv
-   conv_transpose
-   embedding
-   float8_config
-   hooks
-   kernels
-   kv_cache/index.rst
-   layer
-   linear
-   lora
-   moe
-   module_v3
-   norm
-   rotary_embedding
-   sampling
+   module
+   Linear
+   Embedding
    sequential
-   transformer/index.rst
-   attention/index.rst
+   norm/index
+   rope/index
+   legacy/index

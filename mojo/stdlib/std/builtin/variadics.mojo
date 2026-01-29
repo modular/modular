@@ -419,8 +419,9 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-@register_passable("trivial")
-struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
+struct VariadicList[type: TrivialRegisterType](
+    Iterable, Sized, TrivialRegisterType
+):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -667,7 +668,7 @@ struct VariadicListMem[
                 ]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
+        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -869,7 +870,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing
+        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'

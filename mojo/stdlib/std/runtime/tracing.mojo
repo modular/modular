@@ -79,8 +79,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TraceCategory(Equatable, Intable):
+struct TraceCategory(Equatable, Intable, TrivialRegisterType):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -137,8 +136,7 @@ struct TraceCategory(Equatable, Intable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct TraceLevel(Comparable, ImplicitlyCopyable):
+struct TraceLevel(Comparable, TrivialRegisterType):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -740,7 +738,7 @@ struct Trace[
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
     @always_inline
-    fn _get_detail_str[detail_fn: fn () capturing -> String]() -> String:
+    fn _get_detail_str[detail_fn: fn() capturing -> String]() -> String:
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
 

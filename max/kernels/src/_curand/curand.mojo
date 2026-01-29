@@ -81,8 +81,7 @@ fn _get_dylib_function[
 comptime curandDistributionShift_t = UnsafePointer[curandDistributionShift_st]
 
 
-@register_passable("trivial")
-struct curandDistributionShift_st:
+struct curandDistributionShift_st(TrivialRegisterType):
     var probability: curandDistribution_t
     var host_probability: curandDistribution_t
     var shift: UInt32
@@ -90,8 +89,7 @@ struct curandDistributionShift_st:
     var host_gen: UInt32
 
 
-@register_passable("trivial")
-struct curandDistributionM2Shift_st:
+struct curandDistributionM2Shift_st(TrivialRegisterType):
     var histogram: curandHistogramM2_t
     var host_histogram: curandHistogramM2_t
     var shift: UInt32
@@ -99,8 +97,7 @@ struct curandDistributionM2Shift_st:
     var host_gen: UInt32
 
 
-@register_passable("trivial")
-struct curandHistogramM2_st:
+struct curandHistogramM2_st(TrivialRegisterType):
     var V: curandHistogramM2V_t
     var host_V: curandHistogramM2V_t
     var K: curandHistogramM2V_t
@@ -111,8 +108,7 @@ struct curandHistogramM2_st:
 comptime curandDistribution_t = UnsafePointer[Float64]
 
 
-@register_passable("trivial")
-struct curandDiscreteDistribution_st:
+struct curandDiscreteDistribution_st(TrivialRegisterType):
     var self_host_ptr: curandDiscreteDistribution_t
     var M2: curandDistributionM2Shift_t
     var host_M2: curandDistributionM2Shift_t
@@ -131,7 +127,7 @@ fn curandGeneratePoissonMethod(
 ) raises -> curandStatus:
     return _get_dylib_function[
         "curandGeneratePoissonMethod",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Int16], Int, Float64, curandMethod
         ) -> curandStatus,
     ]()(generator, output_ptr, n, func, method)
@@ -167,13 +163,12 @@ fn curandGenerateLongLong(
     ."""
     return _get_dylib_function[
         "curandGenerateLongLong",
-        fn (curandGenerator_t, UnsafePointer[Int64], Int) -> curandStatus,
+        fn(curandGenerator_t, UnsafePointer[Int64], Int) -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct libraryPropertyType_t:
+struct libraryPropertyType_t(TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
@@ -198,13 +193,12 @@ fn curandGetProperty(
     ."""
     return _get_dylib_function[
         "curandGetProperty",
-        fn (libraryPropertyType_t, UnsafePointer[Int16]) -> curandStatus,
+        fn(libraryPropertyType_t, UnsafePointer[Int16]) -> curandStatus,
     ]()(type, value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandRngType(Equatable, Identifiable, Writable):
+struct curandRngType(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND generator types
     ."""
@@ -288,7 +282,7 @@ fn curandDestroyGenerator(generator: curandGenerator_t) raises -> curandStatus:
     - CURAND_STATUS_SUCCESS if generator was destroyed successfully \\n
     ."""
     return _get_dylib_function[
-        "curandDestroyGenerator", fn (curandGenerator_t) -> curandStatus
+        "curandDestroyGenerator", fn(curandGenerator_t) -> curandStatus
     ]()(generator)
 
 
@@ -312,7 +306,7 @@ fn curandGetScrambleConstants64(
     ."""
     return _get_dylib_function[
         "curandGetScrambleConstants64",
-        fn (UnsafePointer[UnsafePointer[Int64]]) -> curandStatus,
+        fn(UnsafePointer[UnsafePointer[Int64]]) -> curandStatus,
     ]()(constants)
 
 
@@ -346,7 +340,7 @@ fn curandGenerateSeeds(generator: curandGenerator_t) raises -> curandStatus:
     - CURAND_STATUS_SUCCESS if the seeds were generated successfully \\n
     ."""
     return _get_dylib_function[
-        "curandGenerateSeeds", fn (curandGenerator_t) -> curandStatus
+        "curandGenerateSeeds", fn(curandGenerator_t) -> curandStatus
     ]()(generator)
 
 
@@ -359,7 +353,7 @@ fn curandGenerateBinomial(
 ) raises -> curandStatus:
     return _get_dylib_function[
         "curandGenerateBinomial",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Int16], Int, Int16, Float64
         ) -> curandStatus,
     ]()(generator, output_ptr, num, n, p)
@@ -419,7 +413,7 @@ fn curandGenerateLogNormalDouble(
     ."""
     return _get_dylib_function[
         "curandGenerateLogNormalDouble",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Float64], Int, Float64, Float64
         ) -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
@@ -477,7 +471,7 @@ fn curandGenerateNormal(
     ."""
     return _get_dylib_function[
         "curandGenerateNormal",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Float32], Int, Float32, Float32
         ) -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
@@ -536,7 +530,7 @@ fn curandGenerateLogNormal(
     ."""
     return _get_dylib_function[
         "curandGenerateLogNormal",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Float32], Int, Float32, Float32
         ) -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
@@ -551,8 +545,7 @@ comptime curandGenerator_t = UnsafePointer[curandGenerator_st]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandMethod(Equatable, Identifiable, Writable):
+struct curandMethod(Equatable, Identifiable, TrivialRegisterType, Writable):
     """\\cond UNHIDE_ENUMS ."""
 
     var _value: Int8
@@ -644,7 +637,7 @@ fn curandSetGeneratorOffset(
     ."""
     return _get_dylib_function[
         "curandSetGeneratorOffset",
-        fn (curandGenerator_t, Int64) -> curandStatus,
+        fn(curandGenerator_t, Int64) -> curandStatus,
     ]()(generator, offset)
 
 
@@ -670,7 +663,7 @@ fn curandSetQuasiRandomGeneratorDimensions(
     ."""
     return _get_dylib_function[
         "curandSetQuasiRandomGeneratorDimensions",
-        fn (curandGenerator_t, Int16) -> curandStatus,
+        fn(curandGenerator_t, Int16) -> curandStatus,
     ]()(generator, num_dimensions)
 
 
@@ -699,7 +692,7 @@ fn curandGetVersion(version: UnsafePointer[Int16]) raises -> curandStatus:
     - CURAND_STATUS_SUCCESS if the version number was successfully returned \\n
     ."""
     return _get_dylib_function[
-        "curandGetVersion", fn (UnsafePointer[Int16]) -> curandStatus
+        "curandGetVersion", fn(UnsafePointer[Int16]) -> curandStatus
     ]()(version)
 
 
@@ -709,8 +702,7 @@ comptime curandMethod_t = curandMethod
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandStatus(Equatable, Identifiable, Writable):
+struct curandStatus(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND function call status types
     ."""
@@ -782,8 +774,9 @@ struct curandStatus(Equatable, Identifiable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandDirectionVectorSet(Equatable, Identifiable, Writable):
+struct curandDirectionVectorSet(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     """
     CURAND choice of direction vector set
     ."""
@@ -858,7 +851,7 @@ fn curandGenerateUniform(
     ."""
     return _get_dylib_function[
         "curandGenerateUniform",
-        fn (curandGenerator_t, UnsafePointer[Float32], Int) -> curandStatus,
+        fn(curandGenerator_t, UnsafePointer[Float32], Int) -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -872,7 +865,7 @@ fn curandGenerateBinomialMethod(
 ) raises -> curandStatus:
     return _get_dylib_function[
         "curandGenerateBinomialMethod",
-        fn (
+        fn(
             curandGenerator_t,
             UnsafePointer[Int16],
             Int,
@@ -910,7 +903,7 @@ fn curandCreatePoissonDistribution(
     ."""
     return _get_dylib_function[
         "curandCreatePoissonDistribution",
-        fn (
+        fn(
             Float64, UnsafePointer[curandDiscreteDistribution_t]
         ) -> curandStatus,
     ]()(func, discrete_distribution)
@@ -1006,7 +999,7 @@ fn curandCreateGenerator(
     ."""
     return _get_dylib_function[
         "curandCreateGenerator",
-        fn (UnsafePointer[curandGenerator_t], curandRngType) -> curandStatus,
+        fn(UnsafePointer[curandGenerator_t], curandRngType) -> curandStatus,
     ]()(generator, rng_type)
 
 
@@ -1037,7 +1030,7 @@ fn curandSetGeneratorOrdering(
     ."""
     return _get_dylib_function[
         "curandSetGeneratorOrdering",
-        fn (curandGenerator_t, curandOrdering) -> curandStatus,
+        fn(curandGenerator_t, curandOrdering) -> curandStatus,
     ]()(generator, order)
 
 
@@ -1086,7 +1079,7 @@ fn curandGenerateUniformDouble(
     ."""
     return _get_dylib_function[
         "curandGenerateUniformDouble",
-        fn (curandGenerator_t, UnsafePointer[Float64], Int) -> curandStatus,
+        fn(curandGenerator_t, UnsafePointer[Float64], Int) -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -1143,7 +1136,7 @@ fn curandGenerateNormalDouble(
     ."""
     return _get_dylib_function[
         "curandGenerateNormalDouble",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Float64], Int, Float64, Float64
         ) -> curandStatus,
     ]()(generator, output_ptr, n, mean, stddev)
@@ -1175,7 +1168,7 @@ fn curandGetDirectionVectors32(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors32",
-        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
+        fn(OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)
 
 
@@ -1195,7 +1188,7 @@ fn curandDestroyDistribution(
     ."""
     return _get_dylib_function[
         "curandDestroyDistribution",
-        fn (curandDiscreteDistribution_t) -> curandStatus,
+        fn(curandDiscreteDistribution_t) -> curandStatus,
     ]()(discrete_distribution)
 
 
@@ -1231,7 +1224,7 @@ fn curandGenerate(
     ."""
     return _get_dylib_function[
         "curandGenerate",
-        fn (curandGenerator_t, UnsafePointer[Int16], Int) -> curandStatus,
+        fn(curandGenerator_t, UnsafePointer[Int16], Int) -> curandStatus,
     ]()(generator, output_ptr, num)
 
 
@@ -1245,8 +1238,7 @@ comptime curandDirectionVectors64_t = StaticTuple[UInt64, 64]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct curandOrdering(Equatable, Identifiable, Writable):
+struct curandOrdering(Equatable, Identifiable, TrivialRegisterType, Writable):
     """
     CURAND ordering of results in memory
     ."""
@@ -1317,7 +1309,7 @@ fn curandSetPseudoRandomGeneratorSeed(
     ."""
     return _get_dylib_function[
         "curandSetPseudoRandomGeneratorSeed",
-        fn (curandGenerator_t, Int64) -> curandStatus,
+        fn(curandGenerator_t, Int64) -> curandStatus,
     ]()(generator, seed)
 
 
@@ -1338,7 +1330,7 @@ fn curandSetStream(
     - CURAND_STATUS_SUCCESS if stream was set successfully \\n
     ."""
     return _get_dylib_function[
-        "curandSetStream", fn (curandGenerator_t, CUstream) -> curandStatus
+        "curandSetStream", fn(curandGenerator_t, CUstream) -> curandStatus
     ]()(generator, stream)
 
 
@@ -1427,7 +1419,7 @@ fn curandCreateGeneratorHost(
     ."""
     return _get_dylib_function[
         "curandCreateGeneratorHost",
-        fn (UnsafePointer[curandGenerator_t], curandRngType) -> curandStatus,
+        fn(UnsafePointer[curandGenerator_t], curandRngType) -> curandStatus,
     ]()(generator, rng_type)
 
 
@@ -1471,7 +1463,7 @@ fn curandGeneratePoisson(
     ."""
     return _get_dylib_function[
         "curandGeneratePoisson",
-        fn (
+        fn(
             curandGenerator_t, UnsafePointer[Int16], Int, Float64
         ) -> curandStatus,
     ]()(generator, output_ptr, n, func)
@@ -1504,7 +1496,7 @@ fn curandGetScrambleConstants32(
     ."""
     return _get_dylib_function[
         "curandGetScrambleConstants32",
-        fn (UnsafePointer[UnsafePointer[Int16]]) -> curandStatus,
+        fn(UnsafePointer[UnsafePointer[Int16]]) -> curandStatus,
     ]()(constants)
 
 
@@ -1534,5 +1526,5 @@ fn curandGetDirectionVectors64(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors64",
-        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
+        fn(OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)

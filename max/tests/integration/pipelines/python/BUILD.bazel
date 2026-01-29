@@ -126,6 +126,9 @@ modular_py_binary(
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        # TODO(GEX-3132): Remove this workaround.
+        # Limit memory usage to avoid OOM in Llama 4 Scout during init.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "0.90",
     },
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
@@ -160,8 +163,9 @@ modular_py_binary(
     testonly = True,
     srcs = ["smoke_tests/smoke_test.py"],
     data = glob([
-        "smoke_tests/chartqa_modular/**",
+        "smoke_tests/tasks/**",
     ]),
+    imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
@@ -176,6 +180,27 @@ modular_py_binary(
     srcs = ["smoke_tests/smoke_test_github_matrix.py"],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "bisect_smoke_test",
+    testonly = True,
+    srcs = ["smoke_tests/bisect_smoke_test.py"],
+    imports = ["."],
+)
+
+modular_py_test(
+    name = "test_bisect_smoke_test",
+    size = "small",
+    srcs = ["test_bisect_smoke_test.py"],
+    args = [
+        "--ignore=max/tests/integration/pipelines/python/smoke_tests",
+    ],
+    imports = ["."],
+    deps = [
+        ":bisect_smoke_test",
+        ":smoke_test",
     ],
 )
 

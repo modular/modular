@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, simd_width_of, size_of
 
 from gpu import warp_id
@@ -137,7 +135,6 @@ struct RegisterAccumulatorDescription:
 # consumer_group_size equals
 # sm90: 128 (warp group size)
 # sm100: num_softmax_threads
-@register_passable("trivial")
 struct RegisterAccumulatorLayout[
     MMA_M: Int,
     MMA_N: Int,
@@ -146,7 +143,7 @@ struct RegisterAccumulatorLayout[
     consumer_group_size: Int,
     *,
     frag_simdwidth: Int = 2,
-]:
+](TrivialRegisterType):
     comptime frag_size: Int = Self.MMA_M * Self.MMA_N // Self.consumer_group_size
     comptime num_row_blocks_per_mma = 2
     comptime element_layout: Layout = Layout.row_major(1, Self.frag_simdwidth)
@@ -183,7 +180,6 @@ struct RegisterAccumulatorLayout[
         )
 
 
-@register_passable("trivial")
 struct MMAOperandOffsetFn[
     dtype: DType,
     BMN: Int,
@@ -192,7 +188,7 @@ struct MMAOperandOffsetFn[
     is_k_major: Bool,
     WMMA_MN: Int,
     WMMA_K: Int,
-]:
+](TrivialRegisterType):
     comptime layout = tile_layout_k_major[
         Self.dtype, Self.BMN, Self.BK, Self.swizzle
     ]() if Self.is_k_major else tile_layout_mn_major[
@@ -216,8 +212,7 @@ struct MMAOperandOffsetFn[
         pass
 
 
-@register_passable("trivial")
-trait DescriptorPair:
+trait DescriptorPair(TrivialRegisterType):
     comptime a_t: MMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -230,8 +225,7 @@ trait DescriptorPair:
         ...
 
 
-@register_passable("trivial")
-trait WriteableMMAOperandDescriptor:
+trait WriteableMMAOperandDescriptor(TrivialRegisterType):
     @always_inline
     fn copy_from[
         src_type: DType, src_layout: Layout, src_element_layout: Layout, //
@@ -248,8 +242,7 @@ trait WriteableMMAOperandDescriptor:
         ...
 
 
-@register_passable("trivial")
-trait DescriptorPairTS:
+trait DescriptorPairTS(TrivialRegisterType):
     comptime a_t: WriteableMMAOperandDescriptor
     comptime b_t: MMAOperandDescriptor
 
@@ -274,12 +267,13 @@ fn local_tensor_type[
     ]
 ):
     dummy_arg = {
-        UnsafePointer[Scalar[dtype], address_space = AddressSpace.LOCAL]()
+        UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
+        ]()
     }
 
 
-@register_passable("trivial")
-trait AccumulatorTile(ImplicitlyCopyable):
+trait AccumulatorTile(TrivialRegisterType):
     comptime dtype: DType
     comptime element_layout: Layout
     comptime vec_output_layout: Layout
@@ -331,8 +325,9 @@ trait AccumulatorTile(ImplicitlyCopyable):
         ...
 
 
-@register_passable("trivial")
-struct UMMADescriptorSS[operand_type: DType](DescriptorPair):
+struct UMMADescriptorSS[operand_type: DType](
+    DescriptorPair, TrivialRegisterType
+):
     comptime operand_t = Self.operand_type
     comptime a_t = MMASmemDescriptor
     comptime b_t = MMASmemDescriptor
@@ -369,7 +364,6 @@ fn _tmem_offset[dtype: DType, *, MMA_N: Int, m_mma: Int, n_mma: Int]() -> Int:
     return linear
 
 
-@register_passable("trivial")
 struct TMemAccumulator[
     dtype_: DType,
     MMA_M: Int,
@@ -377,7 +371,7 @@ struct TMemAccumulator[
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_softmax_threads: Int,
-](AccumulatorTile):
+](AccumulatorTile, TrivialRegisterType):
     comptime dtype: DType = Self.dtype_
     comptime layout_t = RegisterAccumulatorLayout[
         Self.MMA_M,
@@ -414,7 +408,7 @@ struct TMemAccumulator[
 
     @always_inline
     fn __getitem__(self, i: UInt32) -> Self:
-        return {self.tmem_addr + i * Self.MMA_N}
+        return {self.tmem_addr + i * UInt32(Self.MMA_N)}
 
     @always_inline
     @staticmethod
@@ -485,7 +479,7 @@ struct TMemAccumulator[
                 Self.dtype, MMA_N = Self.MMA_N, m_mma=m_mma, n_mma=n_mma
             ]()
 
-            return self.tmem_addr + linear
+            return self.tmem_addr + UInt32(linear)
 
     @staticmethod
     @always_inline
@@ -534,7 +528,7 @@ struct TMemAccumulator[
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
-                tmem = self.tmem_addr + tmem_offset
+                tmem = self.tmem_addr + UInt32(tmem_offset)
                 frag = bitcast[DType.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                 tcgen05_st[
@@ -544,7 +538,7 @@ struct TMemAccumulator[
                     pack=False,
                 ](tmem, frag)
         tcgen05_store_wait()
-        named_barrier[Self.num_softmax_threads]()
+        named_barrier[Int32(Self.num_softmax_threads)]()
 
     @always_inline
     fn copy_to(
@@ -575,7 +569,7 @@ struct TMemAccumulator[
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
-                tmem = self.tmem_addr + tmem_offset
+                tmem = self.tmem_addr + UInt32(tmem_offset)
                 frags[mma_id, 0] = bitcast[
                     Self.dtype, frags.element_layout.size()
                 ](
@@ -592,7 +586,6 @@ struct TMemAccumulator[
         tcgen05_load_wait()
 
 
-@register_passable("trivial")
 struct TMemOperand[
     dtype: DType,
     num_m_mmas: Int,
@@ -601,7 +594,7 @@ struct TMemOperand[
     MMA_N: Int,
     MMA_K: Int,
     num_softmax_threads: Int,
-](WriteableMMAOperandDescriptor):
+](TrivialRegisterType, WriteableMMAOperandDescriptor):
     var tmem_addr: UInt32
 
     comptime reg_layout = RegisterAccumulatorLayout[
@@ -635,7 +628,7 @@ struct TMemOperand[
             comptime linear = _tmem_offset[
                 DType.bfloat16, MMA_N = Self.MMA_K, m_mma=m_mma, n_mma=k_mma
             ]()
-            return self.tmem_addr + linear
+            return self.tmem_addr + UInt32(linear)
 
     @always_inline
     fn copy_from[
@@ -713,7 +706,7 @@ struct TMemOperand[
                 pack=False,
             ](tmem, frag)
         tcgen05_store_wait()
-        named_barrier[Self.num_softmax_threads]()
+        named_barrier[Int32(Self.num_softmax_threads)]()
 
     @always_inline
     fn copy_to[
@@ -780,7 +773,6 @@ struct TMemOperand[
         tcgen05_load_wait()
 
 
-@register_passable("trivial")
 struct UMMADescriptorTS[
     operand_type: DType,
     num_m_mmas: Int,
@@ -790,7 +782,7 @@ struct UMMADescriptorTS[
     MMA_N: Int,
     MMA_K: Int,
     consumer_group_size: Int,
-](DescriptorPairTS):
+](DescriptorPairTS, TrivialRegisterType):
     comptime operand_t = Self.operand_type
     comptime a_t = TMemOperand[
         Self.operand_type,
@@ -820,7 +812,6 @@ struct UMMADescriptorTS[
         return self.b
 
 
-@register_passable("trivial")
 struct SM100TensorAccumulatorSS[
     operand_type: DType,
     accum_type: DType,
@@ -837,7 +828,7 @@ struct SM100TensorAccumulatorSS[
     transpose_b: Bool = True,
     cta_group: Int = 1,
     pipeline_stages: Int = 1,
-]:
+](TrivialRegisterType):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
@@ -850,7 +841,9 @@ struct SM100TensorAccumulatorSS[
     comptime num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
 
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t], address_space = AddressSpace.SHARED
+        Scalar[Self.operand_t],
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ]
 
     comptime a_offset = MMAOperandOffsetFn[
@@ -893,7 +886,7 @@ struct SM100TensorAccumulatorSS[
     ]
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ]
     var pipeline: PipelineState[Self.pipeline_stages]
 
@@ -919,7 +912,7 @@ struct SM100TensorAccumulatorSS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -931,7 +924,9 @@ struct SM100TensorAccumulatorSS[
         @parameter
         for i in range(Self.pipeline_stages):
             self.mbar[i].init()
-            self.mbar[i + Self.pipeline_stages].init(Self.num_softmax_threads)
+            self.mbar[i + Self.pipeline_stages].init(
+                Int32(Self.num_softmax_threads)
+            )
 
     @staticmethod
     @always_inline
@@ -939,10 +934,10 @@ struct SM100TensorAccumulatorSS[
         dtype_a: DType, dtype_b: DType
     ](
         p_a: UnsafePointer[
-            Scalar[dtype_a], address_space = AddressSpace.SHARED
+            Scalar[dtype_a], MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
         p_b: UnsafePointer[
-            Scalar[dtype_b], address_space = AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ) -> Self.ab_t:
         Self.check_constraints()
@@ -1035,7 +1030,7 @@ struct SM100TensorAccumulatorSS[
         """
         Wait for the accumulator tmem to finish being read.
         """
-        self.mbar[Self.pipeline_stages + self.pipeline.index()].wait(
+        self.mbar[UInt32(Self.pipeline_stages) + self.pipeline.index()].wait(
             self.pipeline.phase()
         )
 
@@ -1059,11 +1054,12 @@ struct SM100TensorAccumulatorSS[
         """
         Indicate that the accumulator is ready to be updated.
         """
-        _ = self.mbar[Self.pipeline_stages + self.pipeline.index()].arrive()
+        _ = self.mbar[
+            UInt32(Self.pipeline_stages) + self.pipeline.index()
+        ].arrive()
         self.pipeline.step()
 
 
-@register_passable("trivial")
 struct SM100TensorAccumulatorTS[
     operand_type: DType,
     accum_type: DType,
@@ -1076,13 +1072,15 @@ struct SM100TensorAccumulatorTS[
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     cta_group: Int = 1,
-]:
+](TrivialRegisterType):
     comptime operand_t: DType = Self.operand_type
     comptime accum_t: DType = Self.accum_type
 
     comptime MMA_K = 16
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t], address_space = AddressSpace.SHARED
+        Scalar[Self.operand_t],
+        MutAnyOrigin,
+        address_space = AddressSpace.SHARED,
     ]
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
@@ -1130,7 +1128,7 @@ struct SM100TensorAccumulatorTS[
     ]()
 
     var mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
     ]
     var phase: UInt32
 
@@ -1151,7 +1149,7 @@ struct SM100TensorAccumulatorTS[
     fn __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1161,7 +1159,7 @@ struct SM100TensorAccumulatorTS[
     @always_inline
     fn init(self):
         self.mbar[0].init()
-        self.mbar[1].init(Self.num_softmax_threads)
+        self.mbar[1].init(Int32(Self.num_softmax_threads))
 
     @staticmethod
     @always_inline
@@ -1175,7 +1173,7 @@ struct SM100TensorAccumulatorTS[
         dtype_b: DType
     ](
         p_b: UnsafePointer[
-            Scalar[dtype_b], address_space = AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space = AddressSpace.SHARED
         ],
     ) -> Self.ab_t.b_t:
         Self.check_constraints()
@@ -1316,9 +1314,9 @@ fn mha_sm100_dispatch[
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
-        num_queries_per_block=OptionalReg[UInt](64),
-        num_keys_per_block=OptionalReg[UInt](config.num_keys_per_block),
-        BK=OptionalReg[UInt](config.BK),
+        num_queries_per_block=Optional[UInt](64),
+        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
+        BK=Optional[UInt](config.BK),
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
@@ -1337,7 +1335,7 @@ fn mha_sm100_dispatch[
     __comptime_assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
-    q = rebind[UnsafePointer[Scalar[KVType.dtype]]](q_arg)
+    q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,
@@ -1399,7 +1397,7 @@ fn mha_sm100_dispatch[
     if sink:
         comptime SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
-            rebind[UnsafePointer[Scalar[KVType.dtype]]](
+            rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
                 sink_weights.value().ptr
             )
         }
@@ -1933,7 +1931,7 @@ fn _mha_sm100[
         BN = Int(config.block_n()),
         BK = Int(config.padded_depth),
     ],
-    o_ptr_arg: UnsafePointer[Scalar[output_type]],
+    o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
     scale: Float32,
     batch_size: UInt32,
@@ -2202,13 +2200,13 @@ fn _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type]]()
+    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
 
     @parameter
     if not SinkType.is_null:
-        sink_weights_ptr = rebind[UnsafePointer[Scalar[kv_type]]](
-            sink_weights.value()
-        )
+        sink_weights_ptr = rebind[
+            UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
+        ](sink_weights.value())
 
     # actually 16 byte alignment
     produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
@@ -2232,7 +2230,8 @@ fn _mha_sm100[
     # constructing calls barrier() if static
     var tile_summary = MHATileSummary[ValidLengthType](
         batch_size,
-        ceildiv(max_seq_len.as_uint32(), BM) * partition.num_partitions(),
+        ceildiv(max_seq_len.as_uint32(), UInt32(BM))
+        * partition.num_partitions(),
         valid_length,
         max_seq_len.as_uint32(),
     )
@@ -2257,7 +2256,7 @@ fn _mha_sm100[
         for i in range(pipeline_stages):
             # until we can use TMA, we need 128 producers working on async copies
             produced_mbar_kv[i].init(1)
-            consumed_mbar_kv[i].init(num_softmax_threads)
+            consumed_mbar_kv[i].init(Int32(num_softmax_threads))
         umma_0.init()
         umma_1.init()
 
@@ -2355,15 +2354,17 @@ fn _mha_sm100[
 
             qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
 
-            named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+            named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             if tid != 0:
                 return
             q_desc = qk_desc.get_a()
             k_desc = qk_desc.get_b()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             var s_tmem: UInt32 = tmem_addr
-            var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
-            var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+            var o_tmem: UInt32 = tmem_addr + UInt32(MMA_N0 * num_s)
+            var p_tmem: UInt32 = (
+                tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
+            )
             s_accumulator = UMMA0Type.c_t(s_tmem)
 
             @parameter
@@ -2371,9 +2372,7 @@ fn _mha_sm100[
             fn q_mul_k(read_idx: UInt32, read_phase: UInt32):
                 q = q_desc
                 k = k_desc + Int(
-                    BN
-                    * Int(config.padded_depth)
-                    * size_of[kv_type]()
+                    UInt32(BN * Int(config.padded_depth) * size_of[kv_type]())
                     * read_idx
                 )
                 umma_0.wait_for_tmem()
@@ -2391,7 +2390,7 @@ fn _mha_sm100[
                 mask_status = position.mask_status(mask, kv_tile_start_row)
                 if mask_status != TileMaskStatus.FULL_MASK:
                     break
-                kv_tile_start_row += BN
+                kv_tile_start_row += UInt32(BN)
 
             kv_pipeline_states = PipelineState[pipeline_stages]()
             s_pipeline_states = PipelineState[pipeline_stages]()
@@ -2406,7 +2405,7 @@ fn _mha_sm100[
             # Exit: V{-1}
             while True:
                 # this loops over num_keys
-                kv_tile_start_row += BN
+                kv_tile_start_row += UInt32(BN)
                 if kv_tile_start_row >= end:
                     break
                 # this loops over num_keys
@@ -2434,12 +2433,14 @@ fn _mha_sm100[
                 if kv_tile_start_row >= end:
                     return
 
-            named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+            named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             if tid == 32:
                 var s_tmem: UInt32 = tmem_addr
-                var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
-                var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+                var o_tmem: UInt32 = tmem_addr + UInt32(MMA_N0 * num_s)
+                var p_tmem: UInt32 = (
+                    tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
+                )
                 p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
                 v_desc = UMMA1Type.b_mma_descriptor(kv_smem)
                 output_accumulator = UMMA1Type.c_t(o_tmem)
@@ -2456,7 +2457,7 @@ fn _mha_sm100[
                     comptime offset_bytes_per = offset_elems_per * size_of[
                         kv_type
                     ]()
-                    v = v_desc + Int(offset_bytes_per * read_idx)
+                    v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
                     produced_mbar_kv[read_idx].wait(read_phase)
                     umma_1.wait_for_tmem()
                     umma_1.mma(
@@ -2471,7 +2472,7 @@ fn _mha_sm100[
                     mask_status = position.mask_status(mask, kv_tile_start_row)
                     if mask_status != TileMaskStatus.FULL_MASK:
                         break
-                    kv_tile_start_row += BN
+                    kv_tile_start_row += UInt32(BN)
 
                 kv_pipeline_states = PipelineState[pipeline_stages]()
                 var read_idx_q: UInt32 = kv_pipeline_states.index()
@@ -2484,7 +2485,7 @@ fn _mha_sm100[
                 # Exit: V{-1}
                 while True:
                     # this loops over num_keys
-                    kv_tile_start_row += BN
+                    kv_tile_start_row += UInt32(BN)
                     if kv_tile_start_row >= end:
                         break
                     # this loops over num_keys
@@ -2520,7 +2521,7 @@ fn _mha_sm100[
             _ = consumed_mbar_kv[i].arrive()
         umma_0.tmem_arrive_init()
 
-        var warp_id: UInt32 = warp.broadcast((tid - 128) // WARP_SIZE)
+        var warp_id: UInt32 = warp.broadcast((tid - 128) // UInt32(WARP_SIZE))
 
         # Coordinates of the current warp.
         var elect_one_warp = warp_id == 0
@@ -2538,7 +2539,7 @@ fn _mha_sm100[
 
         # Mask global memory iterator.
 
-        mask_warp_row = warp_y * WM
+        mask_warp_row = warp_y * UInt32(WM)
         var scale_log2e: Scalar[accum_type] = (
             scale.cast[accum_type]() if use_score_mod
             or MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
@@ -2661,12 +2662,16 @@ fn _mha_sm100[
                 for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
-            var output_ptr: UnsafePointer[Scalar[output_type]] = o_ptr_arg
+            var output_ptr: UnsafePointer[
+                Scalar[output_type], MutAnyOrigin
+            ] = o_ptr_arg
 
             @parameter
             if decoding and PartitionType.do_partition:
                 output_ptr = output_ptr + (
-                    depth * num_heads * batch_size * position.prompt_offset
+                    UInt32(depth * num_heads)
+                    * batch_size
+                    * position.prompt_offset
                 )
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
@@ -2690,7 +2695,7 @@ fn _mha_sm100[
             )
 
             # ensure all threads have finished reading `q_smem`
-            named_barrier[num_softmax_threads]()
+            named_barrier[Int32(num_softmax_threads)]()
             copy_local_to_shared[
                 thread_layout=mma_thread_layout, swizzle=swizzle
             ](
@@ -2700,7 +2705,7 @@ fn _mha_sm100[
                 .transpose(),
             )
             # Guard writing to shared memory.
-            named_barrier[num_softmax_threads]()
+            named_barrier[Int32(num_softmax_threads)]()
             # Vectorized copy from shared to global memory, during which every 2 FP32
             # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
             # vector and stored using 16B store instruction.
@@ -2741,7 +2746,7 @@ fn _mha_sm100[
                 write_output(position, rowsum, vectorize_o_reg_tile().fill(0))
                 return
 
-        named_barrier[num_softmax_threads + 2 * WARP_SIZE]()
+        named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
         var tmem_addr = ptr_tmem_addr[0]
 
         @parameter
@@ -2749,8 +2754,8 @@ fn _mha_sm100[
             if warp_group_idx != 1:  # elect_one_warp will be false
                 tmem_addr += 1 << 20
         var s_tmem: UInt32 = tmem_addr
-        var o_tmem: UInt32 = tmem_addr + MMA_N0 * num_s
-        var p_tmem: UInt32 = tmem_addr + MMA_N0 * num_s + MMA_N1
+        var o_tmem: UInt32 = tmem_addr + UInt32(MMA_N0 * num_s)
+        var p_tmem: UInt32 = tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
         p_accumulator = UMMA0Type.c_t(s_tmem)
         p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
         output_accumulator = UMMA1Type.c_t(o_tmem)
@@ -2776,7 +2781,7 @@ fn _mha_sm100[
             mask_status = position.mask_status(mask, kv_tile_start_row)
             if mask_status != TileMaskStatus.FULL_MASK:
                 break
-            kv_tile_start_row += BN
+            kv_tile_start_row += UInt32(BN)
 
         kv_pipeline_states = PipelineState[pipeline_stages]()
         # q_mul_k must wait on fetching q and k
@@ -2864,7 +2869,7 @@ fn _mha_sm100[
         # Exit: V{-1}
         while True:
             # this loops over num_keys
-            kv_tile_start_row += BN
+            kv_tile_start_row += UInt32(BN)
             if kv_tile_start_row >= end:
                 break
             # this loops over num_keys

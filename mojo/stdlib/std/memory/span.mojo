@@ -33,6 +33,34 @@ from builtin.device_passable import DevicePassable
 from compile import get_type_name
 
 
+# ===-----------------------------------------------------------------------===#
+# Span aliases
+# ===-----------------------------------------------------------------------===#
+
+
+comptime MutSpan[
+    T: Copyable,
+    origin: MutOrigin,
+] = Span[T, origin]
+"""A span providing mutable access to its elements.
+
+Parameters:
+    T: The type of the elements in the span.
+    origin: The origin of the span.
+"""
+
+comptime ImmutSpan[
+    T: Copyable,
+    origin: ImmutOrigin,
+] = Span[T, origin]
+"""A span providing read-only access to its elements.
+
+Parameters:
+    T: The type of the elements in the span.
+    origin: The origin of the span.
+"""
+
+
 @fieldwise_init
 struct _SpanIter[
     mut: Bool,
@@ -86,7 +114,6 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-@register_passable("trivial")
 struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     Boolable,
     Defaultable,
@@ -94,6 +121,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     ImplicitlyCopyable,
     Iterable,
     Sized,
+    TrivialRegisterType,
 ):
     """A non-owning view of contiguous data.
 
@@ -589,8 +617,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         )
         var ptr = self.unsafe_ptr()
 
-        # `a` and `b` may be equal, so we cannot use `swap` directly.
-        (ptr + a).swap_pointees(ptr + b)
+        # `a` and `b` may be equal, so we cannot use `swap` directly.  The
+        # unsafe_origin_cast silence the (correct) exclusivity error.
+        (ptr + a).unsafe_origin_cast[MutAnyOrigin]().swap_pointees(ptr + b)
 
     fn swap_elements(self: Span[mut=True, Self.T], a: Int, b: Int) raises:
         """
@@ -675,14 +704,18 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
 
         if is_odd:
             var value = ptr[middle + 1]
-            (ptr + middle + 1).init_pointee_move_from(ptr + middle - 1)
-            (ptr + middle - 1).init_pointee_move(value)
+            # Use an unsafe origin cast to silence the (correct) exclusivity error.
+            var middle_prev = (ptr + middle - 1).unsafe_origin_cast[
+                MutAnyOrigin
+            ]()
+            (ptr + middle + 1).init_pointee_move_from(middle_prev)
+            middle_prev.init_pointee_move(value)
 
     fn apply[
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace.
 
@@ -715,9 +748,9 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         dtype: DType,
         O: MutOrigin,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
-        cond: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        cond: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], O]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -754,7 +787,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
     fn count[
         dtype: DType,
         //,
-        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype]]) -> UInt:
         """Count the amount of times the function returns `True`.
 
@@ -830,7 +863,7 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
         return Optional(cursor) if value == needle else None
 
     fn binary_search_by[
-        func: fn (Self.T) -> Int,
+        func: fn(Self.T) -> Int,
     ](self: Span[Self.T, Self.origin]) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 

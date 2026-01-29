@@ -37,7 +37,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -62,7 +62,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
@@ -74,7 +74,7 @@ class DecodeScheduler(Scheduler):
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-        self.paged_manager = paged_manager
+        self.kv_cache = kv_cache
 
         # Initialize Queues
         self.request_queue = request_queue
@@ -88,19 +88,23 @@ class DecodeScheduler(Scheduler):
         self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
         self.prefill_reqs_per_replica: list[int] = [
-            0 for _ in range(self.paged_manager.num_replicas)
+            0 for _ in range(self.kv_cache.num_replicas)
         ]
 
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
-            total_num_pages=self.paged_manager.total_num_pages,
+            tensors=[
+                self.kv_cache.get_device_tensors(replica_idx)
+                for replica_idx in range(self.kv_cache.num_replicas)
+            ],
+            # Assume all replicas have the same number of pages.
+            total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
         )
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_manager,
+            kv_cache=kv_cache,
         )
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
@@ -167,9 +171,7 @@ class DecodeScheduler(Scheduler):
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
         # prefix caching.
-        for i in range(
-            data.tokens.processed_length // self.paged_manager.page_size
-        ):
+        for i in range(data.tokens.processed_length // self.kv_cache.page_size):
             dst_idxs[i] = -1
 
         self.dispatcher.send_request_nowait(
@@ -200,8 +202,13 @@ class DecodeScheduler(Scheduler):
             )
             < self.scheduler_config.max_batch_size
             and (
-                self.paged_manager is None
-                or self.paged_manager.free_blocks_pct > 0.1
+                self.kv_cache is None
+                or any(
+                    self.kv_cache.get_num_used_pages(replica_idx)
+                    / self.kv_cache.get_num_pages(replica_idx)
+                    < 0.9
+                    for replica_idx in range(self.kv_cache.num_replicas)
+                )
             )
         ):
             # Pop off request queue
@@ -213,22 +220,26 @@ class DecodeScheduler(Scheduler):
             replica_idx = self.batch_constructor.get_next_replica_idx(
                 external_requests_per_replica=self.prefill_reqs_per_replica
             )
-            self.paged_manager.claim(req_id, replica_idx=replica_idx)
+            self.kv_cache.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
             # from prefill -> decode.
             try:
-                self.paged_manager.alloc(context, 1)
+                self.kv_cache.alloc(
+                    context, replica_idx=replica_idx, num_steps=1
+                )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.paged_manager.release(req_id)
+                self.kv_cache.release(req_id, replica_idx=replica_idx)
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.paged_manager.get_req_blocks(req_id)
+            dst_idxs = self.kv_cache.get_req_blocks(
+                req_id, replica_idx=replica_idx
+            )
             self.prefill_reqs[req_id] = (context, replica_idx)
             self.prefill_reqs_per_replica[replica_idx] += 1
             self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
@@ -389,7 +400,7 @@ class DecodeScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.paged_manager,
+            kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
@@ -401,7 +412,7 @@ class DecodeScheduler(Scheduler):
 
 
 def load_decode_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -415,18 +426,16 @@ def load_decode_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    paged_manager = get_paged_manager(pipeline)
-
-    if paged_manager is None:
-        raise RuntimeError(
-            "A paged KV cache manager must be present to use the DecodeScheduler"
+    if len(pipeline.kv_managers) != 1:
+        raise ValueError(
+            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
+            f"{len(pipeline.kv_managers)}"
         )
 
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        paged_manager=paged_manager,
+        kv_cache=pipeline.kv_managers[0],
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

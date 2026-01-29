@@ -15,7 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import (
     acos,
     atanh,
@@ -54,6 +54,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
+from comm.reducescatter import reducescatter
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -85,6 +86,9 @@ from linalg.fp4_quantization import (
 )
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
+)
+from linalg.grouped_matmul_sm100_1d1d import (
+    grouped_matmul_dynamic_scaled_nvfp4,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul, grouped_matmul_vendor
@@ -179,6 +183,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
     k_matmul_ragged_paged_scale,
@@ -3805,11 +3810,11 @@ struct Matmul:
             transposed_a,
             transpose_b,
             packed_b,
-            OptionalReg[matmul_elementwise_epilogue_type](
+            Optional[matmul_elementwise_epilogue_type](
                 epilgue_fn
             ) if lambdas_have_fusion
             and not has_compute_lambda else None,
-            OptionalReg[matmul_elementwise_compute_lambda_type](
+            Optional[matmul_elementwise_compute_lambda_type](
                 output_compute_fn
             ) if lambdas_have_fusion
             and has_compute_lambda else None,
@@ -3865,7 +3870,7 @@ struct BatchMatmul:
         batched_matmul[
             transpose_a=transpose_a,
             transpose_b=transpose_b,
-            elementwise_epilogue_fn = OptionalReg[
+            elementwise_epilogue_fn = Optional[
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
@@ -6095,8 +6100,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6126,8 +6131,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6412,6 +6417,56 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
                     address_space = AddressSpace.GENERIC,
                 ]
             ](),
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2],
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_type, rank=5],
+        weight_scale: InputTensor[dtype=scale_type, rank=5],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            tensor_sf,
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
         )
 
 
@@ -7518,7 +7573,7 @@ struct Struct_moe_router_group_limited:
             scores_input_fn = OptionalReg[
                 fn[
                     width: Int
-                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),
@@ -7559,6 +7614,98 @@ struct Struct_grouped_matmul_ragged:
             managed_tensor_slice_to_ndbuffer(expert_start_indices),
             managed_tensor_slice_to_ndbuffer(expert_ids),
             Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.dynamic.scaled.nvfp4")
+struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
+    """MOGG wrapper for grouped NVFP4 matrix multiplication.
+
+    Provides graph compiler integration for NVFP4-quantized grouped matmul
+    operations used in Mixture of Experts (MoE) layers on SM100 GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    fn execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        tokens_padded_per_expert: Bool,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2],
+        a: InputTensor[dtype=a_type, rank=2],
+        b: InputTensor[dtype=b_type, rank=3],
+        a_scales: InputTensor[dtype=scales_type, rank=5],
+        b_scales: InputTensor[dtype=scales_type, rank=6],
+        expert_start_indices: InputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: InputTensor[dtype = DType.int32, rank=1],
+        a_scale_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        expert_scales: InputTensor[dtype = DType.float32, rank=1],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped NVFP4 matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        NVFP4-quantized (4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            a_type: The input A data type. Constraints: Must be `uint8`.
+            b_type: The input B data type. Constraints: Must be `uint8`.
+            scales_type: The scale factor data type.
+                Constraints: Must be `float8_e4m3fn`.
+            tokens_padded_per_expert: Whether tokens are padded per expert.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in tcgen05 5D layout.
+            b_scales: The B scale factors in tcgen05 6D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            a_scale_offsets: The starting scale index for each expert.
+            expert_scales: The per-expert scaling factors for the epilogue.
+            max_num_tokens_per_expert: The maximum tokens per expert.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        __comptime_assert is_gpu[
+            target
+        ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        cuda_ctx = context.get_device_context()
+        var c_layout_tensor = c.to_layout_tensor()
+        var a_layout_tensor = a.to_layout_tensor()
+        var b_layout_tensor = b.to_layout_tensor()
+        var a_scales_layout_tensor = a_scales.to_layout_tensor()
+        var b_scales_layout_tensor = b_scales.to_layout_tensor()
+        var expert_start_indices_layout_tensor = (
+            expert_start_indices.to_layout_tensor()
+        )
+        var a_scale_offsets_layout_tensor = a_scale_offsets.to_layout_tensor()
+        var expert_ids_layout_tensor = expert_ids.to_layout_tensor()
+        var expert_scales_layout_tensor = expert_scales.to_layout_tensor()
+        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target,](
+            c_layout_tensor,
+            a_layout_tensor,
+            b_layout_tensor,
+            a_scales_layout_tensor,
+            b_scales_layout_tensor,
+            expert_start_indices_layout_tensor,
+            a_scale_offsets_layout_tensor,
+            expert_ids_layout_tensor,
+            expert_scales_layout_tensor,
             Int(num_active_experts),
             cuda_ctx,
         )
@@ -8741,7 +8888,7 @@ struct DistributedAllReduceSum:
             3. The output is only for the assigned device.
 
         Limitations:
-            - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
             - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
             - Requires identical tensor shapes across all participating GPUs
         """
@@ -8791,6 +8938,94 @@ struct DistributedAllReduceSum:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce[ngpus=num_devices, output_lambda=output_lambda](
+                in_bufs, out_buf, rank_sigs, device_ctx[]
+            )
+
+
+@compiler.register("mo.distributed.reducescatter.sum")
+struct DistributedReduceScatterSum:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
+        inputs: InputVariadicTensors[dtype, rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Distributed reduce-scatter operation implementation for sum reduction.
+
+        This executes on a single device specified by device_ctx.
+        The Python API creates multiple instances of this op (one per device) to
+        enable multi-threaded execution.
+
+        Args:
+            output: Output tensor for this device to store reduced result.
+            inputs: Input tensors (one per GPU) containing values to reduce.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            device_ctx: The device context for this specific op instance.
+
+        Implementation Notes:
+            1. Each op instance only launches kernels on its assigned device.
+            2. Still requires all inputs/signal_buffers for coordination.
+            3. The output is only for the assigned device.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
+            - Tensor element count must be multiple of SIMD width
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        comptime num_devices = inputs.size
+        __comptime_assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
+
+        # Reduce-scatter doesn't use scratch storage, so
+        # only need enough signal_buffer space for Signal struct
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # Marshal input tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
+        ](fill={})
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+
+        # Marshal output tensor
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        fn output_lambda[
+            _dtype: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                rebind[IndexList[rank]](coords),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            reducescatter[ngpus=num_devices, output_lambda=output_lambda](
                 in_bufs, out_buf, rank_sigs, device_ctx[]
             )
 

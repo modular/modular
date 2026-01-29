@@ -21,13 +21,12 @@ from ....utils_gpu import MatmulConfig as BaseMatmulConfig
 from collections import OptionalReg
 
 
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, Writable):
+](Copyable, Equatable, Hashable, Stringable, TrivialRegisterType, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters
@@ -40,6 +39,29 @@ struct MatmulConfig[
     var partitioned_multicast: Bool
     var _pdl_level: PDLLevel
     var k_group_size: UInt
+
+    fn __init__(
+        out self,
+        block_tile_shape: IndexList[3],
+        mma_shape: IndexList[3],
+        cluster_shape: IndexList[3],
+        num_pipeline_stages: UInt,
+        num_k_partitions: UInt,
+        num_consumer: UInt,
+        partitioned_multicast: Bool,
+        pdl_level: PDLLevel,
+        k_group_size: UInt,
+    ):
+        """Initialize MatmulConfig with explicit values for all fields."""
+        self.block_tile_shape = block_tile_shape
+        self.mma_shape = mma_shape
+        self.cluster_shape = cluster_shape
+        self.num_pipeline_stages = num_pipeline_stages
+        self.num_k_partitions = num_k_partitions
+        self.num_consumer = num_consumer
+        self.partitioned_multicast = partitioned_multicast
+        self._pdl_level = pdl_level
+        self.k_group_size = k_group_size
 
     fn __init__(
         out self,
@@ -75,7 +97,6 @@ struct MatmulConfig[
         var K = k
 
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
-        # TODO: Once SwapAB is added, this should probably always be 2
 
         var num_consumer_groups: Int
         if consumer_groups:
@@ -85,7 +106,7 @@ struct MatmulConfig[
 
         comptime num_SMs = H100.sm_count
         # Nvidia mma instruction process 32B in K.
-        comptime Kbytes_per_mma = 32  # 16 * 2
+        comptime K_bytes_per_mma = 32  # 16 * 2
         # We use 128B swizzle, tile size in K is 128B over element size.
         comptime BK = 128 // size_of[Self.a_type]()
 
@@ -95,7 +116,7 @@ struct MatmulConfig[
         comptime bm = 64
         mma_mn[0] = bm
 
-        # Tries it maximize active SM's and minimize waves
+        # Tries to maximize active SM's and minimize waves
         for mma_n in range(8, 256 + 1, 8):
             var num_ctas = ceildiv(M, bm * num_consumer_groups) * ceildiv(
                 N, mma_n
@@ -118,7 +139,7 @@ struct MatmulConfig[
             mma_mn[0] * num_consumer_groups, mma_mn[1], BK
         )
         self.mma_shape = IndexList[3](
-            mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[Self.a_type]()
+            mma_mn[0], mma_mn[1], K_bytes_per_mma // size_of[Self.a_type]()
         )
         self.cluster_shape = Index(1, 1, 1)
         self.num_k_partitions = num_k_partitions
@@ -147,6 +168,23 @@ struct MatmulConfig[
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+
+    @staticmethod
+    fn adjust_kgroup_size(
+        mma_m: UInt, mma_n: UInt, K: UInt, BK: UInt, num_pipeline_stages: UInt
+    ) -> UInt:
+        var output_block_size = mma_m * mma_n
+
+        var k_group_size: UInt = 1
+
+        if output_block_size <= 4096 and ceildiv(K, BK) % 2 == 0:
+            k_group_size = 2
+
+        # For very small mmas we can group more aggressively.
+        if output_block_size <= 64 * 48 and ceildiv(K, BK) % 4 == 0:
+            k_group_size = 4
+
+        return align_down(num_pipeline_stages, k_group_size)
 
     fn _maximize_pipeline_stages_by_default(mut self):
         var BM: Int = self.block_tile_shape[0]
@@ -215,42 +253,46 @@ struct MatmulConfig[
         return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("kernel_")
-        writer.write(Self.a_type, "_")
-        writer.write(Self.c_type, "_")
+        writer.write("MatmulConfig(\n")
+        writer.write("  a_type: ", Self.a_type, "\n")
+        writer.write("  c_type: ", Self.c_type, "\n")
         writer.write(
-            "block",
+            "  block_tile_shape: ",
             self.block_tile_shape[0],
-            "x",
+            " x ",
             self.block_tile_shape[1],
-            "x",
+            " x ",
             self.block_tile_shape[2],
-            "_",
+            "\n",
         )
         writer.write(
-            "mma",
+            "  mma_shape: ",
             self.mma_shape[0],
-            "x",
+            " x ",
             self.mma_shape[1],
-            "x",
+            " x ",
             self.mma_shape[2],
-            "_",
+            "\n",
         )
         writer.write(
-            "cluster",
+            "  cluster_shape: ",
             self.cluster_shape[0],
-            "x",
+            " x ",
             self.cluster_shape[1],
-            "x",
+            " x ",
             self.cluster_shape[2],
-            "_",
+            "\n",
         )
-        writer.write("stages", self.num_pipeline_stages, "_")
-        writer.write("consumer", self.num_consumer, "_")
+        writer.write("  stages: ", self.num_pipeline_stages, "\n")
+        writer.write("  consumer: ", self.num_consumer, "\n")
+        writer.write("  k_group_size: ", self.k_group_size, "\n")
         writer.write(
-            "multicast" if self.partitioned_multicast else "nomulticast"
+            "  multicast: ",
+            "yes" if self.partitioned_multicast else "no",
+            "\n",
         )
-        writer.write("_K" if Self.transpose_b else "_MN")
+        writer.write("  transpose_b: ", "K" if Self.transpose_b else "MN", "\n")
+        writer.write(")")
 
     fn __repr__(self) -> String:
         return String.write(self)
@@ -320,6 +362,216 @@ fn build_configs[
             consumer_groups=consumer_groups,
             swapAB=swapAB,
         )
+        if config not in set:
+            set.add(config)
+
+    return set^
+
+
+fn swapAB_smallM[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    prioritize_compute_over_ctas: Bool = False,
+    transpose_b: Bool = True,
+](
+    m: UInt,
+    n: UInt,
+    k: UInt,
+    cluster_shape: IndexList[3],
+    num_k_partitions: UInt,
+    num_consumer: UInt,
+    partitioned_multicast: Bool,
+    pdl_level: PDLLevel,
+    k_group_size: UInt = 0,
+    num_pipeline_stages: UInt = 0,
+) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    var M = n
+    var N = m
+    var K = k
+
+    var BM = 64 * num_consumer
+
+    comptime num_SMs = UInt(H100.sm_count)
+
+    var num_waves = UInt.MAX
+    var compute_ratio = Float64.MAX
+    var ctas_used: UInt = 0
+
+    var total_m_computed = align_up(M, BM)
+
+    var min_compute = M * N
+
+    var final_mma_n: UInt = 0
+
+    @parameter
+    for mma_n in range(UInt(8), UInt(256) + 1, UInt(8)):
+        var total_n_computed = align_up(N, mma_n)
+        var num_ctas = ceildiv(M, BM) * ceildiv(N, mma_n)
+
+        var total_computed = total_m_computed * total_n_computed
+        var current_compute_ratio = Float64(total_computed / min_compute)
+
+        var total_waves = ceildiv(num_ctas, num_SMs)
+
+        var condition: Bool
+
+        @parameter
+        if prioritize_compute_over_ctas:
+            condition = current_compute_ratio < compute_ratio
+        else:
+            condition = num_ctas > ctas_used
+
+        if (total_waves < num_waves) or (
+            (num_waves == total_waves) and condition
+        ):
+            num_waves = total_waves
+            ctas_used = num_ctas
+            compute_ratio = current_compute_ratio
+            final_mma_n = mma_n
+
+    var temp_num_pipeline_stages: UInt = num_pipeline_stages
+
+    var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        Index(BM, final_mma_n, 64),
+        Index(64, final_mma_n, 16),
+        cluster_shape,
+        temp_num_pipeline_stages,
+        num_k_partitions,
+        num_consumer,
+        partitioned_multicast,
+        pdl_level,
+        k_group_size,
+    )
+
+    if num_pipeline_stages == 0:
+        config._maximize_pipeline_stages_by_default()
+
+    if k_group_size == 0:
+        config.k_group_size = config.adjust_kgroup_size(
+            UInt(config.mma_shape[0]),
+            UInt(config.mma_shape[1]),
+            K,
+            UInt(config.block_tile_shape[2]),
+            UInt(config.num_pipeline_stages),
+        )
+
+    return config
+
+
+fn swapAB_smallM_ceildiv[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = True,
+](m: UInt, pdl_level: PDLLevel) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
+    """Config for m < 41 range with BN = ceildiv(m, 8) * 8 pattern.
+
+    Pattern:
+        - BN = ceildiv(m, 8) * 8  (rounds up to next multiple of 8)
+        - stages = 12, cluster = (1,1,1), swapAB = True
+    """
+    var bn = align_up(m, 8)
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(64, Int(bn), 64),
+        mma_shape=Index(64, Int(bn), 16),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=12,
+        num_k_partitions=1,
+        num_consumer=1,
+        partitioned_multicast=False,
+        pdl_level=pdl_level,
+        k_group_size=1,
+    )
+
+
+fn swapAB_midM_linear[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = True,
+](m: UInt, pdl_level: PDLLevel) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
+    """Config for m in [65, 128] range with linear BN pattern.
+
+    Pattern:
+        - BN = 40 + ((m - 65) // 16) * 8
+        - stages = 8, cluster = (1,1,1), swapAB = True
+    """
+    var bucket = (m - 65) // 16
+    var bn = 40 + bucket * 8
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(64, Int(bn), 64),
+        mma_shape=Index(64, Int(bn), 16),
+        cluster_shape=Index(1, 1, 1),
+        num_pipeline_stages=8,
+        num_k_partitions=1,
+        num_consumer=1,
+        partitioned_multicast=False,
+        pdl_level=pdl_level,
+        k_group_size=1,
+    )
+
+
+fn swapAB_largeM_clustered[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool = True,
+](m: UInt, pdl_level: PDLLevel) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
+    """Config for m in [129, 240] range with cluster=(2,1,1).
+
+    Pattern:
+        - BN = 72 + ((m - 129) // 16) * 8
+        - Stages: 12 for m<=160, 10 for m<=224, 8 otherwise
+        - cluster = (2,1,1), k_group_size = 2, swapAB = True
+    """
+    var bucket = (m - 129) // 16
+    var bn = 72 + bucket * 8
+
+    # Pipeline stages: 12 -> 10 -> 8 as m increases
+    var stages: UInt
+    if bucket < 2:
+        stages = 12
+    elif bucket < 6:
+        stages = 10
+    else:
+        stages = 8
+
+    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+        block_tile_shape=Index(64, Int(bn), 64),
+        mma_shape=Index(64, Int(bn), 16),
+        cluster_shape=Index(2, 1, 1),
+        num_pipeline_stages=stages,
+        num_k_partitions=1,
+        num_consumer=1,
+        partitioned_multicast=False,
+        pdl_level=pdl_level,
+        k_group_size=2,
+    )
+
+
+fn build_configs_generic[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool,
+    //,
+    M_start: Int,
+    M_end: Int,
+    config_fn: fn(Int) capturing[_] -> MatmulConfig[
+        a_type, b_type, c_type, transpose_b
+    ],
+]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
+
+    for m in range(M_start, M_end):
+        var config = config_fn(m)
         if config not in set:
             set.add(config)
 

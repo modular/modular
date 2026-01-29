@@ -55,7 +55,7 @@ from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from utils.index import IndexList
 from sys import align_of, size_of
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from layout.layout_tensor import copy_local_to_dram
 import itertools
 from memory.pointer import _GPUAddressSpace
@@ -64,8 +64,7 @@ from std.bit import log2_floor
 
 
 # Import ThreadInfo from matmul_output
-@register_passable("trivial")
-struct ThreadInfo:
+struct ThreadInfo(TrivialRegisterType):
     """Thread identification within the warp group."""
 
     var warp_id: UInt
@@ -102,8 +101,7 @@ struct ThreadInfo:
         return ThreadInfo(warp_id, lid, lane_row, lane_col)
 
 
-@register_passable("trivial")
-struct TileCoordinates:
+struct TileCoordinates(TrivialRegisterType):
     """Helper struct for managing tile coordinate offsets.
 
     This struct encapsulates corner and split coordinates used in epilogue
@@ -140,8 +138,7 @@ struct TileCoordinates:
         )
 
 
-@register_passable("trivial")
-trait SMemTileWriter:
+trait SMemTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing tiles from shared memory to global memory,
@@ -165,14 +162,13 @@ trait SMemTileWriter:
         ...
 
 
-@register_passable("trivial")
 struct TileWriterTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
     tma_layout: Layout,
     desc_layout: Layout,
     //,
-](SMemTileWriter):
+](SMemTileWriter, TrivialRegisterType):
     """TMA-based tile writer for hardware-accelerated memory transfers.
 
     This writer uses NVIDIA's Tensor Memory Accelerator (TMA) for efficient
@@ -234,7 +230,6 @@ struct TileWriterTMA[
         self.tma_op[].wait_group()
 
 
-@register_passable("trivial")
 struct TileWriterThreadwise[
     dtype: DType,
     dst_layout: Layout,
@@ -249,7 +244,7 @@ struct TileWriterThreadwise[
     simd_size: Int,
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
-](SMemTileWriter):
+](SMemTileWriter, TrivialRegisterType):
     comptime _dtype = Self.dtype
 
     comptime DstType = LayoutTensor[
@@ -392,8 +387,7 @@ struct TileWriterThreadwise[
             )
 
 
-@register_passable("trivial")
-trait RegTileWriter:
+trait RegTileWriter(TrivialRegisterType):
     """Base trait for tile writing mechanisms in matrix multiplication.
 
     This trait defines the interface for writing register tiles to memory
@@ -415,7 +409,6 @@ trait RegTileWriter:
         ...
 
 
-@register_passable("trivial")
 struct FragmentToSMemWriter[
     c_type: DType,
     c_tile_layout: Layout,
@@ -626,7 +619,6 @@ struct FragmentToSMemWriter[
             )
 
 
-@register_passable("trivial")
 struct RegisterToGMemWriter[
     c_type: DType,
     dst_layout: Layout,
@@ -640,8 +632,8 @@ struct RegisterToGMemWriter[
     wgmma_shape: IndexList[3],
     num_consumer: Int,
     N: Int,  # Matrix N dimension
-    epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
-    compute_lambda_fn: OptionalReg[elementwise_compute_lambda_type] = None,
+    epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    compute_lambda_fn: Optional[elementwise_compute_lambda_type] = None,
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking
     swapAB: Bool = False,
 ](RegTileWriter):
@@ -939,7 +931,7 @@ struct RegisterToGMemWriter[
                 # For normal: row = lane_row, col = lane_col * 2 + i
                 # For swapAB: row = lane_col * 2 + i, col = lane_row (transposed)
                 var lane_row_idx = self.thread_info.lane_row
-                var lane_col_idx = self.thread_info.lane_col * 2 + i
+                var lane_col_idx = self.thread_info.lane_col * 2 + UInt32(i)
                 var check_row = (
                     lane_row_idx if not Self.swapAB else lane_col_idx
                 )
@@ -960,22 +952,28 @@ struct RegisterToGMemWriter[
                             return (
                                 warp_tile_coords[0]
                                 + Int(
-                                    n_frag * 8
+                                    UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2
-                                    + i
+                                    + UInt32(i)
                                 ),
                                 warp_tile_coords[1]
-                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                                + Int(
+                                    UInt32(m_frag * 8)
+                                    + self.thread_info.lane_row
+                                ),
                             )
                         else:
                             return (
                                 warp_tile_coords[0]
-                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                                + Int(
+                                    UInt32(m_frag * 8)
+                                    + self.thread_info.lane_row
+                                ),
                                 warp_tile_coords[1]
                                 + Int(
-                                    n_frag * 8
+                                    UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2
-                                    + i
+                                    + UInt32(i)
                                 ),
                             )
 

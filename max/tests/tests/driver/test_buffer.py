@@ -43,6 +43,11 @@ def test_tensor() -> None:
     assert (2, 3) == tensor2.shape
 
 
+@pytest.mark.parametrize("dtype", list(DType))
+def test_allocate(dtype: DType) -> None:
+    buffer = Buffer(shape=[2], dtype=dtype, device=CPU())
+
+
 def test_get_and_set() -> None:
     tensor = Buffer(DType.int32, (3, 4, 5))
     tensor[0, 1, 3] = 68

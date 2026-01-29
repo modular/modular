@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -80,7 +80,6 @@ from .matmul_output import MatmulTileWriter
 
 
 # Shared memory structure for Hopper SM90 kernel
-@register_passable("trivial")
 struct HopperMatmulSM90Kernel_SMem[
     a_type: DType,
     a_layout: Layout,
@@ -90,7 +89,7 @@ struct HopperMatmulSM90Kernel_SMem[
     c_layout: Layout,
     num_pipeline_stages: Int,
     k_group_size: Int,
-]:
+](TrivialRegisterType):
     """Shared memory layout for Hopper SM90 matrix multiplication kernel.
 
     This struct manages the shared memory allocation for:
@@ -188,8 +187,8 @@ struct HopperMatmulSM90Kernel[
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
     pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     hilbert_swizzle: Bool = False,
@@ -380,7 +379,7 @@ struct HopperMatmulSM90Kernel[
         var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
             Int32(rank_m) * CLUSTER_N
         )
-        return (multicast_row_mask, multicast_column_mask)
+        return (multicast_row_mask, Int32(multicast_column_mask))
 
     @staticmethod
     @always_inline
@@ -518,7 +517,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn consumer_output[
-        custom_elementwise_lambda_fn: OptionalReg[
+        custom_elementwise_lambda_fn: Optional[
             elementwise_epilogue_type
         ] = Self.elementwise_lambda_fn
     ](
@@ -732,7 +731,9 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Self.num_threads),
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -864,7 +865,9 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Self.num_threads),
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -940,9 +943,9 @@ struct HopperMatmulSM90Kernel[
         var scheduler = SplitKTileScheduler[
             Index(N, K),
             Self.block_tile_shape,
-            splits,
-            Self.num_consumer,
-            Self.num_pipeline_stages,
+            UInt32(splits),
+            UInt32(Self.num_consumer),
+            UInt32(Self.num_pipeline_stages),
             Index(CLUSTER_M, CLUSTER_N),
             raster_order,
         ](
@@ -959,8 +962,8 @@ struct HopperMatmulSM90Kernel[
 
             if warp_id == 0 and lane_predicate:
                 while work_tile_info.is_valid():
-                    var m_coord = work_tile_info.m * Self.BM
-                    var n_coord = work_tile_info.n * Self.BN
+                    var m_coord = work_tile_info.m * UInt32(Self.BM)
+                    var n_coord = work_tile_info.n * UInt32(Self.BN)
 
                     comptime work_k_tile_count = num_k_iters // splits
                     var work_k_tile_start = work_tile_info.get_k_start()
@@ -1040,7 +1043,9 @@ struct HopperMatmulSM90Kernel[
 
     @staticmethod
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Self.num_threads),
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -1113,7 +1118,7 @@ struct HopperMatmulSM90Kernel[
         var skip_matmul = expert < 0
 
         comptime N = Self.c_layout.shape[1].value()
-        var b_start_row = expert * N
+        var b_start_row = expert * Int32(N)
 
         comptime CLUSTER_N = UInt(Self.cluster_shape[0])
         comptime CLUSTER_M = UInt(Self.cluster_shape[1])
@@ -1190,7 +1195,7 @@ struct HopperMatmulSM90Kernel[
             )
 
             var c_by_expert = c_gmem_type(
-                c.ptr + a_start_row * N, c_gmem_runtime_layout
+                c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
             )
 
             @parameter
@@ -1201,12 +1206,12 @@ struct HopperMatmulSM90Kernel[
                 if Self.elementwise_lambda_fn:
                     comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()
                     var batch_idx = IndexList[2](
-                        Int(a_start_row + idx[0]), idx[1]
+                        Int(a_start_row + UInt32(idx[0])), idx[1]
                     )
                     elementwise_epilogue(batch_idx, val)
 
             Self.consumer_output[
-                OptionalReg[elementwise_epilogue_type](
+                Optional[elementwise_epilogue_type](
                     elementwise_epilogue_fn_wrapper
                 ) if Self.elementwise_lambda_fn else None
             ](

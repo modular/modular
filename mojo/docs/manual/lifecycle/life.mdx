@@ -1,5 +1,5 @@
 ---
-title: Life of a value
+title: Value creation
 sidebar_position: 2
 description: An explanation of when and how Mojo creates values.
 ---
@@ -655,17 +655,17 @@ perspective, Mojo doesn't need special support for these written in a struct.
 Usually, these values are so tiny that they should be passed around in CPU
 registers, not indirectly through memory.
 
-As such, Mojo provides a struct decorator to declare these types of values:
-`@register_passable("trivial")`. This decorator tells Mojo that the type should
-be copyable and movable, but that it has no user-defined logic for this (no
-custom copy constructor or move constructor). It also tells Mojo to pass the
-value in CPU registers whenever possible, which has clear performance benefits.
+As such, Mojo provides a trait `TrivialRegisterType` to declare these types of
+values. Conforming to this trait tells Mojo that the
+type should be copyable and movable, but that it has no user-defined logic for
+this (no custom copy constructor or move constructor). It also tells Mojo to
+pass the value in CPU registers whenever possible, which has clear performance
+benefits.
 
 You'll see this decorator on types like `Int` in the standard library:
 
 ```mojo
-@register_passable("trivial")
-struct Int:
+struct Int(TrivialRegisterType):
     ...
 ```
 

@@ -16,7 +16,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 
 import benchmark
 from buffer import NDBuffer
@@ -46,7 +46,7 @@ comptime do_benchmarking = False
 
 @parameter
 fn bench_run[
-    func: fn () raises capturing [_] -> None
+    func: fn() raises capturing[_] -> None
 ]() raises -> benchmark.Report:
     return benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
@@ -102,7 +102,7 @@ def test_matmul[
     c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    epilogue_fn: OptionalReg[elementwise_epilogue_type],
+    epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
     a: NDBuffer[a_type, 2, _, a_shape],

@@ -228,7 +228,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
 # Builders
 # ===-----------------------------------------------------------------------===#
 
-comptime PyFunctionRaising = fn (
+comptime PyFunctionRaising = fn(
     mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings.
@@ -238,7 +238,7 @@ positional arguments. These functions always return a Python object (could be a
 `None` object).
 """
 
-comptime PyFunctionWithKeywordsRaising = fn (
+comptime PyFunctionWithKeywordsRaising = fn(
     mut PythonObject, mut PythonObject, mut PythonObject
 ) raises -> PythonObject
 """The generic function type for raising Python bindings with keyword arguments.
@@ -613,7 +613,7 @@ struct PythonTypeBuilder(Copyable):
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
             self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
-            self.basicsize,
+            c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
@@ -684,7 +684,7 @@ struct PythonTypeBuilder(Copyable):
     fn def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
+        init_func: fn(out T, args: PythonObject, kwargs: PythonObject),
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type.
 
@@ -701,7 +701,7 @@ struct PythonTypeBuilder(Copyable):
 
         @always_inline
         fn raising_wrapper[
-            init_func: fn (out t: T, args: PythonObject, kwargs: PythonObject)
+            init_func: fn(out t: T, args: PythonObject, kwargs: PythonObject)
         ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
             t = init_func(args, kwargs)
 
@@ -710,7 +710,7 @@ struct PythonTypeBuilder(Copyable):
     fn def_py_init[
         T: Movable & ImplicitlyDestructible,
         //,
-        init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+        init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type.
 
@@ -979,7 +979,7 @@ fn _py_new_function_wrapper[
 
 fn _py_init_function_wrapper[
     T: Movable & ImplicitlyDestructible,
-    init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+    init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
 ](
     py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> c_int:

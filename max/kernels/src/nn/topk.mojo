@@ -624,8 +624,7 @@ fn _topk_dead_val[T: DType, largest: Bool = True]() -> Scalar[T]:
 
 # Define the TopK_2 structure to keep track of the top element per thread
 @fieldwise_init
-@register_passable("trivial")
-struct TopK_2[T: DType, largest: Bool = True](Defaultable, ImplicitlyCopyable):
+struct TopK_2[T: DType, largest: Bool = True](Defaultable, TrivialRegisterType):
     var p: Int  # flattened index of the element
     var u: Scalar[Self.T]  # value of the element
 
@@ -680,7 +679,7 @@ fn _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     fn shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = fn[dtype: DType, simd_width: Int] (
+        comptime fn_type = fn[dtype: DType, simd_width: Int](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor

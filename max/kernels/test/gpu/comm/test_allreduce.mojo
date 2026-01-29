@@ -27,7 +27,7 @@ import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from testing import assert_almost_equal, assert_true
-from collections.optional import OptionalReg
+from collections import Optional
 
 from utils import IndexList, StaticTuple
 
@@ -187,7 +187,7 @@ fn allreduce_test[
     for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
-            output_lambda = OptionalReg[elementwise_epilogue_type](
+            output_lambda = Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,

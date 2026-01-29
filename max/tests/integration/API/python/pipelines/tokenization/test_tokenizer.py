@@ -450,6 +450,7 @@ def test_tokenizer_stores_eos_token_ids(
     )
 
     # Test single eos token id
+    assert pipeline_config.model.huggingface_config is not None
     pipeline_config.model.huggingface_config.eos_token_id = 123456
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
@@ -458,6 +459,7 @@ def test_tokenizer_stores_eos_token_ids(
     assert tokenizer._default_eos_token_ids == {tokenizer.eos, 123456}
 
     # Test list of eos token ids
+    assert pipeline_config.model.huggingface_config is not None
     pipeline_config.model.huggingface_config.eos_token_id = [123, 456]
     tokenizer = TextTokenizer(
         model_path=modular_ai_llama_3_1_local_path,
