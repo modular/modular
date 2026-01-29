@@ -866,8 +866,12 @@ PublicArgumentDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   llvm::raw_string_ostream os(buff);
 
   // Print the convention of the argument, eliding the default.
-  if (convention != Convention::kBorrowed)
-    os << getConventionString(convention) << ' ';
+  if (convention != Convention::kBorrowed) {
+    os << getConventionString(convention);
+    // Don't add space after "ref" when there's a prefix (ref[origin]).
+    if (prefix.empty())
+      os << ' ';
+  }
 
   // Include the prefix if any (eg for a ref argument).
   os << prefix;
@@ -1431,12 +1435,12 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   if (!resultType.isNoneType()) {
     std::string str;
     std::optional<ArgConvention> convention;
-    // If this is a ref result add the "ref [life, addrspace] "
+    // If this is a ref result add the "ref[life, addrspace] "
     // prefix to the specifier.
     if (signature.isRefResult()) {
       convention = ArgConvention::Ref;
-      str = "ref " + getRefPrefixAsString(shared, cast<RefType>(resultType),
-                                          signature, /*isRefResult*/ true);
+      str = "ref" + getRefPrefixAsString(shared, cast<RefType>(resultType),
+                                         signature, /*isRefResult*/ true);
     }
     Type reboundUserResultType = evaluator.getReboundType(userResultType);
     str += generateTypeString(shared, reboundUserResultType, VariadicKind::None,

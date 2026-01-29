@@ -1186,7 +1186,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   };
 
   auto printRef = [&](RefType refType) {
-    os << "ref [";
+    os << "ref[";
     printOriginParam(
         os, OriginType::stripMutCastAndFieldExtract(refType.getOrigin()),
         diagShared);
