@@ -477,18 +477,18 @@ struct String(
         ```
         """
         comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
+        var total_bytes = 0
 
         @parameter
         for i in range(length):
-            args[i].write_to(total_bytes)
+            total_bytes += args[i].estimate_bytes_to_write()
 
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
+        @parameter
+        if length >= 2:
+            total_bytes += (length - 1) * sep.estimate_bytes_to_write()
+        total_bytes += end.estimate_bytes_to_write()
 
-        if total_bytes.size == 0:
+        if total_bytes == 0:
             return String()
 
         @parameter
@@ -502,11 +502,11 @@ struct String(
                     sep.write_to(writer)
             end.write_to(writer)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             self = String()
             _write(self)
         else:
-            self = String(capacity=total_bytes.size)
+            self = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -547,18 +547,18 @@ struct String(
         ```
         """
         comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
+        var total_bytes = 0
 
         @parameter
         for i in range(length):
-            args[i].write_to(total_bytes)
+            total_bytes += args[i].estimate_bytes_to_write()
 
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
+        @parameter
+        if length >= 2:
+            total_bytes += (length - 1) * sep.estimate_bytes_to_write()
+        total_bytes += end.estimate_bytes_to_write()
 
-        if total_bytes.size == 0:
+        if total_bytes == 0:
             return String()
 
         @parameter
@@ -572,11 +572,11 @@ struct String(
                     sep.write_to(writer)
             end.write_to(writer)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             self = String()
             _write(self)
         else:
-            self = String(capacity=total_bytes.size)
+            self = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -599,18 +599,18 @@ struct String(
             A string formed by formatting the argument sequence.
         """
         comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
+        var total_bytes = 0
 
         @parameter
         for i in range(length):
-            args[i].write_to(total_bytes)
+            total_bytes += args[i].estimate_bytes_to_write()
 
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
+        @parameter
+        if length >= 2:
+            total_bytes += (length - 1) * sep.estimate_bytes_to_write()
+        total_bytes += end.estimate_bytes_to_write()
 
-        if total_bytes.size == 0:
+        if total_bytes == 0:
             return String()
 
         @parameter
@@ -624,12 +624,12 @@ struct String(
                     sep.write_to(writer)
             end.write_to(writer)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             var result = String()
             _write(result)
             return result^
         else:
-            var result = String(capacity=total_bytes.size)
+            var result = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
             _write(buffer)
             buffer.flush()
@@ -645,12 +645,11 @@ struct String(
             args: Sequence of arguments to write to this Writer.
         """
         comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        total_bytes.size += self.byte_length()
+        var total_bytes = self.byte_length()
 
         @parameter
         for i in range(length):
-            args[i].write_to(total_bytes)
+            total_bytes += args[i].estimate_bytes_to_write()
 
         @parameter
         fn _write[W: Writer](mut writer: W):
@@ -658,10 +657,10 @@ struct String(
             for i in range(length):
                 args[i].write_to(writer)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             _write(self)
         else:
-            self.reserve(total_bytes.size)
+            self.reserve(total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             _write(buffer)
             buffer.flush()
@@ -690,7 +689,7 @@ struct String(
         Returns:
             A new `String` containing the written value.
         """
-        var result = String()
+        var result = String(capacity=value.estimate_bytes_to_write())
         value.write_to(result)
         return result^
 
