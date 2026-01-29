@@ -73,18 +73,63 @@ static TypedAttr stripStructExtractFromBool(TypedAttr prop) {
   return prop;
 }
 
+bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
+  // Canonicalize both to remove sugar and get structural forms.
+  propA = getCanonicalAttr(propA);
+  propB = getCanonicalAttr(propB);
+
+  // Trivially true is implied by anything.
+  if (auto intB = dyn_cast<IntegerAttr>(propB))
+    if (intB.getValue().isOne())
+      return true;
+  // Direct equality: A implies A.
+  if (propA == propB)
+    return true;
+
+  // Weakening rule: A implies (A OR B) for any B.
+  // If propB is an OR and propA matches or implies any operand, we're done.
+  if (auto paramOpB = dyn_cast<ParamOperatorAttr>(propB)) {
+    if (paramOpB.getOpcode() == POC::Or) {
+      for (Attribute operand : paramOpB.getOperands()) {
+        if (constraintImplies(propA, cast<TypedAttr>(operand)))
+          return true;
+      }
+    }
+  }
+
+  // Conjunction elimination: (A AND B) implies A, (A AND B) implies B.
+  // If propA is an AND and any operand implies propB, we're done.
+  if (auto paramOpA = dyn_cast<ParamOperatorAttr>(propA)) {
+    if (paramOpA.getOpcode() == POC::And) {
+      for (Attribute operand : paramOpA.getOperands()) {
+        if (constraintImplies(cast<TypedAttr>(operand), propB))
+          return true;
+      }
+    }
+  }
+
+  // Fallback: canonicalization trick - A implies B iff AND(A, B) == A.
+  TypedAttr combined = ParamOperatorAttr::get(POC::And, {propA, propB});
+  return combined == propA;
+}
+
 ConstraintResult LIT::checkConstraints(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator) {
+    ParameterEvaluator *evaluator,
+    ArrayRef<ConstraintAttr> additionalAssumptions) {
   if (constraints.empty())
     return ConstraintResult::Satisfied;
 
   SmallVector<ConstraintAttr> assumptions;
   declScope.getKnownAssumptionsIncludingParents(assumptions);
+  // Add any additional assumptions passed in (e.g., conformance constraint).
+  assumptions.append(additionalAssumptions.begin(),
+                     additionalAssumptions.end());
+
   SmallVector<TypedAttr> overallAssumptionOperands;
   for (ConstraintAttr assumption : assumptions) {
     TypedAttr prop = assumption.getProposition();
@@ -118,10 +163,9 @@ ConstraintResult LIT::checkConstraints(
     }
 
     // If there are contextual assumptions, and the constraint is implied by
-    // them, skip it.
-    if (overallAssumption &&
-        ParamOperatorAttr::get(POC::And, {overallAssumption, prop}) ==
-            overallAssumption)
+    // them, skip it. Use constraintImplies for better implication checking
+    // (handles weakening rules, conjunction elimination, etc.)
+    if (overallAssumption && constraintImplies(overallAssumption, prop))
       continue;
 
     // Unprovable constraint.

@@ -49,19 +49,28 @@ enum class ConstraintResult {
 /// optional callback can be provided to emit failures for constraint
 /// violations. If provided, unprovableConstraints will be populated with any
 /// unprovable constraints encountered. An optional ParameterEvaluator can be
-/// provided to substitute parameters into the constraints.
+/// provided to substitute parameters into the constraints. Additional
+/// assumptions can be passed to consider alongside the scope's known
+/// assumptions (e.g., a conformance constraint during trait checking).
 ConstraintResult checkConstraints(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator);
+    ParameterEvaluator *evaluator,
+    ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
 /// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
 /// This breaks the "short-circuit" pattern of `and`/`or` operators, so is only
 /// legal during constraint checking.
 TypedAttr deShortCircuitCond(TypedAttr value);
+
+/// Check if propA logically implies propB.
+/// Uses canonicalization, weakening rules (A implies A OR B),
+/// and conjunction elimination ((A AND B) implies A).
+/// Returns true if propA implies propB.
+bool constraintImplies(TypedAttr propA, TypedAttr propB);
 
 } // namespace LIT
 } // namespace M::KGEN
