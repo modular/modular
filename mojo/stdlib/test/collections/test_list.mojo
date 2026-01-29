@@ -683,9 +683,8 @@ def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        # FIXME(MOCO-3012): Why is applying `^` required here?
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()

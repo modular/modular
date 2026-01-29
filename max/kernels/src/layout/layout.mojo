@@ -1216,7 +1216,7 @@ fn composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
 
     if is_tuple(layout_b.shape):
         var r = Layout()
-        for layoutB_i in layout_b:
+        for var layoutB_i in layout_b:
             r.append(composition(layout_a.copy(), layoutB_i^))
         return r^
 

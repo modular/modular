@@ -609,7 +609,7 @@ fn layer_norm_cpu[
     __comptime_assert beta.rank == 1, "beta must have rank 1"
     comptime simd_width = simd_width_of[dtype]()
 
-    for row in range(num_rows):
+    for var row in range(num_rows):
 
         @always_inline
         @parameter
@@ -1312,7 +1312,7 @@ fn rms_norm_cpu[
 
     # PyTorch converts the input to float32 before computing the RMS norm
     # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
-    for row in range(num_rows):
+    for var row in range(num_rows):
         var sum_simd = SIMD[intermediate_type, simd_width]()
         for col in range(0, simd_loop_end, simd_width):
             sum_simd += (

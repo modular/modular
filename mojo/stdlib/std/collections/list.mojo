@@ -397,7 +397,7 @@ struct List[T: Copyable](
         """
         var lower, _ = iter(iterable).bounds()
         self = Self(capacity=lower)
-        for value in iterable:
+        for var value in iterable:
             self.append(rebind_var[Self.T](value^))
 
     @always_inline

@@ -526,7 +526,7 @@ fn any[
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
 
-    for item0 in iterable:
+    for var item0 in iterable:
         var item = trait_downcast_var[
             ImplicitlyDestructible & Boolable & Movable
         ](item0^)
@@ -570,7 +570,7 @@ fn all[
     Returns:
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
-    for item0 in iterable:
+    for var item0 in iterable:
         var item = trait_downcast_var[
             ImplicitlyDestructible & Boolable & Movable
         ](item0^)

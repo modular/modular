@@ -428,8 +428,8 @@ fn _small_matmul[
 
     @parameter
     if transpose_b:
-        for m in range(M):
-            for n in range(N):
+        for var m in range(M):
+            for var n in range(N):
                 var acc_vector = SIMD[c.type, simd_width]()
                 var acc_scalar = Scalar[c.type]()
 

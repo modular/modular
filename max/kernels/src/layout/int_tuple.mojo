@@ -633,7 +633,7 @@ struct IntTuple(
         """
         # FIXME: massively inefficient
         self = Self()
-        for elem in iterable:
+        for var elem in iterable:
             var z0, z1 = rebind_var[Tuple[IntTuple, IntTuple]](elem^)
             var tup = IntTuple()
             tup.append(z0)

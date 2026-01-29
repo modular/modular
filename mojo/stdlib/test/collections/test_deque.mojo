@@ -1097,7 +1097,7 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()

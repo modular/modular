@@ -940,7 +940,7 @@ fn _reduce_along_outer_dimension[
         if length <= 0:
             return
 
-        for slice_idx in range(start_parallel_offset, end_parallel_offset):
+        for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
             fn reduce_chunk[simd_width: Int](inner_dim_idx: Int) unified {read}:

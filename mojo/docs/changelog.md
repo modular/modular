@@ -73,3 +73,6 @@ what we publish.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
+  raising custom type with conversion fails when returning StringSlice
