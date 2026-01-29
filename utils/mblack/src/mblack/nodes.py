@@ -350,6 +350,9 @@ def whitespace(
             return prev.prefix
 
         elif prev.type != token.COMMA and prev.type not in CONVENTIONS:
+            # Space after ref[origin] convention (e.g., ref[x] self)
+            if prev.type == syms.convention:
+                return SPACE
             return NO
 
     elif p.type in TYPED_NAMES:
@@ -357,6 +360,14 @@ def whitespace(
         if not prev:
             prevp = preceding_leaf(p)
             if prevp and prevp.type in CONVENTIONS:
+                return SPACE
+            # Space after ref[origin] convention (e.g., ref[x] r: Int)
+            if (
+                prevp
+                and prevp.type == token.RSQB
+                and prevp.parent
+                and prevp.parent.type == syms.convention
+            ):
                 return SPACE
             if not prevp or prevp.type != token.COMMA:
                 return NO
@@ -484,6 +495,11 @@ def whitespace(
     elif p.type == syms.functype:
         # No space before brackets in function types (e.g., fn[x: Int]())
         if t in OPENING_BRACKETS:
+            return NO
+
+    elif p.type in {syms.convention, syms.result_type}:
+        # No space between ref and [origin] (e.g., ref[x] not ref [x])
+        if t == token.LSQB and prev and prev.type == token.REF:
             return NO
 
     return SPACE

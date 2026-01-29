@@ -67,6 +67,7 @@ class _python_symbols(Symbols):
     comparison: int
     compound_stmt: int
     comptime_assert_stmt: int
+    convention: int
     continue_stmt: int
     decorated: int
     decorator: int
@@ -117,6 +118,7 @@ class _python_symbols(Symbols):
     print_stmt: int
     raise_stmt: int
     return_stmt: int
+    result_type: int
     shift_expr: int
     simple_stmt: int
     single_input: int
