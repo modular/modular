@@ -580,7 +580,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](TrivialRegisterType):
     @implicit
     fn __init__[
         _origin: ImmutOrigin, //
-    ](out self: StringSlice[_origin], ref [_origin]value: String):
+    ](out self: StringSlice[_origin], ref[_origin] value: String):
         self._slice = Span[Byte, _origin]()
 
     @implicit
@@ -743,7 +743,7 @@ struct _ListIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         abort()
 
 
@@ -754,7 +754,7 @@ struct List[T: Copyable & ImplicitlyDestructible](Copyable, Iterable):
     fn append(mut self, var value: Self.T):
         pass
 
-    fn __getitem__(ref self, idx: Int) -> ref [self] Self.T:
+    fn __getitem__(ref self, idx: Int) -> ref[self] Self.T:
         pass
 
     comptime IteratorType[
@@ -922,7 +922,7 @@ struct _VariadicListMemIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.elt_origin] Self.elt_type:
+    ) raises StopIteration -> ref[Self.elt_origin] Self.elt_type:
         raise StopIteration()
 
 
@@ -948,7 +948,7 @@ struct VariadicListMem[
 
     fn __getitem__(
         self, idx: Int
-    ) -> ref [
+    ) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
@@ -999,7 +999,7 @@ struct VariadicPack[
 
     fn __getitem__[
         index: Int
-    ](self) -> ref [Self.origin] Self.element_types[index]:
+    ](self) -> ref[Self.origin] Self.element_types[index]:
         while True:
             pass
 
@@ -1090,7 +1090,7 @@ struct Pointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1102,11 +1102,11 @@ struct Pointer[
     @staticmethod
     @always_inline("nodebug")
     fn address_of(
-        ref [Self.origin, Self.address_space]value: Self.type
+        ref[Self.origin, Self.address_space] value: Self.type
     ) -> Self:
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_origin_exclusivity
@@ -1140,7 +1140,7 @@ struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
     fn __moveinit__(out self, deinit existing: Self):
         pass
 
-    fn __getitem__[i: Int](ref self) -> ref [self] Self.element_types[i]:
+    fn __getitem__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while __mlir_attr.true:
             pass
 
@@ -1174,7 +1174,7 @@ struct UnsafePointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -1184,16 +1184,16 @@ struct UnsafePointer[
         self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
     @staticmethod
-    fn address_of(ref [Self.address_space]arg: Self.type) -> Self:
+    fn address_of(ref[Self.address_space] arg: Self.type) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
             pass
 
     fn __getitem__(
         self, offset: Int
-    ) -> ref [Self.origin, Self.address_space] Self.type:
+    ) -> ref[Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:
             pass
 
@@ -1202,7 +1202,7 @@ struct UnsafePointer[
     # mutable.
     fn get_unique_item_ref[
         self_origin: ImmutOrigin
-    ](ref [self_origin]self, offset: Int = 0) -> ref [
+    ](ref[self_origin] self, offset: Int = 0) -> ref[
         unsafe_origin_mutcast[_lit_indirect_origin[self_origin]],
         Self.address_space,
     ] Self.type:
@@ -1337,7 +1337,7 @@ struct Optional[T: ImplicitlyCopyable]:
     fn __moveinit__(out self, deinit other: Self):
         pass
 
-    fn value(ref self) -> ref [self] Self.T:
+    fn value(ref self) -> ref[self] Self.T:
         while True:
             pass
 
@@ -1361,7 +1361,7 @@ fn rebind[
     src_type: AnyType,
     //,
     dest_type: AnyType,
-](ref src: src_type) -> ref [src] dest_type:
+](ref src: src_type) -> ref[src] dest_type:
     lit = __get_mvalue_as_litref(src)
     rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
     return __get_litref_as_mvalue(rebound)
@@ -1397,7 +1397,7 @@ fn trait_downcast[
 @always_inline
 fn trait_downcast[
     T: AnyType, //, Trait: AnyTrait
-](ref x: T) -> ref [x] downcast[Trait, T]:
+](ref x: T) -> ref[x] downcast[Trait, T]:
     return rebind[downcast[Trait, T]](x)
 
 
