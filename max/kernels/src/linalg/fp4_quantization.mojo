@@ -70,7 +70,7 @@ from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 # Dynamic scaled NVFP4 quantization
 ########################################################
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime logger = Logger()
 
 
