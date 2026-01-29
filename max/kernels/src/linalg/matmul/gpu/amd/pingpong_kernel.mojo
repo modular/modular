@@ -343,7 +343,7 @@ fn _load_from_lds[
                 _type = SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float8_e4m3fn and width == 8:
+    elif dtype.is_float8() and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -355,11 +355,11 @@ fn _load_from_lds[
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
             _type = SIMD[DType.uint8, 8]._mlir_type
         ](llvm_res)
-        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 16:
+    elif dtype.is_float8() and width == 16:
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -371,11 +371,11 @@ fn _load_from_lds[
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
             _type = SIMD[DType.uint8, 16]._mlir_type
         ](llvm_res)
-        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 32:
+    elif dtype.is_float8() and width == 32:
         # FP8 x32 = 256 bits = 2 x ds_read_b128
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
@@ -405,6 +405,7 @@ fn _load_from_lds[
         var uint8_vec = rebind[SIMD[DType.uint8, 16]](uint8_vec0).join(
             rebind[SIMD[DType.uint8, 16]](uint8_vec1)
         )
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](uint8_vec)
     else:
         constrained[
@@ -1515,7 +1516,7 @@ struct AMDPingPongMatmul[
 
         @always_inline
         fn s_setprio[priority: Int16]():
-            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
+            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](Int16(priority))
 
         # ================================================================
         # PHASE SYNCHRONIZATION
