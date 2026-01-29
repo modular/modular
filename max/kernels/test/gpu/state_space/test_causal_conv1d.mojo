@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,9 +30,13 @@ from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
     causal_conv1d_channel_first_fwd_gpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
@@ -423,46 +427,79 @@ fn run_causal_conv1d_gpu[
     result_cpu_heap.free()
 
 
-def main():
+fn test_basic_gpu_causal_conv1d() raises:
+    """Test basic GPU causal conv1d without activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
-        print("GPU not available, skipping GPU tests")
         return
-
-    # Test basic cases
     run_causal_conv1d_gpu[DType.float32, "none"](2, 4, 8, 3, ctx=ctx)
-    print("✓ Basic GPU causal conv1d test passed")
 
+
+fn test_gpu_causal_conv1d_with_silu() raises:
+    """Test GPU causal conv1d with SiLU activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "silu"](2, 4, 8, 3, ctx=ctx)
-    print("✓ GPU causal conv1d with SiLU test passed")
 
-    # Test all supported widths
+
+fn test_gpu_causal_conv1d_width_1() raises:
+    """Test GPU causal conv1d with kernel width 1."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 1, ctx=ctx)
-    print("✓ GPU causal conv1d width 1 test passed")
 
+
+fn test_gpu_causal_conv1d_width_2() raises:
+    """Test GPU causal conv1d with kernel width 2."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 2, ctx=ctx)
-    print("✓ GPU causal conv1d width 2 test passed")
 
+
+fn test_gpu_causal_conv1d_width_3() raises:
+    """Test GPU causal conv1d with kernel width 3."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 3, ctx=ctx)
-    print("✓ GPU causal conv1d width 3 test passed")
 
+
+fn test_gpu_causal_conv1d_width_4() raises:
+    """Test GPU causal conv1d with kernel width 4."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 4, ctx=ctx)
-    print("✓ GPU causal conv1d width 4 test passed")
 
-    # Test larger sequences
+
+fn test_gpu_causal_conv1d_large_sequence() raises:
+    """Test GPU causal conv1d with larger sequence length."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "none"](2, 16, 128, 3, ctx=ctx)
-    print("✓ Large sequence GPU test passed")
 
-    # Test with mamba-130m-hf realistic dimensions
+
+fn test_gpu_causal_conv1d_mamba_dimensions() raises:
+    """Test GPU causal conv1d with mamba-130m-hf realistic dimensions."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     # dim=1536, width=4 (conv_kernel)
     for seqlen in [5, 6, 7]:
         run_causal_conv1d_gpu[DType.float32, "silu"](
             1, 1536, seqlen, 4, ctx=ctx
         )
-        print("✓ Mamba-130m causal conv1d seqlen=" + String(seqlen) + " passed")
 
-    # Strict tolerance test
+
+fn test_gpu_causal_conv1d_strict_tolerance() raises:
+    """Test GPU causal conv1d with strict tolerance (0.01%)."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_gpu[DType.float32, "silu"](
         1, 1536, 7, 4, ctx=ctx, rtol=0.0001
     )
-    print("✓ Strict tolerance (0.01%) causal conv1d seqlen=7 passed")

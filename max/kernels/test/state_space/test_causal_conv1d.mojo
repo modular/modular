@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,9 +28,13 @@ from memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
@@ -181,27 +185,34 @@ fn run_causal_conv1d[
     result_unfused_heap.free()
 
 
-def main():
-    # Test basic cases
+fn test_basic_causal_conv1d() raises:
+    """Test basic causal conv1d without activation."""
     run_causal_conv1d[DType.float32, "none"](2, 4, 8, 3)
-    print("✓ Basic causal conv1d test passed")
 
+
+fn test_causal_conv1d_with_silu() raises:
+    """Test causal conv1d with SiLU activation."""
     run_causal_conv1d[DType.float32, "silu"](2, 4, 8, 3)
-    print("✓ Causal conv1d with SiLU test passed")
 
+
+fn test_causal_conv1d_width_4() raises:
+    """Test causal conv1d with kernel width 4."""
     run_causal_conv1d[DType.float32, "none"](2, 8, 16, 4)
-    print("✓ Causal conv1d width 4 test passed")
 
+
+fn test_causal_conv1d_silu_width_3() raises:
+    """Test causal conv1d with SiLU activation and width 3."""
     run_causal_conv1d[DType.float32, "silu"](2, 8, 16, 3)
-    print("✓ Causal conv1d with SiLU width 3 test passed")
 
-    # Test various widths
+
+fn test_causal_conv1d_various_widths() raises:
+    """Test causal conv1d with various kernel widths."""
     run_causal_conv1d[DType.float32, "none"](2, 4, 8, 1)
     run_causal_conv1d[DType.float32, "none"](2, 4, 8, 2)
     run_causal_conv1d[DType.float32, "none"](2, 4, 8, 3)
     run_causal_conv1d[DType.float32, "none"](2, 4, 8, 4)
-    print("✓ Various widths test passed")
 
-    # Test larger sequences
+
+fn test_causal_conv1d_large_sequence() raises:
+    """Test causal conv1d with larger sequence length."""
     run_causal_conv1d[DType.float32, "none"](2, 16, 128, 3)
-    print("✓ Large sequence test passed")

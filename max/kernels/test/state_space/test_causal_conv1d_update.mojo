@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,9 +29,13 @@ from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
@@ -344,34 +348,42 @@ fn run_causal_conv1d_update[
     result_unfused_heap.free()
 
 
-def main():
-    # Test basic cases
+fn test_basic_causal_conv1d_update() raises:
+    """Test basic causal conv1d update with bias."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
-    print("✓ Basic causal conv1d update test passed")
 
+
+fn test_causal_conv1d_update_with_silu() raises:
+    """Test causal conv1d update with SiLU activation."""
     run_causal_conv1d_update[DType.float32, True, "silu"](2, 4, 1, 3, 4)
-    print("✓ Causal conv1d update with SiLU test passed")
 
+
+fn test_causal_conv1d_update_without_bias() raises:
+    """Test causal conv1d update without bias."""
     run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)
-    print("✓ Causal conv1d update without bias test passed")
 
-    # Test with seqlen > 1
+
+fn test_causal_conv1d_update_seqlen_greater_than_one() raises:
+    """Test causal conv1d update with seqlen > 1."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 4, 3, 4)
-    print("✓ Causal conv1d update with seqlen > 1 test passed")
 
-    # Test various widths
+
+fn test_causal_conv1d_update_various_widths() raises:
+    """Test causal conv1d update with various kernel widths."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 2, 3)
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 4, 5)
-    print("✓ Causal conv1d update various widths test passed")
 
-    # Test with larger state
+
+fn test_causal_conv1d_update_larger_state() raises:
+    """Test causal conv1d update with larger state length."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 8, 1, 3, 8)
-    print("✓ Causal conv1d update with larger state test passed")
 
-    # Test combinations
+
+fn test_causal_conv1d_update_combinations() raises:
+    """Test causal conv1d update with various bias and activation combinations.
+    """
     run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
     run_causal_conv1d_update[DType.float32, False, "silu"](2, 4, 1, 3, 4)
     run_causal_conv1d_update[DType.float32, True, "silu"](2, 4, 1, 3, 4)
-    print("✓ Causal conv1d update combinations test passed")

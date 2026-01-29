@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,9 +32,13 @@ from state_space.causal_conv1d import (
     causal_conv1d_update_gpu,
     causal_conv1d_update_gpu_no_bias,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
@@ -412,35 +416,51 @@ fn run_causal_conv1d_update_gpu[
     result_cpu_heap.free()
 
 
-def main():
+fn test_gpu_causal_conv1d_update_basic() raises:
+    """Test basic GPU causal conv1d update with bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
-        print("GPU not available, skipping GPU tests")
         return
-
-    # Test basic cases
     run_causal_conv1d_update_gpu[DType.float32, True, "none"](
         2, 8, 1, 3, 4, ctx=ctx
     )
-    print("✓ GPU causal conv1d update basic test passed")
 
+
+fn test_gpu_causal_conv1d_update_with_silu() raises:
+    """Test GPU causal conv1d update with SiLU activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_update_gpu[DType.float32, True, "silu"](
         2, 8, 1, 3, 4, ctx=ctx
     )
-    print("✓ GPU causal conv1d update with SiLU test passed")
 
+
+fn test_gpu_causal_conv1d_update_without_bias() raises:
+    """Test GPU causal conv1d update without bias."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_update_gpu[DType.float32, False, "none"](
         2, 8, 1, 3, 4, ctx=ctx
     )
-    print("✓ GPU causal conv1d update without bias test passed")
 
-    # Test with seqlen > 1
+
+fn test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
+    """Test GPU causal conv1d update with seqlen > 1."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_update_gpu[DType.float32, True, "none"](
         2, 8, 4, 3, 4, ctx=ctx
     )
-    print("✓ GPU causal conv1d update with seqlen > 1 test passed")
 
-    # Test various widths
+
+fn test_gpu_causal_conv1d_update_various_widths() raises:
+    """Test GPU causal conv1d update with various kernel widths."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_causal_conv1d_update_gpu[DType.float32, True, "none"](
         2, 8, 1, 2, 3, ctx=ctx
     )
@@ -450,4 +470,3 @@ def main():
     run_causal_conv1d_update_gpu[DType.float32, True, "none"](
         2, 8, 1, 4, 5, ctx=ctx
     )
-    print("✓ GPU causal conv1d update various widths test passed")
