@@ -29,9 +29,42 @@ struct TopLevelTypes {
   Type copyFuncFieldType;
   Type delFuncFieldType;
 };
+
+/// Information about a closure parameter's external reference that needs
+/// a where clause constraint. Contains the closure parameter name and the
+/// alias representing the external reference.
+struct ClosureExternalRef {
+  /// The closure-typed parameter (e.g., "C" in `C: fn(T) unified -> T`)
+  ParamDeclAttr closureParam;
+  /// The alias in the closure trait representing the external param reference
+  AliasDeclOp aliasOp;
+};
+
 class ClosureEmitter : public FunctionEmitter {
 public:
   ClosureEmitter(SharedState &shared);
+
+  /// Collect external parameter references from closure-typed parameters.
+  ///
+  /// For each parameter constrained by a closure trait, this examines the
+  /// alias ops in the trait body. These aliases represent external parameter
+  /// references from the outer scope where the closure was defined.
+  ///
+  /// Example:
+  ///   fn useIt[T: Coord, C: fn(T) unified -> T](impl: C, arg: T)
+  ///
+  /// The closure trait for `C` will have an alias `T` in its body. This
+  /// function collects that alias along with the closure param `C`.
+  /// The caller can then generate: `where _type_is_eq_parse_time[T, C.T]()`
+  ///
+  /// \param closureParam The closure-typed parameter to examine
+  /// \param refs Output vector for collected external references
+  void collectClosureExternalRefs(ParamDeclAttr closureParam,
+                                  SmallVectorImpl<ClosureExternalRef> &refs);
+
+  /// Iterate over closure traits in a TraitType and invoke a callback for each.
+  void processClosureTraits(TraitType traitType,
+                            std::function<void(TraitDeclOp)> const &callback);
 
   /// Generate a Closure Wrapper Struct, a struct that contains an opaque
   /// pointer to the underlying Closure Implementation instance.

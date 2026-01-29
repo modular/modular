@@ -628,6 +628,39 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl) {
   return {op, parameters, result};
 }
 
+//===----------------------------------------------------------------------===//
+// Closure Parameter Type Constraint Collection
+//===----------------------------------------------------------------------===//
+
+void ClosureEmitter::processClosureTraits(
+    TraitType traitType, std::function<void(TraitDeclOp)> const &process) {
+  for (SymbolRefAttr traitSymbol : traitType.getSymbols()) {
+    ASTDecl *traitDecl =
+        shared.getDeclResolver().getDeclForTypeSymbolIfExists(traitSymbol);
+    if (!traitDecl)
+      continue;
+    auto closureTrait = dyn_cast<TraitDeclOp>(traitDecl->getIfOperation());
+    if (!closureTrait || !closureTrait.getDefinesClosure())
+      continue;
+    process(closureTrait);
+  }
+}
+
+void ClosureEmitter::collectClosureExternalRefs(
+    ParamDeclAttr closureParam, SmallVectorImpl<ClosureExternalRef> &refs) {
+
+  auto traitType = sugarDynCast<TraitType>(closureParam.getType());
+  if (!traitType)
+    return;
+
+  // Collect alias ops - these represent external parameter references.
+  auto collectAliases = [&](TraitDeclOp closureTrait) {
+    for (AliasDeclOp aliasOp : closureTrait.getOps<AliasDeclOp>())
+      refs.push_back({closureParam, aliasOp});
+  };
+  processClosureTraits(traitType, collectAliases);
+}
+
 ASTDecl *ClosureEmitter::createStructWrapper(
     ASTDecl &moduleDecl, StringRef name, ASTDecl &traitDecl, SMLoc smLocation,
     TypeConvention typeConvention, bool isCopyable, bool isStateless) {
