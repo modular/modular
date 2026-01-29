@@ -735,7 +735,9 @@ class PipelineRegistry:
         return tokenizer, pipeline_factory
 
     def retrieve_context_type(
-        self, pipeline_config: PipelineConfig
+        self,
+        pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
     ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
@@ -745,18 +747,33 @@ class PipelineRegistry:
 
         Args:
             pipeline_config: The configuration for the pipeline.
+            override_architecture: Optional architecture name to use instead of looking up
+                based on the model repository. This is useful for cases like audio generation
+                where the pipeline uses a different architecture (e.g., audio decoder) than
+                the underlying model repository.
 
         Returns:
             The context class type associated with the architecture, which implements
             either the TextGenerationContext or EmbeddingsContext protocol.
 
         Raises:
-            ValueError: If no supported architecture is found for the given model repository.
+            ValueError: If no supported architecture is found for the given model repository
+                or override architecture name.
         """
-        if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            use_legacy_module=pipeline_config.use_legacy_module,
-        ):
+        arch: SupportedArchitecture | None = None
+        if override_architecture:
+            arch = self.architectures.get(override_architecture)
+            if arch is None:
+                raise ValueError(
+                    f"Architecture '{override_architecture}' not found in registry"
+                )
+        else:
+            arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.model.huggingface_model_repo,
+                use_legacy_module=pipeline_config.use_legacy_module,
+            )
+
+        if arch:
             return arch.context_type
 
         raise ValueError(

@@ -39,6 +39,7 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
     ) -> type[TextContext]:
         return TextContext
 
