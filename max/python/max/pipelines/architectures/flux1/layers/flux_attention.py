@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
+from typing import Any
 
 from max import functional as F
 from max.driver.driver import Device
@@ -30,12 +31,7 @@ from .embeddings import apply_rotary_emb
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 
-class FluxAttention(
-    Module[
-        [Tensor, Tensor | None, Tensor | None, tuple[Tensor, Tensor] | None],
-        Tensor | tuple[Tensor, Tensor],
-    ]
-):
+class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
     """Flux attention mechanism with QK normalization and optional dual stream."""
 
     def __init__(
@@ -235,7 +231,7 @@ class FluxAttention(
         return hidden_states
 
 
-class FeedForward(Module[[Tensor, ...], Tensor]):
+class FeedForward(Module[[Tensor], Tensor]):
     def __init__(
         self,
         dim: int,
@@ -274,16 +270,18 @@ class FeedForward(Module[[Tensor, ...], Tensor]):
                 f"Activation function {activation_fn} is not implemented"
             )
 
-        self.net = ModuleList(
-            act_fn,
-            Linear(
-                inner_dim,
-                dim_out,
-                bias=bias,
-            ),
+        self.net: ModuleList[Module[..., Any]] = ModuleList(
+            [
+                act_fn,
+                Linear(
+                    inner_dim,
+                    dim_out,
+                    bias=bias,
+                ),
+            ]
         )
 
-    def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply feedforward network to hidden states.
 
         Args:

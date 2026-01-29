@@ -13,6 +13,7 @@
 
 import logging
 import os
+from collections.abc import Sequence
 from os import PathLike
 from typing import Any
 
@@ -22,7 +23,7 @@ from max.dtype import DType
 from max.graph import TensorType
 from max.graph.weights import SafetensorWeights
 from max.nn import Linear, Module
-from max.nn.norm import LayerNorm
+from max.nn.norm import LayerNorm  # type: ignore[attr-defined]
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
@@ -36,7 +37,7 @@ from .layers.normalizations import (
     AdaLayerNormZero,
     AdaLayerNormZeroSingle,
 )
-from .model_config import FluxConfig
+from .model_config import FluxConfigBase
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +50,11 @@ def get_weight_registry_from_diffusers(
         for f in os.listdir(safe_tensor_folder)
         if f.endswith(".safetensors")
     ]
-    weights = SafetensorWeights(weight_files)
+    weights = SafetensorWeights(weight_files)  # type: ignore[arg-type]
     return {name: weight.data().data for name, weight in weights.items()}
 
 
-class FluxSingleTransformerBlock(
-    Module[
-        [
-            Tensor,
-            Tensor,
-            Tensor,
-            tuple[Tensor, Tensor] | None,
-            dict[str, Any] | None,
-        ],
-        tuple[Tensor, Tensor],
-    ]
-):
+class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
         dim: int,
@@ -153,18 +143,7 @@ class FluxSingleTransformerBlock(
         return encoder_hidden_states, hidden_states
 
 
-class FluxTransformerBlock(
-    Module[
-        [
-            Tensor,
-            Tensor,
-            Tensor,
-            tuple[Tensor, Tensor] | None,
-            dict[str, Any] | None,
-        ],
-        tuple[Tensor, Tensor],
-    ]
-):
+class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
         dim: int,
@@ -268,6 +247,7 @@ class FluxTransformerBlock(
             **joint_attention_kwargs,
         )
 
+        assert isinstance(attention_outputs, tuple)
         attn_output, context_attn_output = attention_outputs
 
         # Process attention outputs for the `hidden_states`.
@@ -307,28 +287,10 @@ class FluxTransformerBlock(
         return encoder_hidden_states, hidden_states
 
 
-class FluxTransformer2DModel(
-    Module[
-        [
-            Tensor,
-            Tensor,
-            Tensor | None,
-            Tensor | None,
-            Tensor | None,
-            Tensor | None,
-            Tensor | None,
-            dict[str, Any] | None,
-            Any | None,
-            Any | None,
-            bool,
-            bool,
-        ],
-        tuple[Tensor],
-    ]
-):
+class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
     def __init__(
         self,
-        config: FluxConfig,
+        config: FluxConfigBase,
     ):
         """Initialize Flux Transformer 2D model.
 
@@ -377,7 +339,7 @@ class FluxTransformer2DModel(
             bias=True,
         )
 
-        self.transformer_blocks = ModuleList(
+        self.transformer_blocks: ModuleList[FluxTransformerBlock] = ModuleList(
             [
                 FluxTransformerBlock(
                     dim=self.inner_dim,
@@ -389,7 +351,9 @@ class FluxTransformer2DModel(
             ]
         )
 
-        self.single_transformer_blocks = ModuleList(
+        self.single_transformer_blocks: ModuleList[
+            FluxSingleTransformerBlock
+        ] = ModuleList(
             [
                 FluxSingleTransformerBlock(
                     dim=self.inner_dim,
@@ -506,11 +470,18 @@ class FluxTransformer2DModel(
         if guidance is not None:
             guidance = F.cast(guidance, hidden_states.dtype) * 1000.0
 
-        temb = (
-            self.time_text_embed(timestep, pooled_projections)
-            if not self.guidance_embeds
-            else self.time_text_embed(timestep, guidance, pooled_projections)
-        )
+        if self.guidance_embeds:
+            assert isinstance(
+                self.time_text_embed, CombinedTimestepGuidanceTextProjEmbeddings
+            )
+            assert isinstance(guidance, Tensor)
+            temb = self.time_text_embed(timestep, guidance, pooled_projections)
+        else:
+            assert isinstance(
+                self.time_text_embed, CombinedTimestepTextProjEmbeddings
+            )
+            temb = self.time_text_embed(timestep, pooled_projections)
+
         encoder_hidden_states = self.context_embedder(encoder_hidden_states)
 
         ids = F.concat((txt_ids, img_ids), axis=0)
@@ -525,8 +496,8 @@ class FluxTransformer2DModel(
                 joint_attention_kwargs=joint_attention_kwargs,
             )
 
-        for block in self.single_transformer_blocks:
-            encoder_hidden_states, hidden_states = block(
+        for single_block in self.single_transformer_blocks:
+            encoder_hidden_states, hidden_states = single_block(
                 hidden_states=hidden_states,
                 encoder_hidden_states=encoder_hidden_states,
                 temb=temb,

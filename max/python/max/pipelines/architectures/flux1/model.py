@@ -18,7 +18,9 @@ from max import functional as F
 from max.driver import Device
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.lib.interfaces.component_model import (  # type: ignore[import-not-found]
+    ComponentModel,
+)
 
 from .flux1 import FluxTransformer2DModel
 from .model_config import FluxConfig
@@ -48,7 +50,7 @@ class Flux1Model(ComponentModel):
         )
         self.load_model()
 
-    def load_model(self) -> Callable:
+    def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():

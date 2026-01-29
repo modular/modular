@@ -15,13 +15,11 @@
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.norm import LayerNorm, RMSNorm  # type: ignore[attr-defined]
 from max.tensor import Tensor
 
 
-class AdaLayerNormZeroSingle(
-    Module[[Tensor, Tensor | None], tuple[Tensor, Tensor]]
-):
+class AdaLayerNormZeroSingle(Module[..., tuple[Tensor, Tensor]]):
     """Adaptive layer normalization zero single module."""
 
     def __init__(
@@ -78,10 +76,7 @@ class AdaLayerNormZeroSingle(
 
 
 class AdaLayerNormZero(
-    Module[
-        [Tensor, Tensor | None, Tensor | None, DType | None, Tensor | None],
-        tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
-    ]
+    Module[..., tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]
 ):
     r"""Norm layer adaptive layer norm zero (adaLN-Zero).
 
