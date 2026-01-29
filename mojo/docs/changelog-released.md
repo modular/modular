@@ -10,12 +10,6 @@ This is a list of changes to the Mojo language, standard library, and tools.
 To check your current version, run `mojo --version`. To install or update
 Mojo, see the [install guide](/mojo/manual/install).
 
-## Nightly: v0.26.2
-
-This version is still a work in progress.
-
-<!-- INSERT HERE : This line is required for post-process-docs.py -->
-
 ## v0.26.1 (2026-01-29)
 
 ### ✨ Highlights {#26-1-highlights}
