@@ -61,31 +61,23 @@ This version is still a work in progress.
 
 ### Documentation {#26-1-documentation}
 
-- The new [Mojo quickstart](/mojo/manual/quickstart) provides a "5-minute"
+- The new [Mojo quickstart](/mojo/manual/quickstart) page provides a "5-minute"
   introduction to installing Mojo and exploring basic language features.
 
-- The new [Reflection](/mojo/manual/reflection) section of the Mojo Manual
-  describes Mojo's new compile-time reflection capabilities, including some
-  example use cases. Also see the
-  [Reflection and introspection](#26-1-reflection) section of the changelog.
+- The new [Reflection](/mojo/manual/reflection) page
+  describes Mojo's new compile-time reflection capabilities, including
+  example use cases.
 
-- A new
-  [Explicitly-destroyed types](/mojo/manual/lifecycle/death#explicitly-destroyed-types)
-  section of [Death of a value](/mojo/manual/lifecycle/death) describes how to
-  implement and use explicitly-destroyed types. Also see the [Language
-  changes](#26-1-language-changes) and
-  [Explicitly-destroyed types](#26-1-explicitly-destroyed-types) sections of the
-  changelog.
+- Added a section to the *Value destruction* page about how to implement
+  and use [explicitly-destroyed
+  types](/mojo/manual/lifecycle/death#explicitly-destroyed-types).
 
-- The new [Jupyter Notebooks](/mojo/tools/notebooks) section shows you how to
-  use Mojo with [Jupyter Notebooks](https://jupyter.org/), covering both
-  [Google Colab](https://colab.google/) and local JupyterLab environments. The
-  documentation provides step-by-step instructions for setting up Mojo
-  notebooks, including GPU programming examples.
+- The new [Jupyter Notebooks](/mojo/tools/notebooks) page provides
+  step-by-step instructions for programming with Mojo in Google Colab and
+  local JupyterLab environments, including GPU programming examples.
 
-- A new section describes
-  [Materialization](/mojo/manual/metaprogramming/materialization), the process
-  of making compile-time values available at run time.
+- The new [Materialization](/mojo/manual/metaprogramming/materialization) page
+  describes how to make compile-time values available at run time.
 
 ### Language enhancements {#26-1-language-enhancements}
 
