@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
 from memory import LegacyUnsafePointer
+from collections import OptionalReg
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
@@ -254,13 +254,13 @@ fn _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    pre_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    post_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    post_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](
@@ -299,10 +299,10 @@ fn _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    accum_proc_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    accum_apply_func: fn[dtype: DType, width: Int] (
+    accum_apply_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: LayoutTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
@@ -327,19 +327,19 @@ fn _softmax_3_pass_step_3[
 fn _softmax_3_pass_base[
     simd_width: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    step2_pre_update_func: fn[dtype: DType, width: Int] (
+    step2_pre_update_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step2_post_update_func: fn[dtype: DType, width: Int] (
+    step2_post_update_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_proc_func: fn[dtype: DType, width: Int] (
+    step3_accum_proc_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_apply_func: fn[dtype: DType, width: Int] (
+    step3_accum_apply_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: LayoutTensor[mut=True, dtype, ...]) raises:
@@ -433,7 +433,7 @@ fn softmax_3_pass[
     simd_width: Int,
     dtype: DType,
     origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
     logsoftmax: Bool = False,
@@ -504,7 +504,7 @@ fn logsoftmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",
@@ -557,7 +557,7 @@ fn _softmax_cpu[
     simd_width: Int,
     rank: Int,
     origins: OriginSet,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         origins
     ] -> SIMD[dtype, _simd_width],
     logsoftmax: Bool = False,
@@ -648,9 +648,9 @@ fn softmax[
 
 fn softmax_kernel[
     BLOCK_SIZE: Int,
-    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int] (
+    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int](
         IndexList[_rank]
-    ) capturing [_] -> SIMD[_dtype, _simd_width],
+    ) capturing[_] -> SIMD[_dtype, _simd_width],
     dtype: DType,
     layout: Layout,
     sink_type: DType,
@@ -785,7 +785,7 @@ fn _softmax_gpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     *,
@@ -839,7 +839,7 @@ fn softmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",

@@ -83,8 +83,8 @@ fn spatial_merge_kernel[
     var T = grid_thw[b, 0]
     var H = grid_thw[b, 1]
     var W = grid_thw[b, 2]
-    var H_out = H // merge_size
-    var W_out = W // merge_size
+    var H_out = H // Int64(merge_size)
+    var W_out = W // Int64(merge_size)
     var C_out = hidden_size * merge_size * merge_size
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
@@ -127,7 +127,7 @@ fn spatial_merge_kernel[
     )
 
     var input_tensor = LayoutTensor[dtype, Layout.row_major[5]()](
-        input.ptr + Int(offset_in * hidden_size),
+        input.ptr + Int(offset_in * Int64(hidden_size)),
         input_tiled_layout,
     )
 
@@ -138,7 +138,7 @@ fn spatial_merge_kernel[
         Index(T, H_out, W_out, C_out)
     )
     var output_tensor = LayoutTensor[dtype, Layout.row_major[4]()](
-        output.ptr + Int(offset_out * C_out),
+        output.ptr + Int(offset_out * Int64(C_out)),
         output_runtime_layout,
     )
 

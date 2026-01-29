@@ -394,6 +394,142 @@ def fused_qkv_ragged_matmul_scaled_float8(
     )[0].tensor
 
 
+def fused_qkv_ragged_matmul_scaled_float4(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    tensor_sf: float | TensorValue,
+    kv_scales: TensorValue | None = None,
+    sf_vector_size: int = 16,
+    _output_dim: int | None = None,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with scaled float4 input and weights.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: TensorValue representing the weight tensor with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim, K=hidden_dim].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of attention heads.
+        input_scale: TensorValue representing the input scale tensor. Shape
+            for blockwise scaling is 5D e.g., [2, 3, 32, 4, 4].
+        weight_scale: TensorValue representing the weight scale tensor. Shape
+            for blockwise scaling is 5D e.g., [2, 34, 32, 4, 4]
+        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
+        kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.dtype != wqkv.dtype:
+        raise ValueError(
+            "expected input and wqkv to have the same dtype, but got"
+            f" {input.dtype} and {wqkv.dtype}, respectively."
+        )
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    # Device check - all tensors must be on the same device
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            f"expected all tensors to be on the same device as input ({input.device}), "
+            f"but got:\n"
+            f"  wqkv={wqkv.device}\n"
+            f"  input_row_offsets={input_row_offsets.device}\n"
+            f"  input_scale={input_scale.device}\n"
+            f"  weight_scale={weight_scale.device}"
+        )
+
+    # layer_idx must be a scalar on CPU as it's used for indexing
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            f"expected layer_idx to be on CPU device, but got {layer_idx.device}"
+        )
+
+    # tensor_sf must be a scalar on CPU as it's used for per-tensor scaling
+    if isinstance(tensor_sf, float):
+        tensor_sf = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    elif isinstance(tensor_sf, TensorValue):
+        tensor_sf = (
+            tensor_sf.cast(DType.float32).to(DeviceRef.CPU()).reshape(())
+        )
+    else:
+        raise ValueError(
+            "tensor_sf must be either float or a float32 CPU tensor of rank 0."
+        )
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.uint8,
+        "scale_type": DType.float8_e4m3fn,
+        "kv_type": kv_params.dtype,
+        "SF_VECTOR_SIZE": sf_vector_size,
+    }
+
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.float4"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection,
+        layer_idx,
+    ]
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def unfused_qkv_ragged_matmul_gguf_quantized(
     kv_params: KVCacheParams,
     input: TensorValue,

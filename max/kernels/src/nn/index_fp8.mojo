@@ -114,7 +114,7 @@ fn fp8_index_kernel[
         address_space = AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
-    var k_row_offset = k_lut.row_idx(Int(batch_idx), UInt32(key_offset))
+    var k_row_offset = k_lut.row_idx(UInt32(Int(batch_idx)), UInt32(key_offset))
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
     var q_s_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0))
@@ -273,7 +273,7 @@ fn fp8_index_kernel[
             for col_idx in range(thread_dim_y):
                 row_sum += scratch[tid, col_idx][0]
 
-            o_ptr[i * BN + tid] = k_s_reg * row_sum
+            o_ptr[Scalar[DType.uint](i * BN) + tid] = k_s_reg * row_sum
 
 
 @always_inline
@@ -367,7 +367,7 @@ fn fp8_index[
         block_dim=(16, 8, 1),
         shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            smem_available
+            UInt32(smem_available)
         ),
     )
 
@@ -403,7 +403,7 @@ fn _index_matmul_max[
     var seq_len = end_of_seq - start_of_seq
 
     var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_start = k_lut.row_idx(Int(batch_idx), 0)
+    var k_row_start = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
 
     if key_idx >= UInt(num_keys) or seq_idx >= UInt(seq_len):
         return
@@ -467,7 +467,7 @@ fn _reduce_logits[
     var seq_len = end_of_seq - start_of_seq
 
     var num_keys = k_lut.cache_length(Int(batch_idx))
-    var k_row_offset = k_lut.row_idx(Int(batch_idx), 0)
+    var k_row_offset = k_lut.row_idx(UInt32(Int(batch_idx)), 0)
 
     if seq_idx >= UInt(seq_len) or key_idx >= UInt(num_keys):
         return

@@ -1454,16 +1454,6 @@ struct NDBuffer[
             "]",
         )
 
-    @no_inline
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
 
 @always_inline
 fn partial_simd_load[
@@ -1498,8 +1488,8 @@ fn partial_simd_load[
         The SIMD vector loaded and zero-filled.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = max(lbound, 0)
-    var effective_rbound = min(width, rbound)
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
     var incr = iota[DType.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
@@ -1537,8 +1527,8 @@ fn partial_simd_store[
         data: The vector value to store.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = max(lbound, 0)
-    var effective_rbound = min(width, rbound)
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
     var incr = iota[DType.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 

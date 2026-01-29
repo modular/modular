@@ -236,7 +236,7 @@ fn non_max_suppression_shape_func[
 
 fn non_max_suppression[
     dtype: DType,
-    func: fn (Int64, Int64, Int64) capturing [_] -> None,
+    func: fn(Int64, Int64, Int64) capturing[_] -> None,
 ](
     boxes: LayoutTensor[dtype, ...],
     scores: LayoutTensor[dtype, ...],
@@ -324,7 +324,7 @@ fn non_max_suppression[
                 num_boxes_remaining -= 1
 
                 # Each output prediction contains 3 values: [batch_index, class_index, box_index]
-                func(b, c, box_idxs[pred_idx])
+                func(Int64(b), Int64(c), box_idxs[pred_idx])
 
                 # At the beginning of this loop box_idxs are sorted such that scores[box_idxs] looks like this:
                 # [1st best score, 2nd best score, ..., num_boxes_remaining'th best score, -inf, ..., -inf]

@@ -232,8 +232,8 @@ fn gpu_bicubic_kernel[
         var in_x_floor = Int(floor(in_x))
 
         # (how far away from the pixel above and to the left is the output pixel?)
-        var dy = in_y - in_y_floor
-        var dx = in_x - in_x_floor
+        var dy = in_y - Float32(in_y_floor)
+        var dx = in_x - Float32(in_x_floor)
 
         # Look at surrounding 4x4 pixels, assign weights to them (closer pixels
         # have more weight) and get the final value for each channel.

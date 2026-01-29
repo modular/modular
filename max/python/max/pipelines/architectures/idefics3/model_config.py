@@ -211,6 +211,12 @@ class Idefics3Config(ArchConfigWithKVCache):
             An Idefics3Config instance with fields initialized from config.
         """
         huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
 
         # Create Llama3Config from the text config
         hf_text_config = getattr(

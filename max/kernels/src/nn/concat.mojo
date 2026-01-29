@@ -39,7 +39,7 @@ from .gather_scatter import normalize_neg_index
 
 comptime elementwise_epilogue_type = fn[
     c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
-] (IndexList[rank], SIMD[c_type, width]) capturing -> None
+](IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 
 # ===-----------------------------------------------------------------------===#
@@ -893,7 +893,7 @@ fn _fused_concat_cpu[
     rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
-    input_fn: fn[input_index: Int, width: Int, rank: Int] (
+    input_fn: fn[input_index: Int, width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -941,7 +941,7 @@ fn _fused_concat_inner_most_single_dim[
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+    input_fn: fn[input_index: Int, width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -976,7 +976,7 @@ fn _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+    input_fn: fn[input_index: Int, width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1027,7 +1027,7 @@ fn _fused_concat_gpu[
     //,
     rank: Int,
     dtype: DType,
-    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+    input_fn: fn[input_index: Int, width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1095,7 +1095,7 @@ fn fused_concat[
     dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_fn: fn[input_index: Int, width: Int, _rank: Int] (
+    input_fn: fn[input_index: Int, width: Int, _rank: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,

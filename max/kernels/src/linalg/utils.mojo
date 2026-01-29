@@ -29,11 +29,11 @@ from utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
+](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime elementwise_compute_lambda_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -671,7 +671,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () raises capturing [_] -> None,
+    func: fn[x: Bool]() raises capturing[_] -> None,
 ](m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
@@ -680,7 +680,7 @@ fn dispatch_get_kernel_type[
 
 
 fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () capturing [_] -> None,
+    func: fn[x: Bool]() capturing[_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()

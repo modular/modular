@@ -407,6 +407,40 @@ struct SharedMemBarrier(TrivialRegisterType):
             Int32(Int(self.unsafe_ptr())), phase
         )
 
+    @always_inline("nodebug")
+    fn try_wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0) -> Bool:
+        """Non-blocking check if barrier phase is complete.
+
+        Performs a single non-blocking check to see if the barrier has completed
+        the specified phase. Returns immediately with the result without spinning.
+
+        This is useful for implementing the try-acquire pattern where you want to
+        overlap barrier checking with other useful work.
+
+        Args:
+            phase: The phase parity (0 or 1) to check for. Defaults to 0.
+
+        Returns:
+            True if the barrier phase is complete, False otherwise.
+
+        Example:
+            ```mojo
+            # Try-acquire pattern for pipelined execution
+            var ready = barrier.try_wait(phase)
+            # Do other work while potentially waiting
+            do_useful_work()
+            # Now wait conditionally
+            if not ready:
+                barrier.wait(phase)
+            ```
+        """
+        # PTX: mbarrier.try_wait.parity.shared::cta.b64 waitComplete, [addr], phaseParity;
+        return inlined_assembly[
+            "mbarrier.try_wait.parity.shared::cta.b64 $0, [$1], $2;",
+            Bool,
+            constraints="=b,r,r",
+        ](Int32(Int(self.unsafe_ptr())), phase)
+
     @always_inline
     fn unsafe_ptr[
         origin: Origin
@@ -535,9 +569,9 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
             phase: The initial phase value (0 or 1).
             count: The initial count value.
         """
-        self._index = index
-        self._phase = phase
-        self._count = count
+        self._index = UInt32(index)
+        self._phase = UInt32(phase)
+        self._count = UInt32(count)
 
     @always_inline
     fn index(self) -> UInt32:
@@ -572,7 +606,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
         if Self.num_stages > 1:
             self._index += 1
             self._count += 1
-            if self._index == Self.num_stages:
+            if self._index == UInt32(Self.num_stages):
                 self._index = 0
                 self._phase ^= 1
 
@@ -678,17 +712,6 @@ struct TMATensorTile[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     @always_inline
     @implicit
     fn __init__(out self, descriptor: TMADescriptor):
@@ -789,12 +812,12 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 __comptime_assert (
-                    copy_offset * size_of[Self.dtype]()
+                    copy_offset * UInt32(size_of[Self.dtype]())
                 ) % 128 == 0, (
                     "copy_offset="
                     + String(copy_offset)
@@ -894,9 +917,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_shared_cluster_global[
                         eviction_policy=eviction_policy
@@ -988,9 +1011,9 @@ struct TMATensorTile[
 
                     @parameter
                     for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = layout_of_descs(
-                            IntTuple(n, m, i, j)
-                        ) * copy_size
+                        comptime copy_offset: UInt32 = UInt32(
+                            layout_of_descs(IntTuple(n, m, i, j)) * copy_size
+                        )
 
                         cp_async_bulk_tensor_shared_cluster_global[
                             cta_group=cta_group,
@@ -1101,9 +1124,10 @@ struct TMATensorTile[
 
                         @parameter
                         for j in range(num_copies_dim4):
-                            comptime copy_offset: UInt32 = layout_of_descs(
-                                IntTuple(o, n, m, i, j)
-                            ) * copy_size
+                            comptime copy_offset: UInt32 = UInt32(
+                                layout_of_descs(IntTuple(o, n, m, i, j))
+                                * copy_size
+                            )
 
                             cp_async_bulk_tensor_shared_cluster_global[
                                 cta_group=cta_group,
@@ -1314,9 +1338,9 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
@@ -1411,9 +1435,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_shared_cluster_global_multicast[
                         cta_group=cta_group
@@ -1530,9 +1554,9 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
@@ -1610,9 +1634,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.ptr + copy_offset,
@@ -1688,9 +1712,9 @@ struct TMATensorTile[
 
                     @parameter
                     for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = layout_of_descs(
-                            IntTuple(n, m, i, j)
-                        ) * copy_size
+                        comptime copy_offset: UInt32 = UInt32(
+                            layout_of_descs(IntTuple(n, m, i, j)) * copy_size
+                        )
 
                         cp_async_bulk_tensor_global_shared_cta(
                             src.ptr + copy_offset,
@@ -1784,9 +1808,10 @@ struct TMATensorTile[
 
                         @parameter
                         for j in range(num_copies_dim4):
-                            comptime copy_offset: UInt32 = layout_of_descs(
-                                IntTuple(o, n, m, i, j)
-                            ) * copy_size
+                            comptime copy_offset: UInt32 = UInt32(
+                                layout_of_descs(IntTuple(o, n, m, i, j))
+                                * copy_size
+                            )
 
                             cp_async_bulk_tensor_global_shared_cta(
                                 src.ptr + copy_offset,
@@ -1862,7 +1887,7 @@ struct TMATensorTile[
         Parameters:
             n: The number of pending groups left.
         """
-        cp_async_bulk_wait_group[n]()
+        cp_async_bulk_wait_group[Int32(n)]()
 
     @always_inline
     fn smem_tensormap_init(
@@ -3002,17 +3027,6 @@ struct TMATensorTileArray[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(
         out self,
@@ -3167,17 +3181,6 @@ struct RaggedTMA3DTile[
             other: The other `RaggedTMA3DTile` instance to copy from.
         """
         self.descriptor = other.descriptor
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
 
     @always_inline("nodebug")
     fn async_copy_to[
@@ -3396,16 +3399,6 @@ struct RaggedTensorMap[
             ", max_descriptor_length = ",
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Returns the device type name for this descriptor array.
-
-        Returns:
-            A string containing the type name with all template parameters.
-        """
-        return Self.get_type_name()
 
     @staticmethod
     @always_inline

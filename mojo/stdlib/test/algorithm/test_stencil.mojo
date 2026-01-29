@@ -18,11 +18,11 @@ from testing import TestSuite
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
+comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
 ]
-comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
+comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 

@@ -286,15 +286,6 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         """
         return "TMADescriptor"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets the device type name for this descriptor.
-
-        Returns:
-            The string "TMADescriptor".
-        """
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self):
         """Initializes an empty TMA descriptor.

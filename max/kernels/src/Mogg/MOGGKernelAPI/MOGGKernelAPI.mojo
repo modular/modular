@@ -15,11 +15,12 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from math import (
     acos,
     atanh,
     ceil,
+    ceildiv,
     cos,
     erf,
     exp,
@@ -55,6 +56,7 @@ from builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm.reducescatter import reducescatter
+from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -183,6 +185,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
     k_matmul_ragged_paged_scale,
@@ -411,7 +414,7 @@ struct Range:
         fn func[
             width: Int, element_alignment: Int
         ](idx: IndexList[1]) -> SIMD[dtype, width]:
-            return start + step * (iota[dtype, width](idx[0]))
+            return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
 
         foreach[
             func,
@@ -959,9 +962,9 @@ struct SqueezeShape:
         for input_shape_index in range(num_input_dims):
             if input_shape_copy[input_shape_index] == -1:
                 continue
-            output_shape[output_shape_index] = input_shape_copy[
-                input_shape_index
-            ]
+            output_shape[output_shape_index] = Scalar[dtype](
+                input_shape_copy[input_shape_index]
+            )
             output_shape_index += 1
 
     @staticmethod
@@ -5008,9 +5011,11 @@ struct ConvTranspose:
                 input.dtype,
                 filter.dtype,
                 output.dtype,
-                elementwise_epilogue = OptionalReg[
+                elementwise_epilogue = Optional[elementwise_simd_epilogue_type](
+                    output_fn
+                ) if lambdas_have_fusion else Optional[
                     elementwise_simd_epilogue_type
-                ](output_fn) if lambdas_have_fusion else None,
+                ](),
             ](
                 output.to_layout_tensor(),
                 input.to_layout_tensor(),
@@ -6099,8 +6104,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6130,8 +6135,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
     target: StaticString,
-    group_size: OptionalReg[Int] = None,
-    has_zp: OptionalReg[Bool] = None,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
 ](
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
@@ -6416,6 +6421,56 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
                     address_space = AddressSpace.GENERIC,
                 ]
             ](),
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2],
+        hidden_state: InputTensor[dtype=dtype, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        weight: InputTensor[dtype=dtype, rank=2],
+        input_scale: InputTensor[dtype=scale_type, rank=5],
+        weight_scale: InputTensor[dtype=scale_type, rank=5],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6],
+        cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            tensor_sf,
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
         )
 
 
@@ -7522,7 +7577,7 @@ struct Struct_moe_router_group_limited:
             scores_input_fn = OptionalReg[
                 fn[
                     width: Int
-                ] (IndexList[2]) capturing -> SIMD[scores_type, width]
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
             expert_indices.to_layout_tensor(),
@@ -8560,7 +8615,7 @@ struct Struct_fused_token_sampling:
         var out_idxs_buf = out_idxs.to_layout_tensor()
         var k_lt = K.to_layout_tensor()
         comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-        var K_buf = OptionalReg(
+        var K_buf = Optional(
             LayoutTensor[DType.int64, layout_1d](
                 k_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8570,7 +8625,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var temp_lt = temperature.to_layout_tensor()
-        var temperature_buf = OptionalReg(
+        var temperature_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 temp_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8580,7 +8635,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var top_p_lt = top_p.to_layout_tensor()
-        var top_p_buf = OptionalReg(
+        var top_p_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 top_p_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8590,7 +8645,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var seed_lt = seed.to_layout_tensor()
-        var seed_buf = OptionalReg(
+        var seed_buf = Optional(
             LayoutTensor[DType.uint64, layout_1d](
                 seed_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -9047,6 +9102,89 @@ struct DistributedAllGather:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.broadcast")
+struct DistributedBroadcast:
+    """Distributed broadcast: copy tensor from root GPU to all GPUs.
+
+    This op is called once per target GPU. Each instance receives:
+    - input: The source tensor from the root GPU (P2P accessible)
+    - output: The destination tensor on this GPU
+    - signal_buffers: Synchronization buffers for all participating GPUs
+    - device_ctx: Device context for this GPU
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Execute distributed broadcast operation.
+
+        Parameters:
+            dtype: Data type of the tensor.
+            rank: Tensor rank (number of dimensions).
+            root: Index of the root GPU (source of data).
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            output: Output tensor for this GPU.
+            input: Input tensor from root GPU (P2P accessible from all GPUs).
+            signal_buffers: Synchronization buffers for cross-GPU coordination.
+            device_ctx: Device context for this GPU.
+
+        Implementation Notes:
+            1. This op is called once per target GPU by the graph compiler.
+            2. All GPUs receive the same input tensor (from root) via P2P access.
+            3. Each op instance only writes to its assigned output tensor.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (MAX_GPUS).
+            - Requires P2P access between GPUs (NVLink or PCIe P2P).
+        """
+        comptime num_devices = signal_buffers.size
+        __comptime_assert (
+            root >= 0 and root < num_devices
+        ), "root GPU index must be in range [0, ngpus)"
+
+        # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
+        # 1-stage broadcast doesn't use payload at all (direct P2P from root).
+        # Use 2-stage requirement as upper bound.
+        var input_size_bytes = input.size() * size_of[dtype]()
+        var payload_size = ceildiv(input_size_bytes, num_devices)
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            broadcast[ngpus=num_devices](
+                in_buf,
+                out_buf,
+                rank_sigs,
+                device_ctx[],
+                root,
+            )
 
 
 @compiler.register("mo.distributed.matmul_allreduce")

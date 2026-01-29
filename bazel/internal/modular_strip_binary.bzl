@@ -2,8 +2,8 @@
 
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
-load("@build_bazel_rules_android//:link_hack.bzl", "create_compile_variables_hack", "strip_opts_hack")  # See link_hack.bzl for details
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("//tools/build_defs/cc:link_hack.bzl", "create_compile_variables_hack", "strip_opts_hack")  # See link_hack.bzl for details
 
 def register_strip_action(*, ctx, input_file, output_file):
     """Setup the action for stripping the given binary.

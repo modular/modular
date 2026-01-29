@@ -49,7 +49,23 @@ When you modify a .cpp file in the _core/src directory, you can run
         "//max/python/max/_mlir",
         "//max/python/max/mlir",
         requirement("numpy"),
-        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
+    name = "interpreter",
+    srcs = [
+        "_interpreter.py",
+    ],
+    # _interpreter_ops is optional - Mojo kernels may not be available
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    deps = [
+        ":_core",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
     ],
 )
 
@@ -65,9 +81,14 @@ modular_py_library(
         "tensor.py",
     ],
     # engine is used via engine.api.InferenceSession in _realization_context.py
-    ignore_extra_deps = ["//max/python/max/engine"],
+    # interpreter is used via lazy import in _realization_context.py
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+        ":interpreter",
+    ],
     deps = [
         ":_core",
+        ":interpreter",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

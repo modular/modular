@@ -137,15 +137,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#

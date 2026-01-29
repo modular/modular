@@ -123,7 +123,7 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (self.a_tiles[idx], self.b_tiles[idx])
 
     @always_inline
@@ -131,14 +131,14 @@ struct StandardTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 struct BlockScaledTilePayload[
@@ -202,7 +202,7 @@ struct BlockScaledTilePayload[
         Self.ATile, Self.BTile, Self.SFATile, Self.SFBTile
     ]:
         """Get A, B, SFA, SFB tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -215,28 +215,28 @@ struct BlockScaledTilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfa_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFATile:
         """Get SFA tile at the specified stage and k-group index."""
-        return self.sfa_tiles[stage * k_group_size + k_idx]
+        return self.sfa_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_sfb_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.SFBTile:
         """Get SFB tile at the specified stage and k-group index."""
-        return self.sfb_tiles[stage * k_group_size + k_idx]
+        return self.sfb_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 struct BlockwiseFP8TilePayload[
@@ -292,7 +292,7 @@ struct BlockwiseFP8TilePayload[
         Self.ATile, Self.BTile, Self.AScalesTile
     ]:
         """Get A, B, A-scales tiles at the specified stage and k-group index."""
-        var idx = stage * k_group_size + k_idx
+        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
         return (
             self.a_tiles[idx],
             self.b_tiles[idx],
@@ -304,21 +304,21 @@ struct BlockwiseFP8TilePayload[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * k_group_size + k_idx]
+        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_b_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * k_group_size + k_idx]
+        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
     @always_inline
     fn get_a_scales_tile[
         k_group_size: Int
     ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
         """Get A-scales tile at the specified stage and k-group index."""
-        return self.a_scales_tiles[stage * k_group_size + k_idx]
+        return self.a_scales_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
 
 
 # ============================================================================
@@ -385,6 +385,63 @@ struct InputTilePipeline[
     fn release_consumer(mut self):
         """Signal completion and advance consumer stage."""
         self.pipeline.consumer_step()
+
+    # ========== Try-Acquire Pattern Methods ==========
+    # These enable overlapping barrier checks with useful work.
+
+    @always_inline
+    fn try_acquire_producer(self) -> Bool:
+        """Non-blocking check if next producer stage is available.
+
+        Returns:
+            True if consumer has freed the stage, False otherwise.
+
+        Example (TMA Load warp):
+            ```
+            var ready = pipeline.try_acquire_producer()
+            # ... do other work while potentially waiting ...
+            pipeline.wait_producer_if_needed(ready)
+            var stage = pipeline.producer_stage()
+            # ... load tiles ...
+            ```
+        """
+        return self.pipeline.try_wait_consumer()
+
+    @always_inline
+    fn try_acquire_consumer(self) -> Bool:
+        """Non-blocking check if next consumer stage has data.
+
+        Returns:
+            True if producer has filled the stage, False otherwise.
+
+        Example (MMA warp):
+            ```
+            var ready = pipeline.try_acquire_consumer()
+            # ... do other work while potentially waiting ...
+            pipeline.wait_consumer_if_needed(ready)
+            var stage = pipeline.consumer_stage()
+            # ... process tiles ...
+            ```
+        """
+        return self.pipeline.try_wait_producer()
+
+    @always_inline
+    fn wait_producer_if_needed(self, already_ready: Bool):
+        """Conditionally wait for producer stage if not already ready.
+
+        Args:
+            already_ready: Result from try_acquire_consumer().
+        """
+        self.pipeline.wait_producer_if_needed(already_ready)
+
+    @always_inline
+    fn wait_consumer_if_needed(self, already_ready: Bool):
+        """Conditionally wait for consumer to free stage if not already ready.
+
+        Args:
+            already_ready: Result from try_acquire_producer().
+        """
+        self.pipeline.wait_consumer_if_needed(already_ready)
 
     @always_inline
     fn producer_stage(self) -> UInt32:
@@ -474,7 +531,7 @@ struct InputProducerStage[
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -582,6 +639,44 @@ struct InputProducer[
             pipeline_ptr=self.pipeline_ptr, stage=stage, barrier=barrier
         )
 
+    @always_inline
+    fn try_acquire(mut self) -> Bool:
+        """Non-blocking check if next producer stage is available.
+
+        Returns:
+            True if the stage is ready, False if waiting is needed.
+
+        Use with acquire_if_needed() for the try-acquire pattern:
+        ```
+        var ready = producer.try_acquire()
+        # ... do other work ...
+        with producer.acquire_if_needed(ready) as tiles:
+            load_tiles()
+        ```
+        """
+        return self.pipeline_ptr[].try_acquire_producer()
+
+    @always_inline
+    fn acquire_if_needed(
+        mut self, already_ready: Bool
+    ) -> InputProducerStage[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire stage, only waiting if not already ready.
+
+        Args:
+            already_ready: Result from try_acquire(). Skips wait if True.
+
+        Returns:
+            The producer stage for loading tiles.
+        """
+        self.pipeline_ptr[].wait_consumer_if_needed(already_ready)
+        var stage = self.pipeline_ptr[].producer_stage()
+        var barrier = self.pipeline_ptr[].producer_mbar(stage)
+        return InputProducerStage(
+            pipeline_ptr=self.pipeline_ptr, stage=stage, barrier=barrier
+        )
+
 
 @fieldwise_init
 struct InputConsumer[
@@ -614,6 +709,44 @@ struct InputConsumer[
     ]:
         """Acquire next stage, waiting for tiles to be ready."""
         var stage, mbar = self.pipeline_ptr[].acquire_consumer()
+        return InputConsumerStage(
+            pipeline_ptr=self.pipeline_ptr, stage=stage, mbar=mbar
+        )
+
+    @always_inline
+    fn try_acquire(mut self) -> Bool:
+        """Non-blocking check if next consumer stage has data.
+
+        Returns:
+            True if the stage has data, False if waiting is needed.
+
+        Use with acquire_if_needed() for the try-acquire pattern:
+        ```
+        var ready = consumer.try_acquire()
+        # ... do other work ...
+        with consumer.acquire_if_needed(ready) as tiles:
+            process_tiles()
+        ```
+        """
+        return self.pipeline_ptr[].try_acquire_consumer()
+
+    @always_inline
+    fn acquire_if_needed(
+        mut self, already_ready: Bool
+    ) -> InputConsumerStage[
+        Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire stage, only waiting if not already ready.
+
+        Args:
+            already_ready: Result from try_acquire(). Skips wait if True.
+
+        Returns:
+            The consumer stage for processing tiles.
+        """
+        self.pipeline_ptr[].wait_producer_if_needed(already_ready)
+        var stage = self.pipeline_ptr[].consumer_stage()
+        var mbar = self.pipeline_ptr[].consumer_mbar(stage)
         return InputConsumerStage(
             pipeline_ptr=self.pipeline_ptr, stage=stage, mbar=mbar
         )
@@ -836,23 +969,27 @@ struct StandardProducerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn expect_bytes(self, num_bytes: Int):
         """Set expected bytes on the barrier for TMA loads."""
-        self._barrier[0].expect_bytes(num_bytes)
+        self._barrier[0].expect_bytes(Int32(num_bytes))
 
     @always_inline
     fn barrier(self) -> MbarPtr:
@@ -924,18 +1061,22 @@ struct StandardConsumerStage[
     @always_inline
     fn get_tile(self, k_idx: Int) -> Tuple[Self.ATile, Self.BTile]:
         """Get A and B tiles at the specified k-group index."""
-        var idx = self._stage * Self.k_group_size + k_idx
+        var idx = self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
         return (self._a_tiles[idx], self._b_tiles[idx])
 
     @always_inline
     fn get_a_tile(self, k_idx: Int) -> Self.ATile:
         """Get A tile at the specified k-group index."""
-        return self._a_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._a_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn get_b_tile(self, k_idx: Int) -> Self.BTile:
         """Get B tile at the specified k-group index."""
-        return self._b_tiles[self._stage * Self.k_group_size + k_idx]
+        return self._b_tiles[
+            self._stage * UInt32(Self.k_group_size) + UInt32(k_idx)
+        ]
 
     @always_inline
     fn mbar(self) -> MbarPtr:

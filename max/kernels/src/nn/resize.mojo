@@ -52,27 +52,31 @@ struct CoordinateTransformationMode(ImplicitlyCopyable):
 fn coord_transform[
     mode: CoordinateTransformationMode
 ](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Float32:
+    var out_coord_f32 = Float32(out_coord)
+
     @parameter
     if mode == CoordinateTransformationMode.HalfPixel:
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
-        return (out_coord + Float32(0.5)) / scale - 0.5
+        return (out_coord_f32 + Float32(0.5)) / scale - 0.5
     elif mode == CoordinateTransformationMode.HalfPixel1D:
         # Same as HalfPixel except for 1D output. Described here:
         # https://onnx.ai/onnx/operators/onnx__Resize.html
         if out_dim == 1:
             return 0
-        return (out_coord + Float32(0.5)) / scale - 0.5
+        return (out_coord_f32 + Float32(0.5)) / scale - 0.5
     elif mode == CoordinateTransformationMode.AlignCorners:
         # aligning "corners" when output is 1D isn't well defined
         # this matches pytorch
         if out_dim == 1:
             return 0
         # note: resized image will have same corners as original image
-        return out_coord * ((in_dim - 1) / (out_dim - 1)).cast[DType.float32]()
+        return (
+            out_coord_f32 * ((in_dim - 1) / (out_dim - 1)).cast[DType.float32]()
+        )
     elif mode == CoordinateTransformationMode.Asymmetric:
-        return out_coord / scale
+        return out_coord_f32 / scale
     else:
         constrained[False, "coordinate_transformation_mode not implemented"]()
         return 0
@@ -253,7 +257,7 @@ fn interpolate_point_1d[
         + 0.5
     )
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
-    var support = interpolator.filter_length() * filter_scale
+    var support = Float32(interpolator.filter_length()) * filter_scale
     var xmin = max(Int(center - support + 0.5), 0)
     var xmax = min(input.dim(dim), Int(center + support + 0.5))
     var in_coords = out_coords
@@ -262,7 +266,9 @@ fn interpolate_point_1d[
     var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
-        var dist_from_center = ((k + xmin + Float32(0.5)) - center) * ss
+        var dist_from_center = (
+            (Float32(k + xmin) + Float32(0.5)) - center
+        ) * ss
         var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
         var in_idx = input.runtime_layout(
             RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](

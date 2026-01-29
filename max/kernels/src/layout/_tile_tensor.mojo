@@ -86,10 +86,6 @@ struct TileTensor[
     fn get_type_name() -> String:
         return "TileTensor"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     comptime GenericType = TileTensor[
         shape_types = Self.shape_types,
         stride_types = Self.stride_types,
@@ -232,7 +228,9 @@ struct TileTensor[
         for i in range(Variadic.size(tuple.element_types)):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](index(tuple[i]))
+                    RuntimeInt[Self.linear_idx_type](
+                        Scalar[Self.linear_idx_type](index(tuple[i]))
+                    )
                 )
             )
         return self.ptr[

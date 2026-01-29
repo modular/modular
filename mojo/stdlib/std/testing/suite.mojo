@@ -326,7 +326,7 @@ struct TestSuiteReport(Copyable, Writable):
 struct _Test(Copyable):
     """A single test to run."""
 
-    comptime fn_type = fn () raises
+    comptime fn_type = fn() raises
     var test_fn: Self.fn_type
     var name: StaticString
 

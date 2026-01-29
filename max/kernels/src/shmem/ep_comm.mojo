@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from os.atomic import Atomic, Consistency
 from sys.info import align_of, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
+from collections import OptionalReg
 from gpu import (
     PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -60,7 +60,7 @@ comptime RtTuple_4 = RuntimeTuple[
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
+](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 
@@ -265,10 +265,6 @@ struct BF16TokenFormat[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self, output_tokens: Self.TensorType):
         self.output_tokens = output_tokens
@@ -377,10 +373,6 @@ struct BlockwiseFP8TokenFormat[
             String(Self.alignment),
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(
@@ -559,10 +551,6 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):
     @staticmethod
     fn get_type_name() -> String:
         return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     @staticmethod
@@ -1963,7 +1951,7 @@ struct EPCombineKernel[
         output_type: DType,
         output_tokens_layout: Layout,
         router_weights_wrapper: OptionalReg[
-            fn (Int, Int) capturing -> Float32
+            fn(Int, Int) capturing -> Float32
         ] = None,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
@@ -2234,7 +2222,7 @@ fn combine_wait_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
     router_weights_wrapper: OptionalReg[
-        fn (Int, Int) capturing -> Float32
+        fn(Int, Int) capturing -> Float32
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,
@@ -2503,7 +2491,7 @@ fn combine_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     router_weights_wrapper: OptionalReg[
-        fn (Int, Int) capturing -> Float32
+        fn(Int, Int) capturing -> Float32
     ] = None,
     fused_shared_expert: Bool = False,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,

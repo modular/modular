@@ -144,7 +144,7 @@ struct _TypeErasedWriter(Writer):
     var _writer: OpaquePointer[MutAnyOrigin]
     """Opaque pointer to the concrete writer instance."""
 
-    var _write_fn: fn (OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
+    var _write_fn: fn(OpaquePointer[MutAnyOrigin], StringSlice[ImmutAnyOrigin])
     """Function pointer specialized for the concrete writer type that calls the
     writer's `write_string` method."""
 
@@ -202,6 +202,12 @@ struct _VTableErrorOp(Equatable, TrivialRegisterType):
     comptime COPY: Self = Self(1)
     comptime WRITE_TO: Self = Self(2)
 
+    # Note: Keep this manual __eq__ to avoid a compiler crash in the
+    # reflection-based default Equatable.__eq__.
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
 
 fn _make_opaque[T: AnyType, //](ref t: T) -> OpaquePointer[MutAnyOrigin]:
     """Convert a typed reference to an opaque pointer."""
@@ -244,7 +250,7 @@ struct _TypeErasedError(Copyable, Writable):
     var _error: Self._ErrorArcPointer
     """Type-erased `ArcPointer[T]` holding the actual error data."""
 
-    var _vtable: fn (
+    var _vtable: fn(
         _VTableErrorOp,
         Self._VTableInput,
         Self._VTableOutput,

@@ -694,20 +694,6 @@ struct ManagedTensorSlice[
             + "]"
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return (
-            "LayoutTensor[mut = "
-            + String(Self.device_type.mut)
-            + ", dtype = "
-            + String(Self.device_type.dtype)
-            + ", layout = "
-            + String(materialize[Self.device_type.layout]())
-            + ", address_space = "
-            + String(Self.device_type.address_space)
-            + "]"
-        )
-
     comptime address_space = Self.static_spec.address_space
     comptime alignment = Self.static_spec.alignment
     comptime exclusive = Self.static_spec.exclusive
@@ -1511,7 +1497,7 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int, element_alignment: Int] (
+    func: fn[width: Int, element_alignment: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     *,
@@ -1567,8 +1553,8 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
-    out_func: fn[width: Int] (IndexList[rank]) capturing [_] -> None,
+    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
+    out_func: fn[width: Int](IndexList[rank]) capturing[_] -> None,
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
@@ -1618,7 +1604,7 @@ fn foreach[
     dtype: DType,
     rank: Int,
     //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
+    func: fn[width: Int](IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),

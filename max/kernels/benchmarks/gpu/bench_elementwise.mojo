@@ -104,7 +104,7 @@ fn run_elementwise[
     rank: Int,
     //,
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
     *,

@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
+from collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -267,7 +267,7 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-comptime embed_fn_type = fn[dtype: DType, width: Int] (
+comptime embed_fn_type = fn[dtype: DType, width: Int](
     IndexList[4], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 
@@ -279,8 +279,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     //,
     *,
     target: StaticString,
-    q_embed_fn: OptionalReg[embed_fn_type] = None,
-    k_embed_fn: OptionalReg[embed_fn_type] = None,
+    q_embed_fn: Optional[embed_fn_type] = None,
+    k_embed_fn: Optional[embed_fn_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...
@@ -1006,7 +1006,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1039,7 +1041,9 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1171,7 +1175,9 @@ def rms_norm_kv_cache_ragged_paged[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1204,7 +1210,9 @@ def rms_norm_kv_cache_ragged_paged[
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1271,7 +1279,7 @@ def _print_cache[
     var num_to_print: Int = 7 if is_print_compact else Int.MAX
     for b_idx in range(valid_lengths.dim[0]()):
         var total_cache_length = Int(
-            valid_lengths[b_idx] + cache.cache_length(b_idx)
+            valid_lengths[b_idx] + UInt32(cache.cache_length(b_idx))
         )
         for t_idx in range(min(num_to_print, total_cache_length)):
             for h in range(kv_params.num_heads):
