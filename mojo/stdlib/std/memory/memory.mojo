@@ -326,7 +326,13 @@ fn _memset_impl(
         else:
 
             @parameter
-            if is_gpu() or CompilationTarget.has_avx512f():
+            if is_gpu():
+                for i in range(evl):
+                    ptr.store(offset + i, SIMD[DType.uint8, 1](value))
+
+                return
+
+            elif CompilationTarget.has_avx512f():
                 # TODO: SVE could also benefit from masked_store if available
                 var mask = get_active_mask[width](evl)
 
