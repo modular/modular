@@ -14,7 +14,16 @@
 """DeepseekV3.2 layer modules."""
 
 from .mlp import MLP
+from .moe import MoE, MoEFp8
+from .moe_gate import DeepseekV3_2TopKRouter
 from .rms_norm_fused import RMSNormFused
 from .transforms import HadamardTransform
 
-__all__ = ["MLP", "HadamardTransform", "RMSNormFused"]
+__all__ = [
+    "MLP",
+    "DeepseekV3_2TopKRouter",
+    "HadamardTransform",
+    "MoE",
+    "MoEFp8",
+    "RMSNormFused",
+]
