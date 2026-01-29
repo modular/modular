@@ -24,9 +24,6 @@ struct LibraryProperty(Equatable, TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
     @no_inline
     fn __str__(self) -> String:
         if self == Self.MAJOR_VERSION:
@@ -66,9 +63,6 @@ struct Status(
 
     fn __init__(out self, value: Int):
         self._value = Int8(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -139,9 +133,6 @@ struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
     fn __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -183,9 +174,6 @@ struct Compatibility(
     fn __init__(out self, value: Int):
         self._value = Int8(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
     fn __is__(self, other: Self) -> Bool:
         return self == other
 
@@ -217,9 +205,6 @@ struct Property(
 
     fn __init__(out self, value: Int):
         self._value = Int8(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

@@ -106,18 +106,6 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterType):
         self.head_size = head_size
         self.is_mla = is_mla
 
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: KVCacheStaticParams) -> Bool:
-        return (
-            self.num_heads == rhs.num_heads
-            and self.head_size == rhs.head_size
-            and self.is_mla == rhs.is_mla
-        )
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: KVCacheStaticParams) -> Bool:
-        return not (self == rhs)
-
 
 trait KVCacheT(DevicePassable, TrivialRegisterType):
     """Trait for different KVCache types and implementations.

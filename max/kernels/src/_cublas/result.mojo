@@ -30,9 +30,6 @@ struct Result(Equatable, TrivialRegisterType, Writable):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

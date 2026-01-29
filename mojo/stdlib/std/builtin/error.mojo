@@ -202,6 +202,12 @@ struct _VTableErrorOp(Equatable, TrivialRegisterType):
     comptime COPY: Self = Self(1)
     comptime WRITE_TO: Self = Self(2)
 
+    # Note: Keep this manual __eq__ to avoid a compiler crash in the
+    # reflection-based default Equatable.__eq__.
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
 
 fn _make_opaque[T: AnyType, //](ref t: T) -> OpaquePointer[MutAnyOrigin]:
     """Convert a typed reference to an opaque pointer."""
