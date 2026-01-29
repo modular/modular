@@ -20,8 +20,8 @@ from utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
-    return Error(loc.prefix(String("AssertionError: ", msg)))
+fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+    return loc.prefix(String("AssertionError: ", msg))
 
 
 fn _assert_equal_error(

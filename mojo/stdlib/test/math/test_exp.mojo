@@ -73,7 +73,7 @@ def test_exp_libm():
 
 
 @fieldwise_init
-struct Float32Expable(Equatable, Stringable, _Expable):
+struct Float32Expable(Equatable, Writable, _Expable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -87,12 +87,12 @@ struct Float32Expable(Equatable, Stringable, _Expable):
     fn __ne__(self, other: Self) -> Bool:
         return self.x != other.x
 
-    fn __str__(self) -> String:
-        return String("Float32Expable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("Float32Expable(", self.x, ")")
 
 
 @fieldwise_init
-struct FakeExpable(Equatable, Stringable, _Expable):
+struct FakeExpable(Equatable, Writable, _Expable):
     """Test struct using default reflection-based __eq__."""
 
     var x: Int
@@ -102,8 +102,8 @@ struct FakeExpable(Equatable, Stringable, _Expable):
 
     # Uses default reflection-based __eq__ from Equatable trait
 
-    fn __str__(self) -> String:
-        return String("FakeExpable(", self.x, ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("FakeExpable(", self.x, ")")
 
 
 def test_exapble_trait():

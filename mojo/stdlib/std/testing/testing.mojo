@@ -43,9 +43,18 @@ from utils._ansi import Color, Text
 # ===----------------------------------------------------------------------=== #
 
 
+# FIXME(#5274): this should use the Writer trait but it doesn't yet accept
+# capturing write_to functions.
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
-    return Error(loc.prefix(String("AssertionError: ", msg)))
+fn _assert_error[
+    append_message: fn[W: Writer] (mut writer: W) capturing
+](loc: SourceLocation) -> Error:
+    @parameter
+    fn write_to[W: Writer](mut writer: W):
+        writer.write("AssertionError: ")
+        append_message(writer)
+
+    return loc._prefix_error[write_to]()
 
 
 @always_inline
@@ -71,7 +80,12 @@ fn assert_true[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     if not val:
-        raise _assert_error(msg, location.or_else(call_location()))
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(msg)
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
@@ -97,12 +111,17 @@ fn assert_false[
         An Error with the provided message if assert fails and `None` otherwise.
     """
     if val:
-        raise _assert_error(msg, location.or_else(call_location()))
+
+        @parameter
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(msg)
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
 fn assert_equal[
-    T: Equatable & Stringable, //
+    T: Equatable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -127,8 +146,8 @@ fn assert_equal[
     """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
+            lhs,
+            rhs,
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -170,17 +189,19 @@ fn assert_equal[
 
     # Cast `rhs` to have the same origin as `lhs`, so that we can delegate to
     # `List.__ne__`.
-    var rhs_origin_casted = rebind[List[StringSlice[O1]]](rhs).copy()
+    ref lhs_origin_casted = rebind[List[StringSlice[O1].Immutable]](lhs)
+    ref rhs_origin_casted = rebind[List[StringSlice[O1].Immutable]](rhs)
 
-    if lhs != rhs_origin_casted:
+    if lhs_origin_casted != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            lhs,
+            rhs,
             msg=msg,
             loc=location.or_else(call_location()),
         )
 
 
+@doc_private
 @always_inline
 fn assert_equal(
     lhs: StringSlice[mut=False],
@@ -202,8 +223,8 @@ fn assert_equal(
     """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            lhs,
+            rhs,
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -240,8 +261,8 @@ fn assert_equal_pyobj[
 
     if lhs_obj != rhs_obj:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs_obj),
-            String(rhs_obj),
+            lhs,
+            rhs,
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -249,7 +270,7 @@ fn assert_equal_pyobj[
 
 @always_inline
 fn assert_not_equal[
-    T: Equatable & Stringable, //
+    T: Equatable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -274,8 +295,8 @@ fn assert_not_equal[
     """
     if lhs == rhs:
         raise _assert_cmp_error["`left != right` comparison"](
-            String(lhs),
-            String(rhs),
+            lhs,
+            rhs,
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -283,8 +304,8 @@ fn assert_not_equal[
 
 @always_inline
 fn assert_not_equal(
-    lhs: String,
-    rhs: String,
+    lhs: StringSlice[mut=False],
+    rhs: StringSlice[mut=False],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
@@ -356,16 +377,19 @@ fn assert_almost_equal[
     )
 
     if not all(almost_equal):
-        var err = String(lhs, " is not close to ", rhs)
 
         @parameter
-        if dtype.is_integral() or dtype.is_floating_point():
-            err += String(" with a diff of ", abs(lhs - rhs))
+        fn write_to[W: Writer](mut writer: W):
+            writer.write(lhs, " is not close to ", rhs)
 
-        if msg:
-            err += String(" (", msg, ")")
+            @parameter
+            if dtype.is_integral() or dtype.is_floating_point():
+                writer.write(" with a diff of ", abs(lhs - rhs))
 
-        raise _assert_error(err, location.or_else(call_location()))
+            if msg:
+                writer.write(" (", msg, ")")
+
+        raise _assert_error[write_to](location.or_else(__call_location()))
 
 
 @always_inline
@@ -482,16 +506,21 @@ fn _create_colored_diff(lhs: String, rhs: String) -> String:
 
 
 fn _assert_cmp_error[
-    cmp: String
-](lhs: String, rhs: String, *, msg: String, loc: SourceLocation) -> Error:
-    var err = cmp + " failed:"
+    cmp: StringSlice[mut=False]
+](
+    lhs: Some[Writable],
+    rhs: Some[Writable],
+    *,
+    msg: String,
+    loc: SourceLocation,
+) -> Error:
+    @parameter
+    fn write_to[W: Writer](mut writer: W):
+        writer.write(cmp, " failed:\n   left: ", lhs, "\n  right: ", rhs)
+        if msg:
+            writer.write("\n  reason: ", msg)
 
-    # For string comparisons, show colored diff
-    err += _create_colored_diff(lhs, rhs)
-
-    if msg:
-        err += "\n  reason: " + msg
-    return _assert_error(err, loc)
+    return _assert_error[write_to](loc)
 
 
 struct assert_raises:
@@ -579,5 +608,5 @@ struct assert_raises:
             True if the error message contained the expected string.
         """
         if self.message_contains:
-            return self.message_contains.value() in String(error)
+            return self.message_contains.value() in error.as_string_slice()
         return True
