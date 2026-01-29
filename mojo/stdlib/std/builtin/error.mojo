@@ -24,7 +24,7 @@ from memory import (
 )
 from sys import external_call, is_gpu
 from sys.info import size_of, align_of
-
+from format._utils import _TotalWritableBytes
 
 # ===-----------------------------------------------------------------------===#
 # StackTrace
@@ -470,6 +470,29 @@ struct Error(
                 `Writable`.
         """
         self = Error(String(args), depth=0)
+
+    # FIXME(#5274): this should use the Writer trait but it doesn't yet accept
+    # capturing write_to functions.
+    @no_inline
+    fn __init__[
+        message_func: fn[W: Writer] (mut writer: W) capturing
+    ](out self: Error):
+        """Construct an Error by executing a function that writes the message.
+
+        Parameters:
+            message_func: The function that writes the message.
+
+        Warning:
+            This function is for temporary internal use only. Due to some
+            language-level limitations, this needs to be a public `__init__`
+            function.
+        """
+
+        var total_bytes = _TotalWritableBytes()
+        message_func(total_bytes)
+        var string = String(capacity=total_bytes.size)
+        message_func(string)
+        self = Error(string, depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
