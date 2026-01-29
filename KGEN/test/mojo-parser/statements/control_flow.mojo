@@ -436,16 +436,18 @@ fn for_range_loop():
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
         # CHECK: lit.loop {
-        # CHECK-NEXT:   %item = lit.var.decl
+        # CHECK-NEXT:  [[ANON:%.*]] = lit.var.decl "anonymous*"
         # CHECK-NEXT:   %__call_error_tmp__ = lit.var.decl
         # CHECK-NEXT:   lit.try %__call_error_tmp__
-        # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, %item)
+        # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
         # CHECK-NEXT:    lit.try.yield
         # CHECK-NEXT:        } except {
         # CHECK-NEXT:  lit.loop.break.else
         # CHECK: } {suppressWarnings = true}
-        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %item
-        # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMP]])
+        # CHECK-NEXT:  %item = lit.var.decl
+        # CHECK: [[TMP:%.*]] = lit.ref.load %item
+        # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.load [[TMP]]
+        # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMPREF]])
         # CHECK-NEXT: lit.loop.continue
         use(item)
     else:
@@ -518,16 +520,16 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 fn induction_var_scope():
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for (var item) in IterRange(0):
-        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
 
@@ -535,16 +537,16 @@ fn induction_var_scope():
 def induction_var_scope_def():
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: %item = lit.var.decl "item"
         # CHECK: __next__
+        # CHECK: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
 

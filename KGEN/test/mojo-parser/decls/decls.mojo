@@ -595,11 +595,14 @@ fn test_typed_raises_fn3() raises Float32:
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn4
 fn test_typed_raises_fn4() raises Float32:
+    # CHECK: %anonymous2A = lit.var.decl
+    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT:   lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %anonymous2A)
 
     # Make sure to emit ValueDest outside the try block.
     # CHECK: %str = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__
-    # CHECK-NEXT: lit.try
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%anonymous2A, %str)
     var str = test_typed_raises_fn2()
     _ = str.__len__()
 
@@ -625,6 +628,13 @@ fn test_typed_raises_fn6(x: String) raises Float32:
     # CHECK-NEXT: lit.try
     _ = test_typed_raises_fn3(x).__len__()
 
+# https://github.com/modular/modular/issues/5845
+fn callee_7(x: String) raises Int -> Pointer[String, origin_of(x)]:
+    raise 4
+
+fn test_typed_raises_fn7() raises Float32:
+    var str: String
+    var tmp = callee_7(str)
 
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
 fn call_test_typed_raises_fn() raises Int:

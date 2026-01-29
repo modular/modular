@@ -118,9 +118,11 @@ fn test_list_literal():
 fn test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
     # CHECK: lit.loop {
-    # CHECK-NEXT: %i1 = lit.var.decl "i1"
-    # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, %i1)
-    # CHECK: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
+    # CHECK:      lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
+    # CHECK: %i1 = lit.var.decl "i1" ref
+    # CHECK: [[TMPREF:%.*]] = lit.ref.load %i1
+    # CHECK: [[TMP:%.*]] = lit.ref.load [[TMPREF]]
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@List::@"append
@@ -130,13 +132,16 @@ fn test_list_comprehension():
 
     # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!Copyable_ImplicitlyDestructible !Int>
     # CHECK: lit.loop {
-    # CHECK: %i2 = lit.var.decl "i2"
+    # CHECK-NEXT: [[ANONI2:%.*]] = lit.var.decl "anonymous*"
+
     # CHECK:   lit.loop {
-    # CHECK: %i3 = lit.var.decl "i3"
+    # CHECK-NEXT: [[ANONI3:%.*]] = lit.var.decl "anonymous*"
     # CHECK:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK: [[TMP:%.*]] = lit.ref.load %i2
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %i3
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK: [[TMP2REF:%.*]] = lit.ref.load %i2
+    # CHECK-NEXT: [[TMP3REF:%.*]] = lit.ref.load %i3
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load [[TMP2REF]]
+    # CHECK-NEXT: [[TMP3:%.*]] = lit.ref.load [[TMP3REF]]
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP2]], [[TMP3]]
     # CHECK:      lit.call {{.*}}@List::@"append
     var b_collection = [
         i2 * i3 for i2 in SimpleIntRange() for i3 in SimpleIntRange()
@@ -145,10 +150,11 @@ fn test_list_comprehension():
     # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
     # CHECK: lit.loop {
-    # CHECK: %i4 = lit.var.decl "i4"
+    # CHECK-NEXT: [[ANONI4:%.*]] = lit.var.decl "anonymous*"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: hlcf.elif {
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
+    # CHECK-NEXT:    [[TMPREF:%.*]] = lit.ref.load [[TMP]]
     # CHECK-NEXT:    @Int::@"__bool__
     # CHECK-NEXT:    @Bool::@"__mlir_i1__
     # CHECK-NEXT:    hlcf.elif.yield
@@ -202,11 +208,13 @@ fn test_dict_literal(aBool: Bool):
 fn test_dict_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!Copyable_ImplicitlyDestructible !Int, :!Copyable_ImplicitlyDestructible !String>
     # CHECK: lit.loop {
-    # CHECK: %i = lit.var.decl "i"
+    # CHECK-NEXT: [[ANONI:%.*]] = lit.var.decl "anonymous*"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK:       lit.call {{.*}}String::@"__init__()
-    # CHECK:      [[TMP:%.*]] = lit.ref.immut %i
-    # CHECK:      lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%a_collection, [[TMP]],
+    # CHECK:      %i = lit.var.decl "i"
+    # CHECK:      %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
+    # CHECK:      lit.call {{.*}}String::@"__init__(){{.*}}(%__call_result_tmp__)
+    # CHECK:      [[TMP:%.*]] = lit.ref.immut %__call_result_tmp__
+    # CHECK:      lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%a_collection, {{.*}}, [[TMP]])
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
     var a_collection = {i: String() for i in SimpleIntRange()}
@@ -250,11 +258,13 @@ fn test_set_literal():
 fn test_set_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
     # CHECK: lit.loop {
-    # CHECK: %i1 = lit.var.decl "i1"
+    # CHECK-NEXT: [[ANONI1:%.*]] = lit.var.decl "anonymous*"
     # CHECK:   lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK: %i1 = lit.var.decl "i1"
     # CHECK: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK: [[TMPREF:%.*]] = lit.ref.load [[TMP]]
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMP]], [[TMP2]]
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Int::@"__mul__{{.*}}([[TMPREF]], [[TMP2]]
     # CHECK:      lit.call {{.*}}@Set::@"add
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }
