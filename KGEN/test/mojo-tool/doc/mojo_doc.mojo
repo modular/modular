@@ -541,7 +541,7 @@ fn variadic_pack[*Ts: AnyType](*vals: *Ts):
 # CHECK:         "path": "/std/builtin/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
-# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref [ImmutAnyOrigin] element_type])",
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: Variadic[ref[ImmutAnyOrigin] element_type])",
 
 
 fn variadic_arg_hack[
@@ -626,7 +626,7 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: __TypeOfAllTypes) -> ref [ref_arg1] __TypeOfAllTypes",
+# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: __TypeOfAllTypes) -> ref[ref_arg1] __TypeOfAllTypes",
 fn fn_with_anon_refs(
     ref ref_arg1: __TypeOfAllTypes,
 ) -> ref[ref_arg1] __TypeOfAllTypes:
@@ -634,7 +634,7 @@ fn fn_with_anon_refs(
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref [life] ref_arg1: __TypeOfAllTypes) -> ref [life] __TypeOfAllTypes",
+# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: __TypeOfAllTypes) -> ref[life] __TypeOfAllTypes",
 fn fn_with_named_refs[
     life: MutOrigin
 ](ref[life] ref_arg1: __TypeOfAllTypes) -> ref[
@@ -645,7 +645,7 @@ fn fn_with_named_refs[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_origins",
-# CHECK:     "signature": "fn_with_origins[o1: Origin[mut=mut], o2: MutOrigin](ref [o1] arg1: Int, ref [o2] arg2: Int) -> ref [o1] Int",
+# CHECK:     "signature": "fn_with_origins[o1: Origin[mut=mut], o2: MutOrigin](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[o1] Int",
 fn fn_with_origins[
     o1: Origin, o2: Origin[mut=True]
 ](ref[o1] arg1: Int, ref[o2] arg2: Int) -> ref[arg1] Int:
@@ -654,7 +654,7 @@ fn fn_with_origins[
 
 # MOTO-870: Improve doc gen of struct Origin parameters
 # CHECK-LABEL: "name": "fn_with_mult_result_origins",
-# CHECK:     "signature": "fn_with_mult_result_origins(ref arg1: Int, ref arg2: Int) -> ref [arg1, arg2] Int",
+# CHECK:     "signature": "fn_with_mult_result_origins(ref arg1: Int, ref arg2: Int) -> ref[arg1, arg2] Int",
 fn fn_with_mult_result_origins(
     ref arg1: Int, ref arg2: Int
 ) -> ref[arg1, arg2] Int:
@@ -689,7 +689,7 @@ fn deprecated_function():
 # CHECK: "returns": {
 # CHECK:   "type": "ref"
 # CHECK: },
-# CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref [value] UsesParameter[K]",
+# CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref[value] UsesParameter[K]",
 struct UsesParameter[A: AnyType]:
     pass
 
@@ -750,13 +750,13 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](TrivialRegisterType):
-    # CHECK: "signature": "__getitem__(self) -> ref [MutAnyOrigin, address_space] T",
+    # CHECK: "signature": "__getitem__(self) -> ref[MutAnyOrigin, address_space] T",
     fn __getitem__(
         self,
     ) -> ref[MutAnyOrigin, Self.address_space] Self.T:
         pass
 
-    # CHECK: "signature": "address_of(ref [address_space] arg: T) -> Self",
+    # CHECK: "signature": "address_of(ref[address_space] arg: T) -> Self",
     @staticmethod
     fn address_of(ref[Self.address_space] arg: Self.T) -> Self:
         pass
@@ -766,7 +766,7 @@ struct HMyUnsafePointer[
 
 
 struct HList[T: ImplicitlyCopyable]:
-    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
+    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref[self] T",
     fn __getitem__(ref self, idx: Int) -> ref[self] Self.T:
         pass
 

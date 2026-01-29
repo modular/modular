@@ -156,7 +156,7 @@ fn ref_invalid():
     valid_ref_result(a) = MemoryType()
 
 fn return_ref_type_error(a: fn (x: MemoryType) -> ref [x] MemoryType):
-    # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref [*[0,0]] MemoryType' value to 'Int'}}
+    # expected-error @+1 {{cannot implicitly convert 'fn(x: MemoryType) -> ref[*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
 
 @register_passable
