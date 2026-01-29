@@ -184,7 +184,7 @@ class PixelGenerationTokenizer(
         self._use_guidance_embeds = transformer_config.get(
             "guidance_embeds", False
         )
-        guidance: npt.NDArray[np.float32] | None = None
+        self._guidance: npt.NDArray[np.float32] | None = None
 
         # Create scheduler
         scheduler_component = components.get("scheduler", {})
@@ -363,7 +363,7 @@ class PixelGenerationTokenizer(
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
-            **chat_template_options,
+            **chat_template_options or {},
         )
 
         assert isinstance(templated_message, str)
@@ -544,7 +544,9 @@ class PixelGenerationTokenizer(
         )
 
         if self._use_guidance_embeds:
-            guidance = np.array([request.guidance_scale], dtype=np.float32)
+            self._guidance = np.array(
+                [request.guidance_scale], dtype=np.float32
+            )
 
         # 5. Build the context
         context = PixelContext(
@@ -562,7 +564,7 @@ class PixelGenerationTokenizer(
             width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=request.guidance_scale,
-            guidance=guidance,
+            guidance=self._guidance,
             num_images_per_prompt=request.num_images_per_prompt,
             true_cfg_scale=request.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
