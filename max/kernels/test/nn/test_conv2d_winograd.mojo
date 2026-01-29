@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import isclose
 from random import rand
 
@@ -184,10 +181,10 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     comptime Ow: Int = W - Kw + 1  # Output width
 
     # Allocate memory for input, filter, and both outputs
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(H * W)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(Kh * Kw)
-    var output_ptr_winograd = UnsafePointer[Scalar[dtype]].alloc(Oh * Ow)
-    var output_ptr_naive = UnsafePointer[Scalar[dtype]].alloc(Oh * Ow)
+    var input_ptr = alloc[Scalar[dtype]](H * W)
+    var filter_ptr = alloc[Scalar[dtype]](Kh * Kw)
+    var output_ptr_winograd = alloc[Scalar[dtype]](Oh * Ow)
+    var output_ptr_naive = alloc[Scalar[dtype]](Oh * Ow)
 
     # Create NDBuffers
     var input = NDBuffer[dtype, 2, _, DimList((H, W))](input_ptr)
