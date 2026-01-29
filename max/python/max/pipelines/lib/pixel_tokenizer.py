@@ -25,6 +25,7 @@ import numpy.typing as npt
 from max.interfaces import (
     PipelineTokenizer,
     PixelGenerationRequest,
+    TextGenerationRequestMessage,
     TokenBuffer,
 )
 from max.pipelines.core import PixelContext
@@ -294,7 +295,7 @@ class PixelGenerationTokenizer(
         negative_prompt: str | None = None,
         negative_prompt_2: str | None = None,
         messages: list[TextGenerationRequestMessage] | None = None,
-        chat_template_options: ChatTemplateOptions | None = None,
+        chat_template_options: dict[str, Any] | None = None,
         do_true_cfg: bool = False,
     ) -> tuple[
         npt.NDArray[np.int64],
