@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, simd_width_of, size_of
+from sys import simd_width_of, size_of
 from math import ceildiv, exp2, recip
 from math.constants import log2e
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from nn.mha_mask import MHAMask, TileMaskStatus, MASK_VALUE, MaskStrategy
+from nn.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.mha_tile_scheduler import (
-    MHASchedulerSynchronization,
     MHATileScheduler,
-    MHATileState,
-    MHATileSummary,
     SeqInfo,
     TransientScheduler,
 )
@@ -33,7 +30,6 @@ from nn.mha_sm100_2q import (
     SharedMemTensor,
     elect,
     MBarType,
-    ConsumerPipeline,
     TMemTile,
     ProducerPipeline,
 )
@@ -68,14 +64,13 @@ from layout.tma_async import (
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from layout.layout import Layout, blocked_product, UNKNOWN_VALUE
+from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 import gpu.primitives.warp as warp
 from gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
-    syncwarp,
 )
 from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
@@ -92,7 +87,6 @@ from gpu import (
     warp_id,
 )
 from nn.mha_utils import (
-    FlashAttentionAlgorithm,
     MHAConfig,
     MHAPartitionScheme,
     NoPartition,
@@ -101,9 +95,8 @@ from nn.mha_utils import (
 )
 from gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
-from utils.numerics import min_or_neg_inf
 from utils.static_tuple import StaticTuple
-from utils.index import Index, IndexList
+from utils.index import Index
 from kv_cache.types import swizzle_granularity, padded_depth
 
 
@@ -284,6 +277,19 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         self.kv_pipeline.state.step()
 
 
+struct MLASmemStorage[dtype: DType, num_mbars: Int, config: FA4Config]:
+    comptime q_smem_size = Self.config.BM * Self.config.padded_depth
+    comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
+    comptime kv_smem_size = Self.config.padded_depth * Self.config.BN * Self.num_kv_stages
+    comptime correction_smem_size = Self.config.correction_smem_elements()
+
+    var q_smem: InlineArray[Scalar[Self.dtype], Self.q_smem_size]
+    var kv_smem: InlineArray[Scalar[Self.dtype], Self.kv_smem_size]
+    var correction_smem: InlineArray[Float32, Self.correction_smem_size]
+    var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var tmem_addr: InlineArray[UInt32, 1]
+
+
 struct SM100MLA[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -310,7 +316,6 @@ struct SM100MLA[
     comptime padded_depth = Self.config.padded_depth  # 192
     comptime num_q_heads = Self.config.num_q_heads
     comptime group = Self.config.group
-    comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
     comptime k_rope_depth = 64
@@ -464,8 +469,6 @@ struct SM100MLA[
         score_mod = pack.score_mod
         scheduler = pack.scheduler
         valid_length = pack.valid_length
-        sink_weights = pack.sink_weights
-        kv_input_row_offsets = pack.kv_input_row_offsets
         max_seq_len = pack.max_seq_len
         partition = pack.partition
 
@@ -474,27 +477,24 @@ struct SM100MLA[
         __comptime_assert (
             num_qo == 1 or num_qo == 2
         ), "Currently only support num_qo == 1 or 2"
-        q_smem = external_memory[
-            Scalar[Self.qkv_type],
+        smem_ptr = external_memory[
+            Scalar[DType.uint8],
             address_space = AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        kv_smem = q_smem + Self.config.BM * Self.config.padded_depth
-        comptime kv_total_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
-        comptime kv_smem_total_bytes = Self.config.padded_depth * Self.config.BN * kv_total_stages
-        var correction_smem: SharedMemPointer[Scalar[Self.accum_type]] = (
-            kv_smem + kv_smem_total_bytes
-        ).bitcast[Scalar[Self.accum_type]]()
-        var mbar_base: MBarType
-
-        mbar_base = (
-            correction_smem + Self.config.correction_smem_elements()
-        ).bitcast[SharedMemBarrier]()
+        comptime SmemStorageType = MLASmemStorage[
+            Self.qkv_type, Int(Self.MiscMBarsType.num_mbars()), Self.config
+        ]
+        ref smem_storage = smem_ptr.bitcast[SmemStorageType]()[]
+        var q_smem = smem_storage.q_smem.unsafe_ptr()
+        var kv_smem = smem_storage.kv_smem.unsafe_ptr()
+        var correction_smem = smem_storage.correction_smem.unsafe_ptr()
+        var mbar_base = smem_storage.mbar_base.unsafe_ptr()
+        var ptr_tmem_addr = smem_storage.tmem_addr.unsafe_ptr()
 
         # All barriers are managed by misc_mbars (S/C/order/Q1Sync/KV/O)
         var misc_mbars: Self.MiscMBarsType = {mbar_base}
-        ptr_tmem_addr = (mbar_base + misc_mbars.num_mbars()).bitcast[UInt32]()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         comptime num_reg_softmax = 200
@@ -556,7 +556,6 @@ struct SM100MLA[
                 max_seq_len.as_uint32(),
                 ragged_tma_store,
                 q_smem.bitcast[Scalar[Self.output_type]](),
-                sink_weights,
                 correction_smem,
             )
 
@@ -791,7 +790,6 @@ struct SM100MLA[
             BN = Self.kv_depth,
         ],
         o_smem: SharedMemPointer[Scalar[Self.output_type]],
-        sink_weights: Self.SinkType,
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         o_prod_mbar = mbars.mbar_base + Self.MiscMBarsType.O_producer_offset
@@ -862,7 +860,7 @@ struct SM100MLA[
             Int32(splitBM),
         )
 
-        gmem_row = Self.PositionType.get_q_gmem_row[ragged = Self.ragged](
+        gmem_row = Self.PositionType.get_q_gmem_row[ragged=True](
             seq_info, max_seq_len
         )
 
@@ -1006,24 +1004,6 @@ struct SM100MLA[
                             mask_strategy = mask_strategies[2]
                         ](kv_row)
                         mask_iters[2] -= 1
-        var sink_weights_ptr = UnsafePointer[
-            Scalar[Self.qkv_type], ImmutAnyOrigin
-        ]()
-        var sink_weight: Scalar[Self.accum_type]
-
-        @parameter
-        if not Self.SinkType.is_null:
-            sink_weights_ptr = rebind[
-                UnsafePointer[Scalar[Self.qkv_type], ImmutAnyOrigin]
-            ](sink_weights.value())
-            var head_idx: UInt32 = seq_info.head_idx
-            sink_weight = (
-                sink_weights_ptr[head_idx].cast[Self.accum_type]() * log2e
-            )
-            row_max = max(row_max, sink_weight)
-        else:
-            sink_weights_ptr = {}
-            sink_weight = 0.0
 
         @parameter
         @always_inline
@@ -1135,10 +1115,6 @@ struct SM100MLA[
         var row_sum: SIMD[Self.accum_type, 2] = store_exp(row_max)
 
         var o_phase: UInt32 = 0  # initial wait is phase 0
-
-        @parameter
-        if not Self.SinkType.is_null:
-            row_sum[0] += exp2(sink_weight - row_max)
 
         # TODO: add ordering barriers to prevent overlap
         # between the two softmax warpgroups
@@ -1463,9 +1439,9 @@ struct SM100MLA[
         var mbark0: KVPipeType.KPairType
 
         mbark0 = pipeline_kv.get_k[qk_stage=0, expect=False]()  # no wait
-        var q_gmem_row: UInt32 = Self.PositionType.get_q_gmem_row[
-            ragged = Self.ragged
-        ](seq_info, max_seq_len)
+        var q_gmem_row: UInt32 = Self.PositionType.get_q_gmem_row[ragged=True](
+            seq_info, max_seq_len
+        )
         var q_head_idx: UInt32 = seq_info.head_idx
         elect = elect() != 0
 
