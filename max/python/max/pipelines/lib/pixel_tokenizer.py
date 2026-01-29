@@ -183,6 +183,7 @@ class PixelGenerationTokenizer(
         self._use_guidance_embeds = transformer_config.get(
             "guidance_embeds", False
         )
+        guidance: npt.NDArray[np.float32] | None = None
 
         # Create scheduler
         scheduler_component = components.get("scheduler", {})
@@ -515,7 +516,6 @@ class PixelGenerationTokenizer(
             request.seed,
         )
 
-        guidance: npt.NDArray[np.float32] | None = None
         if self._use_guidance_embeds:
             guidance = np.array([request.guidance_scale], dtype=np.float32)
 
@@ -524,9 +524,9 @@ class PixelGenerationTokenizer(
             request_id=request.request_id,
             tokens=token_buffer,
             mask=attn_mask,
-            tokens_2=token_buffer_2,
+            secondary_tokens=token_buffer_2,
             negative_tokens=negative_token_buffer,
-            negative_tokens_2=negative_token_buffer_2,
+            secondary_negative_tokens=negative_token_buffer_2,
             timesteps=timesteps,
             sigmas=self._scheduler.sigmas,
             latents=latents,
