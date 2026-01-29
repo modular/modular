@@ -151,11 +151,11 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
     var __repr: Int32
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = 0
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -164,7 +164,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
         return load_acquire(bar)
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -173,7 +173,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
         store_release(bar, load_acquire(bar) + 1)
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
@@ -184,11 +184,11 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = StaticTuple[Int32, Self.size](fill=0)
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
         @parameter
@@ -197,7 +197,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
         return sum
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -206,7 +206,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
         bar[warp_id] += 1
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True

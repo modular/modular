@@ -462,7 +462,7 @@ struct InputTilePipeline[
     @always_inline
     fn producer[
         mut_origin: MutOrigin
-    ](ref [mut_origin]self) -> InputProducer[
+    ](ref[mut_origin] self) -> InputProducer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
         """Get producer view for TMA Load warp."""
@@ -471,7 +471,7 @@ struct InputTilePipeline[
     @always_inline
     fn consumer[
         mut_origin: MutOrigin
-    ](ref [mut_origin]self) -> InputConsumer[
+    ](ref[mut_origin] self) -> InputConsumer[
         mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
         """Get consumer view for MMA warp."""
@@ -826,7 +826,7 @@ struct TilePipeline[
     @always_inline
     fn producer[
         origin: MutOrigin
-    ](ref [origin]self) -> StandardTileProducer[
+    ](ref[origin] self) -> StandardTileProducer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -842,7 +842,7 @@ struct TilePipeline[
     @always_inline
     fn consumer[
         origin: MutOrigin
-    ](ref [origin]self) -> StandardTileConsumer[
+    ](ref[origin] self) -> StandardTileConsumer[
         origin,
         Self.a_type,
         Self.b_type,
@@ -1354,7 +1354,7 @@ struct OutputTilePipeline[
     @always_inline
     fn producer[
         origin: MutOrigin, //
-    ](ref [origin]self) -> OutputProducer[
+    ](ref[origin] self) -> OutputProducer[
         origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]:
         """Get producer view for MMA warp."""
@@ -1363,7 +1363,7 @@ struct OutputTilePipeline[
     @always_inline
     fn consumer[
         origin: MutOrigin, //
-    ](ref [origin]self) -> OutputConsumer[
+    ](ref[origin] self) -> OutputConsumer[
         origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]:
         """Get consumer view for epilogue warp."""
@@ -1377,7 +1377,7 @@ struct OutputTilePipeline[
     @always_inline
     fn per_k[
         origin: MutOrigin, //
-    ](ref [origin]self) -> OutputKPipeline[
+    ](ref[origin] self) -> OutputKPipeline[
         origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
     ]:
         """Get per-K-iteration view for kernels with per-K signaling.
@@ -1398,8 +1398,8 @@ struct OutputTilePipeline[
         input_origin: MutOrigin,
         num_input_stages: Int,
     ](
-        ref [output_origin]self,
-        ref [input_origin]input_pipeline: ProducerConsumerPipeline[
+        ref[output_origin] self,
+        ref[input_origin] input_pipeline: ProducerConsumerPipeline[
             num_input_stages
         ],
     ) -> EpilogueKContext[

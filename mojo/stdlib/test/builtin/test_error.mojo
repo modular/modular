@@ -37,7 +37,7 @@ def test_from_and_to_string():
 struct TestError[origin: MutOrigin](Copyable, Writable):
     var record: Pointer[List[String], Self.origin]
 
-    fn __init__(out self, ref [Self.origin]record: List[String]):
+    fn __init__(out self, ref[Self.origin] record: List[String]):
         self.record = Pointer(to=record)
 
     fn write_to(self, mut writer: Some[Writer]):

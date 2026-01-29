@@ -240,7 +240,7 @@ struct EpilogueWarpContext[
         k_group_size: Int,
     ](
         mut self,
-        ref [input_origin]input_pipeline: InputTilePipeline[
+        ref[input_origin] input_pipeline: InputTilePipeline[
             Payload, num_group_stages, k_group_size
         ],
     ) -> EpilogueKContext[

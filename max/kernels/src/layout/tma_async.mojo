@@ -176,7 +176,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn init[
         o: MutOrigin
-    ](ref [o, AddressSpace.SHARED]self, num_threads: Int32 = 1):
+    ](ref[o, AddressSpace.SHARED] self, num_threads: Int32 = 1):
         """Initialize the barrier state with the expected number of threads.
 
         Sets up the barrier to expect arrivals from the specified number of threads
@@ -195,7 +195,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn expect_bytes[
         o: MutOrigin
-    ](ref [o, AddressSpace.SHARED]self, bytes: Int32):
+    ](ref[o, AddressSpace.SHARED] self, bytes: Int32):
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -213,7 +213,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline
     fn expect_bytes_relaxed[
         o: MutOrigin
-    ](ref [o, AddressSpace.SHARED]self, bytes: Int32) -> UInt64:
+    ](ref[o, AddressSpace.SHARED] self, bytes: Int32) -> UInt64:
         """Configure the barrier to expect a specific number of bytes to be transferred.
 
         Used with TMA operations to indicate the expected size of data transfer.
@@ -235,7 +235,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     fn arrive_and_expect_bytes[
         o: MutOrigin
     ](
-        ref [o, AddressSpace.SHARED]self,
+        ref[o, AddressSpace.SHARED] self,
         bytes: Int32,
         cta_id: UInt32,
         pred: UInt32,
@@ -271,7 +271,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait[
         ticks: Optional[UInt32] = None
-    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -322,7 +322,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait_acquire[
         scope: Scope
-    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Acquire and wait until the barrier is satisfied.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -366,7 +366,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     @always_inline("nodebug")
     fn wait_relaxed[
         scope: Scope
-    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+    ](ref[AddressSpace.SHARED] self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied with relaxed ordering.
 
         Blocks the calling thread until the barrier is satisfied, either by
@@ -408,7 +408,7 @@ struct SharedMemBarrier(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn try_wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0) -> Bool:
+    fn try_wait(ref[AddressSpace.SHARED] self, phase: UInt32 = 0) -> Bool:
         """Non-blocking check if barrier phase is complete.
 
         Performs a single non-blocking check to see if the barrier has completed
@@ -445,7 +445,7 @@ struct SharedMemBarrier(TrivialRegisterType):
     fn unsafe_ptr[
         origin: Origin
     ](
-        ref [origin, AddressSpace.SHARED]self,
+        ref[origin, AddressSpace.SHARED] self,
     ) -> UnsafePointer[
         Int64,
         origin=origin,
@@ -468,7 +468,7 @@ struct SharedMemBarrier(TrivialRegisterType):
 
     @always_inline
     fn arrive_cluster(
-        ref [AddressSpace.SHARED]self, cta_id: UInt32, count: UInt32 = 1
+        ref[AddressSpace.SHARED] self, cta_id: UInt32, count: UInt32 = 1
     ):
         """Signal arrival at the barrier from a specific CTA (Cooperative Thread Array) in a cluster.
 
@@ -490,7 +490,7 @@ struct SharedMemBarrier(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn arrive[o: MutOrigin](ref [o, AddressSpace.SHARED]self) -> Int:
+    fn arrive[o: MutOrigin](ref[o, AddressSpace.SHARED] self) -> Int:
         """Signal arrival at the barrier and return the arrival count.
 
         This method increments the arrival count at the barrier and returns
@@ -751,7 +751,7 @@ struct TMATensorTile[
     ](
         self,
         dst: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
     ):
         """
@@ -849,7 +849,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
     ):
         """
@@ -943,7 +943,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
     ):
         """
@@ -1041,7 +1041,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int, Int],
     ):
         """
@@ -1158,7 +1158,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, rank],
     ):
         """Schedules an asynchronous copy from global memory to shared memory for N-dimensional tensors.
@@ -1292,7 +1292,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
     ):
@@ -1363,7 +1363,7 @@ struct TMATensorTile[
         dst: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[UInt, UInt, UInt],
         multicast_mask: UInt16,
     ):
@@ -1466,7 +1466,7 @@ struct TMATensorTile[
             alignment=128,
             ...,
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         rank: UInt,
         coords: Tuple[UInt, UInt],
         multicast_mask: UInt16,
@@ -3190,7 +3190,7 @@ struct RaggedTMA3DTile[
         dst: UnsafePointer[
             Scalar[Self.dtype], address_space = AddressSpace.SHARED
         ],
-        ref [AddressSpace.SHARED]mem_barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         *,
         ragged_idx: UInt32,
         dynamic_dim: UInt32,

@@ -255,7 +255,7 @@ struct SMemTileArray[
     ]
 
     fn __init__(
-        ref [AddressSpace.SHARED]storage: Self.Storage,
+        ref[AddressSpace.SHARED] storage: Self.Storage,
     ) -> Self:
         """Initialize with Storage.
 
@@ -348,7 +348,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref [AddressSpace.SHARED]storage: Self.Storage) -> Self:
+    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 

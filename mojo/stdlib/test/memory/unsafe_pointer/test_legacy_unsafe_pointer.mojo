@@ -478,7 +478,7 @@ def test_unsafe_mut_cast():
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutOrigin](ref [origin]to: String):
+fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 

@@ -192,7 +192,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](Copyable, Defaultable):
         self.unsafe_ptr().init_pointee_move(value^)
 
     @always_inline
-    fn assume_initialized(ref self) -> ref [self._array] Self.ElementType:
+    fn assume_initialized(ref self) -> ref[self._array] Self.ElementType:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.

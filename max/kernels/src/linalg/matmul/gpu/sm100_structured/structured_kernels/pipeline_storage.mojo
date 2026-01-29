@@ -84,10 +84,10 @@ struct MyKernelSmem[config: MyConfig]:
     var output_pipeline: OutputPipelineStorage[...]
 
     # Accessors delegate to composed storage
-    fn a_tiles(ref [SHARED]self) -> Self.Tiles.ATileArray:
+    fn a_tiles(ref[SHARED] self) -> Self.Tiles.ATileArray:
         return self.tiles.a_tiles()
 
-    fn c_tiles(ref [SHARED]self) -> Self.OutputTiles.CTileArray:
+    fn c_tiles(ref[SHARED] self) -> Self.OutputTiles.CTileArray:
         return self.output_tiles.c_tiles()
 ```
 
@@ -154,12 +154,12 @@ struct StandardTileStorage[
     var b_tiles_storage: Self.BTileArray.Storage
 
     @always_inline
-    fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor."""
         return Self.ATileArray(self.a_tiles_storage)
 
     @always_inline
-    fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor."""
         return Self.BTileArray(self.b_tiles_storage)
 
@@ -229,23 +229,23 @@ struct BlockScaledTileStorage[
     var sfb_tiles_storage: Self.SFBTileArray.Storage
 
     @always_inline
-    fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         return Self.ATileArray(self.a_tiles_storage)
 
     @always_inline
-    fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         return Self.BTileArray(self.b_tiles_storage)
 
     @always_inline
-    fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         return Self.CTileArray(self.c_tiles_storage)
 
     @always_inline
-    fn sfa_tiles(ref [AddressSpace.SHARED]self) -> Self.SFATileArray:
+    fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
         return Self.SFATileArray(self.sfa_tiles_storage)
 
     @always_inline
-    fn sfb_tiles(ref [AddressSpace.SHARED]self) -> Self.SFBTileArray:
+    fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
         return Self.SFBTileArray(self.sfb_tiles_storage)
 
 
@@ -304,19 +304,19 @@ struct BlockwiseFP8TileStorage[
     var a_scales_tiles_storage: Self.AScalesTileArray.Storage
 
     @always_inline
-    fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         return Self.ATileArray(self.a_tiles_storage)
 
     @always_inline
-    fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         return Self.BTileArray(self.b_tiles_storage)
 
     @always_inline
-    fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         return Self.CTileArray(self.c_tiles_storage)
 
     @always_inline
-    fn a_scales_tiles(ref [AddressSpace.SHARED]self) -> Self.AScalesTileArray:
+    fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
         return Self.AScalesTileArray(self.a_scales_tiles_storage)
 
 
@@ -343,7 +343,7 @@ struct OutputTileStorage[
     var c_tiles_storage: Self.CTileArray.Storage
 
     @always_inline
-    fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         return Self.CTileArray(self.c_tiles_storage)
 
 
@@ -368,18 +368,18 @@ struct BarrierPair[num_stages: Int]:
     var storage: Self.Array.Storage
 
     @always_inline
-    fn barriers(ref [AddressSpace.SHARED]self) -> Self.Array:
+    fn barriers(ref[AddressSpace.SHARED] self) -> Self.Array:
         """Get barrier array accessor."""
         return Self.Array(self.storage)
 
     @always_inline
-    fn ptr(ref [AddressSpace.SHARED]self) -> MbarPtr:
+    fn ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw barrier pointer for initialization or custom usage."""
         return self.barriers().ptr
 
     @always_inline
     fn create_pipeline(
-        ref [AddressSpace.SHARED]self,
+        ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create a runtime pipeline from this barrier storage."""
         return ProducerConsumerPipeline[Self.num_stages](self.barriers().ptr)
@@ -414,7 +414,7 @@ struct InputPipelineStorage[
                 StandardTilePayload[float16, float16, a_layout, b_layout],
             ]
 
-            fn get_pipeline(ref [SHARED]self):
+            fn get_pipeline(ref[SHARED] self):
                 return self.input.create_pipeline()
         ```
     """
@@ -434,13 +434,13 @@ struct InputPipelineStorage[
 
     @always_inline
     fn create_pipeline(
-        ref [AddressSpace.SHARED]self,
+        ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create runtime pipeline from this storage."""
         return self.barriers.create_pipeline()
 
     @always_inline
-    fn barrier_ptr(ref [AddressSpace.SHARED]self) -> MbarPtr:
+    fn barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Escape hatch: Get raw barrier pointer for custom initialization."""
         return self.barriers.barriers().ptr
 
@@ -467,13 +467,13 @@ struct OutputPipelineStorage[num_stages: Int]:
 
     @always_inline
     fn create_pipeline(
-        ref [AddressSpace.SHARED]self,
+        ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create runtime pipeline from this storage."""
         return self.barriers.create_pipeline()
 
     @always_inline
-    fn barrier_ptr(ref [AddressSpace.SHARED]self) -> MbarPtr:
+    fn barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Escape hatch: Get raw barrier pointer."""
         return self.barriers.barriers().ptr
 
@@ -509,19 +509,19 @@ struct ClcPipelineStorage[num_stages: Int]:
     var response_storage: Self.ResponseArray.Storage
 
     @always_inline
-    fn full(ref [AddressSpace.SHARED]self) -> Self.BarrierArray:
+    fn full(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.full_storage)
 
     @always_inline
-    fn empty(ref [AddressSpace.SHARED]self) -> Self.BarrierArray:
+    fn empty(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.empty_storage)
 
     @always_inline
-    fn throttle(ref [AddressSpace.SHARED]self) -> Self.ThrottleArray:
+    fn throttle(ref[AddressSpace.SHARED] self) -> Self.ThrottleArray:
         return Self.ThrottleArray(self.throttle_storage)
 
     @always_inline
-    fn response(ref [AddressSpace.SHARED]self) -> Self.ResponseArray:
+    fn response(ref[AddressSpace.SHARED] self) -> Self.ResponseArray:
         return Self.ResponseArray(self.response_storage)
 
 
@@ -543,11 +543,11 @@ struct TmemDeallocStorage:
     var addr_storage: Self.AddrArray.Storage
 
     @always_inline
-    fn barrier(ref [AddressSpace.SHARED]self) -> Self.BarrierArray:
+    fn barrier(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.barrier_storage)
 
     @always_inline
-    fn addr(ref [AddressSpace.SHARED]self) -> Self.AddrArray:
+    fn addr(ref[AddressSpace.SHARED] self) -> Self.AddrArray:
         return Self.AddrArray(self.addr_storage)
 
 
@@ -571,7 +571,7 @@ struct RawBarrierStorage[count: Int]:
         struct MyCustomSmem:
             var custom_barriers: RawBarrierStorage[8]
 
-            fn init_custom(ref [SHARED]self):
+            fn init_custom(ref[SHARED] self):
                 ptr = self.custom_barriers.ptr()
                 # Custom initialization...
         ```
@@ -582,10 +582,10 @@ struct RawBarrierStorage[count: Int]:
     var storage: Self.Array.Storage
 
     @always_inline
-    fn barriers(ref [AddressSpace.SHARED]self) -> Self.Array:
+    fn barriers(ref[AddressSpace.SHARED] self) -> Self.Array:
         return Self.Array(self.storage)
 
     @always_inline
-    fn ptr(ref [AddressSpace.SHARED]self) -> MbarPtr:
+    fn ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw pointer for custom usage."""
         return self.barriers().ptr

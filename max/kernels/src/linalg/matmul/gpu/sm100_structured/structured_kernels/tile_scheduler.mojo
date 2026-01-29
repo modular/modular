@@ -246,7 +246,7 @@ struct WorkIterator[
     fn next[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> AdvanceAfterWorkContext[
         origin_of(self.work_info),
         origin_of(self.consumer_state),
@@ -266,7 +266,7 @@ struct WorkIterator[
     fn wait_and_advance[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> WaitAndAdvanceContext[
         origin_of(self.work_info)
     ]:
@@ -364,7 +364,7 @@ struct SchedulerWorkIterator[
     fn next[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> AdvanceAfterWorkContext[
         origin_of(self.work_info),
         origin_of(self.consumer_state),
@@ -634,8 +634,8 @@ struct TileScheduler[
         work_origin: MutOrigin, state_origin: MutOrigin, //
     ](
         self,
-        ref [work_origin]work_info: WorkInfo,
-        ref [state_origin]consumer_state: PipelineState[Self.num_stages],
+        ref[work_origin] work_info: WorkInfo,
+        ref[state_origin] consumer_state: PipelineState[Self.num_stages],
     ) -> AdvanceAfterWorkContext[
         work_origin,
         state_origin,
@@ -663,7 +663,7 @@ struct TileScheduler[
         work_origin: MutOrigin, //
     ](
         self,
-        ref [work_origin]work_info: WorkInfo,
+        ref[work_origin] work_info: WorkInfo,
         mut consumer_state: PipelineState[Self.num_stages],
     ) -> WaitAndAdvanceContext[work_origin]:
         """Wait for next work from CLC and advance.

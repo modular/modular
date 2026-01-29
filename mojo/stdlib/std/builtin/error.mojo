@@ -150,7 +150,7 @@ struct _TypeErasedWriter(Writer):
 
     fn __init__[
         W: Writer, //, origin: MutOrigin
-    ](out self, ref [origin]writer: W):
+    ](out self, ref[origin] writer: W):
         """Construct an erased writer, capturing the concrete type `W`."""
         self._writer = _make_opaque(writer)
         self._write_fn = Self._write_to_impl[W]

@@ -39,7 +39,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
     var at_element_start: Bool
     var sep: StaticString
 
-    fn __init__(out self, ref [Self.origin]writer: Self.W, sep: StaticString):
+    fn __init__(out self, ref[Self.origin] writer: Self.W, sep: StaticString):
         self.writer = Pointer(to=writer)
         self.is_first_element = True
         self.at_element_start = True
@@ -194,7 +194,7 @@ struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
     var _value: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, ref [Self.o]value: Self.T):
+    fn __init__(out self, ref[Self.o] value: Self.T):
         """Constructs a `Repr` wrapper around a reference to a value.
 
         Args:
@@ -231,7 +231,7 @@ struct Named[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
     var _value: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, name: StaticString, ref [Self.o]value: Self.T):
+    fn __init__(out self, name: StaticString, ref[Self.o] value: Self.T):
         """Constructs a `Named` wrapper for a field.
 
         Args:
@@ -272,7 +272,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
     var _writer: Pointer[Self.T, Self.o]
 
     @always_inline
-    fn __init__(out self, ref [Self.o]writer: Self.T, name: StaticString):
+    fn __init__(out self, ref[Self.o] writer: Self.T, name: StaticString):
         """Constructs a `FormatStruct` and writes the struct name.
 
         Args:
@@ -283,7 +283,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         self._writer = Pointer(to=writer)
 
     @always_inline
-    fn params[*Ts: Writable](self, *args: *Ts) -> ref [self] Self:
+    fn params[*Ts: Writable](self, *args: *Ts) -> ref[self] Self:
         """Writes type parameters in bracket notation `[param1, param2, ...]`.
 
         This method is used to write compile-time parameters of a parameterized
@@ -409,7 +409,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     fn as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> StringSlice[origin]:
+    ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
             unsafe_from_utf8=Span(
                 ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
@@ -428,7 +428,7 @@ struct _WriteBufferStack[
     var pos: Int
     var writer: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [Self.origin]writer: Self.W):
+    fn __init__(out self, ref[Self.origin] writer: Self.W):
         self.data = InlineArray[UInt8, Int(Self.stack_buffer_bytes)](
             uninitialized=True
         )

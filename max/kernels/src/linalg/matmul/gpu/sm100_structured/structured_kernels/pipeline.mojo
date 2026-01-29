@@ -288,7 +288,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
     @always_inline
     fn produce[
         origin: MutOrigin, //
-    ](ref [origin]self) -> ProduceContext[origin, Self.num_stages]:
+    ](ref[origin] self) -> ProduceContext[origin, Self.num_stages]:
         """Produce one pipeline stage with encapsulated barriers.
 
         Usage:
@@ -305,7 +305,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
     @always_inline
     fn consume[
         origin: MutOrigin, //
-    ](ref [origin]self) -> ConsumeContext[origin, Self.num_stages]:
+    ](ref[origin] self) -> ConsumeContext[origin, Self.num_stages]:
         """Consume one pipeline stage with encapsulated barriers.
 
         Usage:
@@ -321,7 +321,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
     @always_inline
     fn consume_explicit[
         origin: MutOrigin, //
-    ](ref [origin]self) -> ExplicitConsumeContext[origin, Self.num_stages]:
+    ](ref[origin] self) -> ExplicitConsumeContext[origin, Self.num_stages]:
         """Consume one pipeline stage with EXPLICIT barrier arrive.
 
         Use this for kernels requiring lane-guarded or specialized signaling.

@@ -70,7 +70,7 @@ struct _ListIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         @parameter
         if Self.forward:
             if self.index >= len(self.src[]):
@@ -1287,7 +1287,7 @@ struct List[T: Copyable](
 
     fn __getitem__[
         origin: Origin, //
-    ](ref [origin]self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
         """Gets the sequence of elements at the specified positions.
 
         Parameters:
@@ -1304,7 +1304,7 @@ struct List[T: Copyable](
             ptr=self.unsafe_ptr() + start, length=end - start
         )
 
-    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] Self.T:
+    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref[self] Self.T:
         """Gets the list element at the given index.
 
         Args:
@@ -1323,7 +1323,7 @@ struct List[T: Copyable](
         return (self._data + normalized_idx)[]
 
     @always_inline
-    fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
+    fn unsafe_get(ref self, idx: Int) -> ref[self] Self.T:
         """Get a reference to an element of self without checking index bounds.
 
         Args:
@@ -1443,7 +1443,7 @@ struct List[T: Copyable](
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> UnsafePointer[
         Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.

@@ -336,7 +336,7 @@ struct GroupedWorkIterator[
     fn next[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> GroupedAdvanceContext[
         origin_of(self.work_info), origin_of(self.linear_tile_idx)
     ]:
@@ -374,7 +374,7 @@ struct GroupedWorkIterator[
     fn wait_and_advance[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> GroupedAdvanceContext[
         origin_of(self.work_info), origin_of(self.linear_tile_idx)
     ]:
@@ -721,7 +721,7 @@ struct GroupedCLCWorkIterator[
     fn wait_and_advance[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> GroupedCLCWaitAndAdvanceContext[
         origin_of(self.work_info)
     ]:
@@ -743,7 +743,7 @@ struct GroupedCLCWorkIterator[
     fn next[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> GroupedAdvanceContext[
         origin_of(self.work_info), origin_of(self.total_tiles)
     ]:
@@ -1002,7 +1002,7 @@ struct GroupedCLCSchedulerIterator[
     fn next[
         state_origin: MutOrigin, //
     ](
-        ref [state_origin]self,
+        ref[state_origin] self,
     ) -> GroupedAdvanceContext[
         origin_of(self.work_info), origin_of(self.linear_tile_idx)
     ]:

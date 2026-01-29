@@ -177,7 +177,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] Self.element_types[idx]:
+    fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:

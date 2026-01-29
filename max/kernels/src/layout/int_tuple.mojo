@@ -1260,7 +1260,7 @@ struct IntTuple(
             return self._store[offset + 1]
 
     @always_inline("nodebug")
-    fn tuple(ref self) -> ref [self] Self:
+    fn tuple(ref self) -> ref[self] Self:
         """
         Returns a reference to this `IntTuple` as a tuple.
 

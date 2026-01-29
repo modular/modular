@@ -19,7 +19,7 @@ compile-time constants without materializing entire data structures in memory.
 
 fn global_constant[
     T: Copyable & ImplicitlyDestructible, //, value: T
-]() -> ref [StaticConstantOrigin] T:
+]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
     This function stores the compile-time constant in the binary's read-only data

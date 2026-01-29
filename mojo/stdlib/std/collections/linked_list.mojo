@@ -125,7 +125,7 @@ struct _LinkedListIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         if not self.curr:
             raise StopIteration()
         var old = self.curr
@@ -692,7 +692,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
                 curr = curr[].prev
             return curr
 
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Get the element at the specified index.
 
         Parameters:

@@ -274,7 +274,7 @@ The syntax for a `ref` argument is:
 
 Or:
 
-<code><strong>ref [</strong><var>origin_specifier(s)</var><strong>]</strong>
+<code><strong>ref[</strong><var>origin_specifier(s)</var><strong>] </strong>
 <var>arg_name</var>: <var>arg_type</var></code>
 
 In the first form, the origin and mutability of the `ref` argument is inferred
@@ -289,8 +289,8 @@ specifier can be either:
   equivalent:
 
   ```mojo
-  ref [origin_of(self)]
-  ref [self]
+  ref[origin_of(self)]
+  ref[self]
   ```
 
 * An [`AddressSpace`](/mojo/std/memory/pointer/AddressSpace) value.
@@ -323,7 +323,7 @@ def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
+](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
     return Span(list)
 
 def main():
@@ -343,7 +343,7 @@ lifetime as the list, and the span will be mutable if the list is mutable.
 Like `ref` arguments, `ref` return values allow a function to return a mutable
 or immutable reference to a value. The syntax for a `ref` return value is:
 
-<code><strong>-> ref [</strong><var>origin_specifier(s)</var><strong>]</strong>
+<code><strong>-> ref[</strong><var>origin_specifier(s)</var><strong>] </strong>
  <var>arg_type</var></code>
 
 Note that you **must** provide an origin specifier for a `ref` return value. The
@@ -383,8 +383,7 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) ->
-        ref [self.names] String:
+    def __getitem__(ref self, index: Int) -> ref[self.names] String:
         if (index >=0 and index < len(self.names)):
             return self.names[index]
         else:
@@ -422,8 +421,7 @@ mutability.  For example, recall the signature of the `__getitem__()` method
 above:
 
 ```mojo
-def __getitem__(ref self, index: Int) ->
-    ref [self] String:
+def __getitem__(ref self, index: Int) -> ref[self] String:
 ```
 
 Since the `origin` of the return value is tied to the origin of `self`, the
@@ -457,7 +455,7 @@ function returns a reference to one of the two input strings, with an origin
 that's a union of both origins.
 
 ```mojo
-def pick_one(cond: Bool, ref a: String, ref b: String) -> ref [a, b] String:
+def pick_one(cond: Bool, ref a: String, ref b: String) -> ref[a, b] String:
     return a if cond else b
 ```
 

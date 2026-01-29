@@ -349,7 +349,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
     @always_inline("nodebug")
     fn __getitem__[
         idx: Int
-    ](ref self) -> ref [self._storage] Self.element_types[idx]:
+    ](ref self) -> ref[self._storage] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:
@@ -1262,7 +1262,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
         return Self.__len__()
 
     @always_inline("nodebug")
-    fn __getitem__[idx: Int](ref self) -> ref [self] Self.element_types[idx]:
+    fn __getitem__[idx: Int](ref self) -> ref[self] Self.element_types[idx]:
         """Get a reference to an element in the tuple.
 
         Parameters:

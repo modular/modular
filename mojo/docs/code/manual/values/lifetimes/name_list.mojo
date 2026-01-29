@@ -22,7 +22,7 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref [self.names] String:
+    def __getitem__(ref self, index: Int) -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:

@@ -387,7 +387,7 @@ struct Optional[T: Movable](
     @always_inline
     fn __getitem__(
         ref self,
-    ) raises EmptyOptionalError[Self.T] -> ref [self._value] Self.T:
+    ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -472,7 +472,7 @@ struct Optional[T: Movable](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(ref self) -> ref [self._value] Self.T:
+    fn value(ref self) -> ref[self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -502,7 +502,7 @@ struct Optional[T: Movable](
         return self.unsafe_value()
 
     @always_inline
-    fn unsafe_value(ref self) -> ref [self._value] Self.T:
+    fn unsafe_value(ref self) -> ref[self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:

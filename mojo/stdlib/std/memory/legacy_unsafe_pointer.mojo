@@ -126,7 +126,7 @@ struct LegacyUnsafePointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -193,7 +193,7 @@ struct LegacyUnsafePointer[
     ](
         out self: LegacyUnsafePointer[T, origin = Self.origin],
         *,
-        ref [Self.origin]unchecked_downcast_value: PythonObject,
+        ref[Self.origin] unchecked_downcast_value: PythonObject,
     ):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
@@ -259,7 +259,7 @@ struct LegacyUnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data.
 
         Returns:
@@ -277,7 +277,7 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
-    ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
+    ](self, offset: I) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:

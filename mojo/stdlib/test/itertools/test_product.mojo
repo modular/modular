@@ -275,7 +275,7 @@ struct TestCopyIterator[
 
     var counter: Observable[CopyOrigin = Self.CopyOrigin]
 
-    fn __init__(out self, ref [Self.CopyOrigin]copies: Int):
+    fn __init__(out self, ref[Self.CopyOrigin] copies: Int):
         self.counter = Observable(copies=Pointer(to=copies))
 
     fn __next__(mut self) raises StopIteration -> Self.Element:

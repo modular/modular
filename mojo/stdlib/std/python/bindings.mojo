@@ -327,7 +327,7 @@ struct PythonModuleBuilder:
 
     fn add_type[
         T: Representable
-    ](mut self, type_name: StaticString) -> ref [
+    ](mut self, type_name: StaticString) -> ref[
         self.type_builders
     ] PythonTypeBuilder:
         """Add a type to the module and return a builder for it.
@@ -654,7 +654,7 @@ struct PythonTypeBuilder(Copyable):
 
     fn def_init_defaultable[
         T: Defaultable & Movable,
-    ](mut self) raises -> ref [self] Self:
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
 
@@ -685,7 +685,7 @@ struct PythonTypeBuilder(Copyable):
         T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn(out T, args: PythonObject, kwargs: PythonObject),
-    ](mut self) raises -> ref [self] Self:
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
         Parameters:
@@ -711,7 +711,7 @@ struct PythonTypeBuilder(Copyable):
         T: Movable & ImplicitlyDestructible,
         //,
         init_func: fn(out T, args: PythonObject, kwargs: PythonObject) raises,
-    ](mut self) raises -> ref [self] Self:
+    ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type.
 
         Parameters:
@@ -736,7 +736,7 @@ struct PythonTypeBuilder(Copyable):
         method: PyCFunction,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyObjectPtr signature for the
         type.
 
@@ -767,7 +767,7 @@ struct PythonTypeBuilder(Copyable):
         method: PyCFunctionWithKeywords,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyCFunctionWithKeywords signature for the
         type.
 
@@ -798,7 +798,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionRaising signature.
 
         Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
@@ -827,7 +827,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method with PyFunctionWithKeywordsRaising signature.
 
         Accepts methods with signature:
@@ -858,7 +858,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = "",
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         return self.def_py_c_method[static_method](
             _py_c_function_wrapper[method], method_name, docstring
         )
@@ -871,7 +871,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = "",
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a method that receives self as PythonObject.
 
         Use this when you need generic Python object access. For direct access to the wrapped
@@ -910,7 +910,7 @@ struct PythonTypeBuilder(Copyable):
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref [self] Self:
+    ) -> ref[self] Self:
         """Declare a binding for a static method (no self parameter).
 
         Accepts functions with PythonObject arguments (up to 6), can optionally

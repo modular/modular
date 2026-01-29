@@ -215,15 +215,15 @@ struct B200MatmulSmem[
 
     # ========== Tile Accessors (Delegated) ==========
     @always_inline
-    fn a_tiles(ref [AddressSpace.SHARED]self) -> Self.ATileArray:
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         return self.input_tiles.a_tiles()
 
     @always_inline
-    fn b_tiles(ref [AddressSpace.SHARED]self) -> Self.BTileArray:
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         return self.input_tiles.b_tiles()
 
     @always_inline
-    fn c_tiles(ref [AddressSpace.SHARED]self) -> Self.CTileArray:
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         return self.output_tiles.c_tiles()
 
     # ========== Pipeline Storage (Embedded) ==========
@@ -261,35 +261,35 @@ struct B200MatmulSmem[
 
     # ========== Barrier Accessors (Delegated to Pipelines) ==========
     @always_inline
-    fn input_barriers(ref [AddressSpace.SHARED]self) -> Self.InputBarriers:
+    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
         return self.input_pipeline.barriers.barriers()
 
     @always_inline
-    fn accum_barriers(ref [AddressSpace.SHARED]self) -> Self.AccumBarriers:
+    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
         return self.output_pipeline.barriers.barriers()
 
     @always_inline
-    fn clc_full(ref [AddressSpace.SHARED]self) -> Self.ClcBarriers:
+    fn clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         return self.clc_pipeline.full()
 
     @always_inline
-    fn clc_empty(ref [AddressSpace.SHARED]self) -> Self.ClcBarriers:
+    fn clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         return self.clc_pipeline.empty()
 
     @always_inline
-    fn clc_throttle(ref [AddressSpace.SHARED]self) -> Self.ClcThrottleBarriers:
+    fn clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
         return self.clc_pipeline.throttle()
 
     @always_inline
-    fn clc_response(ref [AddressSpace.SHARED]self) -> Self.ClcResponse:
+    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
         return self.clc_pipeline.response()
 
     @always_inline
-    fn tmem_dealloc(ref [AddressSpace.SHARED]self) -> Self.TmemDealloc:
+    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
         return self.tmem_dealloc_pipeline.barrier()
 
     @always_inline
-    fn tmem_addr(ref [AddressSpace.SHARED]self) -> Self.TmemAddr:
+    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         return self.tmem_dealloc_pipeline.addr()
 
     # ========== Size Calculations ==========

@@ -399,7 +399,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
         Parameters:
@@ -435,7 +435,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn __getitem__[
         I: Indexer, //, idx: I
-    ](ref self) -> ref [self] Self.ElementType:
+    ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
@@ -499,7 +499,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
 
         Parameters:
@@ -546,7 +546,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> UnsafePointer[
         Self.ElementType,
         origin,
         address_space=address_space,

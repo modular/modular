@@ -35,7 +35,7 @@ struct ConditionalTriviality[
     fn add_event(mut self, event: Int):
         self.events[].append(event)
 
-    fn __init__(out self, ref [Self.O]events: List[Int]):
+    fn __init__(out self, ref[Self.O] events: List[Int]):
         self.events = Pointer(to=events)
         self.add_event(EVENT_INIT)
 

@@ -72,7 +72,7 @@ struct Complex(
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[idx: Int](ref self) -> ref [self] Float64:
+    fn __getitem__[idx: Int](ref self) -> ref[self] Float64:
         constrained[idx in (0, 1), "idx must be 0 or 1"]()
 
         @parameter

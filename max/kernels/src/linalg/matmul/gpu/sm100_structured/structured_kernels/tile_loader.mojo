@@ -83,7 +83,7 @@ struct TileLoaderTMA[
     ](
         self,
         dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
-        ref [AddressSpace.SHARED]barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
         row_coord: UInt,
     ):
@@ -151,7 +151,7 @@ struct ScalesTileLoader[
     ](
         self,
         dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
-        ref [AddressSpace.SHARED]barrier: SharedMemBarrier,
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,
         k_coord: Int,
     ):
