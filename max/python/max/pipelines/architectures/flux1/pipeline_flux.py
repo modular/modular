@@ -17,10 +17,9 @@ from typing import Literal
 
 import numpy as np
 import PIL.Image
+from max import functional as F
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental import Tensor
-from max.experimental import functional as F
 from max.graph import DeviceRef
 from max.interfaces import PixelGenerationOutput, TokenBuffer
 from max.pipelines.lib.diffusion_schedulers import (
@@ -33,6 +32,7 @@ from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
 )
+from max.tensor import Tensor
 from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLModel

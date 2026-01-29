@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PixelContext, PipelineTask
+from max.interfaces import PipelineTask
+from max.pipelines import PixelContext
 from max.pipelines.lib import (
+    PixelGenerationTokenizer,
     SupportedArchitecture,
     SupportedEncoding,
 )
@@ -32,4 +34,5 @@ flux1_arch = SupportedArchitecture(
     pipeline_model=FluxPipeline,
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
+    tokenizer=PixelGenerationTokenizer,
 )

@@ -11,144 +11,147 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Pipeline utilities for MAX-optimized pipelines."""
+"""Pipeline utilities for MAX-optimized diffusion pipelines."""
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.config import load_config
-from max.driver import load_devices
+from max._core.driver import Device
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
 from max.interfaces.tokens import TokenBuffer
-from max.pipelines.lib.interfaces.max_model import MaxModel
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
 
 if TYPE_CHECKING:
+    from max.engine import InferenceSession
+
     from ..config import PipelineConfig
-    from ..diffusion_schedulers import FlowMatchEulerDiscreteScheduler
-
-
-T = TypeVar("T", bound="PixelModelInputs")
 
 
 class DiffusionPipeline(ABC):
-    config_name: str | None = None
-    """
-    The name of the config file of the pipeline.
+    """Base class for diffusion pipelines.
 
-    It can be found in the downloaded path or HuggingFace hub.
-    It's usually "model_index.json" or "config.json" for Diffusion models.
+    Subclasses must define `components` mapping component names to ComponentModel types.
     """
 
-    components: (
-        dict[str, type[MaxModel] | type[FlowMatchEulerDiscreteScheduler]] | None
-    ) = None
-    """The components of the pipeline.
-    
-    It can be found in the downloaded path or HuggingFace hub.
-    It's usually contains text_encoder, tokenizer, transformer, vae, etc.
-    """
+    components: dict[str, type[ComponentModel]] | None = None
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        cached_folder: str,
+        session: InferenceSession,
+        devices: list[Device],
+        weight_paths: list[Path],
         **kwargs: Any,
-    ) -> DiffusionPipeline:
-        """Load a pipeline from a pretrained model.
-
-        Args:
-            pipeline_config: Pipeline configuration for model and runtime setup.
-            cached_folder: Local path to the downloaded model snapshot.
-            **kwargs: Additional pipeline-specific arguments.
-        """
+    ) -> None:
         self.pipeline_config = pipeline_config
-        self.devices = load_devices(pipeline_config.model.device_specs)
+        self.session = session
+        self.devices = devices
 
-        # Load sub models
-        loaded_sub_models = self.load_sub_models(cached_folder)
-        for name, model in loaded_sub_models.items():
+        for name, model in self._load_sub_models(weight_paths).items():
             setattr(self, name, model)
 
         self.init_remaining_components()
 
     @abstractmethod
     def init_remaining_components(self) -> None:
-        pass
+        """Initialize non-ComponentModel components (e.g., image processors)."""
 
-    def load_sub_models(
-        self,
-        pretrained_model_name_or_path: str | os.PathLike,
-    ) -> dict:
-        """Load sub-models for the pipeline.
+    def finalize_pipeline_config(self) -> None:
+        """Hook for finalizing pipeline configuration. Override if needed."""
 
-        Args:
-            pretrained_model_name_or_path: Path to pretrained model.
-
-        Returns:
-            Dictionary containing the loaded sub-models.
-        """
-        loaded_sub_models = {}
-        if self.components is None:
+    def _load_sub_models(self, weight_paths: list[Path]) -> dict[str, ComponentModel]:
+        """Load all ComponentModel sub-components defined in `components`."""
+        if not self.components:
             raise ValueError(
-                f"`components` for {self.__class__.__name__} pipeline is not set. "
-                "Please set proper components based on its sub-directories in the downloaded path."
+                f"{self.__class__.__name__}.components is not set."
             )
-        for name, component_class in tqdm(
+
+        diffusers_config = self.pipeline_config.model.diffusers_config
+        if not diffusers_config:
+            raise ValueError("diffusers_config is required for DiffusionPipeline.")
+
+        components_config = diffusers_config.get("components")
+        if not components_config:
+            raise ValueError("diffusers_config['components'] is missing.")
+
+        relative_paths = self._resolve_relative_component_paths()
+        loaded_sub_models: dict[str, ComponentModel] = {}
+
+        for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
         ):
-            component_path = os.path.join(pretrained_model_name_or_path, name)
-            if "tokenizer" in name:
-                # NOTE: Currently, we are using tokenizers from transformers.
-                # TODO(minkyu): Check if we can use Tokenizer in Max,
-                # and remove this conditional path.
-                loaded_sub_models[name] = component_class.from_pretrained(
-                    component_path
-                )
+            if not issubclass(component_cls, ComponentModel):
                 continue
 
-            if (
-                not hasattr(component_class, "config_name")
-                or component_class.config_name is None
-            ):
-                raise ValueError(
-                    f"`config_name` for {component_class.__name__} is not set. "
-                    "Please set proper config file name in the downloaded path."
-                )
-            config = load_config(
-                f"{component_path}/{component_class.config_name}"
+            config_dict = self._get_component_config_dict(components_config, name)
+            abs_paths = self._resolve_absolute_paths(
+                weight_paths, relative_paths[name]
             )
-            if issubclass(component_class, MaxModel):
-                weight_paths = [
-                    Path(pretrained_model_name_or_path) / weight_path
-                    for weight_path in self.pipeline_config.model.weight_path
-                    if weight_path.split("/")[0] == name
-                ]
-                loaded_sub_models[name] = component_class(
-                    config=config,
-                    encoding=self.pipeline_config.model.quantization_encoding,
-                    devices=self.devices,
-                    weights=load_weights(weight_paths),
-                )
-            else:
-                loaded_sub_models[name] = component_class(
-                    **config,
-                    device=DeviceRef.from_device(self.devices[0]),
-                    dtype=self.pipeline_config.model.quantization_encoding.dtype,
-                )
+
+            loaded_sub_models[name] = component_cls(
+                config=config_dict,
+                encoding=self.pipeline_config.model.quantization_encoding,
+                devices=self.devices,
+                weights=load_weights(abs_paths),
+            )
 
         return loaded_sub_models
 
-    def finalize_pipeline_config(self) -> None:
-        return
+    def _get_component_config_dict(
+        self, components_config: dict[str, Any], name: str
+    ) -> dict[str, Any]:
+        """Extract config_dict for a named component."""
+        component = components_config.get(name)
+        if not component:
+            raise ValueError(f"Missing config for component '{name}'.")
+
+        config_dict = component.get("config_dict")
+        if not config_dict:
+            raise ValueError(f"Missing config_dict for component '{name}'.")
+
+        return config_dict
+
+    def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
+        """Group weight paths by component name (first path segment)."""
+        result: dict[str, list[str]] = {}
+
+        for path in self.pipeline_config.model.weight_path:
+            path_str = str(path)
+            parts = path_str.split("/")
+            if len(parts) >= 2:
+                component = parts[0]
+                result.setdefault(component, []).append(path_str)
+
+        if not result:
+            raise ValueError(
+                "No component weights found. Expected format: <component>/<file>"
+            )
+        return result
+
+    def _resolve_absolute_paths(
+        self, weight_paths: list[Path], relative_paths: list[str]
+    ) -> list[Path]:
+        """Match relative component paths to absolute weight paths."""
+        absolute_paths = [
+            abs_path
+            for abs_path in weight_paths
+            for rel_path in relative_paths
+            if rel_path in str(abs_path)
+        ]
+
+        if not absolute_paths:
+            raise ValueError(
+                f"Component weights not found: {relative_paths}"
+            )
+        return absolute_paths
 
     def _execution_device(self) -> DeviceRef:
         r"""Returns the device on which the pipeline's models will be executed.
