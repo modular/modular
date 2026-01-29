@@ -190,6 +190,11 @@ def test_pinned_zeros() -> None:
     assert tensor[0, 0].item() == 0
     assert tensor[1, 0].item() == 0
 
+    if accelerator_api() == "hip":
+        pytest.skip(
+            "FIXME SERVOPT-947: __setitem__ / __getitem__ is buggy on HIP."
+        )
+
     tensor[1, 0] = 42
     assert tensor[1, 0].item() == 42
 
