@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
@@ -18,13 +19,18 @@ from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.serve.schemas.openai import CreateEmbeddingResponse
 
+MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="sentence-transformers/all-mpnet-base-v2",
+            model_path=MPNET_REPO_ID,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MPNET_REPO_ID
+            ),
             max_length=256,
             device_specs=[DeviceSpec.cpu()],
         )
@@ -37,7 +43,7 @@ async def test_serve_embeddings(app: FastAPI) -> None:
             "/v1/embeddings",
             json={
                 "input": "Turn this sentence into embeddings",
-                "model": "sentence-transformers/all-mpnet-base-v2",
+                "model": MPNET_REPO_ID,
             },
         )
 

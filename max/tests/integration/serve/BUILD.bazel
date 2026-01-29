@@ -62,17 +62,16 @@ modular_py_test(
         "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
     },
     tags = [
-        "manual",  # TODO(AITLIB-293)
         "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/core",
         "//max/python/max/serve",
         "//max/python/max/serve/schemas",
+        "//max/tests/integration/pipelines/python:hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),

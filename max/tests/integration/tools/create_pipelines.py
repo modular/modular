@@ -351,6 +351,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             cache_strategy=KVCacheStrategy.PAGED,
             model_path=self.model_path,
             huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
             max_length=max_length,
             max_num_steps=1,
             trust_remote_code=True,
@@ -632,10 +633,12 @@ class PixtralPipelineOracle(PipelineOracle):
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
+            huggingface_model_revision=revision,
             max_length=8192,
             max_num_steps=1,
         )
@@ -706,6 +709,7 @@ class GenericOracle(PipelineOracle):
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
@@ -713,6 +717,8 @@ class GenericOracle(PipelineOracle):
             if encoding
             else None,
             model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
             **self.config_params,
