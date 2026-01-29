@@ -185,14 +185,14 @@ struct _RandomState(Copyable):
                 return min + Int64(value % range)
 
     fn random_float64(mut self, min: Float64, max: Float64) -> Float64:
-        """Generates a random Float64 in the range [min, max].
+        """Generates a random Float64 in the range [min, max).
 
         Args:
             min: Minimum value (inclusive).
-            max: Maximum value (inclusive).
+            max: Maximum value.
 
         Returns:
-            A random Float64 in [min, max].
+            A random Float64 in [min, max).
         """
         var unit = self._generator.next_float64()
         var range = max - min
