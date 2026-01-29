@@ -1,0 +1,9 @@
+# CLIP test data
+
+filegroup(
+    name = "testdata",
+    srcs = glob(["*.json"]),
+    visibility = [
+        "//max/tests/integration/pipelines/python/clip:__pkg__",
+    ],
+)
