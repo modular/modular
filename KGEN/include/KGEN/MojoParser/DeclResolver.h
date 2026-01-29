@@ -22,6 +22,7 @@
 namespace M::KGEN {
 class ParamDeclAttr;
 class ConformanceOp;
+class StructGeneratorOp;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -73,6 +74,12 @@ public:
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
   ASTDecl &addFullyResolvedDecl(DeclIRValue declVal, StringRef baseName,
                                 llvm::SMLoc loc, ASTDecl *parentDecl);
+
+  /// Register a StructGeneratorOp in declForTypeSymbol so it can be looked up
+  /// when resolving conformance for closure types.
+  void registerStructGeneratorDecl(StructGeneratorOp structGen,
+                                   SymbolRefAttr symbol, llvm::SMLoc loc,
+                                   ASTDecl &parentDecl);
 
   /// Add a declaration that represents an erroneous declaration. The generated
   /// decl is treated as fully resolved, and in an error state.

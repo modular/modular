@@ -41,6 +41,14 @@ protected:
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                          StringAttr traitName) override;
 
+  /// Resolve an abstract struct handle from a type value.
+  FailureOr<ResolvedAbstractStructHandle>
+  resolveAbstractStructHandle(TypedAttr typeValue) override;
+
+  /// Resolve conformance for an abstract struct.
+  Operation *resolveConformanceForAbstractStruct(
+      const ResolvedAbstractStructHandle &handle,
+      StringAttr traitName) override;
   /// Provide a ParameterEvaluator configured for the struct parameters.
   void withEvaluator(
       ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,

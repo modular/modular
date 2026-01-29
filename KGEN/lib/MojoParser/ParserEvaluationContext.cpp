@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ParserEvaluationContext.h"
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -110,4 +111,41 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   // the parser won't be able to evaluate everything. The user is expected to
   // use rebind in these cases.
   return failure();
+}
+
+FailureOr<ResolvedAbstractStructHandle>
+ParserEvaluationContext::resolveAbstractStructHandle(TypedAttr typeValue) {
+  // For non struct types, the handle is retrieved through the struct generator
+  // op. Extract the TypeGeneratorRefAttr from the type value and look up the
+  // struct generator via declForTypeSymbol.
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(typeValue);
+  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(typeRef);
+  if (!genRef)
+    return failure();
+
+  // Look up the ASTDecl for the struct generator using its symbol.
+  ASTDecl *structGenDecl =
+      shared.declResolver->getDeclForTypeSymbolIfExists(genRef.getSymbol());
+  if (!structGenDecl)
+    return failure();
+
+  auto structGen =
+      dyn_cast_or_null<StructGeneratorOp>(structGenDecl->getIfOperation());
+  if (!structGen)
+    return failure();
+
+  return ResolvedAbstractStructHandle{genRef.getParamValues(),
+                                      structGen.getInputParams(),
+                                      structGen.getSymNameAttr(), structGen};
+}
+
+Operation *ParserEvaluationContext::resolveConformanceForAbstractStruct(
+    const ResolvedAbstractStructHandle &handle, StringAttr traitName) {
+  auto structGen = cast<StructGeneratorOp>(handle.generatorOp);
+  // Find the ConformanceOp within the struct generator.
+  for (auto conformance : structGen.getBody().getOps<ConformanceOp>()) {
+    if (conformance.getSymName() == traitName)
+      return conformance;
+  }
+  return nullptr;
 }

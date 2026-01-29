@@ -1915,6 +1915,13 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
       parameters, closureType, traitType);
   Block *structGenBody = builder.createBlock(&structGen.getRegion());
 
+  // Register the struct generator in declForTypeSymbol so it can be looked up
+  // when resolving conformance for closure types.
+  SymbolRefAttr structGenSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(structGen.getOperation()));
+  shared.declResolver->registerStructGeneratorDecl(structGen, structGenSymbol,
+                                                   smLoc, moduleDecl);
+
   // Emit the conformance ops into the struct gen body by finding the closure
   // method and FnOp associated with the parent trait.
   auto addWitnessTable = [&](ClosureParent &closureParent) {
@@ -2457,6 +2464,13 @@ static void addConformanceTable(
   b.setInsertionPointToStart(&block);
   for (auto [name, newWitness] : witnesses)
     WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
+
+  // Register the conformance with the ASTDecl so lookupInCurrentScope can find
+  // it during constraint checking.
+  ASTDecl &conformDecl = structDecl.getShared().getDeclResolver().addDecl(
+      witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
+  conformDecl.resolvedness = DeclResolvedness::signature;
+
   // Update the types of the struct wrapper.
   SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
   TraitType oldTraitType = structDeclOp.getCanonicalTrait();
@@ -2709,9 +2723,16 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
         SymbolConstantAttr witnessAttr =
             buildSymbol(structCallFn, structParams[0], structParams[1]);
 
-        // Build witnesses list: __call__ method + alias substitutions
+        // Build witnesses list: __call__ method + alias substitutions.
+        // For __call__, create a rebind to match the trait's expected
+        // signature. This is needed when the struct's method returns a
+        // different alias than what the trait expects (e.g., struct returns
+        // Self.T but trait expects Self.X where X = T).
+        TypedAttr callWitness =
+            ParamOperatorAttr::getRebind(witnessAttr, traitSignature);
+
         SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
-        witnesses.emplace_back(callFunction.getSymNameAttr(), witnessAttr);
+        witnesses.emplace_back(callFunction.getSymNameAttr(), callWitness);
         for (auto &[aliasName, aliasValue] : aliasSubstitutions)
           witnesses.emplace_back(aliasName.getValue(), aliasValue);
 
