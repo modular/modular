@@ -1643,6 +1643,42 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   // Compute the signature of the function.
+  // Collect closure external references for parameters that are closure traits.
+  // These will need where clauses like: where _type_is_eq_parse_time[T, C.T]()
+  // Must be done BEFORE getFnTypeGeneratorType() so constraints are in
+  // signature.
+  SmallVector<ClosureExternalRef> closureExternalRefs;
+  for (ParamDeclAttr param : paramList.paramDeclAttrs)
+    shared.getClosureEmitter().collectClosureExternalRefs(param,
+                                                          closureExternalRefs);
+
+  // Emit type equality constraints for closure external references.
+  // Add to tcSignature.fnConstraints so they become part of the function type.
+  for (const ClosureExternalRef &ref : closureExternalRefs) {
+    AliasDeclOp aliasOp = ref.aliasOp;
+    ParamDeclAttr closureParam = ref.closureParam;
+
+    // Get the trait name for the GetWitnessAttr.
+    auto closureTrait = aliasOp->getParentOfType<TraitDeclOp>();
+    StringAttr traitName = builder.getStringAttr(
+        getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
+
+    // LHS: C.T - GetWitnessAttr accessing the alias on the closure param
+    TypedAttr witnessAttr =
+        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
+                            aliasOp.getName(), aliasOp.getType());
+
+    // RHS: T - reference to the function parameter with the same name
+    TypedAttr funcParamRef =
+        ParamDeclRefAttr::get(aliasOp.getName(), aliasOp.getType());
+
+    // Create eq constraint: eq(C.T, T)
+    TypedAttr eqConstraint =
+        ParamOperatorAttr::get(POC::EQ, witnessAttr, funcParamRef);
+    Location loc = shared.diags.translateLocation(decl.getLoc());
+    tcSignature.fnConstraints.push_back(ConstraintAttr::get(eqConstraint, loc));
+  }
+
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();

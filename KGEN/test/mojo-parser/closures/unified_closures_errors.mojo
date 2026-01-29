@@ -124,3 +124,32 @@ fn traitConstraintMismatch[Q: Animal]():
 
     # expected-error-re @below {{cannot bind type '{{.*}}' to trait 'fn(x: W) -> None'}}
     takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)
+
+# ===----------------------------------------------------------------------=== #
+# Enforce Parameter Capture
+# ===----------------------------------------------------------------------=== #
+
+trait Coord(ImplicitlyCopyable):
+  pass
+
+struct Cartesian(Coord):
+   var x: Int
+   var y: Int
+   var z: Int
+
+struct Sphere(Coord):
+   var theta: Int
+   var phi: Int
+
+
+# expected-note @below {{constraint declared here evaluated to False}}
+# expected-note @below {{function declared here}}
+fn takeClosure[T: Coord, C:fn() unified -> T](impl: C) -> T:
+   _ = impl()
+
+
+fn makeClosure[B:Int](something: Cartesian):
+   fn closureImpl() unified {var} -> Cartesian:
+      return something
+   # expected-error @below {{invalid call to 'takeClosure': violated constraint}}
+   takeClosure[Sphere, type_of(closureImpl)](closureImpl)
