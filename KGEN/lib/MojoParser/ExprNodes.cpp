@@ -175,9 +175,15 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 
     // As a very special hack, we treat a unary plus as a marker that the type
     // should not be printed when the attribute is stringized.
+    // A unary tilde is a marker that the type should be printed first instead
+    // of last.
     bool elideType = false;
+    bool invertType = false;
     if (expr->kind == ExprNode::kPos) {
       elideType = true;
+      expr = cast<UnaryOpNode>(expr)->subExpr;
+    } else if (expr->kind == ExprNode::kInvert) {
+      invertType = true;
       expr = cast<UnaryOpNode>(expr)->subExpr;
     }
 
@@ -194,7 +200,10 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
            "indexVal type and value type must match");
 
     // If this is a wrapper for a type, print it as such.
-    if (sugarIsa<TraitType>(indexVal.getType())) {
+    if (invertType) {
+      os << ":" << ASTType(indexVal.getType()).mlirType << " ";
+      indexVal.get().print(os, /*elideType=*/true);
+    } else if (sugarIsa<TraitType>(indexVal.getType())) {
       // values of trait type are printed in a kgen compatible way, e.g.
       // "":!lit.trait<@std::@builtin::@stubs::@AnyType> someParamValue"
       if (!elideType)
