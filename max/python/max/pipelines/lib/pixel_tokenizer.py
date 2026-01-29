@@ -184,7 +184,6 @@ class PixelGenerationTokenizer(
         self._use_guidance_embeds = transformer_config.get(
             "guidance_embeds", False
         )
-        self._guidance: npt.NDArray[np.float32] | None = None
 
         # Create scheduler
         scheduler_component = components.get("scheduler", {})
@@ -543,10 +542,9 @@ class PixelGenerationTokenizer(
             request.seed,
         )
 
+        guidance: npt.NDArray[np.float32] | None = None
         if self._use_guidance_embeds:
-            self._guidance = np.array(
-                [request.guidance_scale], dtype=np.float32
-            )
+            guidance = np.array([request.guidance_scale], dtype=np.float32)
 
         # 5. Build the context
         context = PixelContext(
@@ -564,7 +562,7 @@ class PixelGenerationTokenizer(
             width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=request.guidance_scale,
-            guidance=self._guidance,
+            guidance=guidance,
             num_images_per_prompt=request.num_images_per_prompt,
             true_cfg_scale=request.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
