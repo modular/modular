@@ -53,4 +53,4 @@ class finfo:
             self.dtype = str(np_finfo_obj.dtype)
 
 
-DType.finfo = finfo
+DType.finfo = finfo  # type: ignore[attr-defined]

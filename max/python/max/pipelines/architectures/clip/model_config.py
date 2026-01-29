@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.driver import Device
-from max.dtype import DType
+from max.dtype.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
 from pydantic import Field
@@ -45,7 +45,7 @@ class ClipConfig(ClipConfigBase):
 
     @staticmethod
     def generate(
-        config_dict: dict,
+        config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> ClipConfigBase:

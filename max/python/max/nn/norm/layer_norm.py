@@ -55,6 +55,9 @@ def layer_norm(
 class LayerNorm(Module[[Tensor], Tensor]):
     """Layer normalization over the last dimension."""
 
+    weight: Tensor | None
+    bias: Tensor | None
+
     def __init__(
         self,
         dim: int,

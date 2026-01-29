@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from collections.abc import Callable
+from typing import Any
+
 from max import functional as F
 from max.driver import Device
-from max.engine import Model
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -27,7 +29,7 @@ class ClipModel(ComponentModel):
 
     def __init__(
         self,
-        config: dict,
+        config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
@@ -45,7 +47,7 @@ class ClipModel(ComponentModel):
         )
         self.load_model()
 
-    def load_model(self) -> Model:
+    def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
         with F.lazy():
             clip = CLIPTextModel(self.config)

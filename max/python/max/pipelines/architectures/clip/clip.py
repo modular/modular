@@ -16,7 +16,7 @@ from functools import partial
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.graph import TensorType
+from max.graph import ShapeLike, TensorType
 from max.nn import Embedding, Linear, Module
 from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList
@@ -25,7 +25,7 @@ from max.tensor import Tensor
 from .model_config import ClipConfigBase
 
 
-class CLIPTextEmbeddings(Module):
+class CLIPTextEmbeddings(Module[..., Tensor]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -63,28 +63,29 @@ class CLIPTextEmbeddings(Module):
         Returns:
             Combined embeddings.
         """
-        if input_ids is None and inputs_embeds is None:
+
+        if input_ids is not None:
+            seq_length = input_ids.shape[-1]
+        elif inputs_embeds is not None:
+            seq_length = inputs_embeds.shape[-2]
+        else:
             raise ValueError(
                 "You have to specify either input_ids or inputs_embeds"
             )
 
-        if input_ids is not None:
-            seq_length = input_ids.shape[-1]
-        else:
-            seq_length = inputs_embeds.shape[-2]
-
         if position_ids is None:
-            device = (
-                input_ids.device
-                if input_ids is not None
-                else inputs_embeds.device
-            )
+            if input_ids is not None:
+                device = input_ids.device
+            else:
+                assert inputs_embeds is not None
+                device = inputs_embeds.device
             position_ids = F.arange(
                 0, seq_length, step=1, dtype=DType.int32, device=device
             )
             position_ids = F.unsqueeze(position_ids, 0)
 
         if inputs_embeds is None:
+            assert input_ids is not None
             inputs_embeds = self.token_embedding(input_ids)
 
         position_embeddings = self.position_embedding(position_ids)
@@ -93,7 +94,7 @@ class CLIPTextEmbeddings(Module):
         return embeddings
 
 
-class CLIPAttention(Module):
+class CLIPAttention(Module[..., Tensor]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -198,7 +199,7 @@ class CLIPAttention(Module):
         return attn_output
 
 
-class CLIPMLP(Module):
+class CLIPMLP(Module[[Tensor], Tensor]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -237,7 +238,7 @@ class CLIPMLP(Module):
         return hidden_states
 
 
-class CLIPEncoderLayer(Module):
+class CLIPEncoderLayer(Module[..., Tensor]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -282,9 +283,9 @@ class CLIPEncoderLayer(Module):
 
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            causal_attention_mask=causal_attention_mask,
+            hidden_states,
+            attention_mask,
+            causal_attention_mask,
         )
         hidden_states = residual + hidden_states
 
@@ -296,7 +297,7 @@ class CLIPEncoderLayer(Module):
         return hidden_states
 
 
-class CLIPEncoder(Module):
+class CLIPEncoder(Module[..., Tensor]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -331,13 +332,13 @@ class CLIPEncoder(Module):
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(
                 hidden_states,
-                attention_mask=attention_mask,
-                causal_attention_mask=causal_attention_mask,
+                attention_mask,
+                causal_attention_mask,
             )
         return hidden_states
 
 
-class CLIPTextTransformer(Module):
+class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
         config: ClipConfigBase,
@@ -360,7 +361,7 @@ class CLIPTextTransformer(Module):
         self.eos_token_id = config.eos_token_id
 
     def _create_causal_mask(
-        self, input_shape: tuple[int, int], device: Device
+        self, input_shape: ShapeLike, device: Device
     ) -> Tensor:
         """Create causal mask for the transformer.
 
@@ -379,7 +380,7 @@ class CLIPTextTransformer(Module):
         mask = F.greater(cols, rows)
         mask_float = F.cast(mask, self.config.dtype)
 
-        min_val = DType.finfo(self.config.dtype).min
+        min_val = DType.finfo(self.config.dtype).min  # type: ignore[attr-defined]
         min_val_tensor = F.constant(
             min_val, dtype=self.config.dtype, device=device
         )
@@ -394,7 +395,7 @@ class CLIPTextTransformer(Module):
         input_ids: Tensor | None = None,
         attention_mask: Tensor | None = None,
         position_ids: Tensor | None = None,
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor]:
         """Apply text transformer.
 
         Args:
@@ -419,7 +420,7 @@ class CLIPTextTransformer(Module):
 
         if attention_mask is not None:
             mask_multiplier = F.constant(
-                DType.finfo(hidden_states.dtype).min,
+                DType.finfo(hidden_states.dtype).min,  # type: ignore[attr-defined]
                 dtype=hidden_states.dtype,
                 device=hidden_states.device,
             )
@@ -462,7 +463,7 @@ class CLIPTextTransformer(Module):
         return last_hidden_state, pooled_output
 
 
-class CLIPTextModel(Module):
+class CLIPTextModel(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
         config: ClipConfigBase,

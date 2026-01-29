@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
-from max.engine import Model
 from max.graph.weights import Weights
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ class ComponentModel(ABC):
 
     def __init__(
         self,
-        config: dict,
+        config: Any,
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
@@ -40,6 +40,6 @@ class ComponentModel(ABC):
         self.weights = weights
 
     @abstractmethod
-    def load_model(self) -> Model:
+    def load_model(self) -> Callable[..., Any]:
         """Load and return a runtime model instance."""
         ...
