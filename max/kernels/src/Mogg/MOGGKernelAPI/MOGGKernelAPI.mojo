@@ -310,6 +310,7 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from tensor.transitional import managed_tensor_slice_to_ndbuffer
+from time import sleep
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -10151,3 +10152,38 @@ struct KVCacheCopyPagesD2H:
             Int(layer_idx),
             gpu_ctx,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sleep kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.sleep")
+struct Sleep:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+    ](
+        # In order to prevent this kernel from being DCE'd, we pass in a mutable
+        # input buffer. A fix is tracked in GEX-3080.
+        duration_sec_buffer: MutableInputTensor[dtype = DType.float64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var duration_sec = duration_sec_buffer[0]
+        if duration_sec < 0:
+            raise Error(
+                "Sleep duration must be non-negative. Found: ", duration_sec
+            )
+
+        if is_gpu[target]():
+
+            fn sleep_kernel(duration_sec: Float64):
+                sleep(duration_sec)
+
+            var device_ctx = ctx.get_device_context()
+            device_ctx.enqueue_function_experimental[sleep_kernel](
+                duration_sec, grid_dim=(1,), block_dim=(1,)
+            )
+        else:
+            sleep(duration_sec)
