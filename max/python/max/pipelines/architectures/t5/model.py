@@ -13,12 +13,12 @@
 
 from typing import Any
 
+from max import functional as F
 from max.driver import Device
 from max.engine import Model
-from max import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel  # type: ignore[import-not-found]
+from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import T5Config, T5ConfigBase
 from .t5 import T5EncoderModel
