@@ -586,11 +586,12 @@ class TextGenerationPipeline(
             # Allocate a pinned tensor on the host for faster async d2h transfer
             # speeds. If the model is on host, then fall back to normal pageable
             # memory.
+            # Note that we do not want to `disable_auto_sync()` here.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
                 device=device0,
-                pinned=not device0.is_host,
+                pinned=pinned,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
             # We assume that the call to `.to_numpy()` will insert a device

@@ -312,6 +312,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            input_row_offsets.disable_auto_sync()
         input_row_offsets_np = input_row_offsets.to_numpy()
         np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
@@ -333,6 +335,8 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            tokens.disable_auto_sync()
         np.concatenate(
             [ctx.tokens.active for ctx in context_batch], out=tokens.to_numpy()
         )
