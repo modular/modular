@@ -784,6 +784,60 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             if cond(vec):
                 (ptr + processed + i).init_pointee_move(func(vec))
 
+    fn map_reduce[
+        dtype: DType,
+        map_dtype_out: DType,
+        accum_dtype: DType,
+        //,
+        *,
+        maps_to_scalar: Bool,
+        map_fn: fn[w: Int] (idx: Int) capturing -> SIMD[
+            map_dtype_out, w if not maps_to_scalar else 1
+        ],
+        reduce_fn: fn[w: Int] (
+            lhs: SIMD[accum_dtype, w], rhs: SIMD[accum_dtype, w]
+        ) capturing -> SIMD[accum_dtype, w],
+        accum_fill: Scalar[accum_dtype] = 0,
+    ](self: Span[Scalar[dtype], ...]) -> Scalar[accum_dtype]:
+        """Run a given map reduce operation on the `Span`.
+
+        Parameters:
+            dtype: The dtype of the `Span`.
+            map_dtype_out: The resulting dtype from the map function.
+            accum_dtype: The accumulation dtype for the reduction function.
+            maps_to_scalar: Whether the map function returns a scalar.
+            map_fn: The map function.
+            reduce_fn: The reduction function.
+            accum_fill: The value with which to fill the accumulator at the
+                beginning.
+
+        Returns:
+            The result of the map reduce operation.
+        """
+
+        comptime dtype_width = simd_width_of[dtype]()
+        comptime vec_size = dtype_width if not maps_to_scalar else 1
+        var length = len(self)
+        var res_v = SIMD[accum_dtype, vec_size](accum_fill)
+        var res_s = Scalar[accum_dtype](accum_fill)
+
+        fn run_fns[width: Int](idx: Int) unified {mut res_s, mut res_v}:
+            var vec = map_fn[width](idx).cast[accum_dtype]()
+
+            @parameter
+            if vec.size == 1:
+                res_s = reduce_fn(res_s, rebind[type_of(res_s)](vec))
+            else:
+                res_v = reduce_fn(res_v, rebind[type_of(res_v)](vec))
+
+        vectorize[dtype_width](length, run_fns)
+
+        @parameter
+        if vec_size == 1:
+            return res_s
+        else:
+            return reduce_fn(res_v.reduce[reduce_fn, 1](), res_s)
+
     fn count[
         dtype: DType,
         //,
@@ -799,17 +853,21 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr()
-        var length = len(self)
-        var count = 0
+        comptime D[w: Int] = SIMD[DType.uint, w]
 
-        fn do_count[width: Int](idx: Int) unified {mut count, read ptr}:
-            var mask = func(ptr.load[width=width](idx))
-            count += mask.reduce_bit_count()
+        @parameter
+        fn reduce_fn[w: Int](lhs: D[w], rhs: D[w]) -> D[w]:
+            return lhs + rhs
 
-        vectorize[simdwidth](length, do_count)
-        return UInt(count)
+        @parameter
+        fn map_fn[w: Int](idx: Int) -> D[1]:
+            return func(self.unsafe_ptr().load[width=w](idx)).reduce_bit_count()
+
+        return UInt(
+            self.map_reduce[
+                maps_to_scalar=True, map_fn=map_fn, reduce_fn=reduce_fn
+            ]()
+        )
 
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
