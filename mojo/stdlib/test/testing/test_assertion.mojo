@@ -20,6 +20,7 @@ from testing import (
     assert_not_equal,
     assert_raises,
     assert_true,
+    TestSuite,
 )
 
 from utils.numerics import inf, nan
@@ -255,15 +256,22 @@ def test_assert_equal_stringslice():
         assert_equal(l2, l3)
 
 
+@fieldwise_init
+struct SomeWritable(Equatable, Writable):
+    var value: Int
+
+
+def test_assert_equal_with_writable():
+    assert_equal(SomeWritable(1), SomeWritable(1))
+    with assert_raises():
+        assert_equal(SomeWritable(1), SomeWritable(2))
+
+
+def test_assert_not_equal_with_writable():
+    assert_not_equal(SomeWritable(1), SomeWritable(2))
+    with assert_raises():
+        assert_not_equal(SomeWritable(1), SomeWritable(1))
+
+
 def main():
-    test_assert_equal_is_generic()
-    test_assert_not_equal_is_generic()
-    test_assert_equal_with_simd()
-    test_assert_equal_with_list()
-    test_assert_not_equal_with_list()
-    test_assert_messages()
-    test_assert_almost_equal()
-    test_assert_is()
-    test_assert_is_not()
-    test_assert_custom_location()
-    test_assert_equal_stringslice()
+    TestSuite.discover_tests[__functions_in_module()]().run()

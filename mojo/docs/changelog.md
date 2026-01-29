@@ -62,6 +62,9 @@ what we publish.
 - The following types now correctly implement `write_repr_to`
   - `List`, `Set`
 
+- `assert_equal` and `assert_not_equal` now work with types implementing
+  `Writable`.
+
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 
