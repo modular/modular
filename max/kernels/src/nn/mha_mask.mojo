@@ -345,10 +345,6 @@ struct CausalMask(MHAMask, TrivialRegisterType):
     fn name() -> String:
         return "CausalMask"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn mask[
         dtype: DType,
@@ -514,10 +510,6 @@ struct NullMask(MHAMask, TrivialRegisterType):
     fn name() -> String:
         return "NullMask"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn mask[
         dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -630,10 +622,6 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterType):
     @staticmethod
     fn name() -> String:
         return "ChunkedMask[" + String(Self.local_window_size) + "]"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -815,10 +803,6 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask, TrivialRegisterType):
     @staticmethod
     fn name() -> String:
         return "SlidingWindowCausalMask[" + String(Self.window_size) + "]"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -1127,10 +1111,6 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     fn name() -> String:
         return "MaterializedMask"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     fn __init__(
         out self,
         mask_tensor: Self.MaskType,
@@ -1298,10 +1278,6 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     fn name() -> String:
         return "AndMask[" + Self.T.name() + ", " + Self.S.name() + "]"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn mask[
         dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
@@ -1406,10 +1382,6 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     @staticmethod
     fn name() -> String:
         return "OrMask[" + Self.T.name() + ", " + Self.S.name() + "]"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[

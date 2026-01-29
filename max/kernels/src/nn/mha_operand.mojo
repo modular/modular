@@ -120,10 +120,6 @@ struct KVCacheMHAOperand[
     fn get_type_name() -> String:
         return "KVCacheMHAOperand"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     fn __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
@@ -228,10 +224,6 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
     @staticmethod
     fn get_type_name() -> String:
         return "LayoutTensorMHAOperand"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,
@@ -352,10 +344,6 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     @staticmethod
     fn get_type_name() -> String:
         return "RaggedMHAOperand"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,

@@ -379,16 +379,6 @@ struct LayoutTensor[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
     comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 

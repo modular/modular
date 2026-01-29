@@ -146,10 +146,6 @@ struct TMALoad[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     @implicit
     fn __init__(

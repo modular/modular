@@ -354,10 +354,6 @@ struct ContinuousBatchingKVCache[
     fn get_type_name() -> String:
         return "ContinuousBatchingKVCache"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
@@ -744,10 +740,6 @@ struct PagedKVCache[
     @staticmethod
     fn get_type_name() -> String:
         return "PagedKVCache"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,

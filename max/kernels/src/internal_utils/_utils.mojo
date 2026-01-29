@@ -91,10 +91,6 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
     fn get_type_name() -> String:
         return "InitializationType"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     fn __init__(out self, value: Int):
         self._value = value
 

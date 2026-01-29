@@ -742,22 +742,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         """
         return String("IndexList[", Self.size, ",", Self.element_type, "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name. For example, because DeviceBuffer's
-        device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
-        get_device_type_name() should return something like
-        "UnsafePointer[Float32]". This is used for error messages
-        when passing types to the device.
-        TODO: This method will be retired soon when better kernel call error
-        messages arrive.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
 
 # ===-----------------------------------------------------------------------===#
 # Factory functions for creating index.

@@ -712,17 +712,6 @@ struct TMATensorTile[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     @always_inline
     @implicit
     fn __init__(out self, descriptor: TMADescriptor):
@@ -3038,17 +3027,6 @@ struct TMATensorTileArray[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(
         out self,
@@ -3203,17 +3181,6 @@ struct RaggedTMA3DTile[
             other: The other `RaggedTMA3DTile` instance to copy from.
         """
         self.descriptor = other.descriptor
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing arguments
-        to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
 
     @always_inline("nodebug")
     fn async_copy_to[
@@ -3432,16 +3399,6 @@ struct RaggedTensorMap[
             ", max_descriptor_length = ",
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Returns the device type name for this descriptor array.
-
-        Returns:
-            A string containing the type name with all template parameters.
-        """
-        return Self.get_type_name()
 
     @staticmethod
     @always_inline

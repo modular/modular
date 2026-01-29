@@ -77,15 +77,6 @@ struct StaticTuple[element_type: __TypeOfAllTypes, size: Int](
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Get the human-readable device type name for this `StaticTuple`.
-
-        Returns:
-            A string representation of the device type (same as type name for StaticTuple).
-        """
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self):
         """Constructs an empty (undefined) tuple."""

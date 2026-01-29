@@ -167,10 +167,6 @@ struct ToLegacyUnsafePointer(Copyable, DevicePassable):
     fn get_type_name() -> String:
         return ""
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return ""
-
 
 @fieldwise_init
 struct ToUnsafePointer(Copyable, DevicePassable):
@@ -181,10 +177,6 @@ struct ToUnsafePointer(Copyable, DevicePassable):
 
     @staticmethod
     fn get_type_name() -> String:
-        return ""
-
-    @staticmethod
-    fn get_device_type_name() -> String:
         return ""
 
 

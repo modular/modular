@@ -805,19 +805,6 @@ struct DeviceBuffer[dtype: DType](
         """
         return String("DeviceBuffer[", Self.dtype, "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This dtype's name.
-        """
-        return String("UnsafePointer[Scalar[", Self.dtype, "]]")
-
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and

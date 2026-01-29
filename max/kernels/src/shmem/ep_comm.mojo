@@ -265,10 +265,6 @@ struct BF16TokenFormat[
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self, output_tokens: Self.TensorType):
         self.output_tokens = output_tokens
@@ -377,10 +373,6 @@ struct BlockwiseFP8TokenFormat[
             String(Self.alignment),
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(
@@ -559,10 +551,6 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):
     @staticmethod
     fn get_type_name() -> String:
         return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     @staticmethod

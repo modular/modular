@@ -176,17 +176,6 @@ struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#

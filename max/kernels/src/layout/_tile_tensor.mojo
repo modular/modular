@@ -86,10 +86,6 @@ struct TileTensor[
     fn get_type_name() -> String:
         return "TileTensor"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     comptime GenericType = TileTensor[
         shape_types = Self.shape_types,
         stride_types = Self.stride_types,

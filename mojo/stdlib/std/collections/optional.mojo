@@ -712,15 +712,6 @@ struct OptionalReg[T: __TypeOfAllTypes](
         """
         return String("OptionalReg[", get_type_name[Self.T](), "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Get the human-readable device type name for this `OptionalReg` type.
-
-        Returns:
-            A string representation of the device type (same as type name for `OptionalReg`).
-        """
-        return Self.get_type_name()
-
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
