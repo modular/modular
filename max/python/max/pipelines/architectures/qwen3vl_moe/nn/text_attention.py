@@ -335,14 +335,9 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
                     num_devices, self.n_heads, self.kv_params.head_dim
                 )
             )
-            # For FP8 models with block-wise scales, the scale tensor shape
-            # doesn't match the weight shape (it has fewer columns based on
-            # block size). head_aware_columnwise sharding would try to slice
-            # based on the weight dimensions, so we explicitly replicate scales.
-            if self.float8_config and self.o_proj.weight_scale is not None:
-                self.o_proj.weight_scale.sharding_strategy = (
-                    ShardingStrategy.replicate(num_devices)
-                )
+            # Note: For FP8 block-wise scales with columnwise weight sharding,
+            # Linear.sharding_strategy setter automatically uses columnwise
+            # sharding for the scale's K dimension to match the sharded input.
             self.q_norm.sharding_strategy = ShardingStrategy.replicate(
                 num_devices
             )

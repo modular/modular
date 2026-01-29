@@ -266,15 +266,71 @@ class Linear(Module, Shardable):
                     # Rowwise scale + rowwise weight: shard along same dimension
                     self.weight_scale.sharding_strategy = strategy
             elif self.float8_config.weight_scale.is_block:
-                # Block scaling: always follow weight sharding since blocks correspond
-                # to regions in the weight matrix
-                if int(self.weight_scale.shape[0]) % strategy.num_devices != 0:
-                    raise ValueError(
-                        f"Weight scale dim ({self.weight_scale.shape[0]}) is "
-                        f"not divisible by the number of devices ({strategy.num_devices}) for block-wise scaling."
-                    )
+                # Block scaling: blocks correspond to regions in the weight matrix.
+                # For rowwise weight sharding, shard scale's first dim (N blocks).
+                # For columnwise weight sharding, shard scale's second dim (K blocks).
+                if strategy.is_rowwise:
+                    if (
+                        int(self.weight_scale.shape[0]) % strategy.num_devices
+                        != 0
+                    ):
+                        raise ValueError(
+                            f"Weight scale dim 0 ({self.weight_scale.shape[0]}) is "
+                            f"not divisible by the number of devices ({strategy.num_devices}) for block-wise scaling."
+                        )
+                    self.weight_scale.sharding_strategy = strategy
+                elif strategy.is_colwise or strategy.is_head_aware_colwise:
+                    # For columnwise weight sharding, we need to shard the scale's
+                    # second dimension (K blocks) to match the sharded input.
+                    if (
+                        int(self.weight_scale.shape[1]) % strategy.num_devices
+                        != 0
+                    ):
+                        raise ValueError(
+                            f"Weight scale dim 1 ({self.weight_scale.shape[1]}) is "
+                            f"not divisible by the number of devices ({strategy.num_devices}) for block-wise scaling with columnwise weight sharding."
+                        )
 
-                self.weight_scale.sharding_strategy = strategy
+                    if strategy.is_head_aware_colwise:
+                        # Extract num_heads and head_dim from the partial function
+                        # and compute corresponding values for the scale tensor.
+                        assert isinstance(strategy.shard, partial)
+                        num_heads = strategy.shard.keywords["num_heads"]
+                        head_dim = strategy.shard.keywords["head_dim"]
+                        # block_size is guaranteed non-None when is_block is True
+                        assert (
+                            self.float8_config.weight_scale.block_size
+                            is not None
+                        )
+                        block_size_k = (
+                            self.float8_config.weight_scale.block_size[1]
+                        )
+
+                        # Check if head boundaries align with block boundaries
+                        if head_dim % block_size_k == 0:
+                            # Each head maps to (head_dim / block_size_k) blocks
+                            scale_head_dim = head_dim // block_size_k
+                            self.weight_scale.sharding_strategy = (
+                                ShardingStrategy.head_aware_columnwise(
+                                    strategy.num_devices,
+                                    num_heads,
+                                    scale_head_dim,
+                                )
+                            )
+                        else:
+                            # Head boundaries don't align with blocks, fall back
+                            # to even columnwise sharding.
+                            self.weight_scale.sharding_strategy = (
+                                ShardingStrategy.columnwise(
+                                    strategy.num_devices
+                                )
+                            )
+                    else:
+                        self.weight_scale.sharding_strategy = (
+                            ShardingStrategy.columnwise(strategy.num_devices)
+                        )
+                else:
+                    self.weight_scale.sharding_strategy = strategy
             else:
                 # Colwise scaling (if supported in future)
                 self.weight_scale.sharding_strategy = strategy
