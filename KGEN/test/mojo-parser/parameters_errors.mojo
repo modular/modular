@@ -196,7 +196,7 @@ fn testAliases(variable: Int):
     # expected-error @below {{only traits may contain a comptime member without an initializer}}
     comptime MissingInit: Int
 
-    # expected-error @+1 {{cannot use a dynamic value in alias initializer}}
+    # expected-error @+1 {{cannot use a dynamic value in comptime initializer}}
     comptime NotConstant = variable + 2
 
     # expected-error @+1 {{expected '=' after comptime declaration}}
@@ -216,7 +216,7 @@ fn crash1_callee(
 
 
 fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
-    # expected-error @below {{cannot use a dynamic value in alias initializer}}
+    # expected-error @below {{cannot use a dynamic value in comptime initializer}}
     comptime y = crash1_callee(a, p)
 
 

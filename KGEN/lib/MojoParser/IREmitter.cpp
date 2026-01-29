@@ -53,7 +53,7 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_AttributeRefBase:
     return " in attribute base value";
   case EC_AliasValue:
-    return " in alias initializer";
+    return " in comptime initializer";
   case EC_CallArgValue:
     return " in call argument";
   case EC_CallArgDefaultValue:

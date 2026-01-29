@@ -17,8 +17,8 @@ fn mut_ship_function(mut x: MemType):
 
 # We can convert from fn(read MemType)->None to fn(mut MemType)->None but not
 # vice versa (see TTSMFS).
-# expected-error @below {{cannot implicitly convert 'fn(mut x: MemType) -> None' value to 'fn(MemType) -> None' in alias initializer}}
-comptime read_ship_fn_alias: fn (read MemType) -> None = mut_ship_function
+# expected-error @below {{cannot implicitly convert 'fn(mut x: MemType) -> None' value to 'fn(MemType) -> None' in comptime initializer}}
+comptime read_ship_fn_alias: fn(read MemType) -> None = mut_ship_function
 
 
 # // -----
@@ -31,7 +31,7 @@ comptime read_ship_fn_alias: fn (read MemType) -> None = mut_ship_function
 fn infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, AnyType, `>`],
     //,
-    func: fn (x: Int, y: Int, * args: * ArgTypes) -> None,
+    func: fn(x: Int, y: Int, * args: * ArgTypes) -> None,
 ]():
     pass
 
@@ -65,7 +65,7 @@ trait Sprongling:
 fn infer_variadic[
     ArgTypes: __mlir_type[`!kgen.variadic<`, Sprongling, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> None,
+    func: fn(* args: * ArgTypes) -> None,
 ]():
     pass
 
@@ -97,7 +97,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterType]:
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterType, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> Int,
+    func: fn(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -132,7 +132,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterType]:
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterType, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> Int,
+    func: fn(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -167,7 +167,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterType]:
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterType, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> Int,
+    func: fn(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 
@@ -192,7 +192,7 @@ fn device_func(a: Int, b: Bool) raises -> Int:
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterType, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> Int,
+    func: fn(* args: * ArgTypes) -> Int,
 ]():
     pass
 
@@ -290,7 +290,7 @@ fn kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
 fn compile[
     ArgTypes: __mlir_type[`!kgen.variadic<`, TrivialRegisterType, `>`],
     //,
-    func: fn (* args: * ArgTypes) -> Int,
+    func: fn(* args: * ArgTypes) -> Int,
 ]() -> DeviceFunction[*ArgTypes]:
     return DeviceFunction[*ArgTypes]()
 

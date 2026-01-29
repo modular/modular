@@ -24,6 +24,7 @@ trait FooTrait:
     fn foo(self):
         ...
 
+
 # expected-note @below {{'ParamType' declared here}}
 struct ParamType[x: Int](FooTrait):
     fn foo(self):
@@ -141,7 +142,7 @@ fn bindAnyTraitToTrait():
 
 
 fn anytrait_assignment():
-    # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[FooTrait]' in alias initializer}}
+    # expected-error @below {{cannot implicitly convert 'AnyTrait[ImplicitlyCopyable]' value to 'AnyTrait[FooTrait]' in comptime initializer}}
     comptime t: type_of(FooTrait) = ImplicitlyCopyable
 
 
@@ -173,10 +174,12 @@ trait TBar:
     fn bar(self) -> Int:
         pass
 
+
 trait TBarSub(TBar):
     # expected-note @below {{conflicting implementation from trait 'TBarSub' here}}
     fn bar(self) -> Int:
         return 0
+
 
 # expected-error @+1 {{trait method requirement 'bar' has conflicting default implementations in 'TBar' and 'TBarSub' you must implement it manually}}
 struct TBarActual(TBarSub):
