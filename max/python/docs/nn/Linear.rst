@@ -10,4 +10,4 @@
    :undoc-members:
 
 .. note::
-   For the legacy graph-based linear layer, see :doc:`legacy/linear`.
+   For the legacy graph-based linear layer, see [legacy/linear](/max/api/python/nn/legacy/linear).
