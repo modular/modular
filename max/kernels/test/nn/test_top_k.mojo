@@ -56,9 +56,9 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
 fn test_case_sampling[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     K: Int,
     axis: Int,
@@ -157,9 +157,9 @@ fn test_case_sampling[
 fn test_case[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
+    fill_fn: fn[rank: Int, dtype: DType](
         LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, dtype](input_shape)

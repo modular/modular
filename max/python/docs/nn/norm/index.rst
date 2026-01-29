@@ -27,4 +27,4 @@ Classes
    GemmaRMSNorm
 
 .. note::
-   For legacy normalization layers (LayerNorm, GroupNorm), see :doc:`../legacy/norm`.
+   For legacy normalization layers (LayerNorm, GroupNorm), see [legacy/norm](/max/api/python/nn/legacy/norm).

@@ -116,7 +116,7 @@ fn matmul_dispatch_sm100[
             mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
-            raster_order=RasterOrder(RASTERIZE_ORDER),
+            raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,

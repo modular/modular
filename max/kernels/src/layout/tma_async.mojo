@@ -535,9 +535,9 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
             phase: The initial phase value (0 or 1).
             count: The initial count value.
         """
-        self._index = index
-        self._phase = phase
-        self._count = count
+        self._index = UInt32(index)
+        self._phase = UInt32(phase)
+        self._count = UInt32(count)
 
     @always_inline
     fn index(self) -> UInt32:
@@ -572,7 +572,7 @@ struct PipelineState[num_stages: Int](Defaultable, TrivialRegisterType):
         if Self.num_stages > 1:
             self._index += 1
             self._count += 1
-            if self._index == Self.num_stages:
+            if self._index == UInt32(Self.num_stages):
                 self._index = 0
                 self._phase ^= 1
 
@@ -789,12 +789,12 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 __comptime_assert (
-                    copy_offset * size_of[Self.dtype]()
+                    copy_offset * UInt32(size_of[Self.dtype]())
                 ) % 128 == 0, (
                     "copy_offset="
                     + String(copy_offset)
@@ -894,9 +894,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_shared_cluster_global[
                         eviction_policy=eviction_policy
@@ -988,9 +988,9 @@ struct TMATensorTile[
 
                     @parameter
                     for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = layout_of_descs(
-                            IntTuple(n, m, i, j)
-                        ) * copy_size
+                        comptime copy_offset: UInt32 = UInt32(
+                            layout_of_descs(IntTuple(n, m, i, j)) * copy_size
+                        )
 
                         cp_async_bulk_tensor_shared_cluster_global[
                             cta_group=cta_group,
@@ -1101,9 +1101,10 @@ struct TMATensorTile[
 
                         @parameter
                         for j in range(num_copies_dim4):
-                            comptime copy_offset: UInt32 = layout_of_descs(
-                                IntTuple(o, n, m, i, j)
-                            ) * copy_size
+                            comptime copy_offset: UInt32 = UInt32(
+                                layout_of_descs(IntTuple(o, n, m, i, j))
+                                * copy_size
+                            )
 
                             cp_async_bulk_tensor_shared_cluster_global[
                                 cta_group=cta_group,
@@ -1314,9 +1315,9 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
@@ -1411,9 +1412,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_shared_cluster_global_multicast[
                         cta_group=cta_group
@@ -1530,9 +1531,9 @@ struct TMATensorTile[
 
             @parameter
             for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = (
-                    i * num_copies_dim1 + j
-                ) * copy_size
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
 
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
@@ -1610,9 +1611,9 @@ struct TMATensorTile[
 
                 @parameter
                 for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = layout_of_descs(
-                        IntTuple(m, i, j)
-                    ) * copy_size
+                    comptime copy_offset: UInt32 = UInt32(
+                        layout_of_descs(IntTuple(m, i, j)) * copy_size
+                    )
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.ptr + copy_offset,
@@ -1688,9 +1689,9 @@ struct TMATensorTile[
 
                     @parameter
                     for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = layout_of_descs(
-                            IntTuple(n, m, i, j)
-                        ) * copy_size
+                        comptime copy_offset: UInt32 = UInt32(
+                            layout_of_descs(IntTuple(n, m, i, j)) * copy_size
+                        )
 
                         cp_async_bulk_tensor_global_shared_cta(
                             src.ptr + copy_offset,
@@ -1784,9 +1785,10 @@ struct TMATensorTile[
 
                         @parameter
                         for j in range(num_copies_dim4):
-                            comptime copy_offset: UInt32 = layout_of_descs(
-                                IntTuple(o, n, m, i, j)
-                            ) * copy_size
+                            comptime copy_offset: UInt32 = UInt32(
+                                layout_of_descs(IntTuple(o, n, m, i, j))
+                                * copy_size
+                            )
 
                             cp_async_bulk_tensor_global_shared_cta(
                                 src.ptr + copy_offset,
@@ -1862,7 +1864,7 @@ struct TMATensorTile[
         Parameters:
             n: The number of pending groups left.
         """
-        cp_async_bulk_wait_group[n]()
+        cp_async_bulk_wait_group[Int32(n)]()
 
     @always_inline
     fn smem_tensormap_init(

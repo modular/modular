@@ -269,9 +269,9 @@ fn blockwise_fp8_matmul[
         transpose_b=transpose_b,
         config=corrected_config,
         cluster_shape = StaticTuple[Int32, 3](
-            corrected_config.cluster_shape[0],
-            corrected_config.cluster_shape[1],
-            corrected_config.cluster_shape[2],
+            Int32(corrected_config.cluster_shape[0]),
+            Int32(corrected_config.cluster_shape[1]),
+            Int32(corrected_config.cluster_shape[2]),
         ),
     ]
 
@@ -282,12 +282,12 @@ fn blockwise_fp8_matmul[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], config.cluster_shape[0]),
-        ceildiv(grid_dim[1], config.cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], config.cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], config.cluster_shape[1])),
         1,
     )
 
-    var problem_shape = StaticTuple[Int32, 3](M, N, K)
+    var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
     ctx.enqueue_function[Kernel.run, Kernel.run, dump_asm=False](
         a_tma_op,
@@ -302,5 +302,7 @@ fn blockwise_fp8_matmul[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )

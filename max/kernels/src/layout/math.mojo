@@ -77,8 +77,8 @@ fn outer_product_acc(
 @always_inline
 fn _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int] () -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int] (
+    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -419,6 +419,8 @@ fn mean[
         ),
     )
 
+    comptime src_dtype = src.dtype
+
     @parameter
     if dst.dtype.is_integral():
 
@@ -430,12 +432,12 @@ fn mean[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
             var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
-            var to_store = elem // n
+            var to_store = elem // SIMD[src_dtype, simd_width](n)
             dst_1d.ptr.store(idx_1d, to_store)
 
         vectorize[simd_width](dst_1d.size(), normalize_integral)
     else:
-        var n_recip = Scalar[dst.dtype](1) / n
+        var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
 
         @always_inline
         fn normalize_floating[

@@ -349,7 +349,7 @@ struct PythonObject(
         var set_ptr = cpy.PySet_New({})
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
             if errno == -1:
@@ -564,7 +564,7 @@ struct PythonObject(
             If setting the item fails.
         """
         ref cpy = Python().cpython()
-        comptime size = len(VariadicList(Ks))
+        comptime size = Variadic.size(Ks)
         var key_ptr: PyObjectPtr
         if size == 1:
             var single = args[0].copy().to_python_object()
@@ -1522,7 +1522,7 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        comptime size = len(VariadicList(Ts))
+        comptime size = Variadic.size(Ts)
 
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)

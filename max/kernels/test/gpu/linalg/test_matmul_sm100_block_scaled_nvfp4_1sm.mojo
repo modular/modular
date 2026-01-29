@@ -538,3 +538,44 @@ def main():
                     static[7168](),
                     alpha=0.5,
                 )
+
+                # swapAB tests
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](1, 1, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(16),
+                    static[1024](),
+                    static[1024 + 32](),
+                )
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=1,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
+                )

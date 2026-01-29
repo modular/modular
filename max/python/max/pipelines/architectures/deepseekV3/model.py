@@ -246,6 +246,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         assert encoding is not None
         dtype = encoding.dtype.size_in_bytes
         config = model_config.huggingface_config
+        assert config is not None
         n_sparse_layers = (
             config.num_hidden_layers - config.first_k_dense_replace
         )
@@ -604,11 +605,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
 
-            # FIXME: Buffer.zeros(...) does not support pinned flag
-            pinned_input_row_offsets = Buffer(
+            pinned_input_row_offsets = Buffer.zeros(
                 shape=[1], dtype=DType.uint32, device=device0, pinned=pinned
             )
-            pinned_input_row_offsets.to_numpy().fill(0)
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).

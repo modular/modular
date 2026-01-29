@@ -1648,7 +1648,7 @@ struct UnsafePointer[
             Self.type,
             address_space = AddressSpace.GENERIC,
         ],
-        destroy_func: fn (var Self.type),
+        destroy_func: fn(var Self.type),
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 

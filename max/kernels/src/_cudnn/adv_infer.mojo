@@ -193,7 +193,7 @@ fn cudnnGetRNNDescriptor_v6(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNDescriptor_v6",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[Int16],
@@ -261,7 +261,7 @@ fn cudnnDestroyAttnDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAttnDescriptor",
-        fn (UnsafePointer[cudnnAttnStruct]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnAttnStruct]) -> cudnnStatus_t,
     ]()(attn_desc)
 
 
@@ -275,7 +275,7 @@ fn cudnnGetRNNTempSpaceSizes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNTempSpaceSizes",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             cudnnForwardMode_t,
@@ -300,7 +300,7 @@ fn cudnnSetRNNDescriptor_v6(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNDescriptor_v6",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             Int16,
@@ -334,7 +334,7 @@ fn cudnnCreatePersistentRNNPlan(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreatePersistentRNNPlan",
-        fn (
+        fn(
             UnsafePointer[cudnnRNNStruct],
             Int16,
             cudnnDataType_t,
@@ -357,7 +357,7 @@ fn cudnnGetSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetSeqDataDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnSeqDataStruct],
             UnsafePointer[cudnnDataType_t],
             UnsafePointer[Int16],
@@ -392,7 +392,7 @@ fn cudnnRNNGetClip_v8(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRNNGetClip_v8",
-        fn (
+        fn(
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[cudnnRNNClipMode_t],
             UnsafePointer[cudnnNanPropagation_t],
@@ -409,7 +409,7 @@ fn cudnnSetRNNAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNAlgorithmDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[cudnnAlgorithmStruct],
@@ -426,7 +426,7 @@ fn cudnnGetRNNParamsSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNParamsSize",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -441,7 +441,7 @@ fn cudnnSetRNNMatrixMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNMatrixMathType",
-        fn (UnsafePointer[cudnnRNNStruct], cudnnMathType_t) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnRNNStruct], cudnnMathType_t) -> cudnnStatus_t,
     ]()(rnn_desc, m_type)
 
 
@@ -469,7 +469,7 @@ fn cudnnGetAttnDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetAttnDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnAttnStruct],
             UnsafePointer[Int16],
             UnsafePointer[Int16],
@@ -532,7 +532,7 @@ fn cudnnRNNSetClip(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnRNNSetClip",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             cudnnRNNClipMode_t,
@@ -554,7 +554,7 @@ fn cudnnGetMultiHeadAttnWeights(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetMultiHeadAttnWeights",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnAttnStruct],
             cudnnMultiHeadAttnWeightKind_t,
@@ -580,7 +580,7 @@ fn cudnnSetSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetSeqDataDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnSeqDataStruct],
             cudnnDataType_t,
             Int16,
@@ -607,7 +607,7 @@ fn cudnnCreateSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSeqDataDescriptor",
-        fn (UnsafePointer[UnsafePointer[cudnnSeqDataStruct]]) -> cudnnStatus_t,
+        fn(UnsafePointer[UnsafePointer[cudnnSeqDataStruct]]) -> cudnnStatus_t,
     ]()(seq_data_desc)
 
 
@@ -616,7 +616,7 @@ fn cudnnGetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNPaddingMode",
-        fn (
+        fn(
             UnsafePointer[cudnnRNNStruct], UnsafePointer[Int16]
         ) -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
@@ -640,7 +640,7 @@ fn cudnnGetRNNLinLayerBiasParams(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNLinLayerBiasParams",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             Int16,
@@ -671,7 +671,7 @@ fn cudnnGetRNNForwardInferenceAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNForwardInferenceAlgorithmMaxCount",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[Int16],
@@ -693,7 +693,7 @@ fn cudnnGetRNNWeightParams(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNWeightParams",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnRNNStruct],
             Int32,
@@ -738,7 +738,7 @@ fn cudnnGetRNNDescriptor_v8(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNDescriptor_v8",
-        fn (
+        fn(
             UnsafePointer[cudnnRNNStruct],
             UnsafePointer[cudnnRNNAlgo_t],
             UnsafePointer[cudnnRNNMode_t],
@@ -822,7 +822,7 @@ fn cudnnSetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNPaddingMode",
-        fn (UnsafePointer[cudnnRNNStruct], Int16) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnRNNStruct], Int16) -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
 
 
@@ -831,7 +831,7 @@ fn cudnnDestroyRNNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyRNNDescriptor",
-        fn (UnsafePointer[cudnnRNNStruct]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnRNNStruct]) -> cudnnStatus_t,
     ]()(rnn_desc)
 
 
@@ -847,7 +847,7 @@ fn cudnnSetRNNDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNDataDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnRNNDataStruct],
             cudnnDataType_t,
             cudnnRNNDataLayout_t,

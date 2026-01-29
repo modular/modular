@@ -478,7 +478,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var list_ptr = cpy.PyList_New(len(values))
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
         return PythonObject(from_owned=list_ptr)
@@ -525,7 +525,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var tup_ptr = cpy.PyTuple_New(len(values))
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
         return PythonObject(from_owned=tup_ptr)
