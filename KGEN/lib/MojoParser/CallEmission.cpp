@@ -1179,31 +1179,33 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 CValue IREmitter::emitIndirectCallInTryBlock(
     CValue callee, CallOperands &&operands, ValueDest &dest,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ValueDest throwDest(dest.getContext());
+  ValueDest callDest(dest.getContext());
 
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
   auto callExpr = operands.callExpr;
   auto loc = translateLocation(callExpr->getLoc());
 
   // If the ValueDest is a lazy materialized vardecl, we need to materialize
-  // it outside the try block. This is safe because it will update the
-  // ValueDest in place now that we know the type we're binding to.
-  MLValue destBuf;
-  if (!calleeSig.isRefResult()) {
-    destBuf = dest.getMLValueForResult(callExpr->getLoc(),
-                                       calleeSig.getUserResultType(), *this);
-    if (!destBuf)
-      return {};
-    // For the call, assign into the MLValue.
-    throwDest = ValueDest(LValue(destBuf), dest.getContext());
-  } else {
+  // it outside the try block. Note that we still don't know the result type
+  // that we're binding to - the signature of the callee might have implicit
+  // origins or other things substituted through it that can only be determined
+  // as the call is emitted.
+  VarDeclOp tmpResult;
+  if (calleeSig.isRefResult()) {
     // A ref result will infer the origin of the ref from the arguments.
     // We will do an indirect dance here since the type will be inferred
     // from the result.
     auto varDecl =
         emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
                     loc, VarDeclKind::Bind);
-    throwDest = ValueDest(varDecl, dest.getContext());
+    callDest = ValueDest(varDecl, dest.getContext());
+  } else if (dest.hasExistingMemoryDest()) {
+    // Emit the call result directly into the existing destination.
+    callDest = std::move(dest);
+  } else {
+    tmpResult = emitVarDecl("anonymous*", UnresolvedType::get(getContext()),
+                            loc, VarDeclKind::Synthesized);
+    callDest = ValueDest(tmpResult, dest.getContext());
   }
 
   VarDeclOp errDecl =
@@ -1223,9 +1225,9 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result = emitIndirectCall(callee, std::move(operands), throwDest);
+  CValue result = emitIndirectCall(callee, std::move(operands), callDest);
   if (!result) {
-    throwDest.resetForError(*this);
+    callDest.resetForError(*this);
     dest.resetForError(*this);
   }
   TryYieldOp::create(*builder, tryOp.getLoc());
@@ -1257,9 +1259,9 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     // will turn this into an MBValue, stripping (parametric) mutability.
     // Restore this.
     result = CValue::getMValueForRef(resultVal);
-  } else {
-    // Otherwise, we have the var temporary.
-    result = MLValue(destBuf);
+  } else if (tmpResult) {
+    // If we made a temporary, we can definitely move from it.
+    result = MRValue(tmpResult);
   }
 
   // Emit the result into the "dest" ValueDest outside of the try block.

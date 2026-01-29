@@ -198,8 +198,16 @@ public:
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }
-
   bool isOperation() const { return isa<Operation *>(representation); }
+
+  /// Return true if this ValueDest has an already assigned memory location, or
+  /// false if none is specified.  False means that emitting to this destination
+  /// will produce an anonymous temporary whenever the ValueDest is ultimately
+  /// assigned to.
+  bool hasExistingMemoryDest() const {
+    // These will not produce a temporary when assigned to.
+    return isa<LValue, Operation *>(representation);
+  }
 
   /// Return the LValueInitializerType this contains if it is one.
   ASTType getIfInitializerType() const {
