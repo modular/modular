@@ -14,7 +14,3 @@ trait DevicePassable:
     @staticmethod
     fn get_type_name() -> String:
         ...
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        ...

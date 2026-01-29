@@ -566,7 +566,6 @@ fn conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "device_type" : type =
     # CHECK-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
-    # CHECK-NEXT: kgen.witness "get_device_type_name{{.*}}" : !lit.generator
     fn device_passable() unified register_passable {var} -> Int:
         return x
 
