@@ -4,8 +4,10 @@ load("@rules_mojo//mojo:mojo_shared_library.bzl", _upstream_mojo_shared_library 
 
 def mojo_shared_library(
         name,
+        tags = [],
         **kwargs):
     _upstream_mojo_shared_library(
         name = name,
+        tags = ["mojo-fixits"] + tags,
         **kwargs
     )

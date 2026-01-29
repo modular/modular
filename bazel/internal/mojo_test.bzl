@@ -33,7 +33,7 @@ def mojo_test(
     default_exec_properties = get_default_exec_properties(tags, target_compatible_with)
     _upstream_mojo_test(
         name = name,
-        tags = tags,
+        tags = ["mojo-fixits"] + tags,
         data = data + RUNTIME_SANITIZER_DATA,
         target_compatible_with = target_compatible_with,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
