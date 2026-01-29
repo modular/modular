@@ -13,6 +13,8 @@
 
 import math
 
+import numpy as np
+
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
@@ -24,7 +26,7 @@ from max.tensor import Tensor
 from .model_config import T5Config
 
 
-class T5LayerNorm(Module):
+class T5LayerNorm(Module[..., Tensor]):
     def __init__(
         self,
         hidden_size: int,
@@ -70,7 +72,7 @@ class T5LayerNorm(Module):
         return self.weight * hidden_states
 
 
-class T5DenseActDense(Module):
+class T5DenseActDense(Module[..., Tensor]):
     def __init__(
         self,
         config: T5Config,
@@ -117,7 +119,7 @@ class T5DenseActDense(Module):
         return hidden_states
 
 
-class T5DenseGatedActDense(Module):
+class T5DenseGatedActDense(Module[..., Tensor]):
     def __init__(
         self,
         config: T5Config,
@@ -170,7 +172,7 @@ class T5DenseGatedActDense(Module):
         return hidden_states
 
 
-class T5LayerFF(Module):
+class T5LayerFF(Module[..., Tensor]):
     def __init__(
         self,
         config: T5Config,
@@ -182,7 +184,7 @@ class T5LayerFF(Module):
         """
         super().__init__()
         if config.is_gated_act:
-            self.DenseReluDense = T5DenseGatedActDense(config)
+            self.DenseReluDense: T5DenseGatedActDense | T5DenseActDense = T5DenseGatedActDense(config)
         else:
             self.DenseReluDense = T5DenseActDense(config)
 
@@ -207,7 +209,7 @@ class T5LayerFF(Module):
         return hidden_states
 
 
-class T5Attention(Module):
+class T5Attention(Module[..., tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]]):
     def __init__(
         self,
         config: T5Config,
@@ -362,7 +364,7 @@ class T5Attention(Module):
         use_cache: bool = False,
         output_attentions: bool = False,
         cache_position: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]:
         """Process hidden states through the attention layer.
 
         Args:
@@ -378,9 +380,11 @@ class T5Attention(Module):
             cache_position: Cache position.
 
         Returns:
-            Tuple[TensorValue, TensorValue]: Output tensor and position bias.
+            Tuple[TensorValue, TensorValue] or Tuple[TensorValue, TensorValue, TensorValue]: Output tensor, position bias, and optionally attention weights.
         """
         batch_size, seq_length = hidden_states.shape[:2]
+        # Convert Dim to int for compute_bias
+        seq_length_int: int = int(seq_length) if not isinstance(seq_length, int) else seq_length
 
         # if key_value_states are provided this layer is used as a cross-attention layer for the decoder
         is_cross_attention = key_value_states is not None
@@ -419,7 +423,7 @@ class T5Attention(Module):
 
         if position_bias is None and self.has_relative_attention_bias:
             position_bias = self.compute_bias(
-                seq_length, seq_length, hidden_states.device
+                seq_length_int, seq_length_int, hidden_states.device
             )
 
         if position_bias is not None:
@@ -441,13 +445,12 @@ class T5Attention(Module):
         )
         attn_output = self.o(attn_output)
 
-        outputs = (attn_output, position_bias)
         if output_attentions:
-            outputs = outputs + (attn_weights,)
-        return outputs
+            return (attn_output, position_bias, attn_weights)
+        return (attn_output, position_bias)
 
 
-class T5LayerSelfAttention(Module):
+class T5LayerSelfAttention(Module[..., tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]]):
     def __init__(
         self,
         config: T5Config,
@@ -483,7 +486,7 @@ class T5LayerSelfAttention(Module):
         use_cache: bool = False,
         output_attentions: bool = False,
         cache_position: Tensor | None = None,
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]:
         """Process hidden states through the self-attention layer.
 
         Args:
@@ -497,7 +500,7 @@ class T5LayerSelfAttention(Module):
             cache_position: Cache position.
 
         Returns:
-            TensorValue: Output tensor of shape (batch_size, seq_length, hidden_size).
+            Tuple containing output tensor and optionally position bias and attention weights.
         """
         normed_hidden_states = self.layer_norm(hidden_states)
         attention_output = self.SelfAttention(
@@ -512,10 +515,10 @@ class T5LayerSelfAttention(Module):
         )
         hidden_states = hidden_states + attention_output[0]
         outputs = (hidden_states,) + attention_output[1:]
-        return outputs
+        return outputs  # type: ignore[return-value]
 
 
-class T5Block(Module):
+class T5Block(Module[..., tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]]):
     def __init__(
         self,
         config: T5Config,
@@ -530,7 +533,7 @@ class T5Block(Module):
             layer_idx: Index of the layer.
         """
         super().__init__()
-        layers = list()
+        layers: list[T5LayerSelfAttention | T5LayerFF] = list()
         self.is_decoder = config.is_decoder
         if self.is_decoder:
             raise NotImplementedError(
@@ -561,7 +564,7 @@ class T5Block(Module):
         use_cache: bool = False,
         output_attentions: bool = False,
         cache_position: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor | None] | tuple[Tensor, Tensor | None, Tensor]:
         """Process hidden states through the T5 block.
 
         Args:
@@ -579,7 +582,7 @@ class T5Block(Module):
             cache_position: Cache position.
 
         Returns:
-            Tuple[TensorValue, TensorValue]: Output tensor and position bias.
+            Tuple containing output tensor and optionally position bias and attention weights.
         """
         self_attention_outputs = self.layer[0](
             hidden_states,
@@ -595,7 +598,7 @@ class T5Block(Module):
         attention_outputs = self_attention_outputs[1:]
 
         if hidden_states.dtype == DType.float16:
-            clamp_value = DType.finfo(hidden_states.dtype).max - 1000
+            clamp_value = float(np.finfo(np.float16).max) - 1000
             hidden_states = hidden_states.clip(
                 min=-clamp_value, max=clamp_value
             )
@@ -608,18 +611,20 @@ class T5Block(Module):
                 "T5 CrossAttention is not implemented yet."
             )
 
-        hidden_states = self.layer[-1](hidden_states)
+        ff_output = self.layer[-1](hidden_states)
+        hidden_states = ff_output if isinstance(ff_output, Tensor) else ff_output[0]
         if hidden_states.dtype == DType.float16:
-            clamp_value = DType.finfo(hidden_states.dtype).max - 1000
+            clamp_value = float(np.finfo(np.float16).max) - 1000
             hidden_states = hidden_states.clip(
                 min=-clamp_value, max=clamp_value
             )
 
         outputs = (hidden_states,)
-        return outputs + attention_outputs
+        result = outputs + attention_outputs
+        return result  # type: ignore[return-value]
 
 
-class T5Stack(Module):
+class T5Stack(Module[..., Tensor]):
     def __init__(
         self,
         config: T5Config,
@@ -700,6 +705,8 @@ class T5Stack(Module):
         if input_ids is not None:
             if input_ids.rank == 1:
                 input_ids = F.unsqueeze(input_ids, 0)
+            if self.embed_tokens is None:
+                raise ValueError("embed_tokens must be provided when input_ids is used")
             inputs_embeds = self.embed_tokens(input_ids)
         elif inputs_embeds is None:
             raise ValueError(
@@ -716,8 +723,9 @@ class T5Stack(Module):
         if attention_mask is not None:
             if attention_mask.rank == 1:
                 attention_mask = F.unsqueeze(attention_mask, 0)
+            dtype_np = hidden_states.dtype.to_numpy() if hasattr(hidden_states.dtype, 'to_numpy') else np.float32
             mask_multiplier = F.constant(
-                DType.finfo(hidden_states.dtype).min,
+                float(np.finfo(dtype_np).min),
                 dtype=hidden_states.dtype,
                 device=hidden_states.device,
             )
@@ -736,6 +744,7 @@ class T5Stack(Module):
         encoder_extended_attention_mask = None
 
         position_bias = None
+        all_attentions: tuple[Tensor, ...] = () if output_attentions else ()
         for layer_module in self.block:
             layer_outputs = layer_module(
                 hidden_states,
@@ -752,15 +761,16 @@ class T5Stack(Module):
                 cache_position=cache_position,
             )
             hidden_states = layer_outputs[0]
-            position_bias = layer_outputs[1]
+            position_bias = layer_outputs[1] if len(layer_outputs) > 1 else None
             if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[2],)
+                if len(layer_outputs) > 2:
+                    all_attentions = all_attentions + (layer_outputs[2],)
 
         hidden_states = self.final_layer_norm(hidden_states)
         return hidden_states
 
 
-class T5EncoderModel(Module):
+class T5EncoderModel(Module[..., Tensor]):
     def __init__(
         self,
         config: T5Config,

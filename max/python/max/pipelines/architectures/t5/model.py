@@ -11,30 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from typing import Any
+
 from max.driver import Device
 from max.engine import Model
-from max.experimental import functional as F
+from max import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.max_model import MaxModel
+from max.pipelines.lib.interfaces.component_model import ComponentModel  # type: ignore[import-not-found]
 
-from .model_config import T5Config
+from .model_config import T5Config, T5ConfigBase
 from .t5 import T5EncoderModel
 from .weight_adapters import convert_safetensor_state_dict
 
 
-class T5Model(MaxModel):
+class T5Model(ComponentModel):
     config_name = T5Config.config_name
 
     def __init__(
         self,
-        config: dict,
+        config: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
     ) -> None:
         super().__init__(config, encoding, devices, weights)
-        self.config = T5Config.generate(
+        self.config: T5ConfigBase = T5Config.generate(
             config,
             encoding,
             devices,
@@ -45,9 +47,9 @@ class T5Model(MaxModel):
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():
-            t5 = T5EncoderModel(self.config)
+            t5 = T5EncoderModel(self.config)  # type: ignore[arg-type]
             t5.to(self.devices[0])
-        self.model = t5.compile(*t5.input_types(), weights=state_dict)
+        self.model: Model = t5.compile(*t5.input_types(), weights=state_dict)  # type: ignore[assignment]
         return self.model
 
     def __call__(self, *args, **kwargs):
