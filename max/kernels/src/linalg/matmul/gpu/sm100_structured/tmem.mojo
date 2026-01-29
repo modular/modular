@@ -61,7 +61,9 @@ struct TmemAllocation[
     @staticmethod
     fn allocate(smem_addr: Self.SmemAddrStorage) -> Self:
         """Allocate TMEM (MMA warp). Address stored in smem for epilogue."""
-        tcgen05_alloc[Self.cta_group](smem_addr.ptr, Self.max_cols)
+        tcgen05_alloc[Int32(Self.cta_group)](
+            smem_addr.ptr, UInt32(Self.max_cols)
+        )
         syncwarp()
         return Self(smem_addr.ptr[0])
 
@@ -72,11 +74,11 @@ struct TmemAllocation[
 
     fn release_lock(self):
         """Release allocation lock before waiting for epilogue."""
-        tcgen05_release_allocation_lock[Self.cta_group]()
+        tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
 
     fn deallocate(self):
         """Free TMEM after epilogue completion."""
-        tcgen05_dealloc[Self.cta_group](self.addr, Self.max_cols)
+        tcgen05_dealloc[Int32(Self.cta_group)](self.addr, UInt32(Self.max_cols))
 
 
 # TMEM Address Encoding (SM100 Blackwell)

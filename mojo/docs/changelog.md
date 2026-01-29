@@ -57,6 +57,9 @@ what we publish.
 
 ### Tooling changes
 
+- The Mojo compiler now accepts conjoined `-D` options in addition to the
+  non-conjoined form as before. Now, both `-Dfoo` and `-D foo` are accepted.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed

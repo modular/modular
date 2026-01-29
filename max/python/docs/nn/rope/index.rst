@@ -24,4 +24,4 @@ Classes
 
 .. note::
    For legacy RoPE variants (DynamicRotaryEmbedding, YarnRotaryEmbedding, etc.),
-   see :doc:`../legacy/rotary_embedding`.
+   see [legacy/rotary_embedding](/max/api/python/nn/legacy/rotary_embedding).

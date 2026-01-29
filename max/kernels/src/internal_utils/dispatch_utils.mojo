@@ -72,7 +72,7 @@ struct Table[type: TuningConfig](Stringable):
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
     fn query_index[
-        rule: fn (Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
+        rule: fn(Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
     ](self) -> List[Int]:
         var flag: List[Bool]
 
@@ -96,7 +96,7 @@ struct Table[type: TuningConfig](Stringable):
     # Apply rule on all configs in the table and return list of all the unique results.
     fn query_values[
         ret_type: Comparable & ImplicitlyCopyable,
-        rule: fn (Self.type) capturing -> ret_type,
+        rule: fn(Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
@@ -124,7 +124,7 @@ struct Table[type: TuningConfig](Stringable):
         return result^
 
     fn find[
-        rule: fn (Self.type) capturing -> Bool,
+        rule: fn(Self.type) capturing -> Bool,
     ](self) -> List[Self.type]:
         var result = List[Self.type]()
 

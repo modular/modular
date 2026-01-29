@@ -60,7 +60,7 @@ comptime RtTuple_4 = RuntimeTuple[
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
+](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 
@@ -1963,7 +1963,7 @@ struct EPCombineKernel[
         output_type: DType,
         output_tokens_layout: Layout,
         router_weights_wrapper: OptionalReg[
-            fn (Int, Int) capturing -> Float32
+            fn(Int, Int) capturing -> Float32
         ] = None,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
@@ -2234,7 +2234,7 @@ fn combine_wait_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
     router_weights_wrapper: OptionalReg[
-        fn (Int, Int) capturing -> Float32
+        fn(Int, Int) capturing -> Float32
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,
@@ -2503,7 +2503,7 @@ fn combine_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     router_weights_wrapper: OptionalReg[
-        fn (Int, Int) capturing -> Float32
+        fn(Int, Int) capturing -> Float32
     ] = None,
     fused_shared_expert: Bool = False,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,

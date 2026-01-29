@@ -440,10 +440,10 @@ fn advanced_indexing_getitem[
     target: StaticString,
     single_thread_blocking_override: Bool,
     trace_description: StaticString,
-    input_tensor_fn: fn[width: Int] (IndexList[input_rank]) capturing -> SIMD[
+    input_tensor_fn: fn[width: Int](IndexList[input_rank]) capturing -> SIMD[
         input_type, width
     ],
-    indices_fn: fn[indices_index: Int] (
+    indices_fn: fn[indices_index: Int](
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](
@@ -630,10 +630,10 @@ fn advanced_indexing_setitem_inplace[
     target: StaticString,
     single_thread_blocking_override: Bool,
     trace_description: StaticString,
-    updates_tensor_fn: fn[width: Int] (
+    updates_tensor_fn: fn[width: Int](
         IndexList[updates_rank]
     ) capturing -> SIMD[input_type, width],
-    indices_fn: fn[indices_index: Int] (
+    indices_fn: fn[indices_index: Int](
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](

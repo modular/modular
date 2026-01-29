@@ -931,7 +931,7 @@ struct RegisterToGMemWriter[
                 # For normal: row = lane_row, col = lane_col * 2 + i
                 # For swapAB: row = lane_col * 2 + i, col = lane_row (transposed)
                 var lane_row_idx = self.thread_info.lane_row
-                var lane_col_idx = self.thread_info.lane_col * 2 + i
+                var lane_col_idx = self.thread_info.lane_col * 2 + UInt32(i)
                 var check_row = (
                     lane_row_idx if not Self.swapAB else lane_col_idx
                 )
@@ -952,22 +952,28 @@ struct RegisterToGMemWriter[
                             return (
                                 warp_tile_coords[0]
                                 + Int(
-                                    n_frag * 8
+                                    UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2
-                                    + i
+                                    + UInt32(i)
                                 ),
                                 warp_tile_coords[1]
-                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                                + Int(
+                                    UInt32(m_frag * 8)
+                                    + self.thread_info.lane_row
+                                ),
                             )
                         else:
                             return (
                                 warp_tile_coords[0]
-                                + Int(m_frag * 8 + self.thread_info.lane_row),
+                                + Int(
+                                    UInt32(m_frag * 8)
+                                    + self.thread_info.lane_row
+                                ),
                                 warp_tile_coords[1]
                                 + Int(
-                                    n_frag * 8
+                                    UInt32(n_frag * 8)
                                     + self.thread_info.lane_col * 2
-                                    + i
+                                    + UInt32(i)
                                 ),
                             )
 

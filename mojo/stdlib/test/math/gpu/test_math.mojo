@@ -19,7 +19,7 @@ from testing import TestSuite
 
 fn run_func[
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
@@ -93,7 +93,7 @@ def test_math():
 
         @parameter
         fn test[
-            *kernel_fns: fn[dtype: DType, width: Int] (
+            *kernel_fns: fn[dtype: DType, width: Int](
                 SIMD[dtype, width]
             ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:

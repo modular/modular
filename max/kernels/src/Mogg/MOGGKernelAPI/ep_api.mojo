@@ -2138,7 +2138,7 @@ struct Struct_ep_combine_wait:
             combine_msg_size,
             max_token_per_rank,
             router_weights_wrapper = OptionalReg[
-                fn (Int, Int) capturing -> Float32
+                fn(Int, Int) capturing -> Float32
             ](router_weights_fn),
             elementwise_lambda_fn = Optional[elementwise_epilogue_type](
                 output_fn
@@ -2306,7 +2306,7 @@ struct Struct_ep_combine:
             max_token_per_rank,
             n_gpus_per_node,
             router_weights_wrapper = OptionalReg[
-                fn (Int, Int) capturing -> Float32
+                fn(Int, Int) capturing -> Float32
             ](router_weights_fn),
             fused_shared_expert=fused_shared_expert,
             epilogue_fn = Optional[elementwise_epilogue_type](

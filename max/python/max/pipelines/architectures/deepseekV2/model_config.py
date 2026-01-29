@@ -147,6 +147,12 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
         huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         devices = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs

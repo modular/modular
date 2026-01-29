@@ -263,12 +263,12 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
 
     @always_inline
     fn max_context_length(self) -> UInt32:
-        return self.buffer.dim[1]()
+        return UInt32(self.buffer.dim[1]())
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
-        return batch_idx * self.buffer.dim[1]() + start_tok_idx
+        return batch_idx * UInt32(self.buffer.dim[1]()) + start_tok_idx
 
     @always_inline
     fn create_tma_tile[

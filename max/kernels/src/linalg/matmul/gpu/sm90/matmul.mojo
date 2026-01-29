@@ -292,9 +292,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     )
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -332,7 +332,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        min(log2_floor(c_smem_tile[1] // 8), 3)
+        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     var c_tma_op = create_tma_tile_template[
@@ -489,7 +489,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -517,7 +517,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -559,7 +559,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                     block_dim=(num_threads),
                     shared_mem_bytes=smem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        smem_size
+                        UInt32(smem_size)
                     ),
                     attributes=pdl_launch_attributes(config.pdl_level()),
                 )
@@ -584,7 +584,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                smem_size
+                UInt32(smem_size)
             ),
             attributes=pdl_launch_attributes(config.pdl_level()),
         )
@@ -732,9 +732,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     logger.info("mma_shape:", config.mma_shape)
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -757,7 +757,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        min(log2_floor(c_smem_tile[1] // 8), 3)
+        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     a_tma_op = create_tensor_tile[
@@ -782,7 +782,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime scheduler = SplitKTileScheduler[
         Index(N, K),
         config.block_tile_shape,
-        splits,
+        UInt32(splits),
         UInt32(config.num_consumer),
         UInt32(config.num_pipeline_stages),
         Index(config.cluster_shape[1], config.cluster_shape[0]),
@@ -886,7 +886,9 @@ fn warp_specialize_gemm_with_multicasting_splitk[
         ),
         block_dim=(num_threads),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
         attributes=pdl_launch_attributes(config.pdl_level()),
     )
 

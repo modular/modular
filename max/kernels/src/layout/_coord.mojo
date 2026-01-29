@@ -190,7 +190,7 @@ fn Idx(value: Int) -> RuntimeInt[DType.int]:
 
     Usage: Idx(5) creates a RuntimeInt with value 5.
     """
-    return RuntimeInt[DType.int](value)
+    return RuntimeInt[DType.int](Scalar[DType.int](value))
 
 
 fn Idx[value: Int]() -> ComptimeInt[value]:
@@ -246,7 +246,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
         @parameter
         for i in range(rank):
             UnsafePointer(to=self[i]).init_pointee_copy(
-                rebind[type_of(self[i])](RuntimeInt[dtype](index_list[i]))
+                rebind[type_of(self[i])](
+                    RuntimeInt[dtype](Scalar[dtype](index_list[i]))
+                )
             )
 
     @staticmethod
@@ -657,7 +659,7 @@ fn crd2idx[
         if crd_len > 1:
             abort("crd is a tuple but shape and stride are not")
         else:
-            return crd.value() * stride.value()
+            return Scalar[out_type](crd.value() * stride.value())
 
 
 # Implementation based off crd2idx - computes the inverse operation

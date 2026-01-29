@@ -51,7 +51,7 @@ struct _AsyncContext(TrivialRegisterType):
     to available.
     """
 
-    comptime callback_fn_type = fn (_Chain) -> None
+    comptime callback_fn_type = fn(_Chain) -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -284,7 +284,7 @@ struct TaskGroupContext(TrivialRegisterType):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = fn (mut TaskGroup) -> None
+    comptime tg_callback_fn_type = fn(mut TaskGroup) -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type

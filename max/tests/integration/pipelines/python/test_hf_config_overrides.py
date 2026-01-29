@@ -59,6 +59,7 @@ def test_apply_hf_config_override() -> None:
     with hf_overrides.apply_hf_config_override({"n_embd": 2048}):
         assert MAXModelConfig.huggingface_config is not orig_prop
         cfg_in_ctx = real_cfg.huggingface_config
+        assert cfg_in_ctx is not None
         assert cfg_in_ctx.n_embd == 2048
         assert cfg_in_ctx.n_layer == original_n_layer
 
@@ -70,6 +71,7 @@ def test_apply_hf_config_override() -> None:
         _huggingface_config=fresh_cfg,
     )
     cfg_after = real_cfg2.huggingface_config
+    assert cfg_after is not None
     assert cfg_after.n_embd == fresh_cfg.n_embd
 
     real_cfg3 = MAXModelConfig(
