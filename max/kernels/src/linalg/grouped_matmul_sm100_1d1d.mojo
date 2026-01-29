@@ -1161,14 +1161,12 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: OptionalReg[UInt32] = None,
 ](
-    c_device: LayoutTensor[c_type, c_layout, *_, **_],
-    a_device: LayoutTensor[a_type, a_layout, *_, **_],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, *_, **_],
-    a_scale_offsets: LayoutTensor[
-        DType.uint32, a_scale_offsets_layout, *_, **_
-    ],
-    _b_device: LayoutTensor[b_type, b_layout, *_, **_],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, *_, **_],
+    c_device: LayoutTensor[c_type, c_layout, ...],
+    a_device: LayoutTensor[a_type, a_layout, ...],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ...],
+    a_scale_offsets: LayoutTensor[DType.uint32, a_scale_offsets_layout, ...],
+    _b_device: LayoutTensor[b_type, b_layout, ...],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     _b_scales: LayoutTensor[sfb_dtype, _sfb_layout, MutAnyOrigin],
     expert_scales: LayoutTensor[
