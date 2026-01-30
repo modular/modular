@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, Set
+from collections import Optional
 from math import ceildiv
-from random import random_ui64, seed
+from random import seed
 
 from gpu.host import DeviceContext
 from kv_cache.types import (
@@ -27,6 +27,8 @@ from nn.kv_cache_ragged import kv_cache_store_ragged
 from testing import assert_equal, assert_almost_equal
 
 from utils import IndexList
+
+from kv_cache_test_utils import PagedLookupTable
 
 comptime kv_params_test = KVCacheStaticParams(num_heads=4, head_size=64)
 comptime dtype = DType.float32
@@ -108,28 +110,13 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     )
     var kv_block_tensor = kv_block_managed.tensor()
 
-    var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
+    var paged_lut = PagedLookupTable[page_size].build(
+        valid_lengths,
+        cache_lengths,
+        max_full_context_length,
+        num_paged_blocks,
+        ctx,
     )
-    comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
-    var paged_lut_managed = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_runtime_layout, ctx
-    )
-    var paged_lut_tensor = paged_lut_managed.tensor()
-    var paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        var seq_len = cache_lengths[bs] + valid_lengths[bs]
-
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_tensor[bs, block_idx] = randval
 
     var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
@@ -146,12 +133,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                 cache_lengths_managed.device_tensor().runtime_layout.shape.value
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_managed.device_tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                paged_lut_managed.device_tensor().runtime_layout.shape.value,
-            ),
-        ),
+        paged_lut.device_tensor(),
         max_prompt_length,
         max_full_context_length,
     )
@@ -221,12 +203,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                 cache_lengths_managed.tensor().runtime_layout.shape.value
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_managed.tensor().ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                paged_lut_managed.tensor().runtime_layout.shape.value,
-            ),
-        ),
+        paged_lut.host_tensor(),
         max_prompt_length,
         max_full_context_length,
     )
@@ -280,7 +257,7 @@ fn test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     )
         current_offset += seq_len
     _ = kv_block_managed^
-    _ = paged_lut_managed^
+    _ = paged_lut^
     _ = cache_lengths_managed^
     _ = input_row_offsets_managed^
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
 from math import ceildiv
 from random import random_ui64, seed
 
@@ -33,6 +32,8 @@ from nn.kv_cache_ragged import (
 from testing import assert_almost_equal
 
 from utils import IndexList
+
+from kv_cache_test_utils import PagedLookupTable
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -164,7 +165,6 @@ def execute_matmul_k_cache_ragged_scale[
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
-    comptime paged_lut_layout = Layout.row_major[2]()
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
     comptime input_scale_rows = ceildiv(hidden_size, block_scale)
@@ -225,33 +225,10 @@ def execute_matmul_k_cache_ragged_scale[
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
-    var paged_lut_cols = ceildiv(max_full_context_length, page_size)
-    var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_shape = IndexList[2](batch_size, paged_lut_cols)
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = LayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_host_ptr,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    var paged_lut = PagedLookupTable[page_size].build(
+        prompt_lens, cache_sizes, max_full_context_length, num_paged_blocks, ctx
     )
 
-    var paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        var seq_len = cache_sizes[bs] + prompt_lens[bs]
-
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
-
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
     # Create runtime layouts
@@ -260,9 +237,6 @@ def execute_matmul_k_cache_ragged_scale[
     )
     var cache_len_runtime = RuntimeLayout[layout_1d].row_major(
         IndexList[1](batch_size)
-    )
-    var paged_lut_runtime = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
     )
 
     var kv_collection_device = CollectionType(
@@ -274,10 +248,7 @@ def execute_matmul_k_cache_ragged_scale[
             cache_lengths_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device.unsafe_ptr(),
-            paged_lut_runtime,
-        ),
+        paged_lut.device_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -293,10 +264,7 @@ def execute_matmul_k_cache_ragged_scale[
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_host_ptr,
-            paged_lut_runtime,
-        ),
+        paged_lut.host_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -526,7 +494,6 @@ def execute_matmul_k_cache_ragged_scale[
     # Cleanup host memory
     cache_lengths_host_ptr.free()
     kv_block_host_ptr.free()
-    paged_lut_host_ptr.free()
     input_row_offsets_host_ptr.free()
     weight_host_ptr.free()
     input_scale_host_ptr.free()
@@ -547,9 +514,11 @@ def execute_matmul_k_cache_ragged_scale[
     _ = ref_weight_scale_device^
     _ = ref_output_device^
     _ = kv_block_device^
-    _ = paged_lut_device^
     _ = cache_lengths_device^
     _ = input_row_offsets_device^
+
+    # Cleanup managed objects.
+    _ = paged_lut^
 
 
 def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):

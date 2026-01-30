@@ -38,6 +38,8 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
+from kv_cache_test_utils import PagedLookupTable
+
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
 
@@ -480,7 +482,6 @@ def execute_matmul_k_cache_ragged[
     # Define layouts
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
-    comptime paged_lut_layout = Layout.row_major[2]()
     comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
     comptime ref_output_layout = Layout.row_major(
         UNKNOWN_VALUE, Int(kv_hidden_size)
@@ -525,33 +526,10 @@ def execute_matmul_k_cache_ragged[
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
-    var paged_lut_cols = ceildiv(max_full_context_length, page_size)
-    var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_shape = IndexList[2](batch_size, paged_lut_cols)
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = LayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_host_ptr,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    var paged_lut = PagedLookupTable[page_size].build(
+        prompt_lens, cache_sizes, max_full_context_length, num_paged_blocks, ctx
     )
 
-    paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        seq_len = cache_sizes[bs] + prompt_lens[bs]
-
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
-
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
     # Create runtime layouts
@@ -560,9 +538,6 @@ def execute_matmul_k_cache_ragged[
     )
     var cache_len_runtime = RuntimeLayout[layout_1d].row_major(
         IndexList[1](batch_size)
-    )
-    var paged_lut_runtime = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
     )
 
     kv_collection_device = CollectionType(
@@ -574,10 +549,7 @@ def execute_matmul_k_cache_ragged[
             cache_lengths_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device.unsafe_ptr(),
-            paged_lut_runtime,
-        ),
+        paged_lut.device_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -593,10 +565,7 @@ def execute_matmul_k_cache_ragged[
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_host_ptr,
-            paged_lut_runtime,
-        ),
+        paged_lut.host_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -717,7 +686,6 @@ def execute_matmul_k_cache_ragged[
     input_row_offsets_host_ptr.free()
     cache_lengths_host_ptr.free()
     kv_block_host_ptr.free()
-    paged_lut_host_ptr.free()
     weight_host_ptr.free()
     ref_output_host_ptr.free()
 
@@ -727,9 +695,11 @@ def execute_matmul_k_cache_ragged[
     _ = weight_device^
     _ = ref_output_device^
     _ = kv_block_device^
-    _ = paged_lut_device^
     _ = cache_lengths_device^
     _ = input_row_offsets_device^
+
+    # Cleanup managed objects.
+    _ = paged_lut^
 
 
 def generic_assert_output_equals[
@@ -1030,7 +1000,6 @@ def execute_paged_fused_qkv_matmul[
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
-    comptime paged_lut_layout = Layout.row_major[2]()
 
     var batch_size = len(prompt_lens)
     debug_assert(
@@ -1076,33 +1045,9 @@ def execute_paged_fused_qkv_matmul[
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
-    var paged_lut_cols = ceildiv(max_full_context_length, page_size)
-    var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_shape = IndexList[2](batch_size, paged_lut_cols)
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
+    var paged_lut = PagedLookupTable[page_size].build(
+        prompt_lens, cache_sizes, max_full_context_length, num_paged_blocks, ctx
     )
-    var paged_lut_host = LayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_host_ptr,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
-    )
-
-    paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        seq_len = cache_sizes[bs] + prompt_lens[bs]
-
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
-
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
@@ -1112,9 +1057,6 @@ def execute_paged_fused_qkv_matmul[
     )
     var cache_len_runtime = RuntimeLayout[layout_1d].row_major(
         IndexList[1](batch_size)
-    )
-    var paged_lut_runtime = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
     )
 
     kv_collection_device = CollectionType(
@@ -1126,10 +1068,7 @@ def execute_paged_fused_qkv_matmul[
             cache_lengths_device.unsafe_ptr(),
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device.unsafe_ptr(),
-            paged_lut_runtime,
-        ),
+        paged_lut.device_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -1146,10 +1085,7 @@ def execute_paged_fused_qkv_matmul[
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_host_ptr,
-            paged_lut_runtime,
-        ),
+        paged_lut.host_tensor(),
         max_seq_length_batch,
         max_full_context_length,
     )
@@ -1184,14 +1120,15 @@ def execute_paged_fused_qkv_matmul[
     # Cleanup host memory
     cache_lengths_host_ptr.free()
     kv_block_host_ptr.free()
-    paged_lut_host_ptr.free()
 
     # Cleanup device buffers
     _ = kv_block_device^
-    _ = paged_lut_device^
     _ = cache_lengths_device^
     _ = ref_output_device^
     _ = test_output_device^
+
+    # Cleanup managed objects.
+    _ = paged_lut^
 
 
 def execute_cont_batch_fused_qkv_matmul[

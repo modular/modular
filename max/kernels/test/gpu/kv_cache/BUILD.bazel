@@ -49,7 +49,10 @@ _EXTRA_CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [src],
+        srcs = [
+            src,
+            "kv_cache_test_utils.mojo",
+        ],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
             "//conditions:default": src not in [
@@ -65,6 +68,7 @@ _EXTRA_CONSTRAINTS = {
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, "5"),
         },
+        main = src,
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -76,5 +80,10 @@ _EXTRA_CONSTRAINTS = {
             "@mojo//:std",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = [
+            "kv_cache_test_utils.mojo",  # Imported source, not a test
+        ],
+    )
 ]

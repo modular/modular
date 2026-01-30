@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64
+from math import rsqrt
 
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -28,6 +26,8 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import IndexList
+
+from kv_cache_test_utils import PagedLookupTable
 
 
 def execute_ragged_flash_attention(
@@ -246,34 +246,14 @@ def execute_ragged_flash_attention(
     )
     random(kv_block_paged_host)
 
-    var paged_lut_cols = ceildiv(true_ce_max_full_context_length, page_size)
-    var paged_lut_size = batch_size * paged_lut_cols
-    comptime paged_lut_layout = Layout.row_major[2]()
-    var paged_lut_shape = IndexList[2](batch_size, paged_lut_cols)
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = LayoutTensor[DType.uint32, paged_lut_layout](
-        paged_lut_host_ptr,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    var paged_lut = PagedLookupTable[page_size].build(
+        true_ce_prompt_lens,
+        true_ce_cache_lens,
+        true_ce_max_full_context_length,
+        num_paged_blocks,
+        ctx,
     )
 
-    paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
-
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
-
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
     var kv_block_paged_device = ctx.enqueue_create_buffer[type](kv_block_size)
     ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
 
@@ -286,9 +266,6 @@ def execute_ragged_flash_attention(
     var mixed_ce_cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
         IndexList[1](batch_size)
     )
-    var paged_lut_runtime = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
 
     true_ce_kv_collection_device = PagedCollectionType(
         LayoutTensor[type, kv_layout, MutAnyOrigin](
@@ -299,10 +276,7 @@ def execute_ragged_flash_attention(
             true_ce_cache_lengths_device.unsafe_ptr(),
             true_ce_cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device.unsafe_ptr(),
-            paged_lut_runtime,
-        ),
+        paged_lut.device_tensor(),
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
     )
@@ -316,10 +290,7 @@ def execute_ragged_flash_attention(
             mixed_ce_cache_lengths_device.unsafe_ptr(),
             mixed_ce_cache_len_runtime,
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device.unsafe_ptr(),
-            paged_lut_runtime,
-        ),
+        paged_lut.device_tensor(),
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
     )
@@ -436,7 +407,6 @@ def execute_ragged_flash_attention(
     mixed_ce_output_host_ptr.free()
     true_ce_output_host_ptr.free()
     kv_block_paged_host_ptr.free()
-    paged_lut_host_ptr.free()
 
     # Cleanup device buffers
     _ = true_ce_row_offsets_device^
@@ -448,7 +418,9 @@ def execute_ragged_flash_attention(
     _ = mixed_ce_output_device^
     _ = true_ce_output_device^
     _ = kv_block_paged_device^
-    _ = paged_lut_device^
+
+    # Cleanup managed objects.
+    _ = paged_lut^
 
 
 def main():
