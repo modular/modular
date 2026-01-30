@@ -87,3 +87,32 @@ comptime deprecated_alias_target = 1
 # CHECK-SAME: deprecationWarning = "'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead"
 @deprecated(use=deprecated_alias_target)
 comptime deprecated_alias_use = 1
+
+
+# ===----------------------------------------------------------------------=== #
+# Test: @deprecated(use=...) for methods
+# ===----------------------------------------------------------------------=== #
+
+
+struct MethodDeprecationTest:
+    fn replacement_method(self):
+        pass
+
+    # CHECK-LABEL: lit.fn @"deprecated_method_use
+    # CHECK-SAME: deprecationWarning = "'deprecated_method_use' is deprecated, use 'replacement_method' instead"
+    @deprecated(use=replacement_method)
+    fn deprecated_method_use(self):
+        pass
+
+
+struct StaticMethodDeprecationTest:
+    @staticmethod
+    fn replacement_static():
+        pass
+
+    # CHECK-LABEL: lit.fn @"deprecated_static_use
+    # CHECK-SAME: deprecationWarning = "'deprecated_static_use' is deprecated, use 'replacement_static' instead"
+    @staticmethod
+    @deprecated(use=replacement_static)
+    fn deprecated_static_use():
+        pass

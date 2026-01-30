@@ -249,3 +249,20 @@ fn stable_and_deprecated():
 @stable
 fn deprecated_other_stable():
     pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Test: @deprecated(use=...) for methods
+# ===----------------------------------------------------------------------=== #
+
+
+fn some_top_level_func():
+    pass
+
+
+struct InstanceMethodRefTopLevel:
+    # Instance methods cannot reference top-level functions as replacements.
+    # expected-error @below {{cannot reference unknown value 'some_top_level_func'}}
+    @deprecated(use=some_top_level_func)
+    fn instance_method(self):
+        pass
