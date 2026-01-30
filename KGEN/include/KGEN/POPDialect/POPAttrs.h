@@ -42,8 +42,12 @@ public:
   DTypeValue(APInt data, KGENDType dtype);
 
   /// Compare two dtype values.
+  /// NOTE: We use APInt::isSameValue to compare the data because
+  /// APInt::operator== asserts when comparing APInts with different bit widths.
+  /// This can happen when the same logical value is stored with different bit
+  /// widths (e.g., index types on 32-bit vs 64-bit targets).
   bool operator==(const DTypeValue &rhs) const {
-    return std::tie(dtype, data) == std::tie(rhs.dtype, rhs.data);
+    return dtype == rhs.dtype && APInt::isSameValue(data, rhs.data);
   }
 
   /// Get the underlying data.

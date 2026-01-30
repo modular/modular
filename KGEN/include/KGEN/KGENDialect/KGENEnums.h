@@ -118,12 +118,6 @@ inline StreamT &operator<<(StreamT &os, FnEffects effects) {
 // ArgConvention
 //===----------------------------------------------------------------------===//
 
-template <typename StreamT>
-inline StreamT &operator<<(StreamT &os, ArgConvention convention) {
-  os << stringifyArgConvention(convention);
-  return os;
-}
-
 /// Return a string like "read" or "mut".
 const char *getUserSyntax(ArgConvention convention);
 
