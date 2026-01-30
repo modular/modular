@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Normalization layers for MAX neural networks."""
 
+from .layer_norm import LayerNorm
 from .rms_norm import GemmaRMSNorm, RMSNorm, rms_norm
 
-__all__ = ["GemmaRMSNorm", "RMSNorm", "rms_norm"]
+__all__ = ["GemmaRMSNorm", "LayerNorm", "RMSNorm", "rms_norm"]

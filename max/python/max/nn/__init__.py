@@ -37,13 +37,14 @@ from . import legacy
 from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
-from .norm import GemmaRMSNorm, RMSNorm
+from .norm import GemmaRMSNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
 
 __all__ = [
     "Embedding",
     "GemmaRMSNorm",
+    "LayerNorm",
     "Linear",
     "Module",
     "ModuleList",
