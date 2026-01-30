@@ -30,6 +30,7 @@ from max.pipelines.lib.interfaces.component_model import (  # type: ignore[impor
     ComponentModel,
 )
 from tqdm import tqdm
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession
@@ -68,15 +69,16 @@ class DiffusionPipeline(ABC):
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
     @abstractmethod
-    def prepare_inputs(
-        self, flat_batch: PixelContext
-    ) -> type[PixelModelInputs]:
+    def prepare_inputs(self, context: PixelContext) -> PixelModelInputs:
+        """Prepare inputs for the pipeline."""
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
         )
 
-    def finalize_pipeline_config(self) -> None:  # noqa: B027
+    @classmethod
+    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:  # noqa: B027
         """Hook for finalizing pipeline configuration. Override if needed."""
+        del pipeline_config
 
     def _load_sub_models(
         self, weight_paths: list[Path]
@@ -426,7 +428,7 @@ class PixelModelInputs:
             )
 
     @classmethod
-    def from_context(cls, context: PixelContext) -> PixelModelInputs:
+    def from_context(cls, context: PixelContext) -> Self:
         """
         Build an instance from a context-like dict.
 
@@ -439,20 +441,21 @@ class PixelModelInputs:
         fmap = {f.name: f for f in fields(cls)}
         kwargs: dict[str, Any] = {}
 
-        for k, v in context.__dict__.items():
-            if k not in fmap:
+        for dataclass_field in fields(cls):
+            name = dataclass_field.name
+            if not hasattr(context, name):
                 continue
+            v = getattr(context, name)
 
             if v is None:
-                f = fmap[k]
-                if f.default is not MISSING:
-                    kwargs[k] = f.default
-                elif f.default_factory is not MISSING:
-                    kwargs[k] = f.default_factory()
+                if dataclass_field.default is not MISSING:
+                    kwargs[name] = dataclass_field.default
+                elif dataclass_field.default_factory is not MISSING:
+                    kwargs[name] = dataclass_field.default_factory()
                 else:
                     # No default -> keep None; for required fields this should fail downstream.
-                    kwargs[k] = None
+                    kwargs[name] = None
             else:
-                kwargs[k] = v
+                kwargs[name] = v
 
         return cls(**kwargs)

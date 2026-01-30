@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from max import functional as F
+from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.interfaces import PixelGenerationContext, TokenBuffer
+from max.interfaces import TokenBuffer
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
@@ -29,10 +29,13 @@ from max.pipelines.lib.interfaces import (
 from max.tensor import Tensor
 from tqdm import tqdm
 
-from ..autoencoders import AutoencoderKLModel  # type: ignore[import-not-found]
-from ..clip import ClipModel  # type: ignore[import-not-found]
-from ..t5 import T5Model  # type: ignore[import-not-found]
-from .model import Flux1Model  # type: ignore[import-not-found]
+from ..autoencoders import AutoencoderKLModel
+from ..clip import ClipModel
+from ..t5 import T5Model
+from .model import Flux1Model
+
+if TYPE_CHECKING:
+    from max.pipelines.core.context import PixelContext
 
 
 @dataclass(kw_only=True)
@@ -78,10 +81,10 @@ class FluxPipelineOutput:
 
 
 class FluxPipeline(DiffusionPipeline):
-    vae: Any  # TODO: type this
-    text_encoder: Any  # TODO: type this
-    text_encoder_2: Any  # TODO: type this
-    transformer: Any  # TODO: type this
+    vae: AutoencoderKLModel
+    text_encoder: ClipModel
+    text_encoder_2: T5Model
+    transformer: Flux1Model
 
     components = {
         "vae": AutoencoderKLModel,
@@ -97,10 +100,10 @@ class FluxPipeline(DiffusionPipeline):
             else 8
         )
 
-    def prepare_inputs(  # type: ignore[override]
-        self, context: PixelGenerationContext
+    def prepare_inputs(
+        self, context: PixelContext
     ) -> FluxModelInputs:
-        return FluxModelInputs.from_context(context)  # type: ignore[return-value, arg-type]
+        return FluxModelInputs.from_context(context)
 
     @staticmethod
     def _pack_latents(
@@ -248,7 +251,7 @@ class FluxPipeline(DiffusionPipeline):
         return self._to_numpy(self.vae.decode(latents))
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
-        cpu_image = image.cast(DType.float32).to(DeviceRef.CPU())  # type: ignore[arg-type]
+        cpu_image: Tensor = image.cast(DType.float32).to(CPU())
         return np.from_dlpack(cpu_image)
 
     def _scheduler_step(
