@@ -182,8 +182,81 @@ static int printSupportedCpus(StringRef userTriple) {
   }
 
   llvm::outs() << "Available CPUs for target " << normalized << ":\n";
-  for (const auto &cpu : cpus)
+  for (const std::string &cpu : cpus)
     llvm::outs() << "  " << cpu << "\n";
+  return EXIT_SUCCESS;
+}
+
+/// Print all supported GPU and accelerator architectures.
+///
+/// SYNC: This list must stay in sync with _all_targets in
+///       oss/modular/mojo/stdlib/std/gpu/host/info.mojo.
+/// Run the following test to verify:
+///       bazel test
+///       //KGEN/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
+///
+/// TODO: single-source this information with info.mojo
+static int printSupportedAccelerators() {
+  // The '#' characteers below are intentional.
+  // These delimiters allow Mojo tests to extract the architecture list
+  // without needing to know specific architecture prefixes.
+  llvm::outs() << R"(Supported GPU and Accelerator Architectures:
+
+#
+NVIDIA (CUDA):
+  sm_52       - Maxwell (GTX 970)
+  sm_60       - Pascal (Tesla P100)
+  sm_61       - Pascal (GTX 1060, GTX 1080 Ti)
+  sm_75       - Turing (RTX 2060)
+  sm_80       - Ampere datacenter (A100)
+  sm_86       - Ampere workstation (A10)
+  sm_87       - Ampere embedded (Jetson Orin)
+  sm_89       - Ada Lovelace (L4, RTX 4090)
+  sm_90       - Hopper (H100)
+  sm_90a      - Hopper with extensions
+  sm_100      - Blackwell datacenter (B100, B200)
+  sm_100a     - Blackwell datacenter with extensions
+  sm_110      - Blackwell embedded (Jetson Thor)
+  sm_110a     - Blackwell embedded with extensions
+  sm_120      - Blackwell consumer (RTX 5090)
+  sm_120a     - Blackwell consumer with extensions
+  sm_121      - Blackwell (DGX Spark)
+  sm_121a     - Blackwell with extensions
+
+AMD (ROCm/HIP):
+  gfx942      - CDNA3 (MI300X)
+  mi300x      - (alias) -> gfx942
+  gfx950      - CDNA4 (MI355X)
+  mi355x      - (alias) -> gfx950
+  gfx1030     - RDNA2 (Radeon 6900)
+  gfx1100     - RDNA3 (Radeon 7900)
+  gfx1101     - RDNA3 (Radeon 7800/7700)
+  gfx1102     - RDNA3 (Radeon 7600)
+  gfx1103     - RDNA3 (Radeon 780M)
+  gfx1150     - RDNA3+ (Radeon 880M)
+  gfx1151     - RDNA3+ (Radeon 8060S)
+  gfx1152     - RDNA3+ (Radeon 860M)
+  gfx1200     - RDNA4 (Radeon 9060)
+  gfx1201     - RDNA4 (Radeon 9070)
+
+Apple Silicon GPU:
+  apple-m1    - Apple M1
+  apple-m2    - Apple M2
+  apple-m3    - Apple M3
+  apple-m4    - Apple M4
+  apple-m5    - Apple M5
+
+Other:
+  cuda        - Generic CUDA (uses runtime GPU detection)
+#
+
+Alternative formats supported:
+  nvidia:<arch>  - e.g., nvidia:sm_90a, nvidia:80
+  amdgpu:<arch>  - e.g., amdgpu:gfx942
+
+Usage: mojo build --target-accelerator <arch> file.mojo
+)";
+
   return EXIT_SUCCESS;
 }
 
@@ -240,9 +313,11 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       allArgs.hasArg(options::OPT_print_supported_targets);
   bool hasPrintSupportedCpus =
       allArgs.hasArg(options::OPT_print_supported_cpus);
+  bool hasPrintSupportedAccelerators =
+      allArgs.hasArg(options::OPT_print_supported_accelerators);
 
   int printOptionCount = hasPrintEffectiveTarget + hasPrintSupportedTargets +
-                         hasPrintSupportedCpus;
+                         hasPrintSupportedCpus + hasPrintSupportedAccelerators;
 
   if (printOptionCount > 1) {
     return state.reportError(
@@ -255,6 +330,10 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   // Handle --print-supported-targets (simplest, no target parsing needed).
   if (hasPrintSupportedTargets)
     return printSupportedTargets();
+
+  // Handle --print-supported-accelerators (no target parsing needed).
+  if (hasPrintSupportedAccelerators)
+    return printSupportedAccelerators();
 
   // Handle --print-supported-cpus (requires --target-triple).
   if (hasPrintSupportedCpus) {

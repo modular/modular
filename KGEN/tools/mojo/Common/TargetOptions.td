@@ -70,4 +70,8 @@ def print_supported_cpus : Flag<["--"], "print-supported-cpus">,
   HelpText<"Print valid CPU names for the specified target and exit. "
            "Requires --target-triple.">;
 
+def print_supported_accelerators : Flag<["--"], "print-supported-accelerators">,
+  Group<TargetOptionGroup>, Index<13>,
+  HelpText<"Print all supported GPU and accelerator architectures and exit.">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
