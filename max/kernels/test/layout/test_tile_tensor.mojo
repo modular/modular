@@ -265,10 +265,10 @@ fn test_slice() raises:
     assert_equal(sliced.layout.shape[1].value(), 2)
 
     # Verify slice values - use runtime indices since slice returns runtime shapes
-    assert_equal(sliced[(0, 0)], 5)
-    assert_equal(sliced[(0, 1)], 6)
-    assert_equal(sliced[(1, 0)], 9)
-    assert_equal(sliced[(1, 1)], 10)
+    assert_equal(sliced[0, 0], 5)
+    assert_equal(sliced[0, 1], 6)
+    assert_equal(sliced[1, 0], 9)
+    assert_equal(sliced[1, 1], 10)
 
     # Test that slice is a view (modifying slice affects original)
     sliced[(Idx(0), Idx(0))] = 99
@@ -276,17 +276,17 @@ fn test_slice() raises:
 
     # Test different slice ranges
     var top_left = tensor_2d.slice[0:2, 0:2]()
-    assert_equal(top_left[(0, 0)], 0)
-    assert_equal(top_left[(0, 1)], 1)
-    assert_equal(top_left[(1, 0)], 4)
-    assert_equal(top_left[(1, 1)], 99)  # Modified earlier
+    assert_equal(top_left[0, 0], 0)
+    assert_equal(top_left[0, 1], 1)
+    assert_equal(top_left[1, 0], 4)
+    assert_equal(top_left[1, 1], 99)  # Modified earlier
 
     # Test slice with start=0 (should work with default)
     var first_row = tensor_2d.slice[0:1, 0:4]()
     assert_equal(first_row.layout.shape[0].value(), 1)
     assert_equal(first_row.layout.shape[1].value(), 4)
-    assert_equal(first_row[(0, 0)], 0)
-    assert_equal(first_row[(0, 3)], 3)
+    assert_equal(first_row[0, 0], 0)
+    assert_equal(first_row[0, 3], 3)
 
 
 fn test_slice_3d() raises:
@@ -309,13 +309,13 @@ fn test_slice_3d() raises:
 
     # Verify some values - use runtime indices
     # Original tensor[1][1][1] = 1*16 + 1*4 + 1 = 21
-    assert_equal(sliced_3d[(0, 0, 0)], 21)
+    assert_equal(sliced_3d[0, 0, 0], 21)
 
     # Original tensor[1][1][2] = 1*16 + 1*4 + 2 = 22
-    assert_equal(sliced_3d[(0, 0, 1)], 22)
+    assert_equal(sliced_3d[0, 0, 1], 22)
 
     # Original tensor[2][2][2] = 2*16 + 2*4 + 2 = 42
-    assert_equal(sliced_3d[(1, 1, 1)], 42)
+    assert_equal(sliced_3d[1, 1, 1], 42)
 
     # Test that it's a view
     sliced_3d[(Idx(0), Idx(0), Idx(0))] = 999
@@ -381,21 +381,21 @@ fn test_vectorize() raises:
     assert_equal(vectorized.layout.stride[0].value(), 64)
     assert_equal(vectorized.layout.stride[1].value(), 4)
 
-    # Verify that vectorized[i, j] points to the start of the (i,j) 4x4 block
-    # Block (0, 0) starts at element 0
-    assert_equal(vectorized[(Idx(0), Idx(0))], 0)
+    # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
+    # Block (0, 0) starts at element 0 - check first element of the SIMD vector
+    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[(Idx(0), Idx(1))], 4)
+    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[(Idx(1), Idx(0))], 64)
+    assert_equal(vectorized[(Idx(1), Idx(0))][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[(Idx(1), Idx(1))], 68)
+    assert_equal(vectorized[(Idx(1), Idx(1))][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[(Idx(3), Idx(3))], 204)
+    assert_equal(vectorized[(Idx(3), Idx(3))][0], 204)
 
 
 fn test_vectorize_non_square() raises:
@@ -419,11 +419,15 @@ fn test_vectorize_non_square() raises:
     assert_equal(vectorized.layout.stride[0].value(), 16)
     assert_equal(vectorized.layout.stride[1].value(), 4)
 
-    # Verify block positions
-    assert_equal(vectorized[(Idx(0), Idx(0))], 0)  # Block (0,0) at element 0
-    assert_equal(vectorized[(Idx(0), Idx(1))], 4)  # Block (0,1) at element 4
-    assert_equal(vectorized[(Idx(1), Idx(0))], 16)  # Block (1,0) at element 16
-    assert_equal(vectorized[(Idx(3), Idx(1))], 52)  # Block (3,1) at element 52
+    # Verify block positions - check first element of each SIMD vector
+    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)  # Block (0,0) at element 0
+    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)  # Block (0,1) at element 4
+    assert_equal(
+        vectorized[(Idx(1), Idx(0))][0], 16
+    )  # Block (1,0) at element 16
+    assert_equal(
+        vectorized[(Idx(3), Idx(1))][0], 52
+    )  # Block (3,1) at element 52
 
 
 fn test_vectorize_1d() raises:
@@ -445,18 +449,18 @@ fn test_vectorize_1d() raises:
     # Stride should be 1*4 = 4
     assert_equal(vectorized.layout.stride[0].value(), 4)
 
-    # Verify block positions
-    assert_equal(vectorized[(Idx(0),)], 0)
-    assert_equal(vectorized[(Idx(1),)], 4)
-    assert_equal(vectorized[(Idx(2),)], 8)
-    assert_equal(vectorized[(Idx(3),)], 12)
+    # Verify block positions - check first element of each SIMD vector
+    assert_equal(vectorized[(Idx(0),)][0], 0)
+    assert_equal(vectorized[(Idx(1),)][0], 4)
+    assert_equal(vectorized[(Idx(2),)][0], 8)
+    assert_equal(vectorized[(Idx(3),)][0], 12)
 
 
 def test_indexing():
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]())
-    assert_equal(tensor[(Int32(0), Int64(0))], 1)
-    assert_equal(tensor[(Int(1), Int64(0))], 3)
+    assert_equal(tensor[Int32(0), Int64(0)], 1)
+    assert_equal(tensor[Int(1), Int64(0)], 3)
 
 
 def test_to_layout_tensor_square():

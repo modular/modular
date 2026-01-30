@@ -824,7 +824,7 @@ fn group_limited_router_kernel[
     norm_weights: Bool,
     num_threads: Int,
     scores_input_fn: OptionalReg[
-        fn[width: Int] (IndexList[2]) capturing -> SIMD[scores_type, width]
+        fn[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
     expert_indices: LayoutTensor[
@@ -1003,7 +1003,7 @@ fn router_group_limited[
     norm_weights: Bool,
     target: StaticString,
     scores_input_fn: OptionalReg[
-        fn[width: Int] (IndexList[2]) capturing -> SIMD[scores_type, width]
+        fn[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
     expert_indices: LayoutTensor[mut=True, DType.int32, ...],

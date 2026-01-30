@@ -385,7 +385,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: __TypeOfAllTypes](
+struct _VariadicListIter[type: TrivialRegisterType](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -419,7 +419,7 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-struct VariadicList[type: __TypeOfAllTypes](
+struct VariadicList[type: TrivialRegisterType](
     Iterable, Sized, TrivialRegisterType
 ):
     """A utility class to access homogeneous variadic function arguments.
@@ -570,7 +570,7 @@ struct _VariadicListMemIter[
     fn __init__(
         out self,
         index: Int,
-        ref [Self.list_origin]list: Self.variadic_list_type,
+        ref[Self.list_origin] list: Self.variadic_list_type,
     ):
         self.index = index
         self.src = Pointer(to=list)
@@ -578,7 +578,7 @@ struct _VariadicListMemIter[
     @always_inline
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
+    ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
         var index = self.index
         if index >= len(self.src[]):
             raise StopIteration()
@@ -668,7 +668,7 @@ struct VariadicListMem[
                 ]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
+        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -713,7 +713,7 @@ struct VariadicListMem[
     @always_inline
     fn __getitem__(
         self, idx: Int
-    ) -> ref [
+    ) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
@@ -870,7 +870,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing
+        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -924,7 +924,7 @@ struct VariadicPack[
     @always_inline
     fn __getitem__[
         index: Int
-    ](self) -> ref [Self.origin] Self.element_types[index]:
+    ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -22,6 +21,7 @@ from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout
 from layout.tma_async import _tma_desc_tile_layout
+from collections import OptionalReg
 from linalg.matmul.gpu.sm90.matmul import (
     HopperMatmulSM90Kernel,
     _get_c_smem_layout,

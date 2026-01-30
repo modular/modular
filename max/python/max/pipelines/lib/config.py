@@ -38,6 +38,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from .config_enums import PipelineRole
+from .hf_utils import is_diffusion_pipeline
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
@@ -416,10 +417,20 @@ class PipelineConfig(ConfigFileModel):
                 assert self.draft_model is not None
                 # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
                 if self.speculative.is_eagle():
-                    assert (
+                    if self.draft_model.huggingface_config is None:
+                        raise ValueError(
+                            f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
+                            f"but could not load config for '{self.draft_model.model_path}'. "
+                            "Please ensure the draft model is a standard Transformers model with a valid config.json."
+                        )
+                    if (
                         len(self.draft_model.huggingface_config.architectures)
-                        == 1
-                    )
+                        != 1
+                    ):
+                        raise ValueError(
+                            f"Expected exactly 1 architecture in draft model config, "
+                            f"got {len(self.draft_model.huggingface_config.architectures)}"
+                        )
                     hf_arch = self.draft_model.huggingface_config.architectures[
                         0
                     ]
@@ -1028,6 +1039,19 @@ class PipelineConfig(ConfigFileModel):
         # Resolve final pipeline-specific changes to the config before doing
         # memory estimations.
         arch.pipeline_model.finalize_pipeline_config(self)
+
+        if is_diffusion_pipeline(model_config.huggingface_model_repo):
+            # Skip memory estimation for diffusion pipelines,
+            # since they don't use KV cache.
+            return
+
+        # For non-diffusion pipelines, huggingface_config is required
+        if model_config.huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{model_config.model_path}' but could not be loaded. "
+                "This model may not be a standard Transformers model. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
 
         MemoryEstimator.estimate_memory_footprint(
             self,

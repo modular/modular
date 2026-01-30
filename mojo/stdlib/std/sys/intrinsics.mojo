@@ -818,8 +818,8 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _RegisterPackType[*a: __TypeOfAllTypes](TrivialRegisterType):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, Self.a, `>`]
+struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
 
@@ -844,7 +844,7 @@ struct _RegisterPackType[*a: __TypeOfAllTypes](TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn expect[T: __TypeOfAllTypes, //, expected_val: T](val: T) -> T:
+fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 

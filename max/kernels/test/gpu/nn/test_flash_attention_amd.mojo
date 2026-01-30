@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import isclose
 from random import rand
 from sys import argv, env_get_bool
@@ -52,7 +51,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -497,7 +496,7 @@ fn test_context_encoding[
 fn test_decoding[
     batch_size: Int,
     depth: Int,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     qkv_type: DType = DType.bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.

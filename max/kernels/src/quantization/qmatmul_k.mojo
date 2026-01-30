@@ -638,11 +638,11 @@ fn _matmul_group_stream_x86[
     simd_width: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn (
+    stream_b_vals_fn: fn(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -687,11 +687,11 @@ fn _matmul_group_stream_neon_dotprod[
     simd_width: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn (
+    stream_b_vals_fn: fn(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -738,11 +738,11 @@ fn _matmul_group_stream[
     origins: OriginSet,
     //,
     group_size: Int,
-    stream_b_vals_fn: fn (
+    stream_b_vals_fn: fn(
         mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
-    ) capturing [origins] -> None,
+    ) capturing[origins] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
@@ -1059,10 +1059,10 @@ fn _matmul_Q4_K_tile[
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: fn (
+    matmul_group_fn: fn(
         a_ptr: UnsafePointer[Int8],
         mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
@@ -1297,12 +1297,12 @@ fn _matmul_Q6_K_tile[
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: fn (
+    matmul_group_fn: fn(
         a_ptr: UnsafePointer[Int8],
         mut c_int32_group: _Accumulator[
             DType.int32, tile_m, tile_n, simd_width
         ],
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size]],
@@ -1483,7 +1483,7 @@ fn _matmul_Qb_K[
         tile_n: Int,
         simd_width: Int,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    ] (
+    ](
         var a_ptr: UnsafePointer[_block_Q8_K_packed[group_size]],
         b_ptr: UnsafePointer[b_type],
         var c_ptr: UnsafePointer[Float32],

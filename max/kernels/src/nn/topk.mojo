@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, exp, iota
 from memory import LegacyUnsafePointer
 
@@ -47,6 +46,9 @@ from layout import (
     RuntimeTuple,
 )
 from layout.int_tuple import fill_like
+from layout._tile_tensor import TileTensor
+from layout._coord import DynamicCoord, RuntimeInt, coord_to_index_list
+from layout._layout import Layout as TileLayout
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -56,6 +58,41 @@ from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList, StaticTuple, product
 from utils.numerics import max_or_inf, min_or_neg_inf
+
+
+@always_inline
+fn _to_tile_tensor[
+    rank: Int,
+    dtype: DType,
+](tensor: LayoutTensor[dtype, ...]) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, rank].element_types,
+    stride_types = DynamicCoord[DType.int64, rank].element_types,
+    dtype,
+    tensor.origin,
+    address_space = tensor.address_space,
+]:
+    """Convert a LayoutTensor to a TileTensor with all runtime dimensions.
+
+    This helper avoids using the TileTensor(LayoutTensor) constructor which
+    can trigger a compiler bug when the LayoutTensor has variadic parameters.
+
+    Parameters:
+        rank: The rank of the tensor (must match tensor.rank).
+        dtype: The data type of the tensor elements (inferred from tensor).
+    """
+    var shape = DynamicCoord[DType.int64, rank]()
+    var stride = DynamicCoord[DType.int64, rank]()
+
+    @parameter
+    for i in range(rank):
+        shape[i] = rebind[shape.element_types[i]](
+            RuntimeInt[DType.int64](tensor.runtime_layout.shape.value[i])
+        )
+        stride[i] = rebind[stride.element_types[i]](
+            RuntimeInt[DType.int64](tensor.runtime_layout.stride.value[i])
+        )
+
+    return TileTensor(tensor.ptr, TileLayout(shape, stride))
 
 
 @always_inline
@@ -143,7 +180,7 @@ fn top_k[
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     sorted: Bool,
     ctx: DeviceContextPtr,
-    k: OptionalReg[
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
@@ -197,7 +234,7 @@ fn top_k[
             k=k,
         )
     else:
-        if normalized_axis != input.rank - 1:
+        if normalized_axis != Scalar[DType.int](input.rank - 1):
             raise Error("axis other than -1 not supported on GPU")
         if not sorted:
             print(
@@ -227,7 +264,7 @@ fn _top_k_cpu[
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
-    k: OptionalReg[
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ):
@@ -365,20 +402,20 @@ fn fused_token_sampling_cpu[
     max_k: Int,
     input: LayoutTensor[dtype, ...],
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
-    k: OptionalReg[
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    top_p: OptionalReg[
+    top_p: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -452,20 +489,20 @@ fn _top_k_sampling[
     input: LayoutTensor[dtype, ...],
     out_vals: LayoutTensor[mut=True, dtype, ...],
     out_idxs: LayoutTensor[mut=True, DType.int64, ...],
-    k: OptionalReg[
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    top_p: OptionalReg[
+    top_p: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -520,11 +557,36 @@ fn _top_k_sampling[
         raise Error("Unsupported input rank. Must be >= 1.")
 
     internal_out_shape = IndexList[internal_rank](internal_bs, max_k)
-    internal_out_vals = reshape(out_vals, internal_out_shape)  # internal view
     internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
-    internal_out_idxs = reshape(
-        out_idxs, internal_out_idxs_shape
-    )  # internal view
+
+    var reshaped_out_idxs = reshape(
+        _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+    )
+    var internal_out_idxs = LayoutTensor[
+        DType.int64,
+        Layout.row_major[internal_rank](),
+        out_idxs.origin,
+        address_space = out_idxs.address_space,
+    ](
+        reshaped_out_idxs.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_out_idxs.layout.shape)
+        ),
+    )
+    var reshaped_out_vals = reshape(
+        _to_tile_tensor[out_vals.rank](out_vals), internal_out_shape
+    )
+    var internal_out_vals = LayoutTensor[
+        dtype,
+        Layout.row_major[internal_rank](),
+        out_vals.origin,
+        address_space = out_vals.address_space,
+    ](
+        reshaped_out_vals.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_out_vals.layout.shape)
+        ),
+    )
     # End reshape to internal rank
 
     var out_idxs_tmp = LayoutTensor[
@@ -535,8 +597,22 @@ fn _top_k_sampling[
             internal_out_shape
         ),  # topk returns K as last dim
     )
+    var reshaped_input = reshape(
+        _to_tile_tensor[input.rank](input), internal_in_shape
+    )
+    var internal_input = LayoutTensor[
+        dtype,
+        Layout.row_major[internal_rank](),
+        input.origin,
+        address_space = input.address_space,
+    ](
+        reshaped_input.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_input.layout.shape)
+        ),
+    )
     _top_k_cpu[dtype=dtype, largest=True](
-        reshape(input, internal_in_shape),
+        internal_input,
         max_k,
         axis=internal_rank - 1,  # Always operate on the last axis
         out_vals=internal_out_vals,
@@ -679,7 +755,7 @@ fn _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     fn shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = fn[dtype: DType, simd_width: Int] (
+        comptime fn_type = fn[dtype: DType, simd_width: Int](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor
@@ -688,8 +764,8 @@ fn _warp_reduce_topk[
         comptime shuffle_fn = xor_fn if broadcast else down_fn
 
         return TopK_2[T, largest](
-            u=shuffle_fn(v.u, offset),  # u is the value
-            p=Int(shuffle_fn(Int32(v.p), offset)),  # p is the index
+            u=shuffle_fn(v.u, UInt32(offset)),  # u is the value
+            p=Int(shuffle_fn(Int32(v.p), UInt32(offset))),  # p is the index
         )
 
     @parameter
@@ -1264,22 +1340,22 @@ fn _topk_gpu[
     device_local_topk_idxs: LayoutTensor[out_idx_type, ...],
     out_vals: LayoutTensor[mut=True, dtype, ...],
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
-    k: OptionalReg[
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
     block_size: Int = 256,
-    num_blocks_per_input: OptionalReg[Int] = None,
-    top_p: OptionalReg[
+    num_blocks_per_input: Optional[Int] = None,
+    top_p: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -1318,7 +1394,7 @@ fn _topk_gpu[
         temperature: The temperature based scaling for each batch element.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
-        num_blocks_per_input: OptionalReg[Int]
+        num_blocks_per_input: Optional[Int]
             Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
@@ -1511,22 +1587,22 @@ fn topk_gpu[
     input: LayoutTensor[dtype, ...],
     out_vals: LayoutTensor[mut=True, dtype, ...],
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
-    block_size: OptionalReg[Int] = None,
-    num_blocks_per_input: OptionalReg[Int] = None,
-    k: OptionalReg[
+    block_size: Optional[Int] = None,
+    num_blocks_per_input: Optional[Int] = None,
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    top_p: OptionalReg[
+    top_p: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -1558,7 +1634,7 @@ fn topk_gpu[
             Last dimension is 1 if sampling is True, otherwise K.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
-        num_blocks_per_input: OptionalReg[Int]
+        num_blocks_per_input: Optional[Int]
             Number of blocks per input (default computed from input size and block size).
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
@@ -1619,9 +1695,33 @@ fn topk_gpu[
         var internal_out_vals_shape = IndexList[internal_rank](1, bound_max_k)
         var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
         # Reshape 1D inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        var reshaped_input = reshape(
+            _to_tile_tensor[input.rank](input), internal_in_shape
+        )
+        internal_input = type_of(internal_input)(
+            reshaped_input.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_input.layout.shape)
+            ),
+        )
+        var reshaped_out_idxs = reshape(
+            _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+        )
+        internal_out_idxs = type_of(internal_out_idxs)(
+            reshaped_out_idxs.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_idxs.layout.shape)
+            ),
+        )
+        var reshaped_out_vals = reshape(
+            _to_tile_tensor[out_vals.rank](out_vals), internal_out_vals_shape
+        )
+        internal_out_vals = type_of(internal_out_vals)(
+            reshaped_out_vals.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_vals.layout.shape)
+            ),
+        )
     elif input.rank == internal_rank:
         # Input is already 2D, no reshaping needed
         internal_bs = orig_in_shape[0]
@@ -1675,9 +1775,33 @@ fn topk_gpu[
         )
 
         # Reshape higher dimensional inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        var reshaped_input = reshape(
+            _to_tile_tensor[input.rank](input), internal_in_shape
+        )
+        internal_input = type_of(internal_input)(
+            reshaped_input.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_input.layout.shape)
+            ),
+        )
+        var reshaped_out_idxs = reshape(
+            _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+        )
+        internal_out_idxs = type_of(internal_out_idxs)(
+            reshaped_out_idxs.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_idxs.layout.shape)
+            ),
+        )
+        var reshaped_out_vals = reshape(
+            _to_tile_tensor[out_vals.rank](out_vals), internal_out_vals_shape
+        )
+        internal_out_vals = type_of(internal_out_vals)(
+            reshaped_out_vals.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_vals.layout.shape)
+            ),
+        )
 
     # Calculate the number of blocks per input
     var num_blocks_per_input_ = min(
@@ -1745,22 +1869,22 @@ fn fused_token_sampling_gpu[
     min_top_p: Float32,
     input: LayoutTensor[dtype, ...],
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
-    block_size: OptionalReg[Int] = None,
-    num_blocks_per_input: OptionalReg[Int] = None,
-    k: OptionalReg[
+    block_size: Optional[Int] = None,
+    num_blocks_per_input: Optional[Int] = None,
+    k: Optional[
         LayoutTensor[DType.int64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    top_p: OptionalReg[
+    top_p: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
@@ -1873,7 +1997,7 @@ fn apply_gumbel_noise_kernel[
 
             for i in range(tid_in_group, N // simd_width, group_size):
                 var rng_state = Random(
-                    seed=seed_val * N + i,
+                    seed=seed_val * UInt64(N) + UInt64(i),
                 )
                 var input_val: SIMD[dtype, simd_width]
                 if N % simd_width == 0:
@@ -1906,7 +2030,9 @@ fn apply_gumbel_noise_kernel[
             if N % simd_width != 0:
                 var N_res = N % simd_width
                 var rng_state = Random(
-                    seed=seed_val * N + (N - N_res) + tid_in_group,
+                    seed=seed_val * UInt64(N)
+                    + UInt64(N - N_res)
+                    + UInt64(tid_in_group),
                 )
                 if tid_in_group < N_res:
                     var input_val = ld_ptr.load(
@@ -1932,12 +2058,12 @@ fn gumbel_sampling_gpu[
     ctx: DeviceContext,
     input: LayoutTensor[dtype, input_layout, ...],
     out_idxs: LayoutTensor[mut=True, out_idx_type, ...],
-    temperature: OptionalReg[
+    temperature: Optional[
         LayoutTensor[
             DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    seed: OptionalReg[
+    seed: Optional[
         LayoutTensor[
             DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]

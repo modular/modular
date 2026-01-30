@@ -11,22 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv, rsqrt
 from sys import simd_width_of
 
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext, get_gpu_target
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout.math import mean, variance
 from nn.normalization import *
 from testing import assert_almost_equal
@@ -41,10 +33,10 @@ fn run_layer_norm_block[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
+    var beta_h = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -61,17 +53,9 @@ fn run_layer_norm_block[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[2]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(data_shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(data_shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -82,11 +66,7 @@ fn run_layer_norm_block[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                IndexList[2](row, col)
-            )
-        )
+        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
         return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
@@ -95,11 +75,7 @@ fn run_layer_norm_block[
     fn gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
-                IndexList[1](coords[0])
-            )
-        )
+        var idx = gamma.layout(Idx(coords[0]))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(data_buf)
@@ -108,11 +84,7 @@ fn run_layer_norm_block[
     fn output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                IndexList[2](row, col)
-            )
-        )
+        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
         data_buf.ptr.store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -126,9 +98,9 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
-            mut = beta.mut,
             origin = beta.origin,
-            layout = beta.layout,
+            shape_types = beta.shape_types,
+            stride_types = beta.stride_types,
             UInt(simd_width),
             input_fn,
             gamma_fn,
@@ -150,9 +122,9 @@ fn run_layer_norm_block[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             data_h + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -182,10 +154,10 @@ fn run_layer_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
+    var beta_h = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -201,17 +173,9 @@ fn run_layer_norm_gpu[
 
     var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -224,11 +188,7 @@ fn run_layer_norm_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
 
         return data_buf.ptr.load[width=width](idx)
 
@@ -238,11 +198,7 @@ fn run_layer_norm_gpu[
     fn gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
-                coords[0]
-            )
-        )
+        var idx = gamma.layout(Idx(coords[0]))
         return gamma.ptr.load[width=width](idx[0])
 
     @__copy_capture(data_buf)
@@ -251,11 +207,7 @@ fn run_layer_norm_gpu[
     fn output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         data_buf.ptr.store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -265,9 +217,9 @@ fn run_layer_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             data_h + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
@@ -296,10 +248,10 @@ fn run_layer_norm_warp_tiling[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](cols)
+    var beta_h = alloc[Scalar[dtype]](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -316,17 +268,9 @@ fn run_layer_norm_warp_tiling[
     var data_shape = Index(rows, cols)
     var param_shape = Index(cols)
 
-    comptime layout = Layout.row_major[2]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(data_shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(data_shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -337,11 +281,7 @@ fn run_layer_norm_warp_tiling[
     @always_inline
     @parameter
     fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                IndexList[2](row, col)
-            )
-        )
+        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
 
         return data_buf.ptr.load[width=width](idx)
 
@@ -351,11 +291,7 @@ fn run_layer_norm_warp_tiling[
     fn gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
-                IndexList[1](coords[0])
-            )
-        )
+        var idx = gamma.layout(Idx(coords[0]))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(data_buf)
@@ -364,11 +300,7 @@ fn run_layer_norm_warp_tiling[
     fn output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                IndexList[2](row, col)
-            )
-        )
+        var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
         data_buf.ptr.store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -382,9 +314,9 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
-            mut = beta.mut,
             origin = beta.origin,
-            layout = beta.layout,
+            shape_types = beta.shape_types,
+            stride_types = beta.stride_types,
             UInt(simd_width),
             input_fn,
             gamma_fn,
@@ -406,9 +338,9 @@ fn run_layer_norm_warp_tiling[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             data_h + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)

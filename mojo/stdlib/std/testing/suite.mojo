@@ -37,7 +37,7 @@ struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     var writable: Pointer[Self.W, Self.origin]
     var level: Int
 
-    fn __init__(out self, ref [Self.origin]w: Self.W, *, level: Int):
+    fn __init__(out self, ref[Self.origin] w: Self.W, *, level: Int):
         self.writable = Pointer(to=w)
         self.level = level
 
@@ -326,7 +326,7 @@ struct TestSuiteReport(Copyable, Writable):
 struct _Test(Copyable):
     """A single test to run."""
 
-    comptime fn_type = fn () raises
+    comptime fn_type = fn() raises
     var test_fn: Self.fn_type
     var name: StaticString
 

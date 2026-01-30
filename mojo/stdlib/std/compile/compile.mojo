@@ -76,7 +76,7 @@ struct _PopulateInfo(TrivialRegisterType):
         populate: Function pointer to populate captured variables
     """
 
-    var populate: fn (__mlir_type.`!kgen.pointer<none>`) capturing -> None
+    var populate: fn(__mlir_type.`!kgen.pointer<none>`) capturing -> None
 
 
 @fieldwise_init
@@ -118,7 +118,7 @@ struct CompiledFunctionInfo[
     """The emission kind the object was emitted to."""
 
     comptime populate = rebind[
-        fn (OpaquePointer[MutAnyOrigin]) capturing -> None
+        fn(OpaquePointer[MutAnyOrigin]) capturing -> None
     ](
         __mlir_attr[
             `#kgen.compile_offload_closure<`,

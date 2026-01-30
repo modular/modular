@@ -134,7 +134,7 @@ struct TileLoaderLDS[
     src_layout: Layout,  # Full tensor layout (stride = shape[1])
     src_tile_layout: Layout,  # Tile shape for loading geometry
     num_loading_warps: Int,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
     load_width: Int = simd_width_of[dtype](),
     use_full_tile_width: Bool = False,  # FP8 row-major mode
 ](TrivialRegisterType):
@@ -321,7 +321,7 @@ fn _load_from_lds[
         # BF16 x4 = 64 bits = ds_read_b64
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<4 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -334,7 +334,7 @@ fn _load_from_lds[
         # BF16 x8 = 128 bits = ds_read_b128
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -343,45 +343,45 @@ fn _load_from_lds[
                 _type = SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float8_e4m3fn and width == 8:
+    elif dtype.is_float8() and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
             _type = SIMD[DType.uint8, 8]._mlir_type
         ](llvm_res)
-        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 16:
+    elif dtype.is_float8() and width == 16:
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
             _type = SIMD[DType.uint8, 16]._mlir_type
         ](llvm_res)
-        # Bitcast uint8 → float8_e4m3fn (same 8-bit representation)
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype == DType.float8_e4m3fn and width == 32:
+    elif dtype.is_float8() and width == 32:
         # FP8 x32 = 256 bits = 2 x ds_read_b128
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
         var llvm_res0 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -392,7 +392,7 @@ fn _load_from_lds[
         ](shared_ptr_offset)
         var llvm_res1 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
@@ -405,6 +405,7 @@ fn _load_from_lds[
         var uint8_vec = rebind[SIMD[DType.uint8, 16]](uint8_vec0).join(
             rebind[SIMD[DType.uint8, 16]](uint8_vec1)
         )
+        # Bitcast uint8 → float8 (same 8-bit representation)
         return bitcast[dtype, width](uint8_vec)
     else:
         constrained[
@@ -422,7 +423,7 @@ fn load_lds_fragment[
     frag_element_layout: Layout,
     //,
     mma_access_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](
     smem_tile: SMemTile[
         dtype, smem_layout, element_layout=smem_element_layout, ...
@@ -627,7 +628,7 @@ struct MmaOp[
     MMA_N: Int,
     MMA_K: Int,
     alignment: Int,
-    swizzle: OptionalReg[Swizzle],  # Swizzle pattern (None if disabled)
+    swizzle: Optional[Swizzle],  # Swizzle pattern (None if disabled)
 ]:
     """Encapsulates MMA register tiles and operations for matrix multiplication.
 
@@ -935,9 +936,9 @@ struct TileBuffers[
     )
     comptime swizzle_shift = 4
 
-    comptime byte_swizzle = OptionalReg(
+    comptime byte_swizzle = Optional(
         Swizzle(Self.swizzle_log_tile, Self.swizzle_base, Self.swizzle_shift)
-    ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+    ) if Self.enable_swizzle else Optional[Swizzle]()
 
     # FP8 uses row-major LDS layout for correct partial block OOB handling
     comptime use_fp8_row_major = Self.in_type == DType.float8_e4m3fn
@@ -1384,7 +1385,7 @@ struct AMDPingPongMatmul[
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Self.config.num_threads()
+            Int32(Self.config.num_threads())
         )
     )
     @staticmethod
@@ -1468,9 +1469,9 @@ struct AMDPingPongMatmul[
         var m = Int(block_idx.y) * BM
 
         # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
-        comptime mma_swizzle = OptionalReg(
+        comptime mma_swizzle = Optional(
             make_mma_swizzle[in_type, MMA_M, MMA_K]()
-        ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+        ) if Self.enable_swizzle else Optional[Swizzle]()
 
         # MmaOp handles both BF16 and FP8 via dtype-aware mma_frag_width
         comptime MmaOpType = MmaOp[
@@ -1515,7 +1516,7 @@ struct AMDPingPongMatmul[
 
         @always_inline
         fn s_setprio[priority: Int16]():
-            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
+            llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](Int16(priority))
 
         # ================================================================
         # PHASE SYNCHRONIZATION
@@ -1572,11 +1573,11 @@ struct AMDPingPongMatmul[
             mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
 
             # Wait for b[0], a[0] complete
-            s_waitcnt[lgkmcnt=lgkm_wait_a0_b0]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_a0_b0)]()
             mma_op.mma[0, 0]()  # Uses a[0], b[0] ✓
 
             # Wait for b[1] complete (a[1] still in flight)
-            s_waitcnt[lgkmcnt=lgkm_wait_b1]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_b1)]()
             mma_op.mma[0, 1]()  # Uses a[0] (done), b[1] ✓
 
             # Wait for a[1] (drain remaining)

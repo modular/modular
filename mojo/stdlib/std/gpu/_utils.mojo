@@ -163,12 +163,12 @@ comptime _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
 comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
 comptime llvm_struct_splat[
-    field_type: __TypeOfAllTypes, repeat: Int
+    field_type: TrivialRegisterType, repeat: Int
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
         `!kgen.variadic_splat<`,
-        field_type,
+        +field_type,
         `, `,
         repeat._mlir_value,
         `>`,
@@ -177,12 +177,12 @@ comptime llvm_struct_splat[
 ]
 
 comptime kgen_struct_splat[
-    field_type: __TypeOfAllTypes, repeat: Int
+    field_type: TrivialRegisterType, repeat: Int
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
         `!kgen.variadic_splat<`,
-        field_type,
+        +field_type,
         `, `,
         repeat._mlir_value,
         `>`,

@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
@@ -641,4 +641,47 @@ def main():
                     dynamic(1),
                     static[576](),
                     static[7168](),
+                )
+
+                # swapAB tests
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(2),
+                    dynamic(16),
+                    static[1024](),
+                    static[1024 + 32](),
+                )
+
+                test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scales_dtype,
+                    block_tile_shape,
+                    umma_shape,
+                    cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+                    cta_group=cta_group,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    swapAB=True,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](
+                    ctx,
+                    dynamic(3),
+                    dynamic(100),
+                    static[2560](),
+                    static[8192](),
                 )

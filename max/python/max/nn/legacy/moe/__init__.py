@@ -13,6 +13,22 @@
 """Mixture of Experts (MoE) module."""
 
 from .moe import MoE, MoEGate
-from .moe_fp8 import MoEFp8
+from .moe_fp8 import MoEQuantized
+from .quant_strategy import (
+    Fp8Strategy,
+    Nvfp4Scales,
+    Nvfp4Strategy,
+    QuantStrategy,
+    silu_gate,
+)
 
-__all__ = ["MoE", "MoEFp8", "MoEGate"]
+__all__ = [
+    "Fp8Strategy",
+    "MoE",
+    "MoEGate",
+    "MoEQuantized",
+    "Nvfp4Scales",
+    "Nvfp4Strategy",
+    "QuantStrategy",
+    "silu_gate",
+]

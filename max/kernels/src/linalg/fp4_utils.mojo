@@ -83,7 +83,10 @@ fn cast_uint_to_fp4e2m1[
 
         @parameter
         for shift in range(0, num_fp4_values):
-            var x = (x[i].to_bits() >> (shift * FP4_E2M1_WIDTH)) & FP4_E2M1_MASK
+            comptime BitsType = type_of(x[i].to_bits())
+            var x = (
+                x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
+            ) & BitsType(FP4_E2M1_MASK)
             result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[Int(x)].cast[
                 out_dtype
             ]()

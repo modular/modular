@@ -252,7 +252,7 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = len(VariadicList(types))
+            comptime args_len = Variadic.size(types)
 
             var message = printf_begin()
             message = printf_append_string_n(

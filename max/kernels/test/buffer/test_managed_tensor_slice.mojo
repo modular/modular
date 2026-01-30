@@ -220,9 +220,9 @@ def test_to_tile_tensor():
 
     # Verify the layout tensor has the same data
     __comptime_assert tile_tensor.rank == 2
-    assert_equal(tile_tensor[(0, 0)], 0.0)
-    assert_equal(tile_tensor[(1, 1)], 5.0)
-    assert_equal(tile_tensor[(2, 3)], 11.0)
+    assert_equal(tile_tensor[0, 0], 0.0)
+    assert_equal(tile_tensor[1, 1], 5.0)
+    assert_equal(tile_tensor[2, 3], 11.0)
 
     # Verify dimensions
     assert_equal(tile_tensor.layout.shape[0].value(), 3)

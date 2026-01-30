@@ -210,17 +210,6 @@ struct Interval[T: IntervalElement](
         """
         return self.start <= other.start and self.end >= other.end
 
-    fn __eq__(self, other: Self) -> Bool:
-        """Returns whether this interval equals another interval.
-
-        Args:
-            other: The interval to compare with.
-
-        Returns:
-            True if both intervals have the same start and end values.
-        """
-        return self.start == other.start and self.end == other.end
-
     fn __le__(self, other: Self) -> Bool:
         """Returns whether this interval is less than or equal to another
         interval.
