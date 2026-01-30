@@ -20,10 +20,10 @@ It does two things:
 
 Currently there is a hard dependency that two virtualenvs are already created:
     - .venv-serve (not needed for max-ci, which uses bazel)
-    - .venv-lm-eval
+    - .venv-eval
 
 Where the serve environment should already have either MAX/VLLM/SGLang installed.
-The lm-eval environment should already have lm-eval installed.
+The eval environment should already have lm-eval installed.
 These dependencies are to be removed once this script
 has been integrated into bazel.
 
@@ -69,8 +69,8 @@ VISION_TASK = "chartqa"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-LmEvalResults = dict[str, Any]
-LmEvalSamples = list[dict[str, Any]]
+EvalResults = dict[str, Any]
+EvalSamples = list[dict[str, Any]]
 
 
 def validate_hf_token() -> None:
@@ -165,9 +165,9 @@ def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def call_lm_eval(
+def call_eval(
     model: str, task: str, *, max_concurrent: int, num_questions: int
-) -> tuple[LmEvalResults, LmEvalSamples]:
+) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
         kw in model
@@ -188,13 +188,11 @@ def call_lm_eval(
     if "gpt-oss" in model:
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
-    interpreter = (
-        sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
-    )
+    interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
-        lm_eval_cmd = [
+        eval_cmd = [
             "lm_eval",
             f"--tasks={task}",
             "--model=local-chat-completions",
@@ -209,14 +207,14 @@ def call_lm_eval(
             "--fewshot_as_multiturn",
         ]
 
-        args = [interpreter, "-m", *lm_eval_cmd]
-        logger.info(f"Running lm-eval with:\n {' '.join(args)}")
+        args = [interpreter, "-m", *eval_cmd]
+        logger.info(f"Running eval with:\n {' '.join(args)}")
         check_call(args, timeout=600)
 
-        return parse_lm_eval_results(Path(tempdir))
+        return parse_eval_results(Path(tempdir))
 
 
-def parse_lm_eval_results(loc: Path) -> tuple[LmEvalResults, LmEvalSamples]:
+def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
     samples = []
     for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
         samples.append(json.loads(line))
@@ -271,7 +269,7 @@ def build_eval_summary(
     startup_time_seconds: float,
 ) -> list[EvalSummary]:
     """
-    Extract the metrics from the lm-eval results and build a summary for each task.
+    Extract the metrics from the eval results and build a summary for each task.
     """
     summaries = []
 
@@ -309,7 +307,7 @@ def build_eval_summary(
     return summaries
 
 
-def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
+def print_samples(samples: EvalSamples, print_cot: bool) -> None:
     """
     Print question and the model's responses to each sample
     Assumes 'resps' is [[str]] (one decode) and GSM8K uses 'question',
@@ -365,8 +363,8 @@ def start_server(
 def write_results(
     path: Path,
     summary: list[EvalSummary],
-    results: list[LmEvalResults],
-    all_samples: list[LmEvalSamples],
+    results: list[EvalResults],
+    all_samples: list[EvalSamples],
     tasks: list[str],
 ) -> None:
     summary_file = path / "eval_metrics.json"
@@ -400,13 +398,13 @@ def write_results(
     "--output-path",
     type=click.Path(file_okay=False, writable=True, path_type=Path),
     default=None,
-    help="If provided, a summary json file and the lm-eval result are written here",
+    help="If provided, a summary json file and the eval result are written here",
 )
 @click.option(
     "--print-responses",
     is_flag=True,
     default=False,
-    help="Print question/response pairs from lm-eval samples after the run finishes",
+    help="Print question/response pairs from eval samples after the run finishes",
 )
 @click.option(
     "--print-cot",
@@ -495,7 +493,7 @@ def smoke_test(
 
         for task in tasks:
             test_single_request(model, task)
-            result, samples = call_lm_eval(
+            result, samples = call_eval(
                 model,
                 task,
                 max_concurrent=max_concurrent,
