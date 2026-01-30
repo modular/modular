@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "lit_tests", "pkg_files")
+load("//bazel:api.bzl", "lit_tests")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -67,12 +67,4 @@ lit_tests(
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/kgen-translate",
     ],
-)
-
-pkg_files(
-    name = "test_python",
-    srcs = [
-        "mojo_build_python.mojo",
-    ],
-    visibility = ["//utils:__subpackages__"],
 )
