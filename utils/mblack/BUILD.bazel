@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -62,9 +62,7 @@ modular_py_test(
     ],
 )
 
-pkg_files(
+filegroup(
     name = "mblack_files",
-    srcs = glob(["**"]),
-    prefix = "mblack",
-    strip_prefix = strip_prefix.from_pkg(""),
+    srcs = glob(["src/**"]),
 )
