@@ -34,17 +34,19 @@ Example:
 # New Module-based API (primary)
 # Legacy submodule is available for backward compatibility
 from . import legacy
+from .conv import Conv2d
 from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
-from .norm import GemmaRMSNorm, LayerNorm, RMSNorm
+from .norm import GemmaRMSNorm, GroupNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
 
 __all__ = [
+    "Conv2d",
     "Embedding",
     "GemmaRMSNorm",
-    "LayerNorm",
+    "GroupNorm",
     "Linear",
     "Module",
     "ModuleList",
