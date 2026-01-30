@@ -28,3 +28,4 @@ params:
             ]
 
   multimem: [False]
+  ragged: [False, True]
