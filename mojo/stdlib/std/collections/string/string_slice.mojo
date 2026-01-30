@@ -14,6 +14,7 @@
 
 from builtin.builtin_slice import ContiguousSlice
 from builtin.format_int import _write_int
+from collections._index_normalization import normalize_index
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -27,6 +28,7 @@ from collections.string._utf8 import (
     _utf8_byte_type,
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
+    _is_utf8_start_byte,
 )
 from collections.string.format import _FormatUtils
 from hashlib.hasher import Hasher
@@ -215,7 +217,7 @@ struct CodepointSliceIter[
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
-            var byte_len = Int(_utf8_first_byte_sequence_length(curr_ptr[]))
+            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
             return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
         else:
             return None
@@ -901,6 +903,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new StringSlice containing the bytes in the specified range.
         """
+        var start: Int
+        var end: Int
+
+        start, end = span.indices(len(self._slice))
+        debug_assert[assert_mode="safe"](
+            start == len(self._slice)
+            or _is_utf8_start_byte(self._slice.unsafe_get(start)),
+            "String slice starts on",
+            start,
+            " which is not a codepoint boundary.",
+        )
+        debug_assert[assert_mode="safe"](
+            end == len(self._slice)
+            or _is_utf8_start_byte(self._slice.unsafe_get(end)),
+            "String slice ends on, ",
+            end,
+            " which is not a codepoint boundary.",
+        )
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(var self) raises -> PythonObject:
@@ -1132,7 +1152,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices_reversed()
 
-    fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
+    fn __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -1149,11 +1169,23 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new String containing a single byte at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic
-        # evaluation at compile time
-        var result = String(capacity=1)
-        result._iadd(Span(ptr=UnsafePointer(to=self._slice[byte]), length=1))
-        return result^
+        var normalized_idx = normalize_index["StringSlice"](
+            byte, self.byte_length()
+        )
+        # _utf8_first_byte_sequence_length also checks for this, but
+        # we want subscripting to check unconditionally.
+        debug_assert[assert_mode="safe"](
+            _is_utf8_start_byte(self._slice.unsafe_get(normalized_idx)),
+            "String slice index, ",
+            normalized_idx,
+            " does not lie on a codepoint boundary.",
+        )
+        return StringSlice(
+            ptr=self.unsafe_ptr() + normalized_idx,
+            length=_utf8_first_byte_sequence_length(
+                self._slice.unsafe_get(normalized_idx)
+            ),
+        )
 
     fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
@@ -2172,7 +2204,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 var line_end = line_start
                 var is_new_line = False
                 var b0 = Byte(0)
-                var char_len = UInt(0)
+                var char_len = 0
 
                 while not is_new_line and line_end < UInt(length):
                     b0 = ptr[line_end]
@@ -2918,7 +2950,7 @@ fn _split[
         # until the start of the whitespace which was already appended
         if lhs == str_byte_len:
             break
-        rhs = lhs + Int(_utf8_first_byte_sequence_length(ptr[lhs]))
+        rhs = lhs + _utf8_first_byte_sequence_length(ptr[lhs])
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
             if s.isspace[single_character=True]():
                 break

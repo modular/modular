@@ -11,11 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build %s -o %t
-# RUN not %t 1 2>&1 | FileCheck --check-prefix CHECK_1 %s
-# RUN not %t 2 2>&1 | FileCheck --check-prefix CHECK_2 %s
-# RUN %t 3 2>&1 | FileCheck --check-prefix CHECK_3 %s
-# RUN not %t 4 2>&1 | FileCheck --check-prefix CHECK_4 %s
-# RUN not %t 5 2>&1 | FileCheck --check-prefix CHECK_5 %s
+# RUN: not not %t 1 2>&1 | FileCheck --check-prefix CHECK_1 %s
+# RUN: not not %t 2 2>&1 | FileCheck --check-prefix CHECK_2 %s
+# RUN: %t 3 2>&1 | FileCheck --check-prefix CHECK_3 %s
+# RUN: not not %t 4 2>&1 | FileCheck --check-prefix CHECK_4 %s
+# RUN: not not %t 5 2>&1 | FileCheck --check-prefix CHECK_5 %s
+# RUN: not not %t 6 2>&1 | FileCheck --check-prefix CHECK_6 %s
+# RUN: not not %t 7 2>&1 | FileCheck --check-prefix CHECK_7 %s
+
 
 from sys.arg import argv
 
@@ -50,3 +53,11 @@ def main():
         var s = String()
         s.resize(10, 128)
         # CHECK_5: Fill byte is the start of a multi-byte character.
+    elif test == "6":
+        var s = String("😌😃")
+        # CHECK_6: does not lie on a codepoint boundary.
+        var y = s[byte=1]
+    elif test == "7":
+        var s = String("😌😃")
+        # CHECK_7: is not a codepoint boundary.
+        var y = s[0:5]

@@ -13,7 +13,6 @@
 """Implements the core `String` type and related utilities."""
 
 from collections import KeyElement
-from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
 from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
@@ -892,9 +891,9 @@ struct String(
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters, this may return a
-        partial or invalid character sequence. For proper character access, use
-        `codepoint_slices()` or iterate over the string directly.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
 
         Parameters:
             I: A type that can be used as an index.
@@ -905,17 +904,15 @@ struct String(
         Returns:
             A StringSlice containing a single byte at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var normalized_idx = normalize_index["String"](byte, len(self))
-        return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
+        return StringSlice(self)[byte=byte]
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
         The start and end positions are byte indices. For strings containing
-        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
-        produce invalid UTF-8 sequences.
+        multi-byte UTF-8 characters, slicing at byte positions that do not fall
+        on codepoint boundaries will abort.
 
         Args:
             span: A slice that specifies byte positions of the new substring.
@@ -923,15 +920,7 @@ struct String(
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        var start: Int
-        var end: Int
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-
-        start, end = span.indices(self.byte_length())
-        return StringSlice(
-            ptr=self.unsafe_ptr() + start,
-            length=end - start,
-        )
+        return StringSlice(self)[span]
 
     fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -2596,7 +2585,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                     continue
             else:
                 was_last_character_underscore = False
-            if str_slice[byte=i] != "0":
+            if str_slice[byte=i] != StringSlice("0"):
                 return -1, -1
     elif ord("1") <= ord(str_slice[byte=start]) <= ord("9"):
         return 10, start

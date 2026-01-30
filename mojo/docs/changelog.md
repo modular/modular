@@ -74,6 +74,18 @@ what we publish.
 - `String.resize` will now panic if `fill_byte` is >=128. Previously it would
   create invalid UTF-8.
 
+- Subscripting into `String` and `StringSlice` will now panic if the index falls
+  in the middle of a UTF-8 encoded code-point. Previously they would return invalid
+  UTF-8. This panic is unconditional. Use `.as_bytes()[...]` if you really want
+  the previous behavior.
+
+- `StringSlice[byte=]` subscripting now returns a `StringSlice` instead of a `String`,
+  This is consistent with range-based subscripting.
+
+- Subscripting `String` and `StringSlice` by byte position will
+  now return an entire Unicode codepoint. Previously it would
+  return a single byte, and produce invalid UTF-8 if the index fell on
+  the starting byte of a multi-byte codepoint.
 - The following types now correctly implement `write_repr_to`
   - `List`, `Set`
 

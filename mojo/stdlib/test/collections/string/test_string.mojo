@@ -285,6 +285,14 @@ def test_string_indexing():
     assert_equal("Hello Mojo!!", str[-50::])
     assert_equal("Hello Mojo!!", str[:50:])
 
+    var str2 = "😌😃"
+    assert_equal("😌", str2[byte=0])
+    assert_equal("😌", str2[0:4])
+    assert_equal("😃", str2[byte=4])
+    assert_equal("😃", str2[4:])
+    var str3 = "😌😃🥰😋"
+    assert_equal("😃🥰", str3[4:12])
+
 
 def test_atol():
     # base 10
