@@ -52,7 +52,6 @@ MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
         "sglang",  # Unimplemented model type: qwen2_5_vl_text
         "multi",
-        "max",  # Wait for 26.1
     ],
     "bytedance-seed/academic-ds-9b": [
         "max",
@@ -95,7 +94,6 @@ MODELS = {
     ],  # vLLM 0.13.0 server crash
     "opengvlab/internvl3-8b-instruct": [
         "multi",
-        "max@MI355",  # 26.1
         "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "opengvlab/internvl3_5-8b-instruct": [
@@ -104,41 +102,35 @@ MODELS = {
         "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-3b-instruct": [
-        "multi",
-        "max@MI355",  # 26.1
-    ],
-    "qwen/qwen2.5-vl-7b-instruct": [
-        "multi",
-        "max@MI355",  # 26.1
-    ],
+    "qwen/qwen2.5-vl-3b-instruct": ["multi"],
+    "qwen/qwen2.5-vl-7b-instruct": ["multi"],
     "qwen/qwen3-8b": ["multi"],
     "qwen/qwen3-vl-4b-instruct": [
         "8xB200",
         "8xMI355",
-        "max",  # 26.1
         "vllm@B200",
     ],
     "qwen/qwen3-vl-4b-instruct-fp8": [
         "8xB200",
         "8xMI355",
+        "max",  # 26.2
         "MI355",  # FP8 not supported
-        "max",  # 26.1
         "max-ci@H100",
         "max-ci@2xH100",
     ],
     "qwen/qwen3-vl-30b-a3b-instruct": [
         "8xB200",
         "8xMI355",
-        "max",  # 26.1
+        "max@H100",
+        "max@2xH100",
         "max-ci@H100",
         "max-ci@2xH100",
     ],
     "qwen/qwen3-vl-30b-a3b-instruct-fp8": [
         "8xB200",
         "8xMI355",
+        "max",  # 26.2
         "MI355",  # FP8 not supported
-        "max",  # 26.1
         "max-ci@H100",
         "max-ci@2xH100",
     ],
@@ -153,12 +145,10 @@ MODELS = {
     "tbmod/gemma-3-4b-it": [
         "multi",
         "H100",
-        "max@MI355",  # 26.1
     ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
-        "max@MI355",  # 26.1
         "multi",
     ],
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": [
