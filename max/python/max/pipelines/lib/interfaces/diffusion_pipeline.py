@@ -26,12 +26,14 @@ from max._core.driver import Device
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
 from max.interfaces.tokens import TokenBuffer
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.lib.interfaces.component_model import (  # type: ignore[import-not-found]
+    ComponentModel,
+)
 from tqdm import tqdm
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession
-    from max.pipelines import PixelContext
+    from max.pipelines.core.context import PixelContext
 
     from ..config import PipelineConfig
 
@@ -179,9 +181,10 @@ class DiffusionPipeline(ABC):
         """
         # Check MAX models - prioritize GPU
         # Similar to diffusers' _execution_device but for MAX models (not torch.nn.Module)
+        assert self.components is not None
         sub_models = {k: getattr(self, k) for k in self.components}
         for name, model in sub_models.items():
-            exclude_from_cpu_offload = getattr(
+            exclude_from_cpu_offload: set[str] = getattr(
                 self, "_exclude_from_cpu_offload", set()
             )
             if name in exclude_from_cpu_offload:
@@ -445,8 +448,8 @@ class PixelModelInputs:
                 f = fmap[k]
                 if f.default is not MISSING:
                     kwargs[k] = f.default
-                elif f.default_factory is not MISSING:  # type: ignore[attr-defined]
-                    kwargs[k] = f.default_factory()  # type: ignore[misc]
+                elif f.default_factory is not MISSING:
+                    kwargs[k] = f.default_factory()
                 else:
                     # No default -> keep None; for required fields this should fail downstream.
                     kwargs[k] = None
