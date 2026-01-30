@@ -204,6 +204,8 @@ struct Int(
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    comptime _write_self_not_fields = True
+
     comptime BITWIDTH: Int = bit_width_of[DType.int]()
     """The bit width of the integer type."""
 
@@ -1003,14 +1005,6 @@ struct Int(
         """
 
         writer.write(Int64(self))
-
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the Int".
-
-        Args:
-            writer: The value to write to.
-        """
-        writer.write("Int(", self, ")")
 
     fn write_padded[W: Writer](self, mut writer: W, width: Int):
         """Write the int right-aligned to a set padding.

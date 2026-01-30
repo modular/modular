@@ -84,6 +84,17 @@ struct LegacyUnsafePointer[
         Self.origin,
         address_space = Self.address_space,
     ]
+    # FIXME(#5873): should just use the default, but AddressSpace is wrong
+    comptime _type_name = String(
+        "UnsafePointer[",
+        Self.mut,
+        ", ",
+        _unqualified_type_name[Self.type](),
+        ", ",
+        Self.address_space,
+        "]",
+    )
+    comptime _write_self_not_fields = True
 
     # Fields
     comptime _mlir_type = __mlir_type[
@@ -495,19 +506,6 @@ struct LegacyUnsafePointer[
             writer: The object to write to.
         """
         self.as_unsafe_pointer().write_to(writer)
-
-    @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the LegacyUnsafePointer.
-
-        Args:
-            writer: The object to write to.
-        """
-        FormatStruct(writer, "LegacyUnsafePointer").params(
-            Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
-            Named("address_space", Self.address_space),
-        ).fields(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods

@@ -55,25 +55,19 @@ def test_write_repr_to():
     var n = Int(42)
     check_write_to(
         Pointer(to=n),
-        contains=(
-            "Pointer[mut=True, Int, address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="Pointer[True, Int, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
     check_write_to(
         Pointer(to=n).get_immutable(),
-        contains=(
-            "Pointer[mut=False, Int, address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="Pointer[False, Int, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
 
     var s = String("hello")
     check_write_to(
         Pointer(to=s),
-        contains=(
-            "Pointer[mut=True, String, address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="Pointer[True, String, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
 

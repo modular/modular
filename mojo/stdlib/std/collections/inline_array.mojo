@@ -100,6 +100,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     ].__del__is_trivial
     comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
     comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+    comptime _write_self_not_fields = True
 
     # Fields
     comptime type = __mlir_type[
@@ -648,11 +649,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             ElementConformsTo="Representable",
         ]()
 
-        writer.write("InlineArray[")
-        writer.write(get_type_name[Self.ElementType]())
-        writer.write(", ")
-        writer.write(String(Self.size))
-        writer.write("](")
+        writer.write("[")
 
         for i in range(Self.size):
             ref element = self.unsafe_get(i)
@@ -661,7 +658,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             if i < Self.size - 1:
                 writer.write(", ")
 
-        writer.write(")")
+        writer.write("]")
 
     @always_inline
     fn __str__(self) -> String:
@@ -681,4 +678,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Returns:
             A string representation of the array.
         """
-        return self.__str__()
+        var res = String()
+        self.write_repr_to(res)
+        return res

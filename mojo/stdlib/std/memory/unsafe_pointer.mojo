@@ -302,6 +302,17 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     comptime _UnsafePointerType = Self
+    # FIXME(#5873): should just use the default, but AddressSpace is wrong
+    comptime _type_name = String(
+        "UnsafePointer[",
+        Self.mut,
+        ", ",
+        _unqualified_type_name[Self.type](),
+        ", ",
+        Self.address_space,
+        "]",
+    )
+    comptime _write_self_not_fields = True
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pointer<`,
@@ -924,19 +935,6 @@ struct UnsafePointer[
             writer: The object to write to.
         """
         _write_int[radix=16](writer, Scalar[DType.int](Int(self)), prefix="0x")
-
-    @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the UnsafePointer.
-
-        Args:
-            writer: The object to write to.
-        """
-        FormatStruct(writer, "UnsafePointer").params(
-            Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
-            Named("address_space", Self.address_space),
-        ).fields(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
