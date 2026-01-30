@@ -72,13 +72,13 @@ _SEED: Tensor | None = None
 _MLIR_CONTEXT: mlir.Context | None = None
 
 # Environment variable to control interpreter usage
-_USE_INTERPRETER_ENV_VAR = "MAX_USE_INTERPRETER"
+_USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
 
 
 def _default_use_interpreter() -> bool:
     """Get the default value for use_interpreter from environment.
 
-    Checks the MAX_USE_INTERPRETER environment variable. Set to "1" or "true"
+    Checks the MAX_USE_EAGER_INTERPRETER environment variable. Set to "1" or "true"
     (case-insensitive) to enable the interpreter by default.
 
     Returns:
