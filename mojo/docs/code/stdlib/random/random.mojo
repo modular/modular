@@ -84,7 +84,7 @@ fn test_randn_float64() raises:
     from std.random import randn_float64, seed
 
     seed()
-    for i in range(10000):
+    for _ in range(10000):
         _ = randn_float64(0.0, 1.0)
 
 
