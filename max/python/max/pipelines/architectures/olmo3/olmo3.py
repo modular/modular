@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the GPT OSS model."""
+"""Implements the Olmo3 model."""
 
 from __future__ import annotations
 
@@ -30,37 +30,47 @@ from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
-from .layers.attention import GptOssAttention
-from .layers.moe import GptOssMoE
-from .layers.rms_norm import GptOssRMSNorm
-from .layers.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
-from .layers.transformer_block import GptOssTransformerBlock
-from .model_config import GptOssConfig
+from .layers.attention import Olmo3Attention
+from .layers.mlp import MLP
+from .layers.rms_norm import Olmo3RMSNorm
+from .layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
+from .layers.transformer_block import Olmo3TransformerBlock
+from .model_config import Olmo3Config
 
 
-class GptOssTextModel(
+class Olmo3TextModel(
     Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor]]
 ):
-    """The GPT OSS language model.
+    """The Olmo3 language model.
 
-    Decoder-only Transformer with MoE feed-forward, rotary embeddings (YARN),
-    and mixed attention (full + sliding window).
+    Decoder-only Transformer with standard MLP feed-forward,
+    rotary embeddings (YARN), and mixed attention (full + sliding window).
+
+    Olmo3 includes Q and K normalization after Q/K projections.
     """
 
-    def __init__(self, config: GptOssConfig) -> None:
+    def __init__(self, config: Olmo3Config) -> None:
         super().__init__()
         self.devices = config.devices
 
-        # Create YARN scaling params if configured
-        assert config.rope_scaling is not None, (
-            "RoPE scaling is required for GPT-OSS models"
-        )
-        assert isinstance(config.rope_scaling, YarnScalingParams), (
-            "Only YARN scaling is supported for GPT-OSS models"
-        )
-        yarn_scaling_params: YarnScalingParams = config.rope_scaling
+        if config.rope_scaling is not None:
+            if not isinstance(config.rope_scaling, YarnScalingParams):
+                raise ValueError(
+                    "Only YARN scaling is supported for Olmo3 models"
+                )
+            yarn_scaling_params: YarnScalingParams = config.rope_scaling
+        else:
+            yarn_scaling_params = YarnScalingParams(
+                factor=32.0,
+                beta_fast=32.0,
+                beta_slow=1.0,
+                original_max_position_embeddings=4096,
+                truncate=False,
+            )
 
-        # RoPE with YARN scaling for full and window attention layers
         rope = YarnRotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -76,19 +86,22 @@ class GptOssTextModel(
             dim=config.hidden_size,
         )
 
-        self.norm = GptOssRMSNorm(
+        self.norm = Olmo3RMSNorm(
             config.hidden_size,
             config.rms_norm_eps,
         )
 
-        self.lm_head = Linear(
-            in_dim=config.hidden_size,
-            out_dim=config.vocab_size,
-            bias=False,
-        )
+        if config.tie_word_embeddings:
+            self.lm_head = None
+        else:
+            self.lm_head = Linear(
+                in_dim=config.hidden_size,
+                out_dim=config.vocab_size,
+                bias=False,
+            )
 
         create_norm = functools.partial(
-            GptOssRMSNorm,
+            Olmo3RMSNorm,
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
@@ -105,8 +118,8 @@ class GptOssTextModel(
                 else MHAMaskVariant.CAUSAL_MASK
             )
             layers.append(
-                GptOssTransformerBlock(
-                    attention=GptOssAttention(
+                Olmo3TransformerBlock(
+                    attention=Olmo3Attention(
                         rope=rope,
                         num_attention_heads=config.num_attention_heads,
                         num_key_value_heads=config.num_key_value_heads,
@@ -116,10 +129,17 @@ class GptOssTextModel(
                         local_window_size=config.sliding_window,
                         has_bias=config.attention_bias,
                         mask_variant=mask_variant,
+                        use_qk_norm=config.use_qk_norm,
+                        qk_norm_eps=config.qk_norm_eps,
                     ),
-                    mlp=GptOssMoE(config),
-                    input_layernorm=create_norm(),
+                    mlp=MLP(
+                        hidden_dim=config.hidden_size,
+                        feed_forward_length=config.intermediate_size,
+                        bias=config.attention_bias,
+                        activation_function=config.hidden_activation,
+                    ),
                     post_attention_layernorm=create_norm(),
+                    post_feedforward_layernorm=create_norm(),
                 )
             )
 
@@ -128,6 +148,7 @@ class GptOssTextModel(
         self.layers = ModuleList(layers)
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
+        self.tie_word_embeddings = config.tie_word_embeddings
 
     def forward(
         self,
@@ -137,7 +158,6 @@ class GptOssTextModel(
         input_row_offsets: Tensor,
     ) -> tuple[Tensor]:
         h = self.embed_tokens(tokens)
-        # Run through transformer layers
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=h.device)
             h = layer(
@@ -147,30 +167,35 @@ class GptOssTextModel(
                 input_row_offsets=input_row_offsets,
             )
 
-        # Get last token logits only (no variable logits support).
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = F.gather(h, last_token_indices, axis=0)
-        last_logits = F.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(self.norm(last_token_h)),
-            DType.float32,
-        )
+        last_token_h = self.norm(last_token_h)
 
-        # For now, simplified to return last token only
-        # TODO: Handle VARIABLE and ALL logits cases for distributed processing
+        if self.tie_word_embeddings:
+            last_logits = F.cast(
+                self.embed_tokens.weight.T @ last_token_h.T,
+                DType.float32,
+            ).T
+        else:
+            assert self.lm_head is not None
+            last_logits = F.cast(
+                self.lm_head(last_token_h),
+                DType.float32,
+            )
+
         return (last_logits,)
 
 
-class GptOss(Module[..., tuple[Tensor]]):
-    """The GPT OSS model."""
+class Olmo3(Module[..., tuple[Tensor]]):
+    """The Olmo3 model."""
 
     def __init__(
         self,
-        config: GptOssConfig,
+        config: Olmo3Config,
         kv_manager: PagedKVCacheManager,
     ) -> None:
         super().__init__()
-        self.language_model = GptOssTextModel(config)
+        self.language_model = Olmo3TextModel(config)
         self.config = config
         self.kv_manager = kv_manager
 
@@ -190,7 +215,7 @@ class GptOss(Module[..., tuple[Tensor]]):
 
 
 def _unflatten_kv_inputs(
-    config: GptOssConfig,
+    config: Olmo3Config,
     kv_manager: PagedKVCacheManager,
     kv_inputs_flat: Sequence[Tensor],
 ) -> list[PagedCacheValues]:
