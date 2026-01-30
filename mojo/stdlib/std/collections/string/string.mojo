@@ -923,15 +923,20 @@ struct String(
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        var start: Int
-        var end: Int
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
+        return self.as_string_slice()[bytes=span]
 
-        start, end = span.indices(self.byte_length())
-        return StringSlice(
-            ptr=self.unsafe_ptr() + start,
-            length=end - start,
-        )
+    fn __getitem__(
+        self, *, bytes: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets the sequence of characters at the specified positions.
+
+        Args:
+            bytes: A slice that specifies positions of the new substring.
+
+        Returns:
+            A new string containing the string at the specified positions.
+        """
+        return self.as_string_slice()[bytes=bytes]
 
     fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
