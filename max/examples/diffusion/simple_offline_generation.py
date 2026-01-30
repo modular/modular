@@ -31,12 +31,16 @@ import asyncio
 import os
 
 import numpy as np
+from max.driver import DeviceSpec
 from max.interfaces import (
     PixelGenerationInputs,
     PixelGenerationRequest,
     RequestID,
 )
 from max.pipelines import PipelineConfig
+from max.pipelines.architectures.flux1.pipeline_flux import (
+    FluxPipeline,
+)
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
@@ -100,7 +104,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=42,
         help="Random seed for reproducible generation.",
     )
     parser.add_argument(
@@ -158,8 +162,11 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(f"Loading model: {args.model}")
 
     # Step 1: Initialize pipeline configuration
-    # defer_resolve=True prevents automatic model resolution/loading
-    config = PipelineConfig(model_path=args.model, defer_resolve=True)
+    config = PipelineConfig(
+        model_path=args.model,
+        device_specs=[DeviceSpec.accelerator()],
+        use_legacy_module=False,
+    )
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
@@ -168,12 +175,15 @@ async def generate_image(args: argparse.Namespace) -> None:
         pipeline_config=config,
         subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
         max_length=77,  # Standard max length for CLIP-based encoders
+        subfolder_2="tokenizer_2",
+        secondary_max_length=512,  # Standard max length for T5 encoders
     )
 
     # Step 3: Initialize the pipeline
     # The pipeline executes the diffusion model
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
+        pipeline_model=FluxPipeline,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
