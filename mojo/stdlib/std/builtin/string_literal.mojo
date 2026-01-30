@@ -508,7 +508,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The number of occurrences of `substr`.
         """
-        return String(self).count(substr)
+        return StringSlice(self).count(substr)
 
     fn lower(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -518,7 +518,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to lowercase.
         """
 
-        return String(self).lower()
+        return StringSlice(self).lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -528,7 +528,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to uppercase.
         """
 
-        return String(self).upper()
+        return StringSlice(self).upper()
 
     fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal right justified in a string of specified width.
@@ -559,7 +559,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_rjust(width, fillchar)
+        return StringSlice(self).ascii_rjust(width, fillchar)
 
     fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal left justified in a string of specified width.
@@ -590,7 +590,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_ljust(width, fillchar)
+        return StringSlice(self).ascii_ljust(width, fillchar)
 
     fn center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.
@@ -622,7 +622,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return String(self).center(width, fillchar)
+        return StringSlice(self).center(width, fillchar)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -664,7 +664,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if all characters are digits else False.
         """
-        return String(self).is_ascii_digit()
+        return StringSlice(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
@@ -676,7 +676,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are uppercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).isupper()
+        return StringSlice(self).isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string literal
@@ -688,7 +688,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are lowercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).islower()
+        return StringSlice(self).islower()
 
     fn strip(self) -> StaticString:
         """Return a copy of the string literal with leading and trailing
