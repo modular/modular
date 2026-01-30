@@ -85,6 +85,16 @@ what we publish.
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
   non-conjoined form as before. Now, both `-Dfoo` and `-D foo` are accepted.
 
+- `mojo build` now supports several `--print-*` options for discovering target
+  configuration and supported architectures:
+  - `--print-effective-target`: Shows the resolved target configuration after
+    processing all command-line flags.
+  - `--print-supported-targets`: Lists all available LLVM target architectures.
+  - `--print-supported-cpus`: Lists valid CPU names for a given target triple
+    (requires `--target-triple`).
+  - `--print-supported-accelerators`: Lists all supported GPU and accelerator
+    architectures (NVIDIA, AMD, Apple Metal).
+
 ### ❌ Removed
 
 ### 🛠️ Fixed

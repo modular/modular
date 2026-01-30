@@ -2302,6 +2302,53 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # _get_info_from_target
 # ===-----------------------------------------------------------------------===#
 
+# All supported target architectures in canonical form.
+# This is the canonical list used for validation in _get_info_from_target.
+# Normalization: "nvidia:80" -> "sm_80", "mi300x" -> "gfx942",
+#                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
+#
+# SYNC: This list must stay in sync with printSupportedAccelerators() in
+#       KGEN/tools/mojo/Build/mojo-build.cpp. Run the following test to verify:
+#       bazel test //KGEN/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
+comptime _all_targets = (
+    StaticString("sm_52"),
+    StaticString("sm_60"),
+    StaticString("sm_61"),
+    StaticString("sm_75"),
+    StaticString("sm_80"),
+    StaticString("sm_86"),
+    StaticString("sm_87"),
+    StaticString("sm_89"),
+    StaticString("sm_90"),
+    StaticString("sm_90a"),
+    StaticString("sm_100"),
+    StaticString("sm_100a"),
+    StaticString("sm_110"),
+    StaticString("sm_110a"),
+    StaticString("sm_120"),
+    StaticString("sm_120a"),
+    StaticString("sm_121"),
+    StaticString("sm_121a"),
+    StaticString("gfx942"),
+    StaticString("gfx950"),
+    StaticString("gfx1030"),
+    StaticString("gfx1100"),
+    StaticString("gfx1101"),
+    StaticString("gfx1102"),
+    StaticString("gfx1103"),
+    StaticString("gfx1150"),
+    StaticString("gfx1151"),
+    StaticString("gfx1152"),
+    StaticString("gfx1200"),
+    StaticString("gfx1201"),
+    StaticString("apple-m1"),
+    StaticString("apple-m2"),
+    StaticString("apple-m3"),
+    StaticString("apple-m4"),
+    StaticString("apple-m5"),
+    StaticString("cuda"),
+)
+
 
 @always_inline
 fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
@@ -2315,86 +2362,65 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     Returns:
         `GPUInfo` instance for the specified target architecture.
     """
-    comptime target_arch = target_arch0.replace("sm_", "").replace(
-        "nvidia:", ""
-    ).replace("amdgpu:", "").replace("metal:", "apple-m")
+    # Normalize the target architecture to canonical form.
+    # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
+    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942"
+    # Apple: "metal:4" -> "apple-m4"
+    comptime target_arch = (
+        target_arch0
+        # NVIDIA normalization
+        .replace("nvidia:sm_", "sm_")
+        .replace("nvidia:sm", "sm_")
+        .replace("nvidia:", "sm_")
+        .replace("sm", "sm_")
+        .replace("sm__", "sm_")
+        # AMD normalization
+        .replace("mi300x", "gfx942")
+        .replace("mi355x", "gfx950")
+        .replace("amdgpu:", "")
+        # Apple normalization
+        .replace("metal:", "apple-m")
+    )
 
-    __comptime_assert StaticString(target_arch) in (
-        # NVIDIA
-        StaticString("cuda"),
-        StaticString("52"),
-        StaticString("60"),
-        StaticString("61"),
-        StaticString("75"),
-        StaticString("80"),
-        StaticString("86"),
-        StaticString("87"),
-        StaticString("89"),
-        StaticString("90"),
-        StaticString("90a"),
-        StaticString("100"),
-        StaticString("100a"),
-        StaticString("110"),
-        StaticString("110a"),
-        StaticString("120"),
-        StaticString("120a"),
-        StaticString("121"),
-        StaticString("121a"),
-        # AMD
-        StaticString("mi300x"),
-        StaticString("mi355x"),
-        StaticString("gfx942"),
-        StaticString("gfx950"),
-        StaticString("gfx1030"),
-        StaticString("gfx1100"),
-        StaticString("gfx1101"),
-        StaticString("gfx1102"),
-        StaticString("gfx1103"),
-        StaticString("gfx1150"),
-        StaticString("gfx1151"),
-        StaticString("gfx1152"),
-        StaticString("gfx1200"),
-        StaticString("gfx1201"),
-        # Apple
-        StaticString("apple-m1"),
-        StaticString("apple-m2"),
-        StaticString("apple-m3"),
-        StaticString("apple-m4"),
-        StaticString("apple-m5"),
+    __comptime_assert (
+        StaticString(target_arch) in _all_targets
     ), _build_unsupported_arch_error[target_arch0]()
 
     @parameter
-    if target_arch == "52":
+    if target_arch == "sm_52":
         return materialize[GTX970]()
-    elif target_arch == "61":
+    elif target_arch == "sm_60":
+        return materialize[TeslaP100]()
+    elif target_arch == "sm_61":
         # FIXME GTX1060 and GTX1080Ti architecture wise are different (sm_count is different). We need to differentiate between them here at compile time.
         # return materialize[GTX1060]()
         return materialize[GTX1080Ti]()
-    elif target_arch == "75":
+    elif target_arch == "sm_75":
         return materialize[RTX2060]()
-    elif target_arch == "80":
+    elif target_arch == "sm_80":
         return materialize[A100]()
-    elif target_arch == "86":
+    elif target_arch == "sm_86":
         return materialize[A10]()
-    elif target_arch == "87":
+    elif target_arch == "sm_87":
         return materialize[OrinNano]()
-    elif target_arch == "89":
+    elif target_arch == "sm_89":
         return materialize[L4]()
-    elif target_arch == "90" or target_arch == "90a":
+    elif target_arch == "sm_90" or target_arch == "sm_90a":
         return materialize[H100]()
-    elif target_arch == "100" or target_arch == "100a":
+    elif target_arch == "sm_100" or target_arch == "sm_100a":
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
         return materialize[B200]()
-    elif target_arch == "110" or target_arch == "110a":
+    elif target_arch == "sm_110" or target_arch == "sm_110a":
         return materialize[JetsonThor]()
-    elif target_arch == "120" or target_arch == "120a":
+    elif target_arch == "sm_120" or target_arch == "sm_120a":
         return materialize[RTX5090]()
-    elif target_arch == "121" or target_arch == "121a":
+    elif target_arch == "sm_121" or target_arch == "sm_121a":
         return materialize[DGXSpark]()
-    elif target_arch == "gfx942" or target_arch == "mi300x":
+    # AMD (gfx IDs; "mi300x"/"mi355x" aliases are normalized to gfx IDs above)
+    elif target_arch == "gfx942":
         return materialize[MI300X]()
-    elif target_arch == "gfx950" or target_arch == "mi355x":
+    elif target_arch == "gfx950":
         return materialize[MI355X]()
     elif target_arch == "gfx1030":
         return materialize[Radeon6900]()
@@ -2426,6 +2452,9 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[MetalM4]()
     elif target_arch == "apple-m5":
         return materialize[MetalM5]()
+    # "cuda" means generic CUDA — use runtime GPU detection.
+    elif target_arch == "cuda":
+        return _get_info_from_target[_accelerator_arch()]()
     elif _accelerator_arch() == "":
         return materialize[NoGPU]()
     else:
