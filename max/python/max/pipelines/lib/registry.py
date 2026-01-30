@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RopeType, SupportedEncoding
+from .config_enums import PipelineRole, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, PipelineModel
@@ -122,11 +122,17 @@ def get_pipeline_for_task(
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
-    elif (
-        task == PipelineTask.TEXT_GENERATION
-        and pipeline_config.enable_overlap_scheduler
-    ):
-        return OverlapTextGenerationPipeline[TextContext]
+    elif pipeline_config.enable_overlap_scheduler:
+        role = pipeline_config.pipeline_role
+        if (
+            task == PipelineTask.TEXT_GENERATION
+            and role == PipelineRole.PrefillAndDecode
+        ):
+            return OverlapTextGenerationPipeline[TextContext]
+        raise ValueError(
+            "Overlap scheduler is only supported for TEXT_GENERATION task "
+            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+        )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:

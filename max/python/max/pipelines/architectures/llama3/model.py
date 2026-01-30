@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import CPU, Buffer, Device
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
@@ -359,7 +359,6 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         # Build the model inputs on host memory and copy to device.
         device0 = self.devices[0]
         pinned = not device0.is_host
-        host_device = CPU()
 
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
@@ -419,10 +418,11 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens_np = host_tokens.to_numpy()
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch],
-            out=tokens_np,
-        )
+        if context_batch:
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_np,
+            )
         device_tokens.inplace_copy_from(host_tokens)
         device_row_offsets.inplace_copy_from(host_row_offsets)
 

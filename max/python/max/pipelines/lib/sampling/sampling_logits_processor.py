@@ -78,6 +78,7 @@ class FusedSamplingProcessor:
     generated_tokens: Buffer
     """The generated tokens that have been sampled so far."""
 
+    @traced
     def __init__(
         self,
         sampler: Model,
