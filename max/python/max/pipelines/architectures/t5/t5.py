@@ -17,7 +17,7 @@ import numpy as np
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.graph import TensorType
+from max.graph import Dim, TensorType
 from max.nn import Embedding, Linear, Module
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
@@ -324,13 +324,14 @@ class T5Attention(
         )
 
     def compute_bias(
-        self, query_length: int, key_length: int, device: Device
+        self, query_length: int | Dim, key_length: int | Dim, device: Device
     ) -> Tensor:
         """Compute relative attention bias.
 
         Args:
-            query_length: Length of the query sequence.
-            key_length: Length of the key sequence.
+            query_length: Length of the query sequence. Can be a dimension or an integer.
+            key_length: Length of the key sequence. Can be a dimension or an integer.
+            device: Device to compute the bias on.
 
         Returns:
             TensorValue: Relative attention bias tensor.
