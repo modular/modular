@@ -204,7 +204,7 @@ fn assert_equal[
 fn assert_with_measure[
     dtype: DType,
     //,
-    measure: fn[dtype: DType] (
+    measure: fn[dtype: DType](
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
@@ -250,9 +250,9 @@ fn assert_with_measure[
         )
         ```
     """
-    comptime sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
-        DType.float64
-    ]()
+    comptime sqrt_eps = exp2(
+        -0.5 * Float64(FPUtils[dtype].mantissa_width())
+    ).cast[DType.float64]()
     var m = measure(
         x.address_space_cast[AddressSpace.GENERIC](),
         y.address_space_cast[AddressSpace.GENERIC](),

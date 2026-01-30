@@ -26,7 +26,7 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.optional import OptionalReg
+from collections.optional import Optional, OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
@@ -563,9 +563,9 @@ fn async_copy[
     //,
     size: Int,
     *,
-    fill: OptionalReg[Scalar[dtype]] = None,
+    fill: Optional[Scalar[dtype]] = None,
     bypass_L1_16B: Bool = True,
-    l2_prefetch: OptionalReg[Int] = None,
+    l2_prefetch: Optional[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
@@ -1546,7 +1546,7 @@ fn _load_impl[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: OptionalReg[Int] = None,
+    prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]](),
@@ -1697,7 +1697,7 @@ fn load[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: OptionalReg[Int] = None,
+    prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,
@@ -1742,7 +1742,7 @@ fn load[
     width: Int = 1,
     *,
     read_only: Bool = False,
-    prefetch_size: OptionalReg[Int] = None,
+    prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     alignment: Int = align_of[Scalar[dtype]]() if is_nvidia_gpu() else 1,

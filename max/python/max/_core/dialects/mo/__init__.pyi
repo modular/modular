@@ -156,9 +156,8 @@ class TensorType(max._core.Type):
     device ref, and an optional dictionary of metadata (e.g., layout, etc.).
 
     The `shapeAttr` is one of:
-    1. `KGEN::UnknownAttr` for unparameterized shape of unknown rank, e.g., `?`.
-    2. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
-    3. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
+    1. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
+    2. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
 
     The element type is an M::DType, with `invalid` denoting an unknown type.
     The type implements a subset of the methods in ShapedTypeInterface.
@@ -4768,6 +4767,25 @@ class PadRepeatOp(max._core.Operation):
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
+
+class ParallelOp(max._core.Operation):
+    """
+    The `mo.parallel` operation takes a single "body" block, which is executed
+    in parallel for each set of inputs.
+
+    The results of the `mo.parallel` op are the operands of the
+    `mo.yield` op from each iteration, which must all have the same type.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        results: Sequence[max._core.Type],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class PowOp(max._core.Operation):
     """

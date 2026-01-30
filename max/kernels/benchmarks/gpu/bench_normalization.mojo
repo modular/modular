@@ -17,15 +17,9 @@ from sys import env_get_dtype
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-
-from layout.int_tuple import fill_like
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from utils.index import Index, IndexList
@@ -56,24 +50,9 @@ fn bench_layer_norm_gpu[
 
     var param_shape = Index(cols)
 
-    fn build_data_layout() -> Layout:
-        # While the entire static shape could be used for this layout, to better model
-        # real world usage, use only the column count.
-        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
-        layout_shape[rank - 1] = cols
-        return Layout.row_major(layout_shape)
-
-    comptime layout = build_data_layout()
-    comptime layout_1d = Layout.row_major(cols)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype]()
 
     ctx.enqueue_copy(data_d, data_h)
@@ -86,11 +65,7 @@ fn bench_layer_norm_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
 
         return data_buf.ptr.load[width=width](idx)
 
@@ -100,11 +75,7 @@ fn bench_layer_norm_gpu[
     fn gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](
-                coords[0]
-            )
-        )
+        var idx = gamma.layout(Idx(coords[0]))
 
         return gamma.ptr.load[width=width](idx)
 
@@ -114,11 +85,7 @@ fn bench_layer_norm_gpu[
     fn output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
 
         data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
@@ -173,21 +140,8 @@ fn bench_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    fn build_data_layout() -> Layout:
-        # While the entire static shape could be used for this layout, to better model
-        # real world usage, use only the column count.
-        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
-        layout_shape[rank - 1] = cols
-        return Layout.row_major(layout_shape)
-
-    comptime layout = build_data_layout()
-    comptime layout_1d = Layout.row_major(cols)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -200,11 +154,7 @@ fn bench_rms_norm_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
 
         return data_buf.ptr.load[width=width](idx)
 
@@ -214,11 +164,7 @@ fn bench_rms_norm_gpu[
     fn identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     @always_inline

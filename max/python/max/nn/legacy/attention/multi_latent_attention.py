@@ -30,6 +30,7 @@ from max.graph import (
 )
 
 from ..comm import Allreduce
+from ..float8_config import Float8Config
 from ..kernels import (
     flare_mla_decode_ragged,
     flare_mla_decompress_k_cache,
@@ -77,6 +78,8 @@ class LatentAttentionWithRope(Module, Shardable):
         dtype: DType,
         devices: list[DeviceRef] | None = None,
         linear_cls: Callable[..., Linear] = Linear,
+        o_proj_dtype: DType | None = None,
+        o_proj_float8_config: Float8Config | None = None,
         scale: float | None = None,
         q_lora_rank: int | None = None,
         kv_lora_rank: int = 512,
@@ -99,6 +102,8 @@ class LatentAttentionWithRope(Module, Shardable):
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used.
             linear_cls: Linear class to use for the outputs dense layer.
+            o_proj_dtype: Optional dtype override for the output projection.
+            o_proj_float8_config: Optional float8 config for the output projection.
             scale: Value used to scale the results of the attention output.
             q_lora_rank: Optional LoRA rank for Q projection.
             kv_lora_rank: LoRA rank for KV projections.
@@ -194,11 +199,15 @@ class LatentAttentionWithRope(Module, Shardable):
             ),
             device=self.devices[0],
         )
+        proj_dtype = o_proj_dtype if o_proj_dtype is not None else dtype
+        self._o_proj_dtype = proj_dtype
+        self._o_proj_float8_config = o_proj_float8_config
         self.o_proj = linear_cls(
             in_dim=self.n_heads * self.v_head_dim,
             out_dim=self.hidden_size,
-            dtype=dtype,
+            dtype=proj_dtype,
             device=self.devices[0],
+            float8_config=o_proj_float8_config,
         )
 
     def create_mla_prefill_metadata(
@@ -265,7 +274,7 @@ class LatentAttentionWithRope(Module, Shardable):
             self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(
                 strategy.num_devices
             )
-            self.o_proj.weight.sharding_strategy = ShardingStrategy.columnwise(
+            self.o_proj.sharding_strategy = ShardingStrategy.columnwise(
                 strategy.num_devices
             )
         elif strategy.is_replicate:
@@ -296,7 +305,7 @@ class LatentAttentionWithRope(Module, Shardable):
             self.kv_b_proj.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
-            self.o_proj.weight.sharding_strategy = ShardingStrategy.replicate(
+            self.o_proj.sharding_strategy = ShardingStrategy.replicate(
                 strategy.num_devices
             )
         else:
@@ -334,7 +343,7 @@ class LatentAttentionWithRope(Module, Shardable):
             kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
             kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
             kv_b_proj_shards = self.kv_b_proj.shard(devices)
-            o_proj_weight_shards = self.o_proj.weight.shard(devices)
+            o_proj_shards = self.o_proj.shard(devices)
 
             shards = []
             for shard_idx, device in enumerate(devices):
@@ -349,6 +358,8 @@ class LatentAttentionWithRope(Module, Shardable):
                     devices=[device],
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
+                    o_proj_dtype=self._o_proj_dtype,
+                    o_proj_float8_config=self._o_proj_float8_config,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
                     kv_lora_rank=self.kv_lora_rank,
@@ -375,7 +386,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     shard_idx
                 ]
                 sharded.kv_b_proj = kv_b_proj_shards[shard_idx]
-                sharded.o_proj.weight = o_proj_weight_shards[shard_idx]
+                sharded.o_proj = o_proj_shards[shard_idx]
 
                 shards.append(sharded)
 
@@ -394,7 +405,7 @@ class LatentAttentionWithRope(Module, Shardable):
             kv_a_proj_layernorm_shards = self.kv_a_proj_layernorm.shard(devices)
             kv_a_proj_with_mqa_shards = self.kv_a_proj_with_mqa.shard(devices)
             kv_b_proj_shards = self.kv_b_proj.shard(devices)
-            o_proj_weight_shards = self.o_proj.weight.shard(devices)
+            o_proj_shards = self.o_proj.shard(devices)
 
             replicas: list[LatentAttentionWithRope] = []
             for shard_idx, device in enumerate(devices):
@@ -408,6 +419,8 @@ class LatentAttentionWithRope(Module, Shardable):
                     devices=[device],
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
+                    o_proj_dtype=self._o_proj_dtype,
+                    o_proj_float8_config=self._o_proj_float8_config,
                     scale=self._scale,
                     q_lora_rank=self.q_lora_rank,
                     kv_lora_rank=self.kv_lora_rank,
@@ -433,7 +446,7 @@ class LatentAttentionWithRope(Module, Shardable):
                     shard_idx
                 ]
                 replica.kv_b_proj = kv_b_proj_shards[shard_idx]
-                replica.o_proj.weight = o_proj_weight_shards[shard_idx]
+                replica.o_proj = o_proj_shards[shard_idx]
 
                 replicas.append(replica)
 

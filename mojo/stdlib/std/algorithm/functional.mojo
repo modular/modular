@@ -54,7 +54,7 @@ from utils.static_tuple import StaticTuple
 
 @always_inline
 fn map[
-    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
+    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](size: Int):
     """Maps a function over the integer range [0, size).
     This lets you apply an integer index-based operation across data
@@ -117,7 +117,7 @@ fn map[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None,
+    func: fn[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
     /,
@@ -224,7 +224,7 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int, evl: Int) unified -> None,
+    func: fn[width: Int](idx: Int, evl: Int) unified -> None,
     //,
     simd_width: Int,
     /,
@@ -353,7 +353,7 @@ fn vectorize[
 
 @always_inline
 fn vectorize[
-    func: fn[width: Int] (idx: Int) unified -> None,
+    func: fn[width: Int](idx: Int) unified -> None,
     //,
     simd_width: Int,
     /,
@@ -475,7 +475,7 @@ fn vectorize[
 fn sync_parallelize[
     origins: OriginSet,
     //,
-    func: fn (Int) raises capturing [origins] -> None,
+    func: fn(Int) raises capturing[origins] -> None,
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -548,7 +548,7 @@ fn sync_parallelize[
 
 @always_inline
 fn parallelize[
-    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
+    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -566,7 +566,7 @@ fn parallelize[
 
 @always_inline
 fn parallelize[
-    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
+    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -585,7 +585,7 @@ fn parallelize[
 
 @always_inline
 fn _parallelize_impl[
-    origins: OriginSet, //, func: fn (Int) capturing [origins] -> None
+    origins: OriginSet, //, func: fn(Int) capturing[origins] -> None
 ](num_work_items: Int, num_workers: Int):
     debug_assert(num_workers > 0, "Number of workers must be positive")
     # Calculate how many items are picked up by each worker.
@@ -611,14 +611,14 @@ fn _parallelize_impl[
 # tile
 # ===-----------------------------------------------------------------------===#
 
-comptime Static1DTileUnitFunc = fn[width: Int] (Int) capturing [_] -> None
+comptime Static1DTileUnitFunc = fn[width: Int](Int) capturing[_] -> None
 """Signature of a 1D tiled function with static tile size.
 
 The function takes a static tile size parameter and an offset argument,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Dynamic1DTileUnitFunc = fn (Int, Int) capturing [_] -> None
+comptime Dynamic1DTileUnitFunc = fn(Int, Int) capturing[_] -> None
 """Signature of a 1D tiled function with dynamic tile size.
 
 The function takes a dynamic tile size and an offset argument,
@@ -626,7 +626,7 @@ i.e. `func(offset: Int, tile_size: Int)`.
 """
 
 
-comptime BinaryTile1DTileUnitFunc = fn[width: Int] (Int, Int) capturing [
+comptime BinaryTile1DTileUnitFunc = fn[width: Int](Int, Int) capturing[
     _
 ] -> None
 """
@@ -765,9 +765,9 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 
-comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int] (
+comptime Static2DTileUnitFunc = fn[tile_x: Int, tile_y: Int](
     Int, Int
-) capturing [_] -> None
+) capturing[_] -> None
 """Signature of a 2D tiled function with static tile size.
 
 The function takes static tile size parameters and offset arguments, i.e.
@@ -820,11 +820,11 @@ fn tile[
 # ===-----------------------------------------------------------------------===#
 
 # Signature of a function that unswitch can take.
-comptime SwitchedFunction = fn[sw: Bool] () raises capturing [_] -> None
+comptime SwitchedFunction = fn[sw: Bool]() raises capturing[_] -> None
 """Signature of a function that unswitch can take."""
 
 # Version of unswitch supporting 2 predicates.
-comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool] () capturing [_] -> None
+comptime SwitchedFunction2 = fn[sw0: Bool, sw1: Bool]() capturing[_] -> None
 """Signature for unswitch supporting 2 predicates."""
 
 
@@ -880,7 +880,7 @@ fn unswitch[switched_func: SwitchedFunction](dynamic_switch: Bool) raises:
 
 @always_inline
 fn unswitch[
-    switched_func: fn[sw: Bool] () capturing [_] -> None
+    switched_func: fn[sw: Bool]() capturing[_] -> None
 ](dynamic_switch: Bool):
     """Performs a functional unswitch transformation.
 
@@ -968,18 +968,18 @@ fn unswitch[
 # TileWithUnswitch
 # ===-----------------------------------------------------------------------===#
 
-comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool] (
+comptime Static1DTileUnswitchUnitFunc = fn[width: Int, sw: Bool](
     Int, Int
-) capturing [_] -> None
+) capturing[_] -> None
 """Signature of a tiled function with static tile size and unswitch flag.
 
 The function takes a static tile size parameter and offset arguments,
 i.e. `func[tile_size: Int](offset: Int)`.
 """
 
-comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool] (
+comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool](
     Int
-) capturing [_] -> None
+) capturing[_] -> None
 """Signature of a tiled function with a static tile size, offset, and flag."""
 
 
@@ -1026,9 +1026,9 @@ fn tile_and_unswitch[
         )
 
 
-comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool] (
-    Int, Int, Int
-) capturing [_] -> None
+comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool](Int, Int, Int) capturing[
+    _
+] -> None
 """Signature of a dynamic tiled unswitch unit function."""
 
 
@@ -1138,7 +1138,7 @@ fn tile_middle_unswitch_boundaries[
 
 comptime Static1DTileUnitFuncWithFlags = fn[
     width: Int, left_flag: Bool, right_flag: Bool
-] (Int) capturing [_] -> None
+](Int) capturing[_] -> None
 """Signature of a tiled function with left and right boundary flags."""
 
 
@@ -1334,9 +1334,9 @@ fn _get_start_indices_of_nth_subvolume_uint[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1374,9 +1374,9 @@ fn elementwise[
 fn elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1414,9 +1414,9 @@ fn elementwise[
 
 @always_inline
 fn elementwise[
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1454,9 +1454,9 @@ fn elementwise[
 fn elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1492,9 +1492,9 @@ fn elementwise[
 fn elementwise[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool = False,
@@ -1555,9 +1555,9 @@ fn elementwise[
 fn _elementwise_impl[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     /,
     *,
@@ -1580,9 +1580,9 @@ fn _elementwise_impl[
 fn _elementwise_impl_cpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     /,
     *,
@@ -1596,9 +1596,9 @@ fn _elementwise_impl_cpu[
 fn _elementwise_impl_cpu_1d[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
@@ -1658,9 +1658,9 @@ fn _elementwise_impl_cpu_1d[
 fn _elementwise_impl_cpu_nd[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: Int,
     *,
     use_blocking_impl: Bool,
@@ -1754,9 +1754,9 @@ fn _elementwise_impl_cpu_nd[
 fn _elementwise_impl_gpu[
     rank: Int,
     //,
-    func: fn[width: Int, rank: Int, alignment: Int = 1] (
+    func: fn[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
     simd_width: UInt,
 ](shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
@@ -1896,7 +1896,7 @@ fn _elementwise_impl_gpu[
 
 
 fn parallelize_over_rows[
-    func: fn (Int, Int) capturing [_] -> None
+    func: fn(Int, Int) capturing[_] -> None
 ](shape: IndexList, axis: Int, grain_size: Int):
     """Parallelize func over non-axis dims of shape.
 
@@ -1948,25 +1948,25 @@ fn _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+    map_fn: fn(IndexList[stencil_rank, ...]) capturing[_] -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, ...]
-    ) capturing [_] -> SIMD[dtype, simd_width],
-    compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
+    map_strides: fn(dim: Int) capturing[_] -> Int,
+    load_fn: fn[simd_width: Int, dtype: DType](IndexList[rank, ...]) capturing[
+        _
+    ] -> SIMD[dtype, simd_width],
+    compute_init_fn: fn[simd_width: Int]() capturing[_] -> SIMD[
         dtype, simd_width
     ],
-    compute_fn: fn[simd_width: Int] (
+    compute_fn: fn[simd_width: Int](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
-    ) capturing [_] -> SIMD[dtype, simd_width],
-    compute_finalize_fn: fn[simd_width: Int] (
+    ) capturing[_] -> SIMD[dtype, simd_width],
+    compute_finalize_fn: fn[simd_width: Int](
         IndexList[rank, ...], SIMD[dtype, simd_width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
     input_shape: IndexList[rank, element_type=input_shape_element_type],
@@ -2117,25 +2117,25 @@ fn _stencil_impl_gpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: fn (IndexList[stencil_rank, ...]) capturing [_] -> Tuple[
+    map_fn: fn(IndexList[stencil_rank, ...]) capturing[_] -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, dtype: DType] (
-        IndexList[rank, ...]
-    ) capturing [_] -> SIMD[dtype, simd_width],
-    compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
+    map_strides: fn(dim: Int) capturing[_] -> Int,
+    load_fn: fn[simd_width: Int, dtype: DType](IndexList[rank, ...]) capturing[
+        _
+    ] -> SIMD[dtype, simd_width],
+    compute_init_fn: fn[simd_width: Int]() capturing[_] -> SIMD[
         dtype, simd_width
     ],
-    compute_fn: fn[simd_width: Int] (
+    compute_fn: fn[simd_width: Int](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
-    ) capturing [_] -> SIMD[dtype, simd_width],
-    compute_finalize_fn: fn[simd_width: Int] (
+    ) capturing[_] -> SIMD[dtype, simd_width],
+    compute_finalize_fn: fn[simd_width: Int](
         IndexList[rank, ...], SIMD[dtype, simd_width]
-    ) capturing [_] -> None,
+    ) capturing[_] -> None,
 ](
     ctx: DeviceContext,
     shape: IndexList[rank, element_type=shape_element_type],

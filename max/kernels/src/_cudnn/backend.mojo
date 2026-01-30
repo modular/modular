@@ -82,7 +82,7 @@ fn _get_dylib_function[
 
 fn cudnnBackendInitialize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendInitialize", fn (OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendInitialize", fn(OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -129,7 +129,7 @@ struct cudnnBackendKnobType_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_KNOB_TYPE_COUNTS = Self(37)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -284,7 +284,7 @@ struct cudnnPointwiseMode_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_POINTWISE_BINARY_SELECT = Self(49)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -453,7 +453,7 @@ struct cudnnBackendDescriptorType_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_BACKEND_OPERATION_RNG_DESCRIPTOR = Self(33)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -581,7 +581,7 @@ fn cudnnBackendSetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
-        fn (
+        fn(
             OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
@@ -608,7 +608,7 @@ struct cudnnBackendBehaviorNote_t(
     comptime CUDNN_BEHAVIOR_NOTE_TYPE_COUNT = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -656,7 +656,7 @@ struct cudnnBackendLayoutType_t(
     comptime CUDNN_LAYOUT_TYPE_COUNT = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -699,7 +699,7 @@ struct cudnnBackendNormFwdPhase_t(
     comptime CUDNN_NORM_FWD_TRAINING = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -739,7 +739,7 @@ struct cudnnBackendHeurMode_t(
     comptime CUDNN_HEUR_MODES_COUNT = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -793,7 +793,7 @@ struct cudnnBackendNumericalNote_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_NUMERICAL_NOTE_TYPE_COUNT = Self(9)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -845,7 +845,7 @@ fn cudnnBackendCreateDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
-        fn (
+        fn(
             cudnnBackendDescriptorType_t, UnsafePointer[OpaquePointer]
         ) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
@@ -886,7 +886,7 @@ struct cudnnBackendAttributeType_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_TYPE_RNG_DISTRIBUTION = Self(29)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -980,7 +980,7 @@ struct cudnnRngDistribution_t(
     comptime CUDNN_RNG_DISTRIBUTION_NORMAL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1012,7 +1012,7 @@ struct cudnnRngDistribution_t(
 
 fn cudnnBackendFinalize(descriptor: OpaquePointer) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn (OpaquePointer) -> cudnnStatus_t
+        "cudnnBackendFinalize", fn(OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -1026,7 +1026,7 @@ struct cudnnBackendTensorReordering_t(
     comptime CUDNN_TENSOR_REORDERING_F16x16 = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1279,7 +1279,7 @@ struct cudnnBackendAttributeName_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_ATTR_OPERATION_RNG_OFFSET_DESC = Self(211)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1833,7 +1833,7 @@ struct cudnnBackendNormMode_t(
     comptime CUDNN_RMS_NORM = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1876,7 +1876,7 @@ struct cudnnSignalMode_t(
     comptime CUDNN_SIGNAL_WAIT = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1916,7 +1916,7 @@ struct cudnnBnFinalizeStatsMode_t(
     comptime CUDNN_BN_FINALIZE_STATISTICS_INFERENCE = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1952,7 +1952,7 @@ struct cudnnGenStatsMode_t(
     comptime CUDNN_GENSTATS_SUM_SQSUM = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1983,7 +1983,7 @@ fn cudnnBackendDestroyDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn (OpaquePointer) -> cudnnStatus_t,
+        fn(OpaquePointer) -> cudnnStatus_t,
     ]()(descriptor)
 
 
@@ -1994,7 +1994,7 @@ fn cudnnBackendExecute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             OpaquePointer,
@@ -2015,7 +2015,7 @@ struct cudnnResampleMode_t(
     comptime CUDNN_RESAMPLE_MAXPOOL = Self(5)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2064,7 +2064,7 @@ fn cudnnBackendGetAttribute(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
-        fn (
+        fn(
             OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
@@ -2092,7 +2092,7 @@ struct cudnnPaddingMode_t(
     comptime CUDNN_EDGE_VAL_PAD = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

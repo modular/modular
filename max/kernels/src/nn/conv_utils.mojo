@@ -28,14 +28,14 @@ from .image import Image2DLayout
 
 
 # Elementwise epilogue signature
-comptime elementwise_epilogue_type = fn[rank: Int] (
+comptime elementwise_epilogue_type = fn[rank: Int](
     coords: IndexList[rank],
     f_size: Int,
 ) capturing -> None
 
 comptime elementwise_simd_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int
-] (IndexList[rank], SIMD[dtype, width]) capturing -> None
+](IndexList[rank], SIMD[dtype, width]) capturing -> None
 
 
 # ===----------------------------------------------------------------------=== #

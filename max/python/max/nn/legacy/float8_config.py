@@ -234,3 +234,17 @@ class Float8Config:
     def is_dynamic(self) -> bool:
         """Returns ``True`` if this input scale is dynamic."""
         return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
+
+    @property
+    def is_nvfp4(self) -> bool:
+        """Returns ``True`` if this config represents modelopt NVFP4."""
+        return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
+
+
+def nvfp4_packed_k(in_dim: int, float8_config: Float8Config | None) -> int:
+    """Returns packed K dimension for NVFP4 weights, else returns in_dim."""
+    return (
+        in_dim // 2
+        if float8_config is not None and float8_config.is_nvfp4
+        else in_dim
+    )

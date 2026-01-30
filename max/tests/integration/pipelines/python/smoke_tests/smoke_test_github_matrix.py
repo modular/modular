@@ -118,12 +118,30 @@ MODELS = {
         "max",  # 26.1
         "vllm@B200",
     ],
+    "qwen/qwen3-vl-4b-instruct-fp8": [
+        "8xB200",
+        "8xMI355",
+        "max",  # 26.1
+        "max-ci@H100",
+        "max-ci@MI355",
+        "max-ci@2xH100",
+        "sglang",  # transformers compatibility (AutoModelForVision2Seq)
+        "vllm",  # transformers compatibility (AutoModelForVision2Seq)
+    ],
     "qwen/qwen3-vl-30b-a3b-instruct": [
         "8xB200",
         "8xMI355",
         "max",  # 26.1
         "max-ci@H100",
         "max-ci@2xH100",
+    ],
+    "qwen/qwen3-vl-30b-a3b-instruct-fp8": [
+        "8xB200",
+        "8xMI355",
+        "max",  # 26.1
+        "max-ci@H100",
+        "max-ci@2xH100",
+        "vllm",  # transformers compatibility (AutoModelForVision2Seq)
     ],
     "qwen/qwen3-vl-30b-a3b-thinking": [
         "8xB200",

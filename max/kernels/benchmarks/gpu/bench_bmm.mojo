@@ -79,7 +79,7 @@ fn _get_run_name[
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 @always_inline

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import simd_width_of, size_of
 
@@ -32,6 +31,7 @@ from std.bit import log2_floor
 from utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from collections import OptionalReg
 from ....structuring import (
     SMemTile,
     RegTile,
@@ -96,7 +96,7 @@ struct MatmulTileWriter[
         masked = Self.masked,
         alignment = Self.alignment,
     ]
-    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    comptime lambda_type = fn[dtype: DType, width: Int, *, alignment: Int = 1](
         IndexList[2], mut SIMD[dtype, width]
     ) capturing -> None
 
@@ -349,7 +349,7 @@ struct MatmulTileWriter[
             ):
                 fragment_writer.write_tile(reg_tile, (UInt(0), UInt(tma_chunk)))
 
-            named_barrier[Self.num_consumer_threads](10)
+            named_barrier[Int32(Self.num_consumer_threads)](10)
 
             # swapAB: swap tile shape and position
             comptime tile_rows = Self.WG_BM if Self.swapAB else Self.BM
@@ -389,7 +389,7 @@ struct MatmulTileWriter[
                     val = compute_fn[alignment=alignment](index, val)
 
                 apply_epilogue[_compute]()
-                named_barrier[Self.num_consumer_threads](10)
+                named_barrier[Int32(Self.num_consumer_threads)](10)
 
             @parameter
             if Self.elementwise_lambda_fn:
@@ -446,7 +446,7 @@ struct MatmulTileWriter[
                         self.smem_tile, (UInt(0), UInt(0))
                     )
 
-            named_barrier[Self.num_consumer_threads](10)
+            named_barrier[Int32(Self.num_consumer_threads)](10)
 
     @always_inline
     fn write_tile[

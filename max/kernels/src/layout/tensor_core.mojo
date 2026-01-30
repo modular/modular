@@ -45,8 +45,8 @@ Supported Matrix Shapes:
 - AMD: 16x16x4, 16x16x16, 32x32x8
 """
 
-from collections import OptionalReg
 from math import align_down
+from collections import OptionalReg
 from sys import (
     has_nvidia_gpu_accelerator,
     is_nvidia_gpu,
@@ -293,7 +293,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a[
-        swizzle: OptionalReg[Swizzle] = None
+        swizzle: Optional[Swizzle] = None
     ](
         self,
         a: LayoutTensor,
@@ -330,7 +330,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_amd[
-        swizzle: OptionalReg[Swizzle]
+        swizzle: Optional[Swizzle]
     ](
         self,
         a: LayoutTensor,
@@ -467,7 +467,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_b[
-        swizzle: OptionalReg[Swizzle] = None
+        swizzle: Optional[Swizzle] = None
     ](
         self,
         b: LayoutTensor,
@@ -511,7 +511,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn _load_b_amd[
-        swizzle: OptionalReg[Swizzle]
+        swizzle: Optional[Swizzle]
     ](
         self,
         b: LayoutTensor,
@@ -861,7 +861,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a[
-        swizzle: OptionalReg[Swizzle] = None,
+        swizzle: Optional[Swizzle] = None,
         *,
     ](
         self,
@@ -897,7 +897,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_amd[
-        swizzle: OptionalReg[Swizzle],
+        swizzle: Optional[Swizzle],
         *,
     ](
         self,
@@ -924,7 +924,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_nvidia[
-        swizzle: OptionalReg[Swizzle],
+        swizzle: Optional[Swizzle],
         *,
     ](
         self,
@@ -951,7 +951,7 @@ struct TensorCore[
 
     @always_inline
     fn load_b[
-        swizzle: OptionalReg[Swizzle] = None,
+        swizzle: Optional[Swizzle] = None,
         *,
     ](
         self,
@@ -1002,7 +1002,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_b_amd[
-        swizzle: OptionalReg[Swizzle],
+        swizzle: Optional[Swizzle],
         *,
     ](
         self,
@@ -1336,7 +1336,7 @@ struct TensorCore[
 fn _load_matrix_frag[
     # Refactor the three parameters with ComposedLayout
     # swizzle: OptionalReg[_swizzle_signature] = None,
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     transposed: Bool = False,
     x4_row_major: Bool = False,
     num_matrices: Int = 4,
@@ -1664,7 +1664,7 @@ struct TiledTensorCore[
 
 @always_inline
 fn _load_tr16_b64_row[
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 4
 ]:
@@ -1706,7 +1706,9 @@ fn _load_tr16_b64_row[
         # Convert element offset to byte offset, swizzle, convert back
         var byte_offset = Int(offset) * size_of[tile.dtype]()
         var swizzled_bytes = swizzle.value()(byte_offset)
-        offset = swizzled_bytes // size_of[tile.dtype]()
+        offset = Scalar[tile.linear_idx_type](
+            swizzled_bytes // size_of[tile.dtype]()
+        )
 
     var ptr = tile.ptr + offset
     return ds_read_tr16_b64(ptr)
@@ -1715,7 +1717,7 @@ fn _load_tr16_b64_row[
 @always_inline
 fn _load_tr16_b64_warp[
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 4
 ]:
@@ -1752,7 +1754,7 @@ fn _load_tr16_b64_warp[
 @always_inline
 fn load_b_tr[
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 8
 ]:
@@ -1824,7 +1826,7 @@ fn load_b_tr[
 @always_inline
 fn load_b_nt[
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](tile: LayoutTensor[_, _, address_space = AddressSpace.SHARED, ...]) -> SIMD[
     tile.dtype, 8
 ]:

@@ -83,7 +83,7 @@ fn test_construction_from_int_variadic_list() raises:
 
 
 fn test_static_product() raises:
-    comptime p = coord[1, 2, 3]().STATIC_PRODUCT
+    comptime p = coord[1, 2, 3]().static_product
     assert_equal(p, 6)
 
 

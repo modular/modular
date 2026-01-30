@@ -118,8 +118,8 @@ struct TileScheduler[
     )
     var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-    comptime num_static_dim_blocks: UInt32 = ceildiv(
-        Self.static_MN, Self.tile_shape[Self.static_dim]
+    comptime num_static_dim_blocks: UInt32 = UInt32(
+        ceildiv(Self.static_MN, Self.tile_shape[Self.static_dim])
     )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
@@ -180,7 +180,7 @@ struct TileScheduler[
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= self.num_active_experts:
+            if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 

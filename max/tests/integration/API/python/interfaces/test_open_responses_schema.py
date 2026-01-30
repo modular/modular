@@ -15,6 +15,11 @@
 import json
 
 import pytest
+from max.interfaces.provider_options import (
+    MaxProviderOptions,
+    PixelModalityOptions,
+    ProviderOptions,
+)
 from max.interfaces.request.open_responses import (
     AssistantMessage,
     CreateResponseBody,
@@ -286,3 +291,121 @@ def test_output_text_content_with_annotations() -> None:
     assert content.type == "output_text"
     assert content.text == "The weather in San Francisco is 65°F."
     assert content.annotations == [0, 1]
+
+
+def test_create_response_body_with_provider_options() -> None:
+    """Test CreateResponseBody with provider options."""
+    request = CreateResponseBody(
+        model="gpt-4",
+        input="Hello, world!",
+        provider_options=ProviderOptions(
+            max=MaxProviderOptions(target_endpoint="instance-123")
+        ),
+    )
+
+    assert request.model == "gpt-4"
+    assert request.provider_options is not None
+    assert request.provider_options.max is not None
+    assert request.provider_options.max.target_endpoint == "instance-123"
+    assert request.provider_options.pixel is None
+
+
+def test_create_response_body_with_max_and_pixel_options() -> None:
+    """Test CreateResponseBody with both MAX and pixel modality options."""
+    request = CreateResponseBody(
+        model="vision-model",
+        input="Describe this image",
+        provider_options=ProviderOptions(
+            max=MaxProviderOptions(target_endpoint="instance-456"),
+            pixel=PixelModalityOptions(dummy_param="test"),
+        ),
+    )
+
+    assert request.provider_options is not None
+    assert request.provider_options.max is not None
+    assert request.provider_options.max.target_endpoint == "instance-456"
+    assert request.provider_options.pixel is not None
+    assert request.provider_options.pixel.dummy_param == "test"
+
+
+def test_create_response_body_provider_options_json_serialization() -> None:
+    """Test that CreateResponseBody with provider options serializes correctly."""
+    request = CreateResponseBody(
+        model="gpt-4",
+        input="Hello!",
+        provider_options=ProviderOptions(
+            max=MaxProviderOptions(target_endpoint="instance-123"),
+            pixel=PixelModalityOptions(dummy_param="test"),
+        ),
+    )
+
+    json_str = request.model_dump_json()
+    json_data = json.loads(json_str)
+
+    assert json_data["model"] == "gpt-4"
+    assert json_data["input"] == "Hello!"
+    assert (
+        json_data["provider_options"]["max"]["target_endpoint"]
+        == "instance-123"
+    )
+    assert json_data["provider_options"]["pixel"]["dummy_param"] == "test"
+
+
+def test_create_response_body_provider_options_json_deserialization() -> None:
+    """Test that CreateResponseBody with provider options deserializes correctly."""
+    json_data = {
+        "model": "gpt-4",
+        "input": "Hello!",
+        "provider_options": {
+            "max": {"target_endpoint": "instance-123"},
+            "pixel": {"dummy_param": "test"},
+        },
+    }
+
+    request = CreateResponseBody(**json_data)
+
+    assert request.model == "gpt-4"
+    assert request.input == "Hello!"
+    assert request.provider_options is not None
+    assert request.provider_options.max is not None
+    assert request.provider_options.max.target_endpoint == "instance-123"
+    assert request.provider_options.pixel is not None
+    assert request.provider_options.pixel.dummy_param == "test"
+
+
+def test_create_response_body_without_provider_options() -> None:
+    """Test that CreateResponseBody works without provider options."""
+    request = CreateResponseBody(
+        model="gpt-4",
+        input="Hello!",
+    )
+
+    assert request.model == "gpt-4"
+    assert request.provider_options is None
+
+
+def test_create_response_body_with_partial_provider_options() -> None:
+    """Test CreateResponseBody with only some provider options fields."""
+    # Only MAX options
+    request = CreateResponseBody(
+        model="gpt-4",
+        input="Hello!",
+        provider_options=ProviderOptions(
+            max=MaxProviderOptions(target_endpoint="instance-123")
+        ),
+    )
+    assert request.provider_options is not None
+    assert request.provider_options.max is not None
+    assert request.provider_options.pixel is None
+
+    # Only pixel options
+    request = CreateResponseBody(
+        model="vision-model",
+        input="Describe this",
+        provider_options=ProviderOptions(
+            pixel=PixelModalityOptions(dummy_param="test")
+        ),
+    )
+    assert request.provider_options is not None
+    assert request.provider_options.max is None
+    assert request.provider_options.pixel is not None

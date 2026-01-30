@@ -12,7 +12,7 @@ Legacy graph-based neural network API.
 
 .. note::
    This is the legacy API for backward compatibility. For all new models, use
-   the eager tensor API from :doc:`../index`.
+   the eager tensor API from [nn](/max/api/python/nn).
 
 The legacy API provides graph-based layer implementations for building neural
 networks. This API was the primary interface prior to MAX 26.1 and remains

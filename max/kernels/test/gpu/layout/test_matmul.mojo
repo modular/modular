@@ -38,7 +38,7 @@ from matmul_kernels import (
 from testing import assert_almost_equal
 from utils import IndexList
 
-comptime run_gemm_kernel_type = fn (
+comptime run_gemm_kernel_type = fn(
     mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,

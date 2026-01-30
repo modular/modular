@@ -74,7 +74,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
     comptime cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     comptime min_k = -31 if Self.CarrierDType == DType.uint32 else -292
     comptime max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    comptime divide_magic_number = InlineArray[UInt32, 2](6554, 656)
+    comptime divide_magic_number: InlineArray[UInt32, 2] = [6554, 656]
     comptime n_max = (
         (
             Scalar[Self.CarrierDType](2)
@@ -808,7 +808,7 @@ fn _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-comptime cache_f32 = InlineArray[UInt64, 78](
+comptime cache_f32: InlineArray[UInt64, 78] = [
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -848,10 +848,10 @@ comptime cache_f32 = InlineArray[UInt64, 78](
     0x92EFD1B8D0CF37BF, 0xB7ABC627050305AE,
     0xE596B7B0C643C71A, 0x8F7E32CE7BEA5C70,
     0xB35DBF821AE4F38C, 0xE0352F62A19E306F,
-)
+]
 # fmt: on
 
-comptime cache_f64 = InlineArray[UInt128, 619](
+comptime cache_f64: InlineArray[UInt128, 619] = [
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1471,9 +1471,9 @@ comptime cache_f64 = InlineArray[UInt128, 619](
     _UInt128(0x9E19DB92B4E31BA9, 0x6C07A2C26A8346D2),
     _UInt128(0xC5A05277621BE293, 0xC7098B7305241886),
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
-)
+]
 
-comptime float8_e5m2_to_str = InlineArray[StaticString, 256](
+comptime float8_e5m2_to_str: InlineArray[StaticString, 256] = [
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1730,9 +1730,9 @@ comptime float8_e5m2_to_str = InlineArray[StaticString, 256](
     "nan",
     "nan",
     "nan",
-)
+]
 
-comptime float8_e4m3fn_to_str = InlineArray[StaticString, 256](
+comptime float8_e4m3fn_to_str: InlineArray[StaticString, 256] = [
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -1989,9 +1989,9 @@ comptime float8_e4m3fn_to_str = InlineArray[StaticString, 256](
     "-416.0",
     "-448.0",
     "nan",
-)
+]
 
-comptime float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
+comptime float8_e5m2fnuz_to_str: InlineArray[StaticString, 256] = [
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2248,9 +2248,9 @@ comptime float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
     "-40960.0",
     "-49152.0",
     "-57344.0",
-)
+]
 
-comptime float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
+comptime float8_e4m3fnuz_to_str: InlineArray[StaticString, 256] = [
     "0.0",
     "0.0009765625",
     "0.001953125",
@@ -2507,4 +2507,4 @@ comptime float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
     "-208.0",
     "-224.0",
     "-240.0",
-)
+]

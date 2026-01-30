@@ -126,7 +126,7 @@ def test_closure_non_capturing():
     fn write_closure(mut writer: Some[Writer]):
         writer.write("Hello Mojo!")
 
-    def write_non_capturing[func: fn (mut writer: Some[Writer]) -> None]():
+    def write_non_capturing[func: fn(mut writer: Some[Writer]) -> None]():
         var writer2 = String()
         func(writer2)
 
@@ -139,7 +139,7 @@ def _test_closure_capturing(mut writer: Some[Writer & Writable]):
     fn write_closure() capturing:
         writer.write("Hello Mojo!")
 
-    fn write_capturing[func: fn () capturing -> None]():
+    fn write_capturing[func: fn() capturing -> None]():
         func()
 
     write_capturing[write_closure]()

@@ -2773,7 +2773,7 @@ def targets():
 
     native.alias(
         name = "_wheel_gptqmodel@2.0.0+cu126torch2.6",
-        actual = "@pycross_lock_file_wheel_gptqmodel_2.0.0_cu126torch2.6_cp312_cp312_linux_x86_64//file",
+        actual = "@pycross_lock_file_wheel_gptqmodel_2.0.0_cu126torch2.6_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
@@ -9451,7 +9451,7 @@ def targets():
 
     native.alias(
         name = "_wheel_torch@2.9.1.dev20251204+rocm7.0.2.lw.git351ff442",
-        actual = "@pycross_lock_file_wheel_torch_2.9.1.dev20251204_rocm7.0.2.lw.git351ff442_cp312_cp312_linux_x86_64//file",
+        actual = "@pycross_lock_file_wheel_torch_2.9.1.dev20251204_rocm7.0.2.lw.git351ff442_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
@@ -9545,7 +9545,7 @@ def targets():
 
     native.alias(
         name = "_wheel_torchaudio@2.9.0+rocm7.0.2.gite3c6ee2b",
-        actual = "@pycross_lock_file_wheel_torchaudio_2.9.0_rocm7.0.2.gite3c6ee2b_cp312_cp312_linux_x86_64//file",
+        actual = "@pycross_lock_file_wheel_torchaudio_2.9.0_rocm7.0.2.gite3c6ee2b_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
@@ -9755,7 +9755,7 @@ def targets():
 
     native.alias(
         name = "_wheel_torchvision@0.24.0+rocm7.0.2.gitb919bd0c",
-        actual = "@pycross_lock_file_wheel_torchvision_0.24.0_rocm7.0.2.gitb919bd0c_cp312_cp312_linux_x86_64//file",
+        actual = "@pycross_lock_file_wheel_torchvision_0.24.0_rocm7.0.2.gitb919bd0c_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
@@ -9885,7 +9885,7 @@ def targets():
 
     native.alias(
         name = "_wheel_triton@3.5.1+rocm7.0.2.gita272dfa8",
-        actual = "@pycross_lock_file_wheel_triton_3.5.1_rocm7.0.2.gita272dfa8_cp312_cp312_linux_x86_64//file",
+        actual = "@pycross_lock_file_wheel_triton_3.5.1_rocm7.0.2.gita272dfa8_cp313_cp313_linux_x86_64//file",
     )
 
     pycross_wheel_library(
@@ -14721,12 +14721,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_gptqmodel_2.0.0_cu126torch2.6_cp312_cp312_linux_x86_64",
+        name = "pycross_lock_file_wheel_gptqmodel_2.0.0_cu126torch2.6_cp313_cp313_linux_x86_64",
         urls = [
-            "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl",
+            "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "47fd3d17a61bfcf89b329977b03abaa636f5ffd8b14d4c86aa0149cad99c170a",
-        downloaded_file_path = "gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl",
+        sha256 = "088473a03974733204d8beb1d565e203a1ae4eb362c4a0719a75772cabc2b754",
+        downloaded_file_path = "gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -25101,12 +25101,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torch_2.9.1.dev20251204_rocm7.0.2.lw.git351ff442_cp312_cp312_linux_x86_64",
+        name = "pycross_lock_file_wheel_torch_2.9.1.dev20251204_rocm7.0.2.lw.git351ff442_cp313_cp313_linux_x86_64",
         urls = [
-            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp312-cp312-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torch-2.9.1.dev20251204%2Brocm7.0.2.lw.git351ff442-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "d0ec327ef820e76417a3862cdf3886f821342815d10639fa7599e6c475ab8552",
-        downloaded_file_path = "torch-2.9.1.dev20251204+rocm7.0.2.lw.git351ff442-cp312-cp312-linux_x86_64.whl",
+        sha256 = "7e469d7a91b1b68db01dcf2ecb009a98ca4fd186054baef545dfdc936579abdf",
+        downloaded_file_path = "torch-2.9.1.dev20251204+rocm7.0.2.lw.git351ff442-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -25351,12 +25351,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchaudio_2.9.0_rocm7.0.2.gite3c6ee2b_cp312_cp312_linux_x86_64",
+        name = "pycross_lock_file_wheel_torchaudio_2.9.0_rocm7.0.2.gite3c6ee2b_cp313_cp313_linux_x86_64",
         urls = [
-            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp312-cp312-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchaudio-2.9.0%2Brocm7.0.2.gite3c6ee2b-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "4f0b4a4e8bac1200a73ae19f849c9ca162cdd19b5a4b5d19b9fac1c7305a0dc1",
-        downloaded_file_path = "torchaudio-2.9.0+rocm7.0.2.gite3c6ee2b-cp312-cp312-linux_x86_64.whl",
+        sha256 = "eefcddd8d73e142e768d906d965d2a8664942274ed44e8f739717261eb43060f",
+        downloaded_file_path = "torchaudio-2.9.0+rocm7.0.2.gite3c6ee2b-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -25611,12 +25611,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_torchvision_0.24.0_rocm7.0.2.gitb919bd0c_cp312_cp312_linux_x86_64",
+        name = "pycross_lock_file_wheel_torchvision_0.24.0_rocm7.0.2.gitb919bd0c_cp313_cp313_linux_x86_64",
         urls = [
-            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp312-cp312-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/torchvision-0.24.0%2Brocm7.0.2.gitb919bd0c-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "becf8776b070ab70b2f3116e6573ffd8da8ea2bc8bc042683a0d71ff8d43acf8",
-        downloaded_file_path = "torchvision-0.24.0+rocm7.0.2.gitb919bd0c-cp312-cp312-linux_x86_64.whl",
+        sha256 = "bcfee1127a73cac386d7d016eac9d2ebf0ff0ce8dec0729e6aff6b44cf54d040",
+        downloaded_file_path = "torchvision-0.24.0+rocm7.0.2.gitb919bd0c-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(
@@ -25811,12 +25811,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_triton_3.5.1_rocm7.0.2.gita272dfa8_cp312_cp312_linux_x86_64",
+        name = "pycross_lock_file_wheel_triton_3.5.1_rocm7.0.2.gita272dfa8_cp313_cp313_linux_x86_64",
         urls = [
-            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp312-cp312-linux_x86_64.whl",
+            "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.0.2/triton-3.5.1%2Brocm7.0.2.gita272dfa8-cp313-cp313-linux_x86_64.whl",
         ],
-        sha256 = "a9fb58143a391c679dc020f58f3ed76d01e1d224667896dc16145ee4014214a3",
-        downloaded_file_path = "triton-3.5.1+rocm7.0.2.gita272dfa8-cp312-cp312-linux_x86_64.whl",
+        sha256 = "3d50205cb4e343ac5ab84031b72725270107b1bbc51d307be05c1950fe08ac53",
+        downloaded_file_path = "triton-3.5.1+rocm7.0.2.gita272dfa8-cp313-cp313-linux_x86_64.whl",
     )
 
     maybe(

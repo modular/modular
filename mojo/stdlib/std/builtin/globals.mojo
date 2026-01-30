@@ -19,7 +19,7 @@ compile-time constants without materializing entire data structures in memory.
 
 fn global_constant[
     T: Copyable & ImplicitlyDestructible, //, value: T
-]() -> ref [StaticConstantOrigin] T:
+]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
     This function stores the compile-time constant in the binary's read-only data
@@ -48,7 +48,7 @@ fn global_constant[
     from builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
-    comptime lookup_table = InlineArray[Int, 4](1, 2, 3, 4)
+    comptime lookup_table: InlineArray[Int, 4] = [1, 2, 3, 4]
     var element = global_constant[lookup_table]()[2]  # Access without materializing entire array
     print(element)  # Prints: 3
 
@@ -56,7 +56,7 @@ fn global_constant[
     fn compute(x: Int) -> Int:
         return x * 2 + 1
 
-    comptime data = InlineArray[Int, 3](1, compute(5), 100)
+    comptime data: InlineArray[Int, 3] = [1, compute(5), 100]
     ref data_ref = global_constant[data]()
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```

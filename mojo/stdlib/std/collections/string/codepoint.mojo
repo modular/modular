@@ -267,18 +267,6 @@ struct Codepoint(
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __eq__(self, other: Self) -> Bool:
-        """Return True if this character has the same codepoint value as `other`.
-
-        Args:
-            other: The codepoint value to compare against.
-
-        Returns:
-            True if this character and `other` have the same codepoint value;
-            False otherwise.
-        """
-        return self.to_u32() == other.to_u32()
-
     fn __lt__(self, other: Self) -> Bool:
         """Return True if this character is less than a different codepoint value from
         `other`.

@@ -107,6 +107,8 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            self.generated_tokens.disable_auto_sync()
 
         # temperature is a tensor of shape (batch_size,)
         temperature_host = Buffer(
@@ -115,6 +117,8 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            temperature_host.disable_auto_sync()
         temperature_np = temperature_host.to_numpy()
         temperature_np[:] = [
             context.sampling_params.temperature for context in context_batch
@@ -128,6 +132,8 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            top_k_host.disable_auto_sync()
         top_k_np = top_k_host.to_numpy()
         top_k_np[:] = [
             context.sampling_params.top_k for context in context_batch
@@ -146,6 +152,8 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            top_p_host.disable_auto_sync()
         top_p_np = top_p_host.to_numpy()
         top_p_np[:] = [
             context.sampling_params.top_p for context in context_batch
@@ -164,6 +172,8 @@ class FusedSamplingProcessor:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            seed_host.disable_auto_sync()
         seed_np = seed_host.to_numpy()
         seed_np[:] = [
             context.sampling_params.seed + len(context.tokens)
