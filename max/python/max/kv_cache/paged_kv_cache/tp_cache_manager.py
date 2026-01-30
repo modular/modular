@@ -38,6 +38,71 @@ from .block_manager import BlockManager
 logger = logging.getLogger("max.pipelines")
 
 
+class _RuntimeInputs:
+    """Internal cache holding the runtime buffers for the LUT and cache lengths."""
+
+    lut_table_host: Buffer
+    """LUT host buffer."""
+
+    cache_lengths_host: Buffer
+    """Cache lengths host buffer."""
+
+    lut_table_by_device: list[Buffer]
+    """LUT on each device."""
+
+    cache_lengths_by_device: list[Buffer]
+    """Cache lengths on each device."""
+
+    def __init__(
+        self,
+        batch_size: int,
+        max_total_num_pages: int,
+        devices: Sequence[Device],
+    ):
+        device0 = devices[0]
+        pinned = not device0.is_host
+
+        # [0, total_num_pages) are the valid block ids and total_num_pages
+        # denotes an unassigned block.
+        self.lut_table_host = Buffer(
+            shape=(batch_size, max_total_num_pages),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+
+        if pinned:
+            self.lut_table_host.disable_auto_sync()
+
+        self.cache_lengths_host = Buffer(
+            shape=(batch_size,),
+            dtype=DType.uint32,
+            device=device0,
+            pinned=pinned,
+        )
+
+        if pinned:
+            self.cache_lengths_host.disable_auto_sync()
+
+        self.lut_table_by_device = []
+        self.cache_lengths_by_device = []
+        for device in devices:
+            self.lut_table_by_device.append(
+                self.lut_table_host.to(device=device)
+            )
+            self.cache_lengths_by_device.append(
+                self.cache_lengths_host.to(device=device)
+            )
+
+    def values(self) -> tuple[Buffer, Buffer, list[Buffer], list[Buffer]]:
+        return (
+            self.lut_table_host,
+            self.cache_lengths_host,
+            self.lut_table_by_device,
+            self.cache_lengths_by_device,
+        )
+
+
 class _TPPagedKVCacheManager:
     """Internal class used for managing KVCache blocks that supports tensor parallelism.
 
@@ -115,10 +180,7 @@ class _TPPagedKVCacheManager:
 
         # Track the set of requests that are currently claimed.
         self._claimed_requests: set[RequestID] = set()
-        self._runtime_inputs_cache: dict[
-            tuple[int, int],
-            tuple[Buffer, Buffer, list[Buffer], list[Buffer]],
-        ] = {}
+        self._runtime_inputs_cache: dict[tuple[int, int], _RuntimeInputs] = {}
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
@@ -271,57 +333,20 @@ class _TPPagedKVCacheManager:
         max_total_num_pages = ceildiv(max_seq_len, self.page_size)
         batch_size = len(batch)
 
-        # Allocate persistent host buffers and reuse device buffers for runtime.
-        device0 = self.devices[0]
-
-        pinned = not device0.is_host
-
         # Allocate or reuse persistent lookup table/cache length buffers.
         key = (batch_size, max_total_num_pages)
-        buffers = self._runtime_inputs_cache.get(key)
-        if buffers is None:
-            # [0, total_num_pages) are the valid block ids and total_num_pages
-            # denotes an unassigned block.
-            lut_table_host = Buffer(
-                shape=(batch_size, max_total_num_pages),
-                dtype=DType.uint32,
-                device=device0,
-                pinned=pinned,
-            )
-
-            if pinned:
-                lut_table_host.disable_auto_sync()
-
-            cache_lengths_host = Buffer(
-                shape=(batch_size,),
-                dtype=DType.uint32,
-                device=device0,
-                pinned=pinned,
-            )
-
-            if pinned:
-                cache_lengths_host.disable_auto_sync()
-
-            lut_table_by_device: list[Buffer] = []
-            cache_lengths_by_device: list[Buffer] = []
-            for device in self.devices:
-                lut_table_by_device.append(lut_table_host.to(device=device))
-                cache_lengths_by_device.append(
-                    cache_lengths_host.to(device=device)
-                )
-            buffers = (
-                lut_table_host,
-                cache_lengths_host,
-                lut_table_by_device,
-                cache_lengths_by_device,
+        if not (buffers := self._runtime_inputs_cache.get(key)):
+            buffers = _RuntimeInputs(
+                batch_size, max_total_num_pages, self.devices
             )
             self._runtime_inputs_cache[key] = buffers
+
         (
             lut_table_host,
             cache_lengths_host,
             lut_table_by_device,
             cache_lengths_by_device,
-        ) = buffers
+        ) = buffers.values()
         lut_table_np = lut_table_host.to_numpy()
         lut_table_np.fill(self.total_num_pages)
         cache_lengths_np = cache_lengths_host.to_numpy()
