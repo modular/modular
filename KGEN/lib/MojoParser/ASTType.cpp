@@ -281,8 +281,8 @@ MojoInflightDiag::~MojoInflightDiag() {
   for (auto [loc, attrValue, ctxDecl] : emitted) {
     // See if anything has alias sugar on it, and if so, unpack it so the user
     // has a better chance of understanding what is going on.  We don't want to
-    // look into the body of an always_inline("builtin") calls though!
-    TypedAttr desugared = SugarAttr::strip(attrValue, /*keepApplies=*/true);
+    // look into opaque sugar kinds (AlwaysInlineBuiltin, Preserved) though!
+    TypedAttr desugared = SugarAttr::strip(attrValue, /*keepOpaque=*/true);
     if (desugared == attrValue || !unpackedAttr.insert(attrValue).second)
       continue;
 

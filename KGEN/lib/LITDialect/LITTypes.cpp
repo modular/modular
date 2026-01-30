@@ -199,9 +199,9 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
 
   p << '{';
   if (values.size() == 1 && std::get<0>(values.front()) == "_mlir_value" &&
-      // Don't print 'add(x, y)' as the value, because the parser will think
-      // that is a field name.
-      !::isa<ParamOperatorAttr>(std::get<1>(values.front()))) {
+      // Don't print 'add(x, y)' or 'sugar_xxx(...)' as the value, because the
+      // parser will think that is a field name.
+      !::isa<ParamOperatorAttr, SugarAttr>(std::get<1>(values.front()))) {
     printColonTypeParamValue(p, std::get<1>(values.front()));
   } else {
     llvm::interleaveComma(values, p, [&](const auto &element) {

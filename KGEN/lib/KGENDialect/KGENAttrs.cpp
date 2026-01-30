@@ -4088,9 +4088,9 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
   // pointer.
   canonical = getCanonicalAttr(expanded);
 
-  // We will /never/ use the type sugar in the expanded form of a builtin
-  // call, so we can strip it all away to simplify things.
-  if (kind == SugarKind::AlwaysInlineBuiltin)
+  // We will /never/ use the type sugar in the expanded form of opaque
+  // sugar kinds, so we can strip it all away to simplify things.
+  if (kind <= SugarKind::Preserved)
     expanded = ParamOperatorAttr::getRebind(canonical, sugared.getType());
 
   return Base::get(sugared.getContext(), kind, memberName, sugared, expanded,
@@ -4111,21 +4111,21 @@ Type SugarAttr::getType() const { return getSugared().getType(); }
 
 /// Remove any top-level sugar nodes from this type, but don't fully
 /// canonicalize it.
-TypedAttr SugarAttr::strip(TypedAttr value, bool keepApplies) {
+TypedAttr SugarAttr::strip(TypedAttr value, bool keepOpaque) {
   if (!value)
     return {};
 
   while (auto sugar = dyn_cast<SugarAttr>(value)) {
-    // Keep always_inline("builtin") calls if requested. Diagnostics should
-    // never look through them.
-    if (sugar.getKind() == SugarKind::AlwaysInlineBuiltin && keepApplies)
+    // Keep opaque sugar kinds if requested. These are implementation details
+    // that should not produce "aka" notes in diagnostics.
+    if (sugar.getKind() <= SugarKind::Preserved && keepOpaque)
       break;
     value = sugar.getExpanded();
   }
   return value;
 }
 
-Type SugarAttr::strip(Type type, bool keepApplies) {
+Type SugarAttr::strip(Type type, bool keepOpaque) {
   if (!type)
     return {};
   // Sugar for a type will be wrapped in a ParamType converting the attr into
@@ -4133,7 +4133,7 @@ Type SugarAttr::strip(Type type, bool keepApplies) {
   if (auto paramRef = dyn_cast<ParamType>(type))
     if (isa<SugarAttr>(paramRef.getParam())) {
       // Strip the attr inside the ParamType if it is sugar.
-      type = ParamType::get(strip(paramRef.getParam(), keepApplies));
+      type = ParamType::get(strip(paramRef.getParam(), keepOpaque));
       // ParamType::get has some canonicalizations that can expose nested sugar.
       // Make sure to remove them as well.
       return strip(type);
@@ -4141,9 +4141,9 @@ Type SugarAttr::strip(Type type, bool keepApplies) {
   return type;
 }
 
-Attribute SugarAttr::strip(Attribute value, bool keepApplies) {
+Attribute SugarAttr::strip(Attribute value, bool keepOpaque) {
   if (auto typedAttr = dyn_cast<TypedAttr>(value))
-    return SugarAttr::strip(typedAttr, keepApplies);
+    return SugarAttr::strip(typedAttr, keepOpaque);
   return value;
 }
 

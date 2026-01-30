@@ -260,6 +260,8 @@ TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
   falseVal = deShortCircuitCond(falseVal);
 
   TypedAttr logicalOp = ParamOperatorAttr::get(opcode, {trueVal, falseVal});
-  TypedAttr sugarOp = SugarAttr::getAlias(value, logicalOp);
+  // Use Preserved sugar to indicate this is an internal transformation for
+  // preserving nested sugar.
+  TypedAttr sugarOp = SugarAttr::getPreserved(value, logicalOp);
   return sugarOp;
 }

@@ -335,16 +335,26 @@ def KGEN_ClosureMemoryKind : I32EnumAttr<"ClosureMemoryKind", "closure memory ki
 
 def KGEN_SugarKind : I32EnumAttr<"SugarKind",
     "What kind of sugar a SugarAttr was formed from", [
+  // --- Opaque sugar kinds (user do not expect to see through them) ---
+  // Sugar kinds with values <= Preserved are opaque and should not produce
+  // "aka" notes in diagnostics.
+
   /// This is an expansion of a call to an @always_inline("builtin") function.
   I32EnumAttrCase<"AlwaysInlineBuiltin", 0, "aibuiltin">,
+
+  /// This is sugar created internally to preserve nested sugar during
+  /// transformations.
+  I32EnumAttrCase<"Preserved", 1, "preserved">,
+
+  // --- Transparent sugar kinds (user expects to see through them) ---
 
   /// This is sugar for a member access of the form "T.x".  The "sugared" field
   /// contains the type being accessed and the memberName attr contains the
   /// field name.
-  I32EnumAttrCase<"MemberAlias", 1, "member_alias">,
+  I32EnumAttrCase<"MemberAlias", 2, "member_alias">,
 
   /// This is an expansion of an alias reference "x" or "A.x".
-  I32EnumAttrCase<"Alias", 2, "alias">,
+  I32EnumAttrCase<"Alias", 3, "alias">,
 ]> {
   let cppNamespace = "M::KGEN";
   let genSpecializedAttr = 0;

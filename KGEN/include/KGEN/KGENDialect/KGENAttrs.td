@@ -2394,10 +2394,11 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
 
   let extraClassDeclaration = [{
     /// Remove any top-level sugar nodes from this type, but don't fully
-    /// canonicalize it.
-    static TypedAttr strip(TypedAttr value, bool keepApplies = false);
-    static Attribute strip(Attribute value, bool keepApplies = false);
-    static Type strip(Type value, bool keepApplies = false);
+    /// canonicalize it.  If keepOpaque is true, opaque sugar kinds
+    /// (AlwaysInlineBuiltin, Preserved) are kept.
+    static TypedAttr strip(TypedAttr value, bool keepOpaque = false);
+    static Attribute strip(Attribute value, bool keepOpaque = false);
+    static Type strip(Type value, bool keepOpaque = false);
 
     /// Return true if the specified value has top level SugarAttr.  Nested
     /// sugar isn't processed here.
@@ -2412,16 +2413,20 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
     /// For a MemberAlias sugar, return the base type.
     Type getMemberAliasType() const;
 
-    static TypedAttr getAlias(TypedAttr sugared, TypedAttr expanded) {
-      return get(sugared.getContext(), SugarKind::Alias, {}, sugared, expanded);
-    }
     static TypedAttr getAlwaysInlineBuiltin(TypedAttr sugared,
                                             TypedAttr expanded) {
       return get(sugared.getContext(), SugarKind::AlwaysInlineBuiltin, {},
                  sugared, expanded);
     }
+    static TypedAttr getPreserved(TypedAttr sugared, TypedAttr expanded) {
+      return get(sugared.getContext(), SugarKind::Preserved, {}, sugared,
+                 expanded);
+    }
     static TypedAttr getMemberAlias(Type type, StringAttr memberName,
                                     TypedAttr expanded);
+    static TypedAttr getAlias(TypedAttr sugared, TypedAttr expanded) {
+      return get(sugared.getContext(), SugarKind::Alias, {}, sugared, expanded);
+    }
   }];
 }
 

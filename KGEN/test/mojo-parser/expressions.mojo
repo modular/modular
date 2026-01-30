@@ -704,7 +704,7 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   comptime Index = Int(4)
-  # CHECK: lit.alias.decl *"value{{.*}}" = <4>
+  # CHECK: lit.alias.decl *"value{{.*}}" = <sugar_preserved(#lit.struct.extract<{{.*}}, 4)>
   comptime value = Index._mlir_value
   comptime foldToValue = Int(5)._mlir_value
 
