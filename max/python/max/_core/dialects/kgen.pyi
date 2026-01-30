@@ -2144,9 +2144,11 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    member_alias = 1
+    preserved = 1
 
-    alias = 2
+    member_alias = 2
+
+    alias = 3
 
 class TailKind(enum.Enum):
     none = 0
