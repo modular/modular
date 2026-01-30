@@ -275,16 +275,6 @@ def PropagateShapes() -> max._core.Pass:
     reducing shape logic as much as it can.
     """
 
-def ResolveUnknownParameters() -> max._core.Pass:
-    """
-    This pass parameterizes `mo` ops that can be parameterized. This involves 2
-    things:
-    1. replacing unknown shape and dimension parameters (i.e. `?`) in `!mo.tensor`
-    instances with parameter references.
-    2. letting newly parameterized ops declare their new parameters that appear
-    in their results.
-    """
-
 def SplatLargeConstants(num_elements: int = 100000000) -> max._core.Pass:
     """
     This pass will replace a large constant with a splatted version by
