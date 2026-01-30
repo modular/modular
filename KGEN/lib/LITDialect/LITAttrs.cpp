@@ -1096,11 +1096,10 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
       TypedAttr result =
           ParamOperatorAttr::getRebind(std::get<1>(*it), resultType);
       // Maintain sugar by applying struct-extract on the sugared form too.
-      // Create it as an AlwaysInlineBuiltin sugar to indicate this is an
-      // internal transformation not meant to be printed as an "aka" in
-      // diagnostics.
+      // Create it as Preserved sugar to indicate this is an internal
+      // transformation not meant to be printed as an "aka" in diagnostics.
       if (auto sugarWrapper = dyn_cast<SugarAttr>(structValue)) {
-        result = SugarAttr::getAlwaysInlineBuiltin(
+        result = SugarAttr::getPreserved(
             Base::get(context, sugarWrapper.getSugared(), field, resultType),
             result);
       }

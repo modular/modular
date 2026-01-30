@@ -1099,13 +1099,16 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
-      if (keyword == "sugar_alias" || keyword == "sugar_builtin") {
+      if (keyword == "sugar_alias" || keyword == "sugar_builtin" ||
+          keyword == "sugar_preserved") {
         TypedAttr sugared, expanded;
         if (parseParamValue(p, sugared, type) || p.parseComma() ||
             parseParamValue(p, expanded, type) || p.parseRParen())
           return failure();
         auto kind = keyword == "sugar_alias" ? SugarKind::Alias
-                                             : SugarKind::AlwaysInlineBuiltin;
+                    : keyword == "sugar_builtin"
+                        ? SugarKind::AlwaysInlineBuiltin
+                        : SugarKind::Preserved;
         value = SugarAttr::get(sugared.getContext(), kind, /*memberName=*/{},
                                sugared, expanded);
         return success();
@@ -1489,6 +1492,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       break;
     case SugarKind::AlwaysInlineBuiltin:
       p << "sugar_builtin(";
+      break;
+    case SugarKind::Preserved:
+      p << "sugar_preserved(";
       break;
     }
     printParamValue(p, sugar.getSugared(), sugar.getType());
