@@ -330,6 +330,41 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 }
 
 //===----------------------------------------------------------------------===//
+// DeprecationInfoAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_DeprecationInfoAttr : LITAttr<"DeprecationInfo", "deprecation"> {
+  let summary = "Deprecation information for a declaration";
+  let description = [{
+    The `#lit.deprecation` attribute contains deprecation information for a
+    declaration marked with the `@deprecated` decorator. It stores the warning
+    message and optionally the replacement identifier (from `@deprecated(use=X)`).
+
+    Example:
+
+    ```mlir
+    #lit.deprecation<"use new_func instead">
+    #lit.deprecation<"'old_func' is deprecated, use 'new_func' instead", "new_func">
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$warning,
+    OptionalParameter<"StringAttr">:$replacement
+  );
+  let assemblyFormat = "`<` $warning (`,` $replacement^)? `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "StringAttr":$warning,
+      CArg<"StringAttr", "{}">:$replacement
+    ), [{
+      return get(warning.getContext(), warning, replacement);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // DocStringAttr
 //===----------------------------------------------------------------------===//
 

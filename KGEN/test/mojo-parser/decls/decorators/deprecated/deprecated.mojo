@@ -16,28 +16,28 @@
 
 
 # CHECK-LABEL: lit.struct.decl @DeprecatedStruct
-# CHECK-SAME: deprecationWarning = "struct"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"struct">
 @deprecated("struct")
 struct DeprecatedStruct:
     pass
 
 
 # CHECK-LABEL: lit.fn @"deprecated_func
-# CHECK-SAME: deprecationWarning = "func"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"func">
 @deprecated("func")
 fn deprecated_func():
     pass
 
 
 # CHECK-LABEL: lit.trait.decl @DeprecatedTrait
-# CHECK-SAME: deprecationWarning = "trait"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"trait">
 @deprecated("trait")
 trait DeprecatedTrait:
     pass
 
 
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias
-# CHECK-SAME: deprecationWarning = "alias"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"alias">
 @deprecated("alias")
 comptime deprecated_alias = 1
 
@@ -52,7 +52,7 @@ struct DeprecatedStructTarget:
 
 
 # CHECK-LABEL: lit.struct.decl @DeprecatedStructUse
-# CHECK-SAME: deprecationWarning = "'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"'DeprecatedStructUse' is deprecated, use 'DeprecatedStructTarget' instead", "DeprecatedStructTarget">
 @deprecated(use=DeprecatedStructTarget)
 struct DeprecatedStructUse:
     pass
@@ -63,7 +63,7 @@ fn deprecated_func_target():
 
 
 # CHECK-LABEL: lit.fn @"deprecated_func_use
-# CHECK-SAME: deprecationWarning = "'deprecated_func_use' is deprecated, use 'deprecated_func_target' instead"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_func_use' is deprecated, use 'deprecated_func_target' instead", "deprecated_func_target">
 @deprecated(use=deprecated_func_target)
 fn deprecated_func_use():
     pass
@@ -74,7 +74,7 @@ trait DeprecatedTraitTarget:
 
 
 # CHECK-LABEL: lit.trait.decl @DeprecatedTraitUse
-# CHECK-SAME: deprecationWarning = "'DeprecatedTraitUse' is deprecated, use 'DeprecatedTraitTarget' instead"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"'DeprecatedTraitUse' is deprecated, use 'DeprecatedTraitTarget' instead", "DeprecatedTraitTarget">
 @deprecated(use=DeprecatedTraitTarget)
 trait DeprecatedTraitUse:
     pass
@@ -84,7 +84,7 @@ comptime deprecated_alias_target = 1
 
 
 # CHECK-LABEL: lit.alias.decl *"deprecated_alias_use
-# CHECK-SAME: deprecationWarning = "'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_alias_use' is deprecated, use 'deprecated_alias_target' instead", "deprecated_alias_target">
 @deprecated(use=deprecated_alias_target)
 comptime deprecated_alias_use = 1
 
@@ -99,7 +99,7 @@ struct MethodDeprecationTest:
         pass
 
     # CHECK-LABEL: lit.fn @"deprecated_method_use
-    # CHECK-SAME: deprecationWarning = "'deprecated_method_use' is deprecated, use 'replacement_method' instead"
+    # CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_method_use' is deprecated, use 'replacement_method' instead", "replacement_method">
     @deprecated(use=replacement_method)
     fn deprecated_method_use(self):
         pass
@@ -111,7 +111,7 @@ struct StaticMethodDeprecationTest:
         pass
 
     # CHECK-LABEL: lit.fn @"deprecated_static_use
-    # CHECK-SAME: deprecationWarning = "'deprecated_static_use' is deprecated, use 'replacement_static' instead"
+    # CHECK-SAME: deprecationInfo = #lit.deprecation<"'deprecated_static_use' is deprecated, use 'replacement_static' instead", "replacement_static">
     @staticmethod
     @deprecated(use=replacement_static)
     fn deprecated_static_use():
