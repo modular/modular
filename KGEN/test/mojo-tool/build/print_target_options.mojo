@@ -27,6 +27,12 @@
 # Test error for unsupported target
 # RUN: not %mojo-build --print-supported-cpus --target-triple invalid-unknown-unknown 2>&1 | FileCheck %s --check-prefix=CHECK_INVALID_TARGET
 
+# Test --print-supported-accelerators lists supported GPU architectures
+# RUN: %mojo-build --print-supported-accelerators 2>&1 | FileCheck %s --check-prefix=CHECK_ACCELERATORS
+
+# Test error when --print-supported-accelerators combined with other print options
+# RUN: not %mojo-build --print-supported-accelerators --print-supported-targets 2>&1 | FileCheck %s --check-prefix=CHECK_ERROR_MULTI
+
 # CHECK_TARGETS: Registered Targets:
 # CHECK_TARGETS-DAG: aarch64
 # CHECK_TARGETS-DAG: x86-64
@@ -51,6 +57,16 @@
 
 # CHECK_INVALID_TARGET: error: unknown target triple 'invalid-unknown-unknown'
 # CHECK_INVALID_TARGET: Use --print-supported-targets to see available architectures.
+
+# CHECK_ACCELERATORS: Supported GPU and Accelerator Architectures:
+# CHECK_ACCELERATORS: NVIDIA (CUDA):
+# CHECK_ACCELERATORS: sm_80
+# CHECK_ACCELERATORS: sm_90
+# CHECK_ACCELERATORS: AMD (ROCm/HIP):
+# CHECK_ACCELERATORS: gfx942
+# CHECK_ACCELERATORS: gfx950
+# CHECK_ACCELERATORS: Apple Silicon GPU:
+# CHECK_ACCELERATORS: apple-m4
 
 
 fn main():
