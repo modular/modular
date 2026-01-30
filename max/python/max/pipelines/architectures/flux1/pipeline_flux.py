@@ -11,16 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from queue import Queue
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import PixelGenerationOutput, TokenBuffer
-from max.pipelines import PixelContext
+from max.interfaces import TokenBuffer, PixelGenerationContext
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
@@ -28,10 +29,10 @@ from max.pipelines.lib.interfaces import (
 from max.tensor import Tensor
 from tqdm import tqdm
 
-from ..autoencoders import AutoencoderKLModel
-from ..clip import ClipModel
-from ..t5 import T5Model
-from .model import Flux1Model
+from ..autoencoders import AutoencoderKLModel  # type: ignore[import-not-found]
+from ..clip import ClipModel  # type: ignore[import-not-found]
+from ..t5 import T5Model  # type: ignore[import-not-found]
+from .model import Flux1Model  # type: ignore[import-not-found]
 
 
 @dataclass(kw_only=True)
@@ -77,6 +78,11 @@ class FluxPipelineOutput:
 
 
 class FluxPipeline(DiffusionPipeline):
+    vae: Any  # TODO: type this
+    text_encoder: Any  # TODO: type this
+    text_encoder_2: Any  # TODO: type this
+    transformer: Any  # TODO: type this
+
     components = {
         "vae": AutoencoderKLModel,
         "text_encoder": ClipModel,
@@ -91,8 +97,10 @@ class FluxPipeline(DiffusionPipeline):
             else 8
         )
 
-    def prepare_inputs(self, context: PixelContext) -> FluxModelInputs:
-        return FluxModelInputs.from_context(context)
+    def prepare_inputs(  # type: ignore[override]
+        self, context: PixelGenerationContext
+    ) -> FluxModelInputs:
+        return FluxModelInputs.from_context(context)  # type: ignore[return-value, arg-type]
 
     @staticmethod
     def _pack_latents(
@@ -121,7 +129,8 @@ class FluxPipeline(DiffusionPipeline):
         latents: Tensor, height: int, width: int, vae_scale_factor: int
     ) -> Tensor:
         # TODO: should compile this function for speed up.
-        batch_size, _, channels = latents.shape
+        batch_size = int(latents.shape[0])
+        ch_size = int(latents.shape[2])
         # VAE applies 8x compression on images but we must also account for packing which requires
         # latent height and width to be divisible by 2.
         height = 2 * (height // (vae_scale_factor * 2))
@@ -129,12 +138,13 @@ class FluxPipeline(DiffusionPipeline):
 
         latents = F.reshape(
             latents,
-            (batch_size.dim, height // 2, width // 2, channels.dim // 4, 2, 2),
+            (batch_size, height // 2, width // 2, ch_size // 4, 2, 2),
         )
         latents = F.permute(latents, (0, 3, 1, 4, 2, 5))
 
         latents = F.reshape(
-            latents, (batch_size.dim, channels.dim // (2 * 2), height, width)
+            latents,
+            (batch_size, ch_size // (2 * 2), height, width),
         )
 
         return latents
@@ -175,18 +185,19 @@ class FluxPipeline(DiffusionPipeline):
             dtype=prompt_embeds.dtype,
         )
 
-        bs_embed, seq_len, _ = prompt_embeds.shape
+        bs_embed = int(prompt_embeds.shape[0])
+        seq_len = prompt_embeds.shape[1]
 
         prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
         prompt_embeds = prompt_embeds.reshape(
-            (bs_embed.dim * num_images_per_prompt, seq_len, -1)
+            (bs_embed * num_images_per_prompt, seq_len, -1)
         )
 
         pooled_prompt_embeds = F.tile(
             pooled_prompt_embeds, (1, num_images_per_prompt)
         )
         pooled_prompt_embeds = pooled_prompt_embeds.reshape(
-            (bs_embed.dim * num_images_per_prompt, -1)
+            (bs_embed * num_images_per_prompt, -1)
         )
         dtype = prompt_embeds.dtype
         device = prompt_embeds.device
@@ -223,26 +234,22 @@ class FluxPipeline(DiffusionPipeline):
         latents: Tensor,
         height: int,
         width: int,
-        output_type: Literal["np", "latent"] = "np",
+        output_type: Literal["np", "latent", "pil"] = "np",
     ) -> Tensor | np.ndarray:
         if output_type == "latent":
-            image = latents
-        else:
-            latents = Tensor.from_dlpack(latents)
-            latents = self._unpack_latents(
-                latents, height, width, self.vae_scale_factor
-            )
-            latents = (
-                latents / self.vae.config.scaling_factor
-            ) + self.vae.config.shift_factor
-            image = self.vae.decode(latents)
-            image = self._to_numpy(image)
-        return image
+            return latents
+        latents = Tensor.from_dlpack(latents)
+        latents = self._unpack_latents(
+            latents, height, width, self.vae_scale_factor
+        )
+        latents = (
+            latents / self.vae.config.scaling_factor
+        ) + self.vae.config.shift_factor
+        return self._to_numpy(self.vae.decode(latents))
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
-        image = image.cast(DType.float32).to(DeviceRef.CPU())
-        image = np.from_dlpack(image)
-        return image
+        cpu_image = image.cast(DType.float32).to(DeviceRef.CPU())  # type: ignore[arg-type]
+        return np.from_dlpack(cpu_image)
 
     def _scheduler_step(
         self,
@@ -263,9 +270,9 @@ class FluxPipeline(DiffusionPipeline):
     def execute(
         self,
         model_inputs: FluxModelInputs,
-        callback_queue: Queue[np.ndarray] | None = None,
+        callback_queue: Queue[np.ndarray | Tensor] | None = None,
         output_type: Literal["np", "latent", "pil"] = "np",
-    ) -> PixelGenerationOutput:
+    ) -> FluxPipelineOutput:
         """Execute the pipeline."""
         # 1. Encode prompts
         prompt_embeds, pooled_prompt_embeds, text_ids = (
@@ -276,7 +283,11 @@ class FluxPipeline(DiffusionPipeline):
             )
         )
 
+        negative_prompt_embeds: Tensor | None = None
+        negative_pooled_prompt_embeds: Tensor | None = None
+        negative_text_ids: Tensor | None = None
         if model_inputs.do_true_cfg:
+            assert model_inputs.negative_tokens is not None
             (
                 negative_prompt_embeds,
                 negative_pooled_prompt_embeds,
@@ -319,14 +330,14 @@ class FluxPipeline(DiffusionPipeline):
         sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(
             self.transformer.devices[0]
         )
-        batch_size = prompt_embeds.shape[0].dim
+        batch_size = int(prompt_embeds.shape[0])
 
         timesteps: np.ndarray = model_inputs.timesteps
         num_timesteps = timesteps.shape[0]
-        timesteps_batched = np.broadcast_to(
+        timesteps_np = np.broadcast_to(
             timesteps[:, None], (num_timesteps, batch_size)
         )
-        timesteps_batched = Tensor.from_dlpack(timesteps_batched).to(
+        timesteps_batched = Tensor.from_dlpack(timesteps_np).to(
             self.transformer.devices[0]
         )
         for i in tqdm(range(num_timesteps), desc="Denoising"):
@@ -344,6 +355,9 @@ class FluxPipeline(DiffusionPipeline):
             )
 
             if model_inputs.do_true_cfg:
+                assert negative_prompt_embeds is not None
+                assert negative_pooled_prompt_embeds is not None
+                assert negative_text_ids is not None
                 neg_noise_pred = self._denoise_latents(
                     latents,
                     negative_prompt_embeds,

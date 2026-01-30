@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines import PixelContext
+from max.pipelines import PixelContext  # type: ignore[attr-defined]
 from max.pipelines.lib import (
     PixelGenerationTokenizer,
     SupportedArchitecture,
@@ -31,7 +31,7 @@ flux1_arch = SupportedArchitecture(
         "black-forest-labs/FLUX.1-dev",
         "black-forest-labs/FLUX.1-schnell",
     ],
-    pipeline_model=FluxPipeline,
+    pipeline_model=FluxPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
