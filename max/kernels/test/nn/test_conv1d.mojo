@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
@@ -76,10 +73,10 @@ fn test[
 
     var C_per_group = C // num_groups
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(S * C_per_group * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](S * C_per_group * F)
+    var output_ptr = alloc[Scalar[dtype]](N * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * WO * F)
 
     rand[dtype](input_ptr, N * W * C)
     rand[dtype](filter_ptr, S * C_per_group * F)
@@ -102,7 +99,7 @@ fn test[
     )
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
 
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_4d](

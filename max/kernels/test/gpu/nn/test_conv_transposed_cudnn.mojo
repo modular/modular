@@ -14,9 +14,6 @@ from gpu.host import DeviceContext
 from gpu.host.info import Vendor
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import random
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
@@ -91,10 +88,10 @@ fn test_conv_transposed_cudnn[
     )
 
     # Allocate host memory for NHWC tensors
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_host_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var output_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_host_ptr = alloc[Scalar[dtype]](output_size)
 
     # Create host LayoutTensors for NHWC
     var input_host = LayoutTensor[dtype, input_layout](input_host_ptr)
@@ -146,15 +143,9 @@ fn test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        input_nchw_size
-    )
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        filter_nchw_size
-    )
-    var output_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_nchw_size
-    )
+    var input_nchw_host_ptr = alloc[Scalar[dtype]](input_nchw_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_nchw_size)
+    var output_nchw_host_ptr = alloc[Scalar[dtype]](output_nchw_size)
 
     # Create host LayoutTensors for NCHW
     var input_nchw_host = LayoutTensor[dtype, input_nchw_layout](
