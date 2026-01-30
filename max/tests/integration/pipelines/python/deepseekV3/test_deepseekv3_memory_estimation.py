@@ -16,6 +16,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, NonCallableMock
 
 from max.driver import DeviceSpec
+from max.dtype import DType
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
 from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
 
@@ -29,6 +30,7 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
     pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
+    pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(NUM_RANKS)

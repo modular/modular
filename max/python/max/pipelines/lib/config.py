@@ -517,12 +517,12 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.create_kv_cache_config(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
 
         elif config_name == "sampling":
             if hasattr(self, "model") and self.model:

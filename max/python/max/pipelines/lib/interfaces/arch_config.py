@@ -115,7 +115,7 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in pipeline_config.model.device_specs
             ],
-            cache_dtype=pipeline_config.model.quantization_encoding.cache_dtype,
+            cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
             kv_cache=pipeline_config.model.kv_cache,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             user_provided_max_length=pipeline_config.max_length,

@@ -182,7 +182,7 @@ class MemoryEstimator:
             pipeline_config=pipeline_config,
             devices=[DeviceRef.from_device(d) for d in devices],
             kv_cache_config=model_config.kv_cache,
-            cache_dtype=model_config.quantization_encoding.cache_dtype,
+            cache_dtype=model_config.kv_cache.cache_dtype,
         )
 
         kvcache_mem = cls.available_kv_cache_memory(
@@ -306,7 +306,7 @@ class MemoryEstimator:
                 pipeline_config=pipeline_config,
                 kv_cache_config=model_config.kv_cache,
                 devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                cache_dtype=model_config.kv_cache.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 huggingface_config=huggingface_config,
@@ -334,7 +334,7 @@ class MemoryEstimator:
                 huggingface_config=huggingface_config,
                 devices=devices,
                 kv_cache_config=model_config.kv_cache,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                cache_dtype=model_config.kv_cache.cache_dtype,
             )
 
         assert pipeline_config.max_batch_size is not None
@@ -354,7 +354,7 @@ class MemoryEstimator:
             pipeline_config=pipeline_config,
             kv_cache_config=model_config.kv_cache,
             devices=devices,
-            cache_dtype=model_config.quantization_encoding.cache_dtype,
+            cache_dtype=model_config.kv_cache.cache_dtype,
             max_batch_size=pipeline_config.max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
             huggingface_config=huggingface_config,
@@ -393,7 +393,7 @@ class MemoryEstimator:
                 pipeline_config=pipeline_config,
                 kv_cache_config=model_config.kv_cache,
                 devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                cache_dtype=model_config.kv_cache.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 huggingface_config=huggingface_config,
@@ -466,7 +466,7 @@ class MemoryEstimator:
                     huggingface_config,
                     devices=devices,
                     kv_cache_config=model_config.kv_cache,
-                    cache_dtype=model_config.quantization_encoding.cache_dtype,
+                    cache_dtype=model_config.kv_cache.cache_dtype,
                 )
 
             kv_cache_size = cls._calculate_kv_cache_size(
@@ -474,7 +474,7 @@ class MemoryEstimator:
                 pipeline_config=pipeline_config,
                 kv_cache_config=model_config.kv_cache,
                 devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                cache_dtype=model_config.kv_cache.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 huggingface_config=huggingface_config,
@@ -540,7 +540,7 @@ class MemoryEstimator:
                 pipeline_config=pipeline_config,
                 kv_cache_config=model_config.kv_cache,
                 devices=devices,
-                cache_dtype=model_config.quantization_encoding.cache_dtype,
+                cache_dtype=model_config.kv_cache.cache_dtype,
                 max_batch_size=pipeline_config.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 huggingface_config=huggingface_config,

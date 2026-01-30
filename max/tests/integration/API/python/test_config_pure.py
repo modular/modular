@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
+from max.dtype import DType
 from max.entrypoints.cli.config import parse_task_flags
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
@@ -309,6 +310,7 @@ class TestPipelineConfigUtilityMethods:
             "enable_penalties": True,  # SamplingConfig
             "model_path": "/override/path",  # MAXModelConfig
             "kv_cache_page_size": 128,  # KVCacheConfig
+            "kv_cache_format": "float8_e4m3fn",  # KVCacheConfig
             "unknown_param": "value",  # Should remain unmatched
         }
 
@@ -328,6 +330,7 @@ class TestPipelineConfigUtilityMethods:
         assert config.sampling.enable_penalties is True
         assert config.model.model_path == "/override/path"
         assert config.model.kv_cache.kv_cache_page_size == 128
+        assert config.model.kv_cache.cache_dtype == DType.float8_e4m3fn
 
     @mock_pipeline_config_resolve
     def test_process_remaining_config_classes_no_matches(self) -> None:
@@ -389,6 +392,28 @@ class TestPipelineConfigUtilityMethods:
         # Model config with KV cache
         assert config.model.quantization_encoding == "bfloat16"
         assert config.model.kv_cache.kv_cache_page_size == 512
+
+    @mock_pipeline_config_resolve
+    def test_kv_cache_config_dtype(
+        self,
+    ) -> None:
+        """Test that the KVCache dtype is set correctly."""
+        kwargs = {
+            "model_path": "test/model",
+            # Draft model config
+            "draft_model_path": "/draft/model",
+            "draft_quantization_encoding": "float8_e4m3fn",
+            # Model config with KV cache
+            "quantization_encoding": "float4_e2m1fnx2",
+            "kv_cache_page_size": 512,
+        }
+
+        config = PipelineConfig(**kwargs)
+        assert config.model.quantization_encoding == "float4_e2m1fnx2"
+        assert config.model.kv_cache.cache_dtype == DType.float8_e4m3fn
+        assert config.draft_model is not None
+        assert config.draft_model.quantization_encoding == "float8_e4m3fn"
+        assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
 
 @prepare_registry
@@ -551,6 +576,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         use_legacy_module=False,
     )
+    assert config.model.kv_cache.cache_dtype == DType.float32
 
     # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
     # and the quantization encoding is set to bfloat16.
@@ -562,6 +588,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
         use_legacy_module=False,
     )
+    assert config.model.kv_cache.cache_dtype == DType.bfloat16
 
     # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
     with pytest.raises(

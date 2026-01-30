@@ -239,7 +239,7 @@ class Llama3Config(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = quantization_encoding.dtype
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
         n_devices = len(pipeline_config.model.device_specs)
 
         _weights_format = weights_format(pipeline_config.model.weight_path)

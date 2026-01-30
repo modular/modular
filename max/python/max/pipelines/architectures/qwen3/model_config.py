@@ -142,7 +142,7 @@ class Qwen3Config(Llama3Config):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [

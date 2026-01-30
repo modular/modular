@@ -377,7 +377,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 * max_kv_length
                 * huggingface_config.num_attention_heads
                 * huggingface_config.qk_nope_head_dim
-                * encoding.cache_dtype.size_in_bytes
+                * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
             )
 
         # Estimate activation memory during Expert Parallel MoE.

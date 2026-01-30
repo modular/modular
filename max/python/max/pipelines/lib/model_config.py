@@ -23,16 +23,12 @@ from typing import TYPE_CHECKING, Any
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
+from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from pydantic import (
-    ConfigDict,
-    Field,
-    PrivateAttr,
-    computed_field,
-)
+from pydantic import ConfigDict, Field, PrivateAttr, computed_field
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
@@ -844,7 +840,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 and len(supported_encodings) > 1
             ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
-                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
+                # If we are running on an accelerator and the quantization encoding is not set, override to bfloat16.
                 if SupportedEncoding.float4_e2m1fnx2 in supported_encodings:
                     self.quantization_encoding = (
                         SupportedEncoding.float4_e2m1fnx2
@@ -1110,3 +1106,90 @@ class MAXModelConfig(MAXModelConfigBase):
             The default device spec for the model.
         """
         return self.device_specs[0]
+
+    def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
+        """Create and set the KV cache configuration with the given parameters.
+
+        This method creates a new KVCacheConfig from the provided keyword arguments
+        and automatically sets the cache_dtype based on the model's quantization
+        encoding (or any explicit override in kv_cache_kwargs).
+
+        Args:
+            **kv_cache_kwargs: Keyword arguments to pass to KVCacheConfig constructor.
+                Common options include:
+                - cache_strategy: The KV cache strategy (continuous, paged, etc.)
+                - kv_cache_page_size: Number of tokens per page for paged cache
+                - enable_prefix_caching: Whether to enable prefix caching
+                - device_memory_utilization: Fraction of device memory to use
+                - cache_dtype: Override for the cache data type
+        """
+        self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+        self.kv_cache._cache_dtype = self._get_cache_dtype()
+
+    def _get_cache_dtype(self) -> DType:
+        """Determine the KV cache dtype based on configuration.
+
+        The dtype is determined in the following priority order:
+        1. Explicit override from kv_cache.kv_cache_format (if set)
+        2. Derived from the model's quantization_encoding
+        3. Falls back to float32 if no encoding is specified
+
+        Returns:
+            The DType to use for the KV cache. Typical values are:
+            - DType.float32 for float32, q4_k, q4_0, q6_k encodings
+            - DType.bfloat16 for bfloat16, float8_e4m3fn, gptq encodings
+            - DType.float8_e4m3fn for float4_e2m1fnx2 encoding
+        """
+        # First check if there's a KV cache dtype override.
+        if cache_type := self._get_cache_override():
+            return cache_type
+
+        # If there's no quantization encoding return a default value.
+        if not self.quantization_encoding:
+            return DType.float32
+
+        # Otherwise select the default KV cache dtype based on the quantization encoding.
+        supported_encoding_to_cache_dtype = {
+            SupportedEncoding.float32: DType.float32,
+            SupportedEncoding.bfloat16: DType.bfloat16,
+            SupportedEncoding.float8_e4m3fn: DType.bfloat16,
+            SupportedEncoding.float4_e2m1fnx2: DType.float8_e4m3fn,
+            SupportedEncoding.q4_k: DType.float32,
+            SupportedEncoding.q4_0: DType.float32,
+            SupportedEncoding.q6_k: DType.float32,
+            SupportedEncoding.gptq: DType.bfloat16,
+        }
+        if self.quantization_encoding in supported_encoding_to_cache_dtype:
+            return supported_encoding_to_cache_dtype[self.quantization_encoding]
+        else:
+            raise ValueError(
+                f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
+            )
+
+    def _get_cache_override(self) -> DType | None:
+        """Check for an explicit KV cache dtype override from kv_cache_format.
+
+        Parses the kv_cache.kv_cache_format string (if set) and converts it
+        to the corresponding DType.
+
+        Returns:
+            The DType corresponding to the override string, or None if no
+            override is set or the string is not recognized. Supported values
+            are 'float32', 'bfloat16', and 'float8_e4m3fn' (case-insensitive).
+        """
+        if self.kv_cache.kv_cache_format is None:
+            return None
+
+        dtype_str = self.kv_cache.kv_cache_format.lower()
+        cache_format_to_dtype = {
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float8_e4m3fn": DType.float8_e4m3fn,
+        }
+        if dtype_str in cache_format_to_dtype:
+            return cache_format_to_dtype[dtype_str]
+        else:
+            raise ValueError(
+                f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
+                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+            )

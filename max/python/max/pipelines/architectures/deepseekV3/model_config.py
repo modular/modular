@@ -170,7 +170,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = quantization_encoding.dtype
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
