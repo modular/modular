@@ -424,7 +424,7 @@ def test_issue_30237():
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    var coefficients = InlineArray[SIMD[dtype, simd_width], coefficients_len](
+    var coefficients: InlineArray[SIMD[dtype, simd_width], coefficients_len] = [
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,
@@ -432,7 +432,7 @@ def test_issue_30237():
         -8.60467152213735e-11,
         2.00018790482477e-13,
         -2.76076847742355e-16,
-    )
+    ]
 
     @parameter
     @always_inline
@@ -2161,34 +2161,31 @@ def test_float_conversion():
 
 def test_from_bytes_as_bytes():
     # Test scalar types with specific byte patterns
-    comptime TwoBytes = InlineArray[Byte, size_of[Int16]()]
-    comptime TwoUBytes = InlineArray[Byte, size_of[UInt16]()]
-    comptime FourBytes = InlineArray[Byte, size_of[Int32]()]
 
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(252, 0)), -1024)
-    assert_equal(UInt16.from_bytes[big_endian=True](TwoUBytes(252, 0)), 64512)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(252, 0)), 252)
-    assert_equal(Int32.from_bytes[big_endian=True](FourBytes(0, 0, 0, 1)), 1)
+    assert_equal(Int16.from_bytes[big_endian=True]([0, 16]), 16)
+    assert_equal(Int16.from_bytes[big_endian=False]([0, 16]), 4096)
+    assert_equal(Int16.from_bytes[big_endian=True]([252, 0]), -1024)
+    assert_equal(UInt16.from_bytes[big_endian=True]([252, 0]), 64512)
+    assert_equal(Int16.from_bytes[big_endian=False]([252, 0]), 252)
+    assert_equal(Int32.from_bytes[big_endian=True]([0, 0, 0, 1]), 1)
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(0, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([0, 0, 0, 1]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 0]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(255, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([255, 0, 0, 0]),
         -16777216,
     )
 

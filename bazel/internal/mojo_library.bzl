@@ -24,7 +24,7 @@ def mojo_library(
         deps = deps,
         visibility = visibility,
         testonly = testonly,
-        tags = tags,
+        tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
         copts = copts,
     )

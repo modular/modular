@@ -82,8 +82,8 @@ struct MMA_Vec(TiledOp):
 
         comptime width = simd_width_of[dst.dtype]() * 2
 
-        for m in range(M):
-            for n in range(N):
+        for var m in range(M):
+            for var n in range(N):
 
                 fn dot[width: Int](k: Int) unified {mut}:
                     dst.store[width](

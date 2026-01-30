@@ -107,7 +107,7 @@ struct cudnnSoftmaxMode_t(
     comptime CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -165,7 +165,7 @@ struct cudnnReduceTensorIndices_t(
     comptime CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -351,7 +351,7 @@ struct cudnnReduceTensorOp_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS = Self(8)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -452,7 +452,7 @@ struct cudnnDeterminism_t(
     comptime CUDNN_DETERMINISTIC = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -505,7 +505,7 @@ struct cudnnStatus_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_STATUS_VERSION_MISMATCH = Self(14)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -568,7 +568,7 @@ struct cudnnCTCLossAlgo_t(
     comptime CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -629,7 +629,7 @@ struct cudnnTensorFormat_t(
     comptime CUDNN_TENSOR_NCHW_VECT_C = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -789,7 +789,7 @@ struct cudnnNormAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_NORM_ALGO_PERSIST = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -830,7 +830,7 @@ struct cudnnOpTensorOp_t(
     comptime CUDNN_OP_TENSOR_NOT = Self(5)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1125,7 +1125,7 @@ struct cudnnActivationMode_t(
     comptime CUDNN_ACTIVATION_SWISH = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1205,7 +1205,7 @@ struct cudnnConvolutionBwdDataAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1300,7 +1300,7 @@ struct cudnnSamplerType_t(
     comptime CUDNN_SAMPLER_BILINEAR = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1360,7 +1360,7 @@ struct cudnnNormMode_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_NORM_PER_CHANNEL = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1470,7 +1470,7 @@ struct cudnnNormOps_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_NORM_OPS_NORM_ADD_ACTIVATION = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1542,7 +1542,7 @@ struct cudnnSoftmaxAlgorithm_t(
     comptime CUDNN_SOFTMAX_LOG = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1626,7 +1626,7 @@ struct cudnnBatchNormOps_t(
     comptime CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1670,7 +1670,7 @@ struct cudnnConvolutionFwdAlgo_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_CONVOLUTION_FWD_ALGO_COUNT = Self(8)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1907,7 +1907,7 @@ struct cudnnLRNMode_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2027,7 +2027,7 @@ struct cudnnFoldingDirection_t(
     comptime CUDNN_TRANSFORM_UNFOLD = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2086,7 +2086,7 @@ struct cudnnErrQueryMode_t(
     comptime CUDNN_ERRQUERY_BLOCKING = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2240,7 +2240,7 @@ struct cudnnBatchNormMode_t(
     comptime CUDNN_BATCHNORM_SPATIAL_PERSISTENT = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2323,7 +2323,7 @@ struct cudnnSeverity_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_SEV_INFO = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2367,7 +2367,7 @@ struct cudnnMathType_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_FMA_MATH = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2408,7 +2408,7 @@ struct cudnnNanPropagation_t(
     comptime CUDNN_PROPAGATE_NAN = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2449,7 +2449,7 @@ struct cudnnRNNAlgo_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     comptime CUDNN_RNN_ALGO_COUNT = Self(4)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2580,7 +2580,7 @@ struct cudnnDataType_t(Equatable, TrivialRegisterType, Writable):
     comptime CUDNN_DATA_FAST_FLOAT_FOR_FP8 = Self(14)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -2764,7 +2764,7 @@ struct cudnnIndicesType_t(
     comptime CUDNN_8BIT_INDICES = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3048,7 +3048,7 @@ struct cudnnConvolutionBwdFilterAlgo_t(
     comptime CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT = Self(7)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3199,7 +3199,7 @@ struct cudnnPoolingMode_t(
     comptime CUDNN_POOLING_MAX_DETERMINISTIC = Self(3)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -3292,7 +3292,7 @@ struct cudnnDivNormMode_t(
     comptime CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

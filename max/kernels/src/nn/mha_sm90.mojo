@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv, exp2, recip
 from math.constants import log2e
 from sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
+from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -1488,7 +1488,7 @@ fn _mha_sm90[
             wgmma_0.wgmma[
                 Int(num_consumer),
                 scale_c=0,
-                num_k_iters = OptionalReg[Int](
+                num_k_iters = Optional[Int](
                     Int(ceildiv(depth, UInt(wgmma_0.mma_shape[2])))
                 ),
             ](

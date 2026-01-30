@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from sys import align_of, size_of
 
 from buffer import NDBuffer
@@ -226,7 +225,7 @@ fn distribute[
     shape: DimList,
     thread_layout: Layout,
     _result_shape: DimList = _distribute_shape[thread_layout](shape),
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
     element_size: Int = 1,
 ](buff: NDBuffer[dtype, rank, _, shape], thread_id: Int) -> NDBuffer[
     dtype, rank, buff.origin, _result_shape
@@ -453,7 +452,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     buff_element_layout_shape: IndexList[src_rank],
     *,
     is_async: Bool = False,
-    fill: OptionalReg[Scalar[dtype]] = None,
+    fill: Optional[Scalar[dtype]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
@@ -587,7 +586,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     mask_element_stride: IndexList[mask_rank],
     *,
     is_async: Bool = False,
-    fill: OptionalReg[Scalar[dtype]] = None,
+    fill: Optional[Scalar[dtype]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
@@ -951,7 +950,7 @@ fn copy_from_nd_buffer[
     //,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
         mut=True,
@@ -1021,7 +1020,7 @@ fn copy_from_nd_buffer_masked[
     src_buff_shape: DimList,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
         mut=True,
@@ -1263,7 +1262,7 @@ fn copy_from_nd_buffer_async[
     src_buff_shape: DimList,
     thread_layout: Layout,
     is_async: Bool = False,
-    swizzle: OptionalReg[_swizzle_signature] = None,
+    swizzle: Optional[_swizzle_signature] = None,
 ](
     dst_tensor: LayoutTensor[
         mut=True,

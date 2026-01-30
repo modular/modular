@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import align_of
 
@@ -23,6 +22,7 @@ from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from memory import LegacyUnsafePointer
+from collections import OptionalReg
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

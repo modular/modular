@@ -436,10 +436,6 @@ struct TransientScheduler[
             + "]"
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self):
         pass
@@ -540,10 +536,6 @@ struct TileScheduler[
             + String(Self.schedule._value)
             + "]"
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
@@ -818,13 +810,3 @@ struct QueuedTileScheduler[
             String(Self.schedule._value),
             "]",
         )
-
-    @no_inline
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()

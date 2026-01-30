@@ -1454,16 +1454,6 @@ struct NDBuffer[
             "]",
         )
 
-    @no_inline
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
 
 @always_inline
 fn partial_simd_load[

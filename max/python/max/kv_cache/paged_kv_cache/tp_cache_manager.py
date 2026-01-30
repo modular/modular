@@ -283,6 +283,8 @@ class _TPPagedKVCacheManager:
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            lut_table.disable_auto_sync()
         lut_table_np = lut_table.to_numpy()
         lut_table_np.fill(self.total_num_pages)
 
@@ -293,6 +295,8 @@ class _TPPagedKVCacheManager:
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            cache_lengths.disable_auto_sync()
         cache_lengths_np = cache_lengths.to_numpy()
 
         # Update cache_lengths and max_lengths.

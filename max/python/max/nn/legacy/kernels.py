@@ -4897,3 +4897,35 @@ def kv_cache_copy_pages_d2h(
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         ],
     )
+
+
+def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
+    """Sleep for the given duration in seconds.
+
+    This kernel is supported on CPUs and GPUs. However, the timing may be completely
+    inaccurate on AMD GPUs due to limitation of current time.sleep(...) impl.
+
+    Args:
+        duration_sec: The duration to sleep in seconds.
+    """
+    # FIXME(GEX-3080): Convert duration_sec to a 0-d scalar instead of 1-d buffer.
+    # We currently use 1-d buffer to prevent sleep op from being DCE'd away.
+    if duration_sec.shape.static_dims != [1]:
+        raise ValueError(
+            f"Expected duration_sec to have shape [1] but got {duration_sec.shape.static_dims}"
+        )
+    if duration_sec.dtype != DType.float64:
+        raise ValueError(
+            f"Expected duration_sec to have DType.float64 but got {duration_sec.dtype}"
+        )
+    if duration_sec.device != DeviceRef.CPU():
+        raise ValueError(
+            f"Expected duration_sec to be on cpu but got {duration_sec.device}"
+        )
+
+    ops.inplace_custom(
+        "mo.sleep",
+        device=device_ref,
+        values=[duration_sec],
+        out_types=[],
+    )

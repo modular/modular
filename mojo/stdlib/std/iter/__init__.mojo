@@ -716,7 +716,7 @@ fn map[
     ResultType: Copyable,
     //,
     function: fn(var IterableType.IteratorType[origin].Element) -> ResultType,
-](ref [origin]iterable: IterableType) -> _MapIterator[
+](ref[origin] iterable: IterableType) -> _MapIterator[
     OutputType=ResultType, function=function
 ]:
     """Returns an iterator that applies `function` to each element of the input

@@ -106,18 +106,6 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterType):
         self.head_size = head_size
         self.is_mla = is_mla
 
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: KVCacheStaticParams) -> Bool:
-        return (
-            self.num_heads == rhs.num_heads
-            and self.head_size == rhs.head_size
-            and self.is_mla == rhs.is_mla
-        )
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: KVCacheStaticParams) -> Bool:
-        return not (self == rhs)
-
 
 trait KVCacheT(DevicePassable, TrivialRegisterType):
     """Trait for different KVCache types and implementations.
@@ -354,10 +342,6 @@ struct ContinuousBatchingKVCache[
     fn get_type_name() -> String:
         return "ContinuousBatchingKVCache"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
@@ -555,8 +539,12 @@ struct ContinuousBatchingKVCache[
         Self.dtype,
         IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ]:
         """Creates a TMA tile for this KV cache."""
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
         var total_blocks = self.blocks.dim[0]()
@@ -596,7 +584,11 @@ struct ContinuousBatchingKVCache[
             BM=BN,
             BN=BK,
         ],
-    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ) raises:
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
@@ -737,10 +729,6 @@ struct PagedKVCache[
     fn get_type_name() -> String:
         return "PagedKVCache"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     fn __init__(
         out self,
         blocks: Self.blocks_type,
@@ -830,8 +818,12 @@ struct PagedKVCache[
         Self.dtype,
         IndexList[3](BN, 1, BK),
         swizzle_mode,
-    ] where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ]:
         """Creates a TMA tile for this KV cache."""
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
         #
@@ -873,7 +865,11 @@ struct PagedKVCache[
             BM=BN,
             BN=BK,
         ],
-    ) raises where (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0:
+    ) raises:
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
+        ]()
         var total_blocks = self.blocks.dim[0]()
         var rows = (total_blocks - 1) * self._stride() + Self.page_size
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](

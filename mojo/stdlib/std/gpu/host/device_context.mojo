@@ -745,7 +745,7 @@ struct HostBuffer[dtype: DType](
 
     fn as_span[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> Span[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
         """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Parameters:
@@ -804,19 +804,6 @@ struct DeviceBuffer[dtype: DType](
             This dtype's name.
         """
         return String("DeviceBuffer[", Self.dtype, "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This dtype's name.
-        """
-        return String("UnsafePointer[Scalar[", Self.dtype, "]]")
 
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of

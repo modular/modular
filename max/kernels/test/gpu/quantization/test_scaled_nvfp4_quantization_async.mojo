@@ -36,7 +36,7 @@ from gpu.memory import (
 )
 from math import recip
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from layout.layout_tensor import LayoutTensorIter
 from gpu.host import DeviceContext, FuncAttribute
 from utils.static_tuple import StaticTuple

@@ -29,6 +29,13 @@ what we publish.
 
 ### Library changes
 
+- `InlineArray` now requires explicitly using literals for construction. E.g.
+
+  ```Mojo
+  var a: InlineArray[UInt8, 4] = [1, 2, 3, 4]
+  # instead of InlineArray[UInt8, 4](1, 2, 3, 4)
+  ```
+
 - The `__reversed__()` method on `String`, `StringSlice`, and `StringLiteral`
   has been deprecated in favor of the new `codepoints_reversed()` method. The
   new method name makes it explicit that iteration is over Unicode codepoints
@@ -52,6 +59,12 @@ what we publish.
 - `String.resize` will now panic if `fill_byte` is >=128. Previously it would
   create invalid UTF-8.
 
+- The following types now correctly implement `write_repr_to`
+  - `List`, `Set`
+
+- `assert_equal` and `assert_not_equal` now work with types implementing
+  `Writable`.
+
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 
@@ -63,3 +76,6 @@ what we publish.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
+  raising custom type with conversion fails when returning StringSlice

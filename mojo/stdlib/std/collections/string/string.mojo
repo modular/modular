@@ -819,7 +819,7 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.int]:
+    fn _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[DType.int]:
         # The header is stored before the string data.
         return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
             Atomic[DType.int]

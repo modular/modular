@@ -187,12 +187,14 @@ fn rope_ragged[
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
-            var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+            var token_idx = Int(
+                UInt32(global_token_idx) - input_row_offsets[batch_idx]
+            )
             var head_idx = idx[1]
             var head_dim_idx = idx[2]
 
             # Use position_ids if provided, otherwise fall back to cache calculation
-            var post_seq_idx = start_pos[batch_idx] + token_idx
+            var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
 
             var position_ids_idx = Int(post_seq_idx)
             if position_ids:

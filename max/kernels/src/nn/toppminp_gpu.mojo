@@ -162,12 +162,12 @@ fn normalize(value: BFloat16) -> UInt16:
     # inverting negative numbers
     var bits = reinterpret(value)
     comptime sign_bit_mask = 0b1 << (bit_width_of[DType.bfloat16]() - 1)
-    if bits & sign_bit_mask:
+    if bits & UInt16(sign_bit_mask):
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
     else:
         # For positive numbers, flip only the sign bit
-        return bits ^ sign_bit_mask
+        return bits ^ UInt16(sign_bit_mask)
 
 
 @always_inline
@@ -188,7 +188,7 @@ fn normalize(value: Int32) -> UInt32:
     # unsigned comparison
     comptime sign_bit_mask = 0b1 << (bit_width_of[DType.int32]() - 1)
 
-    return reinterpret(value) ^ sign_bit_mask
+    return reinterpret(value) ^ UInt32(sign_bit_mask)
 
 
 @always_inline
@@ -209,7 +209,7 @@ fn normalize(value: Float32) -> UInt32:
     comptime sign_bit = bit_width_of[DType.float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
-    return bits ^ ((-(bits >> sign_bit)) | (0b1 << sign_bit))
+    return bits ^ ((-(bits >> UInt32(sign_bit))) | UInt32(0b1 << sign_bit))
 
 
 @always_inline
@@ -336,7 +336,10 @@ fn radix_sort_pairs_kernel[
         if index < UInt(num_keys):
             var key = input_keys[index]
             var normalized_key = normalize(key)
-            var radix = (normalized_key >> current_bit) & (NUM_BUCKETS - 1)
+            comptime KeyType = type_of(normalized_key)
+            var radix = (normalized_key >> KeyType(current_bit)) & KeyType(
+                NUM_BUCKETS - 1
+            )
             counts[radix] += 1
 
     # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
@@ -432,7 +435,11 @@ fn radix_sort_pairs_kernel[
         if index < UInt(num_keys):
             var key = input_keys[index]
             var normalized_key = normalize(key)
-            var radix = Int((normalized_key >> current_bit) & (NUM_BUCKETS - 1))
+            comptime KeyType = type_of(normalized_key)
+            var radix = Int(
+                (normalized_key >> KeyType(current_bit))
+                & KeyType(NUM_BUCKETS - 1)
+            )
 
             # Adjust global_offset for ascending or descending order
             var global_offset: Int

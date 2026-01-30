@@ -120,10 +120,6 @@ struct KVCacheMHAOperand[
     fn get_type_name() -> String:
         return "KVCacheMHAOperand"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     fn __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
@@ -196,11 +192,15 @@ struct KVCacheMHAOperand[
             BM=BN,
             BN=BK,
         ],
-    ) raises where depth == Int(Self.cache_t.kv_params.head_size):
+    ) raises:
         # Forward to the underlying cache's implementation
-        # TODO: remove `__comptime_assert` when the `where` clause is enough
         constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
+            depth == Int(Self.cache_t.kv_params.head_size),
+            "depth must match kv_params.head_size",
+        ]()
+        constrained[
+            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
+            "BK must be a multiple of swizzle granularity",
         ]()
         tma = rebind[type_of(tma)](
             self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
@@ -224,10 +224,6 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
     @staticmethod
     fn get_type_name() -> String:
         return "LayoutTensorMHAOperand"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,
@@ -348,10 +344,6 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     @staticmethod
     fn get_type_name() -> String:
         return "RaggedMHAOperand"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,

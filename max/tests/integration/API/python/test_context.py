@@ -37,6 +37,7 @@ from max.pipelines.core import (
     TextContext,
     TTSContext,
 )
+from max.pipelines.core.context import FUTURE_TOKEN
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -740,6 +741,47 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
     assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
     assert original_context._speech_token_end_idx == 3
     assert original_context.block_counter == 1
+
+
+def test_text_context_update_with_future_token() -> None:
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_token_ids=set([42]),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Cannot realize a future token when there are no generated tokens",
+    ):
+        context.realize_future_token(123)
+
+    context.update_with_future_token()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+
+    context.realize_future_token(5)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5]
+
+    with pytest.raises(
+        ValueError, match=r"Attempted to realize a non-future token"
+    ):
+        context.realize_future_token(6)
+
+    context.update_with_future_token()
+    with pytest.raises(ValueError, match=r"Cannot have multiple future tokens"):
+        context.update_with_future_token()
+
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, FUTURE_TOKEN]
+    assert context.status == GenerationStatus.ACTIVE
+    with pytest.raises(
+        ValueError,
+        match=r"Attempted to create generation output while future token is not yet realized",
+    ):
+        context.to_generation_output()
+
+    context.realize_future_token(42)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, 42]
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
 
 
 def test_vision_context_reset() -> None:

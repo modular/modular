@@ -15,11 +15,12 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from math import (
     acos,
     atanh,
     ceil,
+    ceildiv,
     cos,
     erf,
     exp,
@@ -55,6 +56,7 @@ from builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm.reducescatter import reducescatter
+from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -308,6 +310,7 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from tensor.transitional import managed_tensor_slice_to_ndbuffer
+from time import sleep
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -412,7 +415,7 @@ struct Range:
         fn func[
             width: Int, element_alignment: Int
         ](idx: IndexList[1]) -> SIMD[dtype, width]:
-            return start + step * (iota[dtype, width](idx[0]))
+            return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
 
         foreach[
             func,
@@ -960,9 +963,9 @@ struct SqueezeShape:
         for input_shape_index in range(num_input_dims):
             if input_shape_copy[input_shape_index] == -1:
                 continue
-            output_shape[output_shape_index] = input_shape_copy[
-                input_shape_index
-            ]
+            output_shape[output_shape_index] = Scalar[dtype](
+                input_shape_copy[input_shape_index]
+            )
             output_shape_index += 1
 
     @staticmethod
@@ -5009,9 +5012,11 @@ struct ConvTranspose:
                 input.dtype,
                 filter.dtype,
                 output.dtype,
-                elementwise_epilogue = OptionalReg[
+                elementwise_epilogue = Optional[elementwise_simd_epilogue_type](
+                    output_fn
+                ) if lambdas_have_fusion else Optional[
                     elementwise_simd_epilogue_type
-                ](output_fn) if lambdas_have_fusion else None,
+                ](),
             ](
                 output.to_layout_tensor(),
                 input.to_layout_tensor(),
@@ -8611,7 +8616,7 @@ struct Struct_fused_token_sampling:
         var out_idxs_buf = out_idxs.to_layout_tensor()
         var k_lt = K.to_layout_tensor()
         comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-        var K_buf = OptionalReg(
+        var K_buf = Optional(
             LayoutTensor[DType.int64, layout_1d](
                 k_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8621,7 +8626,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var temp_lt = temperature.to_layout_tensor()
-        var temperature_buf = OptionalReg(
+        var temperature_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 temp_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8631,7 +8636,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var top_p_lt = top_p.to_layout_tensor()
-        var top_p_buf = OptionalReg(
+        var top_p_buf = Optional(
             LayoutTensor[DType.float32, layout_1d](
                 top_p_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -8641,7 +8646,7 @@ struct Struct_fused_token_sampling:
             )
         )
         var seed_lt = seed.to_layout_tensor()
-        var seed_buf = OptionalReg(
+        var seed_buf = Optional(
             LayoutTensor[DType.uint64, layout_1d](
                 seed_lt.ptr,
                 RuntimeLayout[layout_1d](
@@ -9098,6 +9103,89 @@ struct DistributedAllGather:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.broadcast")
+struct DistributedBroadcast:
+    """Distributed broadcast: copy tensor from root GPU to all GPUs.
+
+    This op is called once per target GPU. Each instance receives:
+    - input: The source tensor from the root GPU (P2P accessible)
+    - output: The destination tensor on this GPU
+    - signal_buffers: Synchronization buffers for all participating GPUs
+    - device_ctx: Device context for this GPU
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Execute distributed broadcast operation.
+
+        Parameters:
+            dtype: Data type of the tensor.
+            rank: Tensor rank (number of dimensions).
+            root: Index of the root GPU (source of data).
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            output: Output tensor for this GPU.
+            input: Input tensor from root GPU (P2P accessible from all GPUs).
+            signal_buffers: Synchronization buffers for cross-GPU coordination.
+            device_ctx: Device context for this GPU.
+
+        Implementation Notes:
+            1. This op is called once per target GPU by the graph compiler.
+            2. All GPUs receive the same input tensor (from root) via P2P access.
+            3. Each op instance only writes to its assigned output tensor.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (MAX_GPUS).
+            - Requires P2P access between GPUs (NVLink or PCIe P2P).
+        """
+        comptime num_devices = signal_buffers.size
+        __comptime_assert (
+            root >= 0 and root < num_devices
+        ), "root GPU index must be in range [0, ngpus)"
+
+        # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
+        # 1-stage broadcast doesn't use payload at all (direct P2P from root).
+        # Use 2-stage requirement as upper bound.
+        var input_size_bytes = input.size() * size_of[dtype]()
+        var payload_size = ceildiv(input_size_bytes, num_devices)
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            broadcast[ngpus=num_devices](
+                in_buf,
+                out_buf,
+                rank_sigs,
+                device_ctx[],
+                root,
+            )
 
 
 @compiler.register("mo.distributed.matmul_allreduce")
@@ -10064,3 +10152,38 @@ struct KVCacheCopyPagesD2H:
             Int(layer_idx),
             gpu_ctx,
         )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sleep kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.sleep")
+struct Sleep:
+    @staticmethod
+    fn execute[
+        target: StaticString,
+    ](
+        # In order to prevent this kernel from being DCE'd, we pass in a mutable
+        # input buffer. A fix is tracked in GEX-3080.
+        duration_sec_buffer: MutableInputTensor[dtype = DType.float64, rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var duration_sec = duration_sec_buffer[0]
+        if duration_sec < 0:
+            raise Error(
+                "Sleep duration must be non-negative. Found: ", duration_sec
+            )
+
+        if is_gpu[target]():
+
+            fn sleep_kernel(duration_sec: Float64):
+                sleep(duration_sec)
+
+            var device_ctx = ctx.get_device_context()
+            device_ctx.enqueue_function_experimental[sleep_kernel](
+                duration_sec, grid_dim=(1,), block_dim=(1,)
+            )
+        else:
+            sleep(duration_sec)

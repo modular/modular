@@ -19,7 +19,7 @@ def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
+](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
     return Span(list)
 
 

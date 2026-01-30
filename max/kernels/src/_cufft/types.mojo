@@ -22,10 +22,7 @@ struct LibraryProperty(Equatable, TrivialRegisterType):
     comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -65,10 +62,7 @@ struct Status(
     comptime CUFFT_NOT_SUPPORTED = Self(16)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -137,10 +131,7 @@ struct Type(Equatable, Identifiable, Stringable, TrivialRegisterType, Writable):
     comptime CUFFT_Z2Z = Self(0x69)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -181,10 +172,7 @@ struct Compatibility(
     comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other
@@ -216,10 +204,7 @@ struct Property(
     comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int8(value)
 
     fn __is__(self, other: Self) -> Bool:
         return self == other

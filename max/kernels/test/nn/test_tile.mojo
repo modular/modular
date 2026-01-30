@@ -1124,7 +1124,7 @@ fn test_tile_1d() raises:
     )
 
     # Expected: [1, 2, 3] repeated 3 times
-    var expected = InlineArray[Scalar[type], 9](1, 2, 3, 1, 2, 3, 1, 2, 3)
+    var expected: InlineArray[Scalar[type], 9] = [1, 2, 3, 1, 2, 3, 1, 2, 3]
     for i in range(9):
         assert_equal(output[i], expected[i])
 

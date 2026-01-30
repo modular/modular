@@ -98,3 +98,18 @@ modular_py_binary(
         "//max/python/max",
     ],
 )
+
+modular_py_binary(
+    name = "apply_mojo_fixits",
+    srcs = ["apply_mojo_fixits.py"],
+    data = [
+        "@llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements",
+    ],
+    env = {
+        "TOOL_RLOCATION": "$(rlocationpath @llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements)",
+    },
+    deps = [
+        "@rules_python//python/runfiles",
+        requirement("pyyaml"),
+    ],
+)
