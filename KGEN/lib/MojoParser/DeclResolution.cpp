@@ -220,9 +220,15 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
       return success();
     }
 
+    // If the deprecated decl is a method, we try to find a sibling member in
+    // the same struct/trait/extension. For non-methods (top-level functions,
+    // structs, aliases), use the standard lookup with searchParentScopes=true.
+    ASTDecl *methodParent = decl.tryGetMethodParentDecl();
+    ASTDecl *scope = methodParent ? methodParent : decl.getParentDecl();
     LookupResult lookup = shared.lookupAndResolveDecl(
-        target->spelling, target->getLoc(), *decl.getParentDecl(),
-        /*searchParentScopes=*/true);
+        target->spelling, target->getLoc(), *scope,
+        /*searchParentScopes=*/methodParent == nullptr);
+
     if (lookup.isErroneous())
       return success();
 
