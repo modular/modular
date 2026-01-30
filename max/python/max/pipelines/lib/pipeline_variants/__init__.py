@@ -12,4 +12,5 @@
 # ===----------------------------------------------------------------------=== #
 
 from .overlap_text_generation import OverlapTextGenerationPipeline
+from .pixel_generation import PixelGenerationPipeline
 from .text_generation import TextGenerationPipeline
