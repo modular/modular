@@ -241,6 +241,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
+    device_graph_capture: bool = Field(
+        default=False,
+        description="Enable device graph capture/replay for graph execution.",
+    )
+
     force: bool = Field(
         default=False,
         description=(
@@ -1310,6 +1315,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    max_batch_size     : {self.max_batch_size}")
         logger.info(f"    max_seq_len        : {self.max_length}")
         logger.info(f"    cache_memory       : {memory_str}")
+        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
         logger.info("")
 
 

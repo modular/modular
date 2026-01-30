@@ -274,6 +274,7 @@ class ModelWorker:
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
         except Exception as e:
+            logger.exception("Model worker crashed")
             detect_and_wrap_oom(e)
             raise
 
@@ -301,7 +302,7 @@ async def start_model_worker(
         Iterator[AsyncIterator[Worker]]: _description_
     """
     worker_name = "MODEL_" + str(uuid.uuid4())
-    logger.debug("Starting worker: %s", worker_name)
+    logger.info("Starting worker: %s", worker_name)
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
@@ -316,7 +317,9 @@ async def start_model_worker(
             model_worker_interface,
         )
 
+        logger.info("Waiting for model worker readiness")
         await proc.ready(alive, timeout=settings.mw_timeout_s)
+        logger.info("Model worker ready")
 
         if settings.use_heartbeat:
             proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)

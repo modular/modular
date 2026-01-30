@@ -115,6 +115,10 @@ class _TPPagedKVCacheManager:
 
         # Track the set of requests that are currently claimed.
         self._claimed_requests: set[RequestID] = set()
+        self._runtime_inputs_cache: dict[
+            tuple[int, int],
+            tuple[Buffer, Buffer, list[Buffer], list[Buffer]],
+        ] = {}
 
         # Whether prefix caching is enabled.
         self.enable_prefix_caching = self.params.enable_prefix_caching
@@ -267,37 +271,61 @@ class _TPPagedKVCacheManager:
         max_total_num_pages = ceildiv(max_seq_len, self.page_size)
         batch_size = len(batch)
 
-        # Allocate the kvcache runtime inputs on pinned memory for faster h2d
-        # transfer speeds. If kvcache is on host, then fall back to normal
-        # pageable memory. We initialize these empty max tensors by exporting
-        # to numpy over dlpack and using numpy methods.
+        # Allocate persistent host buffers and reuse device buffers for runtime.
         device0 = self.devices[0]
+
         pinned = not device0.is_host
 
-        # Allocate the lookup table buffer.
-        # [0, total_num_pages) are the valid block ids and total_num_pages
-        # denotes an unassigned block.
-        lut_table = Buffer(
-            shape=(batch_size, max_total_num_pages),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-        if pinned:
-            lut_table.disable_auto_sync()
-        lut_table_np = lut_table.to_numpy()
-        lut_table_np.fill(self.total_num_pages)
+        # Allocate or reuse persistent lookup table/cache length buffers.
+        key = (batch_size, max_total_num_pages)
+        buffers = self._runtime_inputs_cache.get(key)
+        if buffers is None:
+            # [0, total_num_pages) are the valid block ids and total_num_pages
+            # denotes an unassigned block.
+            lut_table_host = Buffer(
+                shape=(batch_size, max_total_num_pages),
+                dtype=DType.uint32,
+                device=device0,
+                pinned=pinned,
+            )
 
-        # Allocate cache length buffer.
-        cache_lengths = Buffer(
-            shape=(batch_size,),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-        if pinned:
-            cache_lengths.disable_auto_sync()
-        cache_lengths_np = cache_lengths.to_numpy()
+            if pinned:
+                lut_table_host.disable_auto_sync()
+
+            cache_lengths_host = Buffer(
+                shape=(batch_size,),
+                dtype=DType.uint32,
+                device=device0,
+                pinned=pinned,
+            )
+
+            if pinned:
+                cache_lengths_host.disable_auto_sync()
+
+            lut_table_by_device: list[Buffer] = []
+            cache_lengths_by_device: list[Buffer] = []
+            for device in self.devices:
+                lut_table_by_device.append(lut_table_host.to(device=device))
+                cache_lengths_by_device.append(
+                    cache_lengths_host.to(device=device)
+                )
+            buffers = (
+                lut_table_host,
+                cache_lengths_host,
+                lut_table_by_device,
+                cache_lengths_by_device,
+            )
+            self._runtime_inputs_cache[key] = buffers
+        (
+            lut_table_host,
+            cache_lengths_host,
+            lut_table_by_device,
+            cache_lengths_by_device,
+        ) = buffers
+        lut_table_np = lut_table_host.to_numpy()
+        lut_table_np.fill(self.total_num_pages)
+        cache_lengths_np = cache_lengths_host.to_numpy()
+        cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
@@ -338,12 +366,19 @@ class _TPPagedKVCacheManager:
         )
 
         ret_list = []
-        for i, device in enumerate(self.devices):
+        for cache_lengths_device, lookup_table_device, device_blocks in zip(
+            cache_lengths_by_device,
+            lut_table_by_device,
+            self.device_tensors,
+            strict=True,
+        ):
+            cache_lengths_device.inplace_copy_from(cache_lengths_host)
+            lookup_table_device.inplace_copy_from(lut_table_host)
             ret_list.append(
                 RaggedKVCacheInputs(
-                    blocks=self.device_tensors[i],
-                    cache_lengths=cache_lengths.to(device=device),
-                    lookup_table=lut_table.to(device=device),
+                    blocks=device_blocks,
+                    cache_lengths=cache_lengths_device,
+                    lookup_table=lookup_table_device,
                     max_lengths=max_lengths_host,
                 )
             )
