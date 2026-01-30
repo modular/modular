@@ -92,7 +92,7 @@ from linalg.fp4_quantization import (
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from linalg.grouped_matmul_sm100_1d1d import (
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_dynamic_scaled_nvfp4,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8

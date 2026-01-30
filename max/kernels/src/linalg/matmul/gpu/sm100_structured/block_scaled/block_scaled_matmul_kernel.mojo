@@ -118,7 +118,7 @@ from ..structured_kernels.warp_context import (
 )
 
 # Block-scaled output writer for epilogue
-from .block_scaled_output_writer import BlockScaledTileWriter
+from ..structured_kernels.output_writer import TileWriter
 
 
 # =============================================================================
@@ -388,7 +388,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Block-Scaled Output Tile Writer ==========
     # Uses structured building blocks with 3D batch coordinates for TMA stores
-    comptime TileWriterType = BlockScaledTileWriter[
+    comptime TileWriterType = TileWriter[
         a_type = Self.a_type,
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
@@ -401,6 +401,7 @@ struct BlackwellBlockScaledMatmulKernel[
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
+        batched=True,  # Block-scaled uses 3D batched coordinates
     ]
 
     # ========== Load Input Tiles ==========
@@ -625,7 +626,7 @@ struct BlackwellBlockScaledMatmulKernel[
     ):
         """Execute epilogue to store accumulated results to global memory.
 
-        Uses BlockScaledTileWriter which encapsulates:
+        Uses TileWriter which encapsulates:
         - TmemArrayType.load_fragments() for TMEM load
         - AccumBarrier.arrive() for barrier signaling
         - TMEMToSMemWriter.write_fragments() for SMEM write
@@ -643,9 +644,9 @@ struct BlackwellBlockScaledMatmulKernel[
             N: Problem N dimension.
             alpha: Tensor scale factor (scalar).
         """
-        # Use BlockScaledTileWriter for structured epilogue
+        # Use TileWriter for structured epilogue
         var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-        tile_writer.write(
+        tile_writer.write_batched(
             c_tiles,
             stage,
             work_tile_coord,
