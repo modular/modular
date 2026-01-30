@@ -20,9 +20,6 @@ struct DeprecatedStruct:
     pass
 
 
-struct NormalStruct:
-    pass
-
 
 @deprecated("deprecated function")
 # expected-note @below {{'deprecated_fn' declared here}}
@@ -77,11 +74,6 @@ struct StructWithDeprecatedMembers:
 
 # expected-warning @below {{deprecated struct}}
 fn use_deprecated_struct_in_signature(value: DeprecatedStruct):
-    pass
-
-
-fn use_normal_struct_in_signature(value: NormalStruct):
-    # No warning expected.
     pass
 
 
@@ -266,3 +258,16 @@ struct InstanceMethodRefTopLevel:
     @deprecated(use=some_top_level_func)
     fn instance_method(self):
         pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Test: Cross-module deprecation warnings
+# ===----------------------------------------------------------------------=== #
+
+
+from imported_module import DeprecatedInAnotherModule
+
+
+# expected-warning @below {{use of deprecated struct 'DeprecatedInAnotherModule'}}
+fn use_deprecated_import(value: DeprecatedInAnotherModule):
+    pass
