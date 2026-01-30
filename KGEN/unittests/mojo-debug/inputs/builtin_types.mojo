@@ -45,7 +45,7 @@ struct AStruct:
 
 
 @fieldwise_init("implicit")
-struct ParamStruct[T: __TypeOfAllTypes]:
+struct ParamStruct[T: TrivialRegisterType]:
     var t: Self.T
 
 
