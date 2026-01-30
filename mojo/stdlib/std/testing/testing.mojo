@@ -248,6 +248,41 @@ fn assert_equal(
 
 
 @always_inline
+fn assert_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are equal. If not, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            repr(lhs),
+            repr(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
 fn assert_equal_pyobj[
     LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
 ](
@@ -314,6 +349,41 @@ fn assert_not_equal[
         raise _assert_cmp_error["`left != right` comparison"](
             String(lhs),
             String(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_not_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are not equal. If they are, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs == rhs:
+        raise _assert_cmp_error["`left != right` comparison"](
+            repr(lhs),
+            repr(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )

@@ -11,7 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    assert_raises,
+    TestSuite,
+)
 from test_utils import CopyCounter, MoveOnly
 
 
@@ -125,8 +132,9 @@ def test_tuple_default():
 
 
 def test_tuple_comparison():
-    assert_true((1, 2, 3) == (1, 2, 3))
+    assert_equal((1, 2, 3), (1, 2, 3))
     assert_false((1, 2, 3) != (1, 2, 3))
+    assert_not_equal((1, 2, 3), (1, 2, 4))
     assert_false((1, 2, 3) < (1, 2, 3))
     assert_false((1, 2, 3) > (1, 2, 3))
     assert_true((1, 2, 3) <= (1, 2, 3))
@@ -169,22 +177,19 @@ def test_tuple_comparison_different_types_and_lengths():
 def test_tuple_reverse_odd():
     var t = ("hi", 1, 4.5)
     var reversed_t = t^.reverse()
-    assert_equal(reversed_t[0], 4.5)
-    assert_equal(reversed_t[1], 1)
-    assert_equal(reversed_t[2], "hi")
+    assert_equal(reversed_t, (4.5, 1, "hi"))
 
 
 def test_tuple_reverse_empty():
     var t = Tuple[]()
     var t_reversed = t^.reverse()
-    assert_true(t_reversed == ())
+    assert_equal(t_reversed, ())
 
 
 def test_tuple_reverse_even():
     var t = (Bool(True), Int(42))
     var t_reversed = t^.reverse()
-    assert_equal(t_reversed[0], Int(42))
-    assert_equal(t_reversed[1], Bool(True))
+    assert_equal(t_reversed, (Int(42), Bool(True)))
 
 
 def test_tuple_reverse_copy_count():
@@ -197,25 +202,21 @@ def test_tuple_concat():
     var t = ("hi", "hey", 1)
     var t2 = (4.5, "hello")
     var concatted = t^.concat(t2^)
-    assert_equal(concatted[0], "hi")
-    assert_equal(concatted[1], "hey")
-    assert_equal(concatted[2], 1)
-    assert_equal(concatted[3], 4.5)
-    assert_equal(concatted[4], "hello")
+    assert_equal(concatted, ("hi", "hey", 1, 4.5, "hello"))
 
 
 def test_tuple_empty_concat():
     var t = ()
     var t2 = ()
     var concatted = t^.concat(t2^)
-    assert_true(concatted == ())
+    assert_equal(concatted, ())
 
 
 def test_tuple_identity_concat():
     var t = (Bool(True),)
     var t2 = ()
     var concatted = t^.concat(t2^)
-    assert_true(concatted == (Bool(True),))
+    assert_equal(concatted, (Bool(True),))
 
 
 def test_tuple_concat_copy_count():
@@ -245,6 +246,72 @@ def test_tuple_works_with_non_copyable_types():
     var moved = tuple^
     assert_equal(moved[0].data, 42)
     assert_equal(moved[1], 55)
+
+
+def test_tuple_write_to():
+    var s = String()
+    (1, 2, 3).write_to(s)
+    assert_equal(s, "(1, 2, 3)")
+
+    s = String()
+    (1,).write_to(s)
+    assert_equal(s, "(1,)")
+
+    s = String()
+    ().write_to(s)
+    assert_equal(s, "()")
+
+    # write_to uses write_to on elements, so strings are unquoted.
+    s = String()
+    (1, "hello").write_to(s)
+    assert_equal(s, "(1, hello)")
+
+    s = String()
+    (True, 42, "hi").write_to(s)
+    assert_equal(s, "(True, 42, hi)")
+
+
+def test_tuple_write_repr_to():
+    var s = String()
+    (1, 2, 3).write_repr_to(s)
+    assert_equal(s, "Tuple[Int, Int, Int](Int(1), Int(2), Int(3))")
+
+    s = String()
+    (1,).write_repr_to(s)
+    assert_equal(s, "Tuple[Int](Int(1),)")
+
+    s = String()
+    ().write_repr_to(s)
+    assert_equal(s, "Tuple[]()")
+
+    # write_repr_to uses write_repr_to on elements, so strings are quoted.
+    s = String()
+    (1, "hello").write_repr_to(s)
+    assert_equal(s, "Tuple[Int, String](Int(1), 'hello')")
+
+    s = String()
+    (True, 42, "hi").write_repr_to(s)
+    assert_equal(s, "Tuple[Bool, Int, String](True, Int(42), 'hi')")
+
+
+def test_tuple_assert_equal():
+    # Direct tuple-to-tuple comparisons via assert_equal.
+    assert_equal((), ())
+    assert_equal((1,), (1,))
+    assert_equal((1, 2, 3), (1, 2, 3))
+    assert_equal((1, "hello"), (1, "hello"))
+    assert_equal((True, 42, "hi"), (True, 42, "hi"))
+
+
+def test_tuple_assert_not_equal():
+    assert_not_equal((1, 2), (1, 3))
+    assert_not_equal((1, "foo"), (1, "bar"))
+    assert_not_equal((1, 2, 3), (1, 2))
+
+
+def test_tuple_assert_equal_failure_message():
+    with assert_raises(contains="Tuple[Int, Int](Int(1), Int(2))"):
+        assert_equal((1, 2), (1, 3))
 
 
 def main():

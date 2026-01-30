@@ -216,6 +216,18 @@ struct Bool(
 
         writer.write("True" if self else "False")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this boolean to a writer.
+
+        The repr of a boolean is the same as its string representation:
+        `True` or `False`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self.write_to(writer)
+
     fn __repr__(self) -> String:
         """Get the bool as a string.
 

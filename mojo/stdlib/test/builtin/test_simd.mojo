@@ -1304,16 +1304,15 @@ def test_interleave():
 
 def test_deinterleave():
     var tup2 = SIMD[DType.float32, 2](1, 2).deinterleave()
-    assert_equal(tup2[0], Float32(1))
-    assert_equal(tup2[1], Float32(2))
+    assert_equal(tup2, (Float32(1), Float32(2)))
 
     var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
-    assert_equal(tup4[0], type_of(tup4[0])(0, -2))
-    assert_equal(tup4[1], type_of(tup4[0])(1, -3))
+    assert_equal(tup4, (type_of(tup4[0])(0, -2), type_of(tup4[0])(1, -3)))
 
     var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
-    assert_equal(tup8[0], type_of(tup8[0])(0, 2, 4, 6))
-    assert_equal(tup8[1], type_of(tup8[0])(1, 3, 5, 7))
+    assert_equal(
+        tup8, (type_of(tup8[0])(0, 2, 4, 6), type_of(tup8[0])(1, 3, 5, 7))
+    )
 
 
 def test_extract():

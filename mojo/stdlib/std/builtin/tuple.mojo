@@ -19,6 +19,7 @@ from builtin.constrained import _constrained_conforms_to
 from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import Variadic
+from reflection.type_info import _unqualified_type_name
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -28,7 +29,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
+struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.
@@ -302,6 +303,82 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized):
         """
 
         return not self == other
+
+    @no_inline
+    fn _write_tuple_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        """Write this tuple's elements to a writer.
+
+        Parameters:
+            is_repr: Whether to use repr formatting for elements.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        for i in range(Self.__len__()):
+            comptime T = Self.element_types[i]
+            _constrained_conforms_to[
+                conforms_to(T, Writable),
+                Parent=Self,
+                Element=T,
+                ParentConformsTo="Writable",
+            ]()
+
+        writer.write_string("(")
+
+        @parameter
+        for i in range(Self.__len__()):
+
+            @parameter
+            if i != 0:
+                writer.write_string(", ")
+
+            @parameter
+            if is_repr:
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self[i]).write_to(writer)
+
+        @parameter
+        if Self.__len__() == 1:
+            writer.write_string(",")
+        writer.write_string(")")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this tuple's text representation to a writer.
+
+        Elements are formatted using their `write_to()` representation.
+        Single-element tuples include a trailing comma: `(1,)`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        self._write_tuple_to[is_repr=False](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this tuple's debug representation to a writer.
+
+        Outputs the type name and parameters followed by elements formatted
+        using their `write_repr_to()` representation. For example,
+        `Tuple[Int, String](Int(0), 'hello')`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string("Tuple[")
+
+        @parameter
+        for i in range(Self.__len__()):
+
+            @parameter
+            if i != 0:
+                writer.write_string(", ")
+            writer.write_string(_unqualified_type_name[Self.element_types[i]]())
+        writer.write_string("]")
+        self._write_tuple_to[is_repr=True](writer)
 
     @always_inline
     fn _compare[
