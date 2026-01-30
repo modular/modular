@@ -14,6 +14,7 @@
 from collections.string._unicode_lookups import *
 
 from memory import Span
+from sys.intrinsics import likely
 
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -174,21 +175,40 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var data = s.as_bytes()
+    # lowercased strings always have the same amount of bytes
+    var result = String(capacity=len(data))
     var input_offset = 0
-    while input_offset < s.byte_length():
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
-        )
-        var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
-        if lowercase_char_opt is None:
-            result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
-            )
-        else:
-            result += String(lowercase_char_opt.unsafe_value())
+    while input_offset < len(data):
+        comptime `a` = Byte(ord("a"))
+        comptime `A` = Byte(ord("A"))
+        comptime lower_ascii_latin1 = `A` ^ `a`
 
-        input_offset += rune_and_size[1]
+        ref rune, size = Codepoint.unsafe_decode_utf8_codepoint(
+            data[input_offset:]
+        )
+
+        if likely(size == 1):  # ASCII fast path
+            comptime `z` = Byte(ord("z"))
+            var b = Byte(rune.to_u32())
+            var low = b | lower_ascii_latin1
+            result._unsafe_append_byte(low if `a` <= low <= `z` else b)
+        elif size == 2:  # latin-1 fast path
+            comptime `à` = Byte(ord("à"))
+            comptime `þ` = Byte(ord("þ"))
+            comptime `÷` = Byte(ord("÷"))
+            var b = Byte(rune.to_u32())
+            var low = b | lower_ascii_latin1
+            var c = Codepoint(low if `à` <= low <= `þ` and low != `÷` else b)
+            result += String(c)
+        else:
+            var lowercase_char_opt = _get_lowercase_mapping(rune)
+            if lowercase_char_opt is None:
+                result.write_bytes(data[input_offset : input_offset + size])
+            else:
+                result += String(lowercase_char_opt.unsafe_value())
+
+        input_offset += size
 
     return result^
 
@@ -202,34 +222,54 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var data = s.as_bytes()
+    # estimate the size since some codepoints require multiple chars to uppercase
+    var result = String(capacity=3 * (len(data) // 2))
     var input_offset = 0
-    while input_offset < s.byte_length():
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
+    while input_offset < len(data):
+        comptime `a` = Byte(ord("a"))
+        comptime `A` = Byte(ord("A"))
+        comptime upper_ascii_latin1 = ~(`A` ^ `a`)
+
+        ref rune, size = Codepoint.unsafe_decode_utf8_codepoint(
+            data[input_offset:]
         )
-        var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
-
-        if uppercase_replacement_opt:
-            # A given character can be replaced with a sequence of characters
-            # up to 3 characters in length. A fixed size `Codepoint` array is
-            # returned, along with a `count` (1, 2, or 3) of how many
-            # replacement characters are in the uppercase replacement sequence.
-            count, ref uppercase_replacement_chars = (
-                uppercase_replacement_opt.unsafe_value()
-            )
-            for char_idx in range(count):
-                result += String(uppercase_replacement_chars[char_idx])
+        if likely(size == 1):  # ASCII fast path
+            comptime `Z` = Byte(ord("Z"))
+            var b = Byte(rune.to_u32())
+            var up = b & upper_ascii_latin1
+            result._unsafe_append_byte(up if `A` <= up <= `Z` else b)
+        elif size == 2:  # latin-1 fast path
+            comptime `À` = Byte(ord("À"))
+            comptime `Þ` = Byte(ord("Þ"))
+            comptime `×` = Byte(ord("×"))
+            comptime `ÿ` = Byte(ord("ÿ"))
+            comptime `Ÿ` = Byte(ord("Ÿ"))
+            comptime `ß` = Byte(ord("ß"))
+            var b = Byte(rune.to_u32())
+            if likely(b != `ß`):
+                b = `Ÿ` if b == `ÿ` else b
+                var up = b & upper_ascii_latin1
+                var c = Codepoint(up if `À` <= up <= `Þ` and up != `×` else b)
+                result += String(c)
+            else:
+                result += "SS"
         else:
-            result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
-            )
+            var uppercase_replacement_opt = _get_uppercase_mapping(rune)
 
-        input_offset += rune_and_size[1]
+            if uppercase_replacement_opt:
+                # A given character can be replaced with a sequence of characters
+                # up to 3 characters in length. A fixed size `Codepoint` array is
+                # returned, along with a `count` (1, 2, or 3) of how many
+                # replacement characters are in the uppercase replacement sequence.
+                count, ref uppercase_replacement_chars = (
+                    uppercase_replacement_opt.unsafe_value()
+                )
+                for char_idx in range(count):
+                    result += String(uppercase_replacement_chars[char_idx])
+            else:
+                result.write_bytes(data[input_offset : input_offset + size])
+
+        input_offset += size
 
     return result^
-
-
-@always_inline
-fn _estimate_needed_size(byte_len: Int) -> Int:
-    return 3 * (byte_len >> 1) + 1
