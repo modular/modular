@@ -29,13 +29,13 @@ struct NotMovable:
 
 def use_black_box_ref(
     x: NotRegisterPassable,
-) -> ref [origin_of(x)] NotRegisterPassable:
+) -> ref[origin_of(x)] NotRegisterPassable:
     return black_box(x)
 
 
 def use_black_box_ref_not_movable(
     x: NotMovable,
-) -> ref [origin_of(x)] NotMovable:
+) -> ref[origin_of(x)] NotMovable:
     return black_box(x)
 
 

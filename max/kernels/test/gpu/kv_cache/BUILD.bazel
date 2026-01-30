@@ -52,8 +52,8 @@ _EXTRA_CONSTRAINTS = {
         srcs = [src],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            "//:amd_gpu": False,
             "//conditions:default": src not in [
+                "test_kv_cache_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_kv_cache_ragged_matmul.mojo",  # TODO: MSTDL-1147 understand why this test fails with asserts turned on.
                 "test_mha_mixed_ce_tg.mojo",  # KERN-2339: accessing idx=4 in dimension of size 4
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug

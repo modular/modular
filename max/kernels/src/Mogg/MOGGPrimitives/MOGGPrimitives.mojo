@@ -21,6 +21,9 @@ from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 
 from nn.concat import concat
@@ -644,22 +647,25 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var output_lt = LayoutTensor[DType.int8, layout_1d](
+    var output_lt = TileTensor(
         output.data,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
+        row_major(Coord(Idx(len(output)))),
     )
-    var input_tensors = StaticTuple[
-        LayoutTensor[DType.int8, layout_1d, MutAnyOrigin],
-        inputs.size,
-    ]()
-    for i in range(len(inputs)):
-        input_tensors[i] = input_tensors.element_type(
-            inputs[i].data,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
+    var input_tensors = StaticTuple[_, inputs.size](
+        TileTensor(inputs[0])
+        .make_dynamic[DType.int64]()
+        .as_any_origin()
+        .as_immut()
+    )
+    for i in range(1, len(inputs)):
+        input_tensors[i] = (
+            TileTensor(inputs[i])
+            .make_dynamic[DType.int64]()
+            .as_any_origin()
+            .as_immut()
         )
     if len(output) < 4096:
-        concat[inputs_layout=layout_1d, DType.int8, True, bDevice, None](
+        concat[DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
     else:

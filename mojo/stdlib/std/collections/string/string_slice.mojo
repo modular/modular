@@ -717,7 +717,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
 
     @implicit
-    fn __init__(out self, ref [Self.origin]value: String):
+    fn __init__(out self, ref[Self.origin] value: String):
         """Construct a StringSlice from a String.
 
         This constructor propagates the mutability of the reference. If you

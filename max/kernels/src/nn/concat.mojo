@@ -13,9 +13,7 @@
 
 from collections import Optional
 from math import align_down, align_up, ceildiv
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys._build import is_debug_build
 from sys.info import simd_width_of, size_of
 
@@ -28,7 +26,9 @@ from algorithm.functional import (
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -53,9 +53,9 @@ fn memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[Int8],
+    dest_data: UnsafePointer[mut=True, Int8],
     out_byte_offset: Int,
-    src_data: type_of(dest_data),
+    src_data: UnsafePointer[Int8],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -77,9 +77,9 @@ fn memcpy_or_fuse[
         # Cast
         var shape_1d = IndexList[1](typed_len)
         var typed_src = src_data.bitcast[Scalar[dtype]]()
-        var input = LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)](
+        var input = TileTensor(
             typed_src,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(shape_1d),
+            row_major(Coord(shape_1d)),
         )
 
         @parameter
@@ -87,7 +87,9 @@ fn memcpy_or_fuse[
         fn epilogue_wrapper[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](index: IndexList[_rank]):
-            var load = input.load[width=simd_width](index)
+            var coord = Coord(index)
+            __comptime_assert coord.rank == input.rank
+            var load = input.load[width=simd_width](coord)
 
             # Convert the linearized address back to the n-D indices.
             __comptime_assert _rank == 1
@@ -123,8 +125,10 @@ struct _Span(TrivialRegisterType):
 
 
 @fieldwise_init
-struct _CanonicallyReshapedBuffer(TrivialRegisterType):
-    var data: UnsafePointer[Int8]
+struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
+    TrivialRegisterType
+):
+    var data: UnsafePointer[Int8, Self.origin]
     var h: Int
     var w: Int
     var c: Int
@@ -133,29 +137,40 @@ struct _CanonicallyReshapedBuffer(TrivialRegisterType):
 fn _canonical_reshape[
     dtype: DType
 ](
-    buf: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    buf: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     axis: Int,
-) -> _CanonicallyReshapedBuffer:
-    var shape = buf.runtime_layout.shape.value.canonicalize()
+) -> _CanonicallyReshapedBuffer[buf.origin]:
+    var shape = coord_to_index_list(buf.layout.shape)
     var h = product(shape, 0, axis)
-    var w = buf.dim(axis)
+    var w = Int(buf.dim(axis))
     var c = product(shape, axis + 1, buf.rank) * size_of[dtype]()
     return _CanonicallyReshapedBuffer(buf.ptr.bitcast[Int8](), h, w, c)
 
 
 fn _canonical_reshape_output[
-    inputs_layout: Layout, //, dtype: DType
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
+    //,
+    dtype: DType,
 ](
-    out_buf: LayoutTensor[
+    out_buf: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
-) -> _CanonicallyReshapedBuffer:
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
+) -> _CanonicallyReshapedBuffer[out_buf.origin]:
     var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
     for i in range(1, len(inputs)):
-        out_w += inputs[i].dim(axis)
+        out_w += Int(inputs[i].dim(axis))
     return _CanonicallyReshapedBuffer(
         out_buf.ptr.bitcast[Int8](),
         input0_canon.h,
@@ -165,16 +180,25 @@ fn _canonical_reshape_output[
 
 
 fn _concat_parallel[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -245,12 +269,7 @@ fn _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data + overlap_rel_start,
                         overlap_rel_end - overlap_rel_start,
-                        rebind[
-                            IndexList[
-                                output.rank,
-                                element_type = output.layout_int_type,
-                            ]
-                        ](output.runtime_layout.shape.value),
+                        coord_to_index_list(output.layout.shape),
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
@@ -264,12 +283,7 @@ fn _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data + overlap_rel_start,
                         overlap_full_rel_start - overlap_rel_start,
-                        rebind[
-                            IndexList[
-                                output.rank,
-                                element_type = output.layout_int_type,
-                            ]
-                        ](output.runtime_layout.shape.value),
+                        coord_to_index_list(output.layout.shape),
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data + overlap_full_rel_start
@@ -285,12 +299,7 @@ fn _concat_parallel[
                             out_ptr_offset,
                             in_ptr,
                             input_wc,
-                            rebind[
-                                IndexList[
-                                    output.rank,
-                                    element_type = output.layout_int_type,
-                                ]
-                            ](output.runtime_layout.shape.value),
+                            coord_to_index_list(output.layout.shape),
                         )
                         in_ptr += input_wc
                         out_ptr_offset += output_wc
@@ -300,12 +309,7 @@ fn _concat_parallel[
                         out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
-                        rebind[
-                            IndexList[
-                                output.rank,
-                                element_type = output.layout_int_type,
-                            ]
-                        ](output.runtime_layout.shape.value),
+                        coord_to_index_list(output.layout.shape),
                     )
 
             amount_traversed += input_byte_size
@@ -323,16 +327,25 @@ fn _concat_parallel[
 
 @always_inline
 fn _concat[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -346,12 +359,14 @@ fn _concat[
 
     """
 
-    var h = product(inputs[0].runtime_layout.shape.value, 0, axis)
-    var c = product(inputs[0].runtime_layout.shape.value, axis + 1, output.rank)
+    var h = product(coord_to_index_list(inputs[0].layout.shape), 0, axis)
+    var c = product(
+        coord_to_index_list(inputs[0].layout.shape), axis + 1, output.rank
+    )
 
     var w_out: Int = 0
     for i in range(len(inputs)):
-        w_out += inputs[i].dim(axis)
+        w_out += Int(inputs[i].dim(axis))
 
     var stride_h_out = w_out * c
     var stride_w_out = c
@@ -359,7 +374,7 @@ fn _concat[
     var w_offset: Int = 0
     for i in range(len(inputs)):
         # copy one w x c slice along h at a time
-        var w = inputs[i].dim(axis)
+        var w = Int(inputs[i].dim(axis))
         for j in range(h):
             var input_offset = j * w * c
             var output_offset = j * stride_h_out + w_offset * stride_w_out
@@ -369,50 +384,63 @@ fn _concat[
                 output_offset * size_of[dtype](),
                 (inputs[i].ptr + input_offset).bitcast[Int8](),
                 w * c * size_of[dtype](),
-                rebind[
-                    IndexList[
-                        output.rank,
-                        element_type = output.layout_int_type,
-                    ]
-                ](output.runtime_layout.shape.value),
+                coord_to_index_list(output.layout.shape),
             )
         w_offset += w
 
 
 @always_inline
 fn _concat_inner[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
-        var buffer_len = inputs[i].size()
+        var buffer_len = inputs[i].numel()
         memcpy_or_fuse[output.rank, dtype, epilogue_fn](
             output.ptr.bitcast[Int8](),
             num_elems_copied * size_of[dtype](),
             inputs[i].ptr.bitcast[Int8](),
             buffer_len * size_of[dtype](),
-            rebind[
-                IndexList[
-                    output.rank,
-                    element_type = output.layout_int_type,
-                ]
-            ](output.runtime_layout.shape.value),
+            coord_to_index_list(output.layout.shape),
         )
         num_elems_copied += buffer_len
 
 
 @always_inline
 fn _check_input_consistency[
-    inputs_layout: Layout, //, dtype: DType
-](axis: Int, inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],):
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
+    //,
+    dtype: DType,
+](
+    axis: Int,
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
+):
     @parameter
     if not is_debug_build():
         return
@@ -430,16 +458,25 @@ fn _check_input_consistency[
 
 @always_inline
 fn _concat_serial[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     _check_input_consistency[dtype](axis, inputs)
 
@@ -460,16 +497,25 @@ fn _concat_serial[
 
 @always_inline
 fn _concat_small[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     comptime single_thread_blocking_override = True
     comptime simd_width = simd_width_of[dtype]()
@@ -493,29 +539,30 @@ fn _concat_small[
         for i in range(len(inputs)):
             var input = inputs[i]
             # This is the input we should be loading/storing.
-            if target_dim < input.runtime_layout.shape.value[axis]:
+            if target_dim < Int(input.dim(axis)):
                 var in_index = out_index
                 in_index[axis] = target_dim
-                var load = input.load[width=simd_width](in_index)
+                var coord = Coord(in_index)
+                __comptime_assert coord.rank == input.rank
+                var load = input.load[width=simd_width](coord)
 
                 @parameter
                 if epilogue_fn:
                     comptime func = epilogue_fn.value()
                     func[dtype, rank, simd_width](out_index, load)
                 else:
-                    output.store[width=simd_width](out_index, load)
+                    var coord = Coord(out_index)
+                    __comptime_assert coord.rank == output.rank
+                    output.store[width=simd_width](coord, load)
                 return
             else:
                 # Keep looking...
-                target_dim -= input.runtime_layout.shape.value[axis]
+                target_dim -= Int(input.dim(axis))
 
     # We need to check it's safe to simd_load from each input.
     var inputs_simd_aligned = True
     for i in range(len(inputs)):
-        if (
-            inputs[i].runtime_layout.shape.value[output.rank - 1] % simd_width
-            != 0
-        ):
+        if inputs[i].dim(output.rank - 1) % simd_width != 0:
             inputs_simd_aligned = False
 
     # If we are concat'ing along the last dimension we can do a simd load.
@@ -524,29 +571,38 @@ fn _concat_small[
             concat_lambda,
             simd_width=simd_width,
             use_blocking_impl=single_thread_blocking_override,
-        ](output.runtime_layout.shape.value)
+        ](coord_to_index_list(output.layout.shape))
     else:
         # Otherwise we must run scalar.
         elementwise[
             concat_lambda,
             simd_width=1,
             use_blocking_impl=single_thread_blocking_override,
-        ](output.runtime_layout.shape.value)
+        ](coord_to_index_list(output.layout.shape))
 
 
 @always_inline
 fn _concat_cpu[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[LayoutTensor[dtype, inputs_layout, MutAnyOrigin]],
+    inputs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ]
+    ],
 ) raises:
     @parameter
     if single_thread_blocking_override:
@@ -562,7 +618,7 @@ fn _concat_cpu[
     comptime KB = 1024
     comptime min_work_for_parallel = 128 * KB  # TODO: autotune
 
-    var output_bytes = output.size() * size_of[dtype]()
+    var output_bytes = output.numel() * size_of[dtype]()
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
@@ -574,20 +630,31 @@ fn _concat_cpu[
 
 @always_inline
 fn concat_shape[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_bufs: List[LayoutTensor[input_type, inputs_layout, MutAnyOrigin]],
+    input_bufs: List[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            input_type,
+            input_origin,
+        ]
+    ],
     axis: Int,
-) raises -> IndexList[inputs_layout.rank()]:
+) raises -> IndexList[Variadic.size(input_shape_types)]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
 
     Parameters:
-        inputs_layout: Input layout of the input tensor.
+        input_shape_types: Input shape layout of the input tensor.
+        input_stride_types: Input stride layout of the input tensor.
+        input_origin: Origin of the input tensor.
         input_type: Type of the input tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
@@ -602,29 +669,26 @@ fn concat_shape[
 
     # extract hyper parameters
     var normalized_axis = normalize_neg_index(
-        axis, comptime (inputs_layout.rank())
+        axis, Variadic.size(input_shape_types)
     )
 
     @parameter
     @always_inline
     fn shape_equal_ignore_axis(
-        s1: IndexList[inputs_layout.rank()], s2: IndexList[inputs_layout.rank()]
+        s1: IndexList[Variadic.size(input_shape_types)],
+        s2: IndexList[Variadic.size(input_shape_types)],
     ) -> Bool:
-        for i in range(comptime (inputs_layout.rank())):
+        for i in range(Variadic.size(input_shape_types)):
             if i != axis and s1[i] != s2[i]:
                 return False
         return True
 
     var concat_axis_dim_sum = 0
     for i in range(len(input_bufs)):
-        concat_axis_dim_sum += input_bufs[i].dim(normalized_axis)
+        concat_axis_dim_sum += Int(input_bufs[i].dim(normalized_axis))
         if not shape_equal_ignore_axis(
-            rebind[IndexList[inputs_layout.rank()]](
-                input_bufs[0].runtime_layout.shape.value.canonicalize()
-            ),
-            rebind[IndexList[inputs_layout.rank()]](
-                input_bufs[i].runtime_layout.shape.value.canonicalize()
-            ),
+            coord_to_index_list(input_bufs[0].layout.shape),
+            coord_to_index_list(input_bufs[i].layout.shape),
         ):
             raise Error(
                 "[concat_from_list] input shapes must match except at concat"
@@ -632,26 +696,35 @@ fn concat_shape[
             )
 
     # compute and return the output shape
-    var output_shape = rebind[IndexList[inputs_layout.rank()]](
-        input_bufs[0].runtime_layout.shape.value.canonicalize()
-    )
+    var output_shape = coord_to_index_list(input_bufs[0].layout.shape)
     output_shape[normalized_axis] = concat_axis_dim_sum
     return output_shape
 
 
 @always_inline
 fn concat[
-    output_layout: Layout,
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout],
+    output: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     axis: Int,
-    inputs: StaticTuple[LayoutTensor[dtype, inputs_layout, MutAnyOrigin], ...],
+    inputs: StaticTuple[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ],
+        ...,
+    ],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     __comptime_assert is_valid_target[target](), "not a valid target"
@@ -663,7 +736,12 @@ fn concat[
         @parameter
         if is_cpu[target]():
             var inputVec = List[
-                LayoutTensor[dtype, inputs_layout, MutAnyOrigin]
+                TileTensor[
+                    shape_types=input_shape_types,
+                    stride_types=input_stride_types,
+                    dtype,
+                    input_origin,
+                ]
             ](capacity=len(inputs))
 
             for i in range(inputs.size):
@@ -680,7 +758,7 @@ fn concat[
             _concat_gpu[dtype, epilogue_fn](
                 # This is safe since `output` being an arg will keep the origin alive
                 # for the duration of this call.
-                output.as_any_origin(),
+                output,
                 axis,
                 inputs,
                 context.get_device_context(),
@@ -688,55 +766,83 @@ fn concat[
 
 
 fn _concat_inner_most_single_dim[
-    output_layout: Layout,
-    inputs_layout: Layout,
+    output_origin: MutOrigin,
+    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
     //,
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
+    output: TileTensor[
+        shape_types=output_shape_types,
+        stride_types=output_stride_types,
+        dtype,
+        output_origin,
+    ],
     inputs: StaticTuple[
-        LayoutTensor[dtype, inputs_layout, MutAnyOrigin], num_inputs
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ],
+        num_inputs,
     ],
 ):
     var idx = block_idx.x * UInt(block_size) + thread_idx.x
-    if idx >= UInt(output.size()):
+    if idx >= UInt(output.numel()):
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, output.runtime_layout.shape.value
+        idx, coord_to_index_list(output.layout.shape)
     )
+    var in_coord = Coord(index)
+    __comptime_assert in_coord.rank == Variadic.size(input_shape_types)
 
     @parameter
     for i in range(num_inputs):
         var out_index = rebind[IndexList[output.rank]](index.canonicalize())
         out_index[output.rank - 1] = i
+        var out_coord = Coord(out_index)
+        __comptime_assert out_coord.rank == output.rank
 
         @parameter
         if epilogue_fn:
             comptime func = epilogue_fn.value()
             func[dtype, output.rank, 1](
-                out_index, inputs[i].load[width=1](index)
+                out_index, inputs[i].load[width=1](in_coord)
             )
         else:
-            output.store(out_index, inputs[i].load[width=1](index))
+            output.store(out_coord, inputs[i].load[width=1](in_coord))
 
 
 @always_inline
 fn _concat_gpu_elementwise[
-    output_layout: Layout,
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
+    output: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     axis: Int,
     inputs: StaticTuple[
-        LayoutTensor[dtype, inputs_layout, MutAnyOrigin], num_inputs
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ],
+        num_inputs,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -751,18 +857,26 @@ fn _concat_gpu_elementwise[
 
 @always_inline
 fn _concat_gpu_elementwise[
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     axis: Int,
     dtype: DType,
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     inputs: StaticTuple[
-        LayoutTensor[dtype, inputs_layout, MutAnyOrigin], num_inputs
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ],
+        num_inputs,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -773,23 +887,27 @@ fn _concat_gpu_elementwise[
     ](out_index: IndexList[_rank]):
         var in_index = out_index
         in_index[axis] = out_index[axis]
+        var out_coord = Coord(out_index)
+        __comptime_assert out_coord.rank == output.rank
 
         @parameter
         for i in range(num_inputs):
             var input = inputs[i]
-            var input_shape = input.runtime_layout.shape.value
+            var input_shape = coord_to_index_list(input.layout.shape)
 
             if in_index[axis] < input_shape[axis]:
+                var in_coord = Coord(in_index)
+                __comptime_assert in_coord.rank == input.rank
 
                 @parameter
                 if epilogue_fn:
                     comptime func = epilogue_fn.value()
                     func[dtype, _rank, simd_width](
                         out_index,
-                        input.load[width=1](in_index),
+                        input.load[width=1](in_coord),
                     )
                 else:
-                    output.store(out_index, input.load[width=1](in_index))
+                    output.store(out_coord, input.load[width=1](in_coord))
                 return
 
             in_index[axis] -= input_shape[axis]
@@ -800,21 +918,32 @@ fn _concat_gpu_elementwise[
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
     elementwise[per_output_elem, 1, target="gpu"](
-        output.runtime_layout.shape.value, ctx
+        coord_to_index_list(output.layout.shape), ctx
     )
 
 
 @always_inline
 fn _concat_gpu[
-    output_layout: Layout,
-    inputs_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
+    output: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
     axis: Int,
-    inputs: StaticTuple[LayoutTensor[dtype, inputs_layout, MutAnyOrigin], ...],
+    inputs: StaticTuple[
+        TileTensor[
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            dtype,
+            input_origin,
+        ],
+        ...,
+    ],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = inputs.size
@@ -822,7 +951,7 @@ fn _concat_gpu[
     var outer_dims = 1
     for i in range(axis):
         # Use input[0], all dims should be equal except axis.
-        outer_dims *= inputs[0].dim(i)
+        outer_dims *= Int(inputs[0].dim(i))
 
     @parameter
     @always_inline
@@ -832,18 +961,18 @@ fn _concat_gpu[
         @parameter
         for i in range(num_inputs):
             # Skip empty inputs.
-            if inputs[i].size() > 0:
+            if inputs[i].numel() > 0:
                 # TODO: Owning = True or False?
                 var outp = DeviceBuffer(
                     ctx,
                     output.ptr + input_size,
-                    inputs[i].size(),
+                    inputs[i].numel(),
                     owning=False,
                 )
                 var inp = DeviceBuffer(
                     ctx,
                     inputs[i].ptr,
-                    inputs[i].size(),
+                    inputs[i].numel(),
                     owning=False,
                 )
                 ctx.enqueue_copy(
@@ -851,7 +980,7 @@ fn _concat_gpu[
                     inp,
                 )
 
-                input_size += inputs[i].size()
+                input_size += inputs[i].numel()
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
@@ -870,8 +999,12 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _concat_inner_most_single_dim[
-                output_layout=output_layout,
-                inputs_layout=inputs_layout,
+                output_origin = output.origin,
+                output_shape_types = output.shape_types,
+                output_stride_types = output.stride_types,
+                input_origin=input_origin,
+                input_shape_types=input_shape_types,
+                input_stride_types=input_stride_types,
                 dtype,
                 num_inputs,
                 block_size,
@@ -881,7 +1014,7 @@ fn _concat_gpu[
             return ctx.enqueue_function[kernel, kernel](
                 output,
                 inputs,
-                grid_dim=(inputs[0].size() // block_size),
+                grid_dim=(inputs[0].numel() // block_size),
                 block_dim=(block_size),
             )
 
@@ -901,7 +1034,7 @@ fn _fused_concat_cpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContextPtr,
@@ -936,7 +1069,9 @@ fn _fused_concat_cpu[
 
 @always_inline
 fn _fused_concat_inner_most_single_dim[
-    output_layout: Layout,
+    output_origin: MutOrigin,
+    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_stride_types: Variadic.TypesOfTrait[CoordLike],
     //,
     rank: Int,
     dtype: DType,
@@ -948,7 +1083,12 @@ fn _fused_concat_inner_most_single_dim[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
+    output: TileTensor[
+        shape_types=output_shape_types,
+        stride_types=output_stride_types,
+        dtype,
+        output_origin,
+    ],
 ):
     comptime num_inputs = input_shapes.size
 
@@ -957,7 +1097,7 @@ fn _fused_concat_inner_most_single_dim[
         return
 
     var index = _get_start_indices_of_nth_subvolume_uint[1](
-        idx, output.runtime_layout.shape.value
+        idx, coord_to_index_list(output.layout.shape)
     )
 
     @parameter
@@ -983,7 +1123,7 @@ fn _fused_concat_gpu_elementwise[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -1017,14 +1157,12 @@ fn _fused_concat_gpu_elementwise[
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
     elementwise[per_output_elem, 1, target="gpu"](
-        output.runtime_layout.shape.value, ctx
+        coord_to_index_list(output.layout.shape), ctx
     )
 
 
 @always_inline
 fn _fused_concat_gpu[
-    output_layout: Layout,
-    //,
     rank: Int,
     dtype: DType,
     input_fn: fn[input_index: Int, width: Int, _rank: Int](
@@ -1035,7 +1173,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: LayoutTensor[mut=True, dtype, output_layout, MutAnyOrigin],
+    output: TileTensor[mut=True, dtype],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1053,7 +1191,9 @@ fn _fused_concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _fused_concat_inner_most_single_dim[
-                output_layout=output_layout,
+                output_origin = output.origin,
+                output_shape_types = output.shape_types,
+                output_stride_types = output.stride_types,
                 rank,
                 dtype,
                 block_size,
@@ -1090,8 +1230,6 @@ fn _fused_concat_gpu[
 
 @always_inline
 fn fused_concat[
-    output_layout: Layout,
-    //,
     dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
@@ -1103,7 +1241,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: LayoutTensor[mut=True, dtype, output_layout],
+    output: TileTensor[mut=True, dtype],
     ctx: DeviceContextPtr,
 ) raises:
     __comptime_assert is_valid_target[target](), "not a valid target"

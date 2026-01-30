@@ -844,7 +844,7 @@ struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn expect[T: __TypeOfAllTypes, //, expected_val: T](val: T) -> T:
+fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 

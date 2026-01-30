@@ -80,7 +80,7 @@ comptime shuf3 = SIMD[DType.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
 )
 
-comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
+comptime UTF8_CHAR_WIDTHS: InlineArray[Byte, 256] = [
     #  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 0
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 1
@@ -98,7 +98,7 @@ comptime UTF8_CHAR_WIDTHS = InlineArray[Byte, 256](
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, # D
     3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, # E
     4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, # F
-)
+]
 # fmt: on
 
 

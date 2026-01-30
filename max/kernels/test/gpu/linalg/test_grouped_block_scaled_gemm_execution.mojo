@@ -50,11 +50,13 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 
-from linalg.matmul.gpu.sm100_structured.config import BlockScaledMatmulConfig
-from linalg.matmul.gpu.sm100_structured.block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
+)
+from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_matmul import (
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
 

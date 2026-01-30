@@ -27,6 +27,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
+from gpu.host import get_gpu_target
 from gpu.intrinsics import Scope, load_acquire, store_release, threadfence
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
@@ -61,6 +62,10 @@ comptime RtTuple_4 = RuntimeTuple[
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
+
+comptime router_weights_wrapper_type = fn[width: Int](
+    token_idx: Int, topk_id: Int
+) capturing -> SIMD[DType.float32, width]
 
 comptime EP_DATA_READY_FLAG = 1 << 10
 
@@ -162,10 +167,22 @@ fn ep_signal_completion[
             )
 
 
+@always_inline
+fn get_device_alignment() -> Int:
+    comptime gpu_target = get_gpu_target()
+    comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
+    comptime gpu_alignment = align_of[
+        SIMD[DType.uint8, gpu_simd_width], target=gpu_target
+    ]()
+
+    return gpu_alignment
+
+
 trait TokenFormat(DevicePassable, TrivialRegisterType):
     comptime hid_dim: Int
     comptime top_k: Int
     comptime alignment: Int
+    comptime expert_m_padding: Int
 
     @always_inline
     @staticmethod
@@ -229,11 +246,12 @@ trait TokenFormat(DevicePassable, TrivialRegisterType):
 
 
 struct BF16TokenFormat[
-    output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int
+    output_layout: Layout, //, _hid_dim: Int, _top_k: Int, _alignment: Int = 0
 ](TokenFormat, TrivialRegisterType):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
-    comptime alignment = Self._alignment
+    comptime alignment = Self._alignment or get_device_alignment()
+    comptime expert_m_padding = 0
 
     comptime TensorType = LayoutTensor[
         DType.bfloat16, Self.output_layout, MutAnyOrigin
@@ -326,11 +344,12 @@ struct BlockwiseFP8TokenFormat[
     //,
     _hid_dim: Int,
     _top_k: Int,
-    _alignment: Int,
+    _alignment: Int = 0,
 ](TokenFormat, TrivialRegisterType):
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
-    comptime alignment = Self._alignment
+    comptime alignment = Self._alignment or get_device_alignment()
+    comptime expert_m_padding = 16 // size_of[Self.scales_dtype]()
 
     comptime TensorType = LayoutTensor[
         Self.fp8_dtype, Self.output_layout, MutAnyOrigin
@@ -1422,7 +1441,6 @@ fn dispatch_async_kernel[
 )
 fn dispatch_wait_kernel[
     num_threads: Int,
-    output_tokens_layout: Layout,
     row_offsets_layout: Layout,
     expert_ids_layout: Layout,
     src_info_layout: Layout,
@@ -1461,7 +1479,6 @@ fn dispatch_wait_kernel[
 
     Parameters:
         num_threads: The number of threads in the block.
-        output_tokens_layout: The layout of the output tokens.
         row_offsets_layout: The layout of the row offsets.
         expert_ids_layout: The layout of the expert IDs.
         src_info_layout: The layout of the source token info.
@@ -1950,9 +1967,7 @@ struct EPCombineKernel[
     fn reduce_and_copy_to_output[
         output_type: DType,
         output_tokens_layout: Layout,
-        router_weights_wrapper: OptionalReg[
-            fn(Int, Int) capturing -> Float32
-        ] = None,
+        router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
         output_tokens: LayoutTensor[
@@ -2053,7 +2068,7 @@ struct EPCombineKernel[
                 if router_weights_wrapper:
                     comptime router_weights_fn = router_weights_wrapper.value()
 
-                    var weight = router_weights_fn(token_idx, topk_idx)
+                    var weight = router_weights_fn[1](token_idx, topk_idx)
                     accum += weight * recv_chunk.cast[DType.float32]()
 
                 else:
@@ -2221,9 +2236,7 @@ fn combine_wait_kernel[
     n_ranks: Int,
     msg_bytes: Int,
     max_tokens_per_rank: Int,
-    router_weights_wrapper: OptionalReg[
-        fn(Int, Int) capturing -> Float32
-    ] = None,
+    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,
 ](
@@ -2490,9 +2503,7 @@ fn combine_kernel[
     msg_bytes: Int,
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
-    router_weights_wrapper: OptionalReg[
-        fn(Int, Int) capturing -> Float32
-    ] = None,
+    router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     fused_shared_expert: Bool = False,
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
     use_shmem: Bool = True,

@@ -333,7 +333,7 @@ fn fp8_index[
         ),
     )
 
-    comptime block_tile_shape = InlineArray[Int, 2](512, 128)
+    comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
     comptime kernel = fp8_index_kernel[
         dtype,
         output_layout,

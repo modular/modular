@@ -639,7 +639,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
+        ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
         statically known dimensions.
@@ -693,7 +693,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
+        ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
         statically known dimensions.
@@ -728,7 +728,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
+        ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer` and a runtime layout.
@@ -754,7 +754,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
+        ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` from a `HostBuffer` and a runtime layout.
@@ -780,7 +780,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
+        ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
@@ -806,7 +806,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericLayoutTensorType,
-        ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
+        ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):

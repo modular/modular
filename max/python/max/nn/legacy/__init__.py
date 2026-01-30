@@ -60,7 +60,7 @@ from .linear import (
     Linear,
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
-from .moe import MoE, MoEFp8, MoEGate
+from .moe import MoE, MoEGate, MoEQuantized
 from .norm import (
     ConstantLayerNorm,
     GroupNorm,
@@ -138,8 +138,8 @@ __all__ = [
     "LongRoPEScalingParams",
     "MinPSampler",
     "MoE",
-    "MoEFp8",
     "MoEGate",
+    "MoEQuantized",
     "Module",
     "MultiheadAttention",
     "PagedCacheValues",

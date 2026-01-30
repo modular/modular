@@ -22,7 +22,7 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr = InlineArray[Int, 3](1, 2, 3)
+var arr: InlineArray[Int, 3] = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
@@ -85,7 +85,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
 
     ```mojo
     # Create array of 3 integers
-    var arr = InlineArray[Int, 3](1, 2, 3)
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
 
     # Create array filled with value
     var filled = InlineArray[Int, 5](fill=42)
@@ -271,9 +271,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         )
 
     @always_inline
-    fn __init__(
-        out self, var *elems: Self.ElementType, __list_literal__: () = ()
-    ):
+    fn __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
         """Constructs an array from a variadic list of elements.
 
         Args:
@@ -285,7 +283,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
         debug_assert(
@@ -348,7 +346,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
@@ -401,7 +399,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
         Parameters:
@@ -418,7 +416,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr[0])   # Prints 1 - first element
         print(arr[1])   # Prints 2 - second element
         print(arr[-1])  # Prints 3 - last element
@@ -437,7 +435,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn __getitem__[
         I: Indexer, //, idx: I
-    ](ref self) -> ref [self] Self.ElementType:
+    ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
@@ -453,7 +451,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr[0])   # Prints 1 - first element
         print(arr[-1])  # Prints 3 - last element
         ```
@@ -486,7 +484,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(len(arr))  # Prints 3
         ```
 
@@ -501,7 +499,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
 
         Parameters:
@@ -518,7 +516,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr.unsafe_get(0))  # Prints 1
         ```
 
@@ -548,7 +546,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     @always_inline
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> UnsafePointer[
         Self.ElementType,
         origin,
         address_space=address_space,
@@ -566,7 +564,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr:InlineArray[Int, 3] = [1, 2, 3]
         var ptr = arr.unsafe_ptr()
         print(ptr[0])  # Prints 1
         ```
@@ -609,7 +607,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(3 in arr)  # Prints True - value exists
         print(4 in arr)  # Prints False - value not found
         ```

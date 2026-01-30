@@ -28,6 +28,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
+from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -925,12 +926,8 @@ fn _fill_strides[
 
 
 fn _fill_strides[
-    input_layout: Layout,
     dtype: DType,
-](
-    buf: LayoutTensor[dtype, input_layout, ...],
-    strides: LayoutTensor[mut=True, DType.int, Layout.row_major(buf.rank), ...],
-):
+](buf: TileTensor[dtype, ...], strides: TileTensor[mut=True, DType.int, ...],):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
     `buf` contains contiguous buf.
@@ -938,6 +935,7 @@ fn _fill_strides[
     Note that `buf` is only used for querying its dimensions.
     """
     __comptime_assert buf.rank > 0
+    __comptime_assert strides.rank == 1 and strides.static_shape[0] == buf.rank
     strides[buf.rank - 1] = 1
 
     @parameter

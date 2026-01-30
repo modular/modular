@@ -708,7 +708,7 @@ struct Bench(Stringable, Writable):
         self.bench_function[input_closure](bench_id, measures)
 
     fn bench_with_input[
-        T: __TypeOfAllTypes,
+        T: TrivialRegisterType,
         bench_fn: fn(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
@@ -716,7 +716,7 @@ struct Bench(Stringable, Writable):
         input: T,
         measures: List[ThroughputMeasure] = {},
     ) raises:
-        """Benchmarks an input function with input args of type __TypeOfAllTypes.
+        """Benchmarks an input function with input args of type TrivialRegisterType.
 
         Parameters:
             T: Benchmark function input type.

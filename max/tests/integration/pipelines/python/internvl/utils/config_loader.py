@@ -85,8 +85,8 @@ class ConfigLoader:
         """Create MAX VisionConfig from HuggingFace config."""
         hf_config = self.load_hf_vision_config(config_name)
 
-        return VisionConfig.generate(
-            hf_config,
+        vision_config = VisionConfig.initialize_from_config(hf_config)
+        vision_config.finalize(
             DType.bfloat16,
             {
                 "vision_model.encoder.layers.0.attn.o_proj.bias": WeightData.from_numpy(
@@ -95,6 +95,7 @@ class ConfigLoader:
                 )
             },
         )
+        return vision_config
 
     def create_llm_config(self, config_name: ConfigNames) -> Llama3Config:
         """Create MAX Llama3Config from HuggingFace config."""

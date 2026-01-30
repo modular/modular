@@ -213,7 +213,7 @@ struct StaticTuple[element_type: TrivialRegisterType, size: Int](
         self._unsafe_ref(idx) = val
 
     @always_inline("nodebug")
-    fn _unsafe_ref(ref self, idx: Int) -> ref [self] Self.element_type:
+    fn _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
             UnsafePointer(to=self._mlir_value).address, idx._mlir_value
         )

@@ -12,19 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceil, floor
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
+from layout._coord import Coord, CoordLike, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import memcpy
 
@@ -144,15 +138,17 @@ fn resize_nearest_neighbor[
     round_mode: RoundMode,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, dtype, ...],
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
 ) raises:
     __comptime_assert (
         input.rank == output.rank
     ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
-        scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
+        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+            DType.float32
+        ]()
 
     @parameter
     @always_inline
@@ -184,32 +180,22 @@ fn resize_nearest_neighbor[
                     round(
                         coord_transform[coordinate_transformation_mode](
                             out_coords[i],
-                            input.dim(i),
-                            output.dim(i),
+                            Int(input.dim(i)),
+                            Int(output.dim(i)),
                             scales[i],
                         )
                     )
                 ),
-                input.dim(i) - 1,
+                Int(input.dim(i)) - 1,
             )
 
-        var in_idx = input.runtime_layout(
-            RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
-                in_coords
-            )
-        )
-        var out_idx = output.runtime_layout(
-            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](
-                out_coords
-            )
-        )
+        var in_idx = input.layout(Coord(in_coords))
+        var out_idx = output.layout(Coord(out_coords))
 
         output.ptr[out_idx] = input.ptr[in_idx]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](
-        output.runtime_layout.shape.value.canonicalize()
-    )
+    elementwise[nn_interpolate, 1](coord_to_index_list(output.layout.shape))
 
 
 @always_inline
@@ -232,7 +218,7 @@ fn linear_filter(x: Float32) -> Float32:
 @parameter
 @always_inline
 fn interpolate_point_1d[
-    in_layout: Layout,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
@@ -241,25 +227,29 @@ fn interpolate_point_1d[
 ](
     interpolator: Interpolator[interpolation_mode],
     dim: Int,
-    out_coords: IndexList[in_layout.rank()],
+    out_coords: IndexList[Variadic.size(input_shape_types)],
     scale: Float32,
-    input: LayoutTensor[
-        dtype, in_layout, address_space = AddressSpace.GENERIC, ...
+    input: TileTensor[
+        mut=True,
+        shape_types=input_shape_types,
+        dtype,
+        address_space = AddressSpace.GENERIC,
+        ...,
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
     var center = (
         coord_transform[coordinate_transformation_mode](
-            out_coords[dim], input.dim(dim), output.dim(dim), scale
+            out_coords[dim], Int(input.dim(dim)), Int(output.dim(dim)), scale
         )
         + 0.5
     )
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
     var support = Float32(interpolator.filter_length()) * filter_scale
     var xmin = max(Int(center - support + 0.5), 0)
-    var xmax = min(input.dim(dim), Int(center + support + 0.5))
+    var xmax = min(Int(input.dim(dim)), Int(center + support + 0.5))
     var in_coords = out_coords
     var sum = Scalar[dtype](0)
     var acc = Scalar[dtype](0)
@@ -270,19 +260,13 @@ fn interpolate_point_1d[
             (Float32(k + xmin) + Float32(0.5)) - center
         ) * ss
         var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
-        var in_idx = input.runtime_layout(
-            RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
-                in_coords
-            )
-        )
+        var in_idx = input.layout(Coord(in_coords))
         acc += input.ptr[in_idx] * filter_coeff
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
-    var out_idx = output.runtime_layout(
-        RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](out_coords)
-    )
+    var out_idx = output.layout(Coord(out_coords))
     output.ptr[out_idx] = acc / sum
 
 
@@ -291,8 +275,10 @@ fn resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    output: LayoutTensor[
+    input: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
@@ -323,8 +309,10 @@ fn _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    output: LayoutTensor[
+    input: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
@@ -333,63 +321,56 @@ fn _resize[
     ), "input rank must match output rank"
 
     if rebind[IndexList[input.rank]](
-        input.runtime_layout.shape.value.canonicalize()
+        coord_to_index_list(input.layout.shape)
     ) == rebind[IndexList[input.rank]](
-        output.runtime_layout.shape.value.canonicalize()
+        coord_to_index_list(output.layout.shape)
     ):
-        return memcpy(dest=output.ptr, src=input.ptr, count=input.size())
+        return memcpy(dest=output.ptr, src=input.ptr, count=input.numel())
     var scales = StaticTuple[Float32, input.rank]()
     var resize_dims = List[Int](capacity=input.rank)
     var tmp_dims = IndexList[input.rank](0)
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
-        tmp_dims[i] = max(input.dim(i), output.dim(i))
-        scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
-        if input.dim(i) != output.dim(i):
+        tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
+        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+            DType.float32
+        ]()
+        if Int(input.dim(i)) != Int(output.dim(i)):
             resize_dims.append(i)
     var interpolator = Interpolator[interpolation_mode]()
 
-    var in_ptr = input.ptr
-    var out_ptr = UnsafePointer[Scalar[dtype]]()
+    var in_ptr = input.ptr.unsafe_origin_cast[MutExternalOrigin]()
+    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[dtype]]()
-    var tmp_buffer2 = UnsafePointer[Scalar[dtype]]()
+    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
+    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin]()
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
-        out_ptr = output.ptr
+        out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = UnsafePointer[Scalar[dtype]].alloc(
-            tmp_dims.flattened_length()
-        )
+        tmp_buffer1 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
         out_ptr = tmp_buffer1
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = UnsafePointer[Scalar[dtype]].alloc(
-            tmp_dims.flattened_length()
-        )
-    var in_shape = input.runtime_layout.shape.value.canonicalize()
-    var out_shape = input.runtime_layout.shape.value.canonicalize()
+        tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
+    var in_shape = coord_to_index_list(input.layout.shape)
+    var out_shape = coord_to_index_list(input.layout.shape)
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
         if dim_idx == len(resize_dims) - 1:
-            out_ptr = output.ptr
+            out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
         var resize_dim = resize_dims[dim_idx]
-        out_shape[resize_dim] = output.dim(resize_dim)
+        out_shape[resize_dim] = Int(output.dim(resize_dim))
 
-        comptime dyn_layout = Layout.row_major[input.rank]()
-        var in_buf = LayoutTensor[dtype, dyn_layout](
-            in_ptr, RuntimeLayout[dyn_layout].row_major(in_shape)
-        )
-        var out_buf = LayoutTensor[dtype, dyn_layout](
-            out_ptr, RuntimeLayout[dyn_layout].row_major(out_shape)
-        )
+        var in_buf = TileTensor(in_ptr, row_major(Coord(in_shape)))
+        var out_buf = TileTensor(out_ptr, row_major(Coord(out_shape)))
 
-        var num_rows = out_buf.size() // out_shape[resize_dim]
+        var num_rows = out_buf.numel() // out_shape[resize_dim]
         for row_idx in range(num_rows):
             var coords = _get_nd_indices_from_flat_index(
                 row_idx, out_shape, resize_dim
@@ -397,7 +378,7 @@ fn _resize[
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
                 interpolate_point_1d[
-                    in_layout=dyn_layout,
+                    input_shape_types = in_buf.shape_types,
                     coordinate_transformation_mode,
                     antialias,
                 ](
@@ -410,7 +391,7 @@ fn _resize[
                 )
 
         in_shape = out_shape
-        in_ptr = out_ptr
+        in_ptr = out_ptr.unsafe_origin_cast[MutExternalOrigin]()
 
         out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
         using_tmp1 = not using_tmp1

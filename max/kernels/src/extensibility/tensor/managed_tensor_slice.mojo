@@ -1284,13 +1284,13 @@ struct ManagedTensorSlice[
         for i in range(Self.rank):
 
             @parameter
-            if not shape_tuple.element_types[i].IS_STATIC_VALUE:
+            if not shape_tuple.element_types[i].is_static_value:
                 shape_tuple[i] = rebind[shape_tuple.element_types[i]](
                     Scalar[coord_dtype](shape[i])
                 )
 
             @parameter
-            if not stride_tuple.element_types[i].IS_STATIC_VALUE:
+            if not stride_tuple.element_types[i].is_static_value:
                 stride_tuple[i] = rebind[stride_tuple.element_types[i]](
                     Scalar[coord_dtype](stride[i])
                 )

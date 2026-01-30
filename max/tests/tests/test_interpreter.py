@@ -214,7 +214,7 @@ class TestRealizationContextIntegration:
         """Test that interpreter is disabled by default when env var not set."""
 
         # Ensure env var is not set
-        monkeypatch.delenv("MAX_USE_INTERPRETER", raising=False)
+        monkeypatch.delenv("MAX_USE_EAGER_INTERPRETER", raising=False)
 
         # Just test the attribute without creating operations
         # to avoid cleanup issues with graph state
@@ -231,22 +231,22 @@ class TestRealizationContextIntegration:
         assert ctx._use_interpreter is True
 
     def test_env_var_enables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_INTERPRETER=1 enables interpreter by default."""
-        monkeypatch.setenv("MAX_USE_INTERPRETER", "1")
+        """Test that MAX_USE_EAGER_INTERPRETER=1 enables interpreter by default."""
+        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "1")
 
         ctx = EagerRealizationContext()
         assert ctx._use_interpreter is True
 
     def test_env_var_true_enables_interpreter(self, monkeypatch: Any) -> None:
-        """Test that MAX_USE_INTERPRETER=true enables interpreter by default."""
-        monkeypatch.setenv("MAX_USE_INTERPRETER", "true")
+        """Test that MAX_USE_EAGER_INTERPRETER=true enables interpreter by default."""
+        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "true")
 
         ctx = EagerRealizationContext()
         assert ctx._use_interpreter is True
 
     def test_explicit_false_overrides_env_var(self, monkeypatch: Any) -> None:
         """Test that explicit use_interpreter=False overrides env var."""
-        monkeypatch.setenv("MAX_USE_INTERPRETER", "1")
+        monkeypatch.setenv("MAX_USE_EAGER_INTERPRETER", "1")
 
         ctx = EagerRealizationContext(use_interpreter=False)
         assert ctx._use_interpreter is False

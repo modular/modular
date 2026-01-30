@@ -56,7 +56,7 @@ from linalg.fp4_utils import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp4_quantization import (
-    quantize_dynamic_scaled_fp4,
+    quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )
 from layout._fillers import random
@@ -193,7 +193,7 @@ def test_nvfp4_quantization[
         tensor_sf,
     )
 
-    quantize_dynamic_scaled_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
         output_tensor_ref,
         scales_tensor_ref,

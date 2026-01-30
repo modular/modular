@@ -1216,7 +1216,7 @@ fn composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
 
     if is_tuple(layout_b.shape):
         var r = Layout()
-        for layoutB_i in layout_b:
+        for var layoutB_i in layout_b:
             r.append(composition(layout_a.copy(), layoutB_i^))
         return r^
 
@@ -1976,23 +1976,25 @@ fn expand_modes_alike(
                 new_stride_a.append(uc[1])
                 new_stride_b.append(uc[2])
 
-        return InlineArray[IntTuple, 3](new_shape, new_stride_a, new_stride_b)
+        return [new_shape, new_stride_a, new_stride_b]
     elif shape_a.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_a.owned_copy(),
             stride_a.owned_copy(),
             expand_strides(shape_a, stride_b.value()),
-        )
+        ]
     elif shape_b.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_b.owned_copy(),
             expand_strides(shape_b.owned_copy(), stride_a.value()),
             stride_b.owned_copy(),
-        )
+        ]
     else:
-        return InlineArray[IntTuple, 3](
-            shape_b.owned_copy(), stride_a.owned_copy(), stride_b.owned_copy()
-        )
+        return [
+            shape_b.owned_copy(),
+            stride_a.owned_copy(),
+            stride_b.owned_copy(),
+        ]
 
 
 fn expand_modes_alike(
@@ -2043,7 +2045,7 @@ fn expand_modes_alike(
     var uc = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
     )
-    return InlineArray[Layout, 2](Layout(uc[0], uc[1]), Layout(uc[0], uc[2]))
+    return [Layout(uc[0], uc[1]), Layout(uc[0], uc[2])]
 
 
 fn right_inverse(layout: Layout) -> Layout:

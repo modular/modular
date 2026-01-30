@@ -745,7 +745,7 @@ struct HostBuffer[dtype: DType](
 
     fn as_span[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> Span[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
         """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Parameters:

@@ -175,6 +175,7 @@ class ParallelArrayOps:
                     device=self._accelerator,
                     pinned=True,
                 )
+                out_max.disable_auto_sync()
                 np.copyto(out_max.to_numpy(), first)
                 return out_max
 
@@ -238,6 +239,8 @@ class ParallelArrayOps:
             device=device,
             pinned=pinned,
         )
+        if pinned:
+            out_max.disable_auto_sync()
 
         # This will alias the underlying memory.
         # It should NOT copy the memory to another buffer.

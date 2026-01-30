@@ -13,8 +13,8 @@
 
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from layout import IntTuple, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._tile_tensor import TileTensor
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import IndexList
@@ -29,8 +29,8 @@ fn arg_nonzero[
     dtype: DType,
     output_type: DType,
 ](
-    input_buffer: LayoutTensor[dtype, ...],
-    output_buffer: LayoutTensor[mut=True, output_type, ...],
+    input_buffer: TileTensor[dtype, ...],
+    output_buffer: TileTensor[mut=True, output_type, ...],
 ) raises:
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
@@ -46,38 +46,32 @@ fn arg_nonzero[
     __comptime_assert output_buffer.rank == 2, "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
-        var numel = input_buffer.size()
+        var numel = input_buffer.numel()
         if numel == 0:
             return
 
         var j: Int = 0
         for i in range(numel):
             var indices = _get_start_indices_of_nth_subvolume[0](
-                i, input_buffer.runtime_layout.shape.value
+                i, coord_to_index_list(input_buffer.layout.shape)
             )
-            var offset = input_buffer.runtime_layout(
-                RuntimeTuple[
-                    fill_like(input_buffer.layout.shape, 1),
-                    element_type = indices.element_type,
-                ](indices)
-            )
+            var offset = input_buffer.layout(Coord(indices))
             if input_buffer.ptr.load(offset) != 0:
                 var out_indices = IndexList[2]()
                 out_indices[0] = j
                 j += 1
 
                 # Get the coordinates for the current index
-                var coords = input_buffer.runtime_layout.idx2crd(
-                    RuntimeTuple[IntTuple(1)](Int(offset))
-                )
+                var coords = input_buffer.layout.idx2crd(Int(offset))
 
                 # Write each coordinate to the output buffer
                 @parameter
                 for k in range(input_buffer.rank):
                     out_indices[1] = k
-                    output_buffer[
-                        out_indices[0], out_indices[1]
-                    ] = output_buffer.element_type(Int(coords[k]))
+                    output_buffer.store(
+                        Coord(Idx(out_indices[0]), Idx(out_indices[1])),
+                        output_buffer.ElementType(coords[k].value()),
+                    )
 
 
 # Where has the shape 2D shape [NumNonZeros, InputRank]
@@ -85,7 +79,7 @@ fn arg_nonzero[
 fn arg_nonzero_shape[
     dtype: DType,
     single_thread_blocking_override: Bool,
-](input_buffer: LayoutTensor[dtype, ...]) -> IndexList[2]:
+](input_buffer: TileTensor[dtype, ...]) -> IndexList[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
@@ -103,11 +97,11 @@ fn arg_nonzero_shape[
     var shape = IndexList[2]()
     shape[1] = input_buffer.rank
 
-    var numel = input_buffer.size()
+    var numel = input_buffer.numel()
 
     var j: Int = 0
     for i in range(numel):
-        var offset = input_buffer.runtime_layout(i)
+        var offset = input_buffer.layout(Idx(i))
         if input_buffer.ptr.load(offset) != 0:
             j += 1
 
