@@ -14,23 +14,28 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 
 INF = 999999999
 GIB = 1024 * 1024 * 1024
 
 
 def create_params(
-    dp: int = 1, tp: int = 1, page_size: int = 128
+    dp: int = 1,
+    tp: int = 1,
+    page_size: int = 128,
+    dtype: DType = DType.float32,
+    quantization_config: KVCacheQuantizationConfig = KVCacheQuantizationConfig(),
 ) -> KVCacheParams:
     return KVCacheParams(
-        dtype=DType.float32,
+        dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
         page_size=page_size,
         data_parallel_degree=dp,
         devices=[DeviceRef.GPU(i) for i in range(tp * dp)],
+        kvcache_quant_config=quantization_config,
     )
 
 
@@ -199,3 +204,38 @@ def test_bytes_per_block() -> None:
     )
 
     assert params.bytes_per_block == 417792
+
+
+def test_quantized_kv_cache() -> None:
+    fp8_params = create_params(dp=2, dtype=DType.float8_e4m3fn)
+    fp32_params = create_params(dp=2, dtype=DType.float32)
+
+    fp8_estimated_memory = fp8_params.estimated_memory_size(
+        available_cache_memory=GIB,
+        max_batch_size=INF,
+        max_seq_len=INF,
+    )
+    fp32_estimated_memory = fp32_params.estimated_memory_size(
+        available_cache_memory=GIB,
+        max_batch_size=INF,
+        max_seq_len=INF,
+    )
+    assert fp32_estimated_memory == GIB
+    # The estimated memory is the same in both cases since more blocks can be allocated when the KVCache is compressed.
+    assert fp8_estimated_memory < fp32_estimated_memory
+
+    # The number of bytes / block should be ~4x smaller for FP8 KVCache (compared to FP32).
+    assert fp8_params.bytes_per_block < fp32_params.bytes_per_block
+
+    fp8_num_device_blocks = fp8_params.compute_num_device_blocks(
+        available_cache_memory=GIB,
+        max_batch_size=INF,
+        max_seq_len=INF,
+    )
+    fp32_num_device_blocks = fp32_params.compute_num_device_blocks(
+        available_cache_memory=GIB,
+        max_batch_size=INF,
+        max_seq_len=INF,
+    )
+    # Nearly ~4x more blocks can be allocated when using FP8 KVCache (compared to FP32).
+    assert fp8_num_device_blocks > fp32_num_device_blocks

@@ -14,7 +14,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 
 
 def test_single_device_compatible() -> None:
@@ -415,3 +415,24 @@ def test_mla_with_data_parallel_compatible() -> None:
     )
     # In DP mode, all heads are on each device
     assert params.n_kv_heads_per_device == 1
+
+
+def test_kv_cache_quantization_config() -> None:
+    kv_cache_quant_config = KVCacheQuantizationConfig(
+        quantization_granularity=64
+    )
+    dp: int = 2
+    tp: int = 1
+    params = KVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        data_parallel_degree=dp,
+        devices=[DeviceRef.GPU(i) for i in range(tp * dp)],
+        kvcache_quant_config=kv_cache_quant_config,
+    )
+    assert params.kvcache_quant_config is not None
+    assert params.kvcache_quant_config.quantization_granularity == 64
+    assert params.quantized_kv_cache

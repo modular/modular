@@ -53,7 +53,7 @@ async def test_kv_cache_multi_gpu() -> None:
         list_of_kv_tuples = kv_manager.get_runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
-            assert len(kv_tuple) == 4
+            assert len(kv_tuple) == 5
 
 
 def create_kv_cache(

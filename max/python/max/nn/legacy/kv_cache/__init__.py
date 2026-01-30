@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .cache_params import KVCacheParams, KVCacheStrategy
+from .cache_params import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVCacheStrategy,
+)
 from .input_types import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -27,6 +31,7 @@ __all__ = [
     "KVCacheInputsSequence",
     "KVCacheMetrics",
     "KVCacheParams",
+    "KVCacheQuantizationConfig",
     "KVCacheStrategy",
     "NestedIterableDataclass",
     "PagedCacheValues",
