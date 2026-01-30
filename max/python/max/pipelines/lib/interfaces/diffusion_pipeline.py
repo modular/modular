@@ -75,9 +75,8 @@ class DiffusionPipeline(ABC):
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
         )
 
-    def finalize_pipeline_config(self) -> None:
+    def finalize_pipeline_config(self) -> None:  # noqa: B027
         """Hook for finalizing pipeline configuration. Override if needed."""
-        pass
 
     def _load_sub_models(
         self, weight_paths: list[Path]

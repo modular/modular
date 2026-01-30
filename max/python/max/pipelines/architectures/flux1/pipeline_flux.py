@@ -21,7 +21,7 @@ import numpy as np
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import TokenBuffer, PixelGenerationContext
+from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
