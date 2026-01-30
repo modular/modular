@@ -75,7 +75,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn quantize_dynamic_scaled_fp4[
+fn quantize_dynamic_scaled_fp4fp8[
     out_dtype: DType,
     scales_dtype: DType,
     in_dtype: DType,
@@ -143,7 +143,7 @@ fn quantize_dynamic_scaled_fp4[
     )
     var grid_dim = (min(num_rows_padded, num_SMs * num_blocks_per_SM), 1, 1)
 
-    comptime kernel = quantize_dynamic_scaled_fp4_kernel[
+    comptime kernel = quantize_dynamic_scaled_fp4fp8_kernel[
         out_dtype,
         scales_dtype,
         in_dtype,
@@ -170,7 +170,7 @@ fn quantize_dynamic_scaled_fp4[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
-fn quantize_dynamic_scaled_fp4_kernel[
+fn quantize_dynamic_scaled_fp4fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
     in_dtype: DType,
@@ -678,42 +678,75 @@ fn quantize_dynamic_block_scaled[
     ), "input dtype should be bfloat16"
     __comptime_assert out_dtype in (
         DType.uint8,
-    ), "output dtype should be uint8"
+        DType.float8_e4m3fn,
+    ), "output dtype should be uint8 or float8_e4m3fn"
     __comptime_assert scales_dtype in (
         NVFP4_SF_DTYPE,
-    ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
+        MXFP8_SF_DTYPE,
+    ), (
+        "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn) or"
+        " MXFP8_SF_DTYPE (float8_e8m0fnu)"
+    )
     __comptime_assert (
         SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
-
-    var output = from_ndbuffer_row_major(output_device)
-    var scales = from_ndbuffer_row_major(scales_device)
-    var input = from_ndbuffer_row_major(input_device)
-
-    comptime input_layout = input.layout
-    comptime output_layout = output.layout
-    __comptime_assert (
-        input_layout.shape[1].value() % (SF_VECTOR_SIZE // 2) == 0
-    ), "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)"
-    __comptime_assert (
-        output_layout.shape[1].value() == input_layout.shape[1].value() // 2
+        or SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     ), (
-        "output.dim(1) must be equal to input.dim(1) // 2 (each output"
-        " element (uint8) is 2 fp4-e2m1fn values)"
+        "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4) or"
+        " MXFP8_SF_VECTOR_SIZE (32 for MXFP8)"
     )
 
-    quantize_dynamic_scaled_fp4[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        num_max_threads=512,
-    ](
-        ctx,
-        output,
-        scales,
-        input,
-        num_cols=input.dim(1),
-        num_cols_padded=input.dim(1),
-        tensor_sf=tensor_sf,
-    )
+    var input_tensor = from_ndbuffer_row_major(input_device)
+    var output_tensor = from_ndbuffer_row_major(output_device)
+    var scales_tensor = from_ndbuffer_row_major(scales_device)
+
+    var num_rows = input_tensor.dim(0)
+    var num_cols = input_tensor.dim(1)
+    if num_rows == 0 or num_cols == 0:
+        return
+
+    comptime input_layout = input_tensor.layout
+    comptime output_layout = output_tensor.layout
+    comptime is_fp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    __comptime_assert is_fp4 or is_fp8, "invalid scaling kind"
+
+    comptime static_N = input_layout.shape[1].value()
+
+    @parameter
+    if is_fp4:
+        __comptime_assert (
+            output_layout.shape[1].value() == input_layout.shape[1].value() // 2
+        ), (
+            "output.dim(1) must be equal to input.dim(1) // 2 (each output"
+            " element (uint8) is 2 fp4-e2m1fn values)"
+        )
+
+    @parameter
+    if is_fp4 and static_N % 32 == 0:
+        quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            ctx,
+            output_tensor,
+            scales_tensor,
+            input_tensor,
+            tensor_sf=tensor_sf,
+        )
+    else:
+        __comptime_assert (
+            static_N % (SF_VECTOR_SIZE // 2) == 0
+        ), "input.dim(1) must be a multiple of (SF_VECTOR_SIZE // 2)"
+
+        quantize_dynamic_scaled_fp4fp8[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            num_max_threads=512,
+        ](
+            ctx,
+            output_tensor,
+            scales_tensor,
+            input_tensor,
+            num_cols=input_tensor.dim(1),
+            num_cols_padded=input_tensor.dim(1),
+            tensor_sf=tensor_sf,
+        )
 
 
 fn block_scales_interleave[
@@ -745,7 +778,7 @@ fn block_scales_interleave[
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-fn quantize_dynamic_scaled_async_kernel[
+fn quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
     input_cta_tile_layout: Layout,
     input_desc_layout: Layout,
@@ -1113,7 +1146,7 @@ fn quantize_dynamic_scaled_fp4_async[
         SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K * size_of[scales_dtype]()
     )
 
-    comptime kernel = quantize_dynamic_scaled_async_kernel[
+    comptime kernel = quantize_dynamic_scaled_async_fp4_kernel[
         type_of(input_tma_op).dtype,
         type_of(input_tma_op).layout,
         type_of(input_tma_op).desc_layout,
