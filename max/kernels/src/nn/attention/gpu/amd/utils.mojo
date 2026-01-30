@@ -26,7 +26,6 @@ from memory import stack_allocation
 
 from utils import IndexList
 from utils.numerics import get_accum_type
-from collections import OptionalReg
 from layout.swizzle import Swizzle
 from gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
 from itertools import product
@@ -99,7 +98,9 @@ fn copy_local_to_dram2[
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
     var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + offset
+    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
+        dst.linear_idx_type
+    ](offset)
 
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
@@ -117,7 +118,7 @@ fn copy_local_to_dram2[
 
             @parameter
             if dst_fragments.layout.all_dims_known():
-                dst_idx += dst_static_idx
+                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
 
@@ -143,7 +144,10 @@ fn copy_local_to_dram2[
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
-                        Int32(dst_idx + element_offset),
+                        Int32(
+                            dst_idx
+                            + Scalar[dst.linear_idx_type](element_offset)
+                        ),
                         src,
                     )
 
@@ -573,7 +577,7 @@ fn load_b_tr[
 
 @always_inline
 fn copy_dram_to_sram_lds[
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
     comptime thread_layout = Layout.row_major(16, 4)
     var worker_idx = lane_id()
@@ -663,19 +667,21 @@ fn copy_dram_to_sram_lds[
         ](
             desc_ptr_llvm,
             shared_ptr3,
-            to_i32(num_bytes_per_lane),
-            to_i32(vector_offset_bytes),
-            to_i32(scalar_offset_bytes),
+            to_i32(Int32(num_bytes_per_lane)),
+            to_i32(Int32(vector_offset_bytes)),
+            to_i32(Int32(scalar_offset_bytes)),
             to_i32(0),
             to_i32(aux),
         )
-        comptime num_bytes_per_warp = thread_layout.size() * num_bytes_per_lane
+        comptime num_bytes_per_warp = UInt32(
+            thread_layout.size() * num_bytes_per_lane
+        )
         lds_ptr += num_bytes_per_warp
 
 
 @always_inline
 fn load_b_[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
@@ -692,7 +698,9 @@ fn load_b_[
 
     @parameter
     if swizzle:
-        offset = swizzle.value()(offset // simd_width) * simd_width
+        offset = swizzle.value()(
+            offset // Scalar[src.linear_idx_type](simd_width)
+        ) * Scalar[src.linear_idx_type](simd_width)
 
     var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type = __mlir_type.`!llvm.ptr<3>`
@@ -716,7 +724,7 @@ fn load_b_[
 
 @always_inline
 fn load_b[
-    mma_shape: IndexList[3], swizzle: OptionalReg[Swizzle]
+    mma_shape: IndexList[3], swizzle: Optional[Swizzle]
 ](
     src: LayoutTensor,
     out res: LayoutTensor[

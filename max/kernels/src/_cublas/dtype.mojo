@@ -14,20 +14,14 @@
 from os import abort
 
 
-struct Property(TrivialRegisterType):
+struct Property(Equatable, TrivialRegisterType):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:
@@ -43,7 +37,7 @@ struct Property(TrivialRegisterType):
         return Int(self._value)
 
 
-struct DataType(TrivialRegisterType):
+struct DataType(Equatable, TrivialRegisterType):
     var _value: Int32
     comptime R_16F = Self(2)
     comptime C_16F = Self(6)
@@ -82,13 +76,7 @@ struct DataType(TrivialRegisterType):
     comptime R_4F_E2M1 = Self(33)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:

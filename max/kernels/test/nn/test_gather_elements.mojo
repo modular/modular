@@ -20,12 +20,12 @@ def main():
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 
-        var data_stack = InlineArray[Float32, 4](Float32(1), 2, 3, 4)
+        var data_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var data = LayoutTensor[DType.float32, Layout.row_major(2, 2)](
             data_stack
         )
 
-        var indices_stack = InlineArray[Int32, 4](Int32(0), 0, 1, 0)
+        var indices_stack: InlineArray[Int32, 4] = [Int32(0), 0, 1, 0]
         var indices = LayoutTensor[DType.int32, Layout.row_major(2, 2)](
             indices_stack
         )
@@ -49,14 +49,22 @@ def main():
     fn test_gather_ax0() raises:
         print("== test_gather_ax0")
 
-        var data_stack = InlineArray[Float32, 9](
-            Float32(1), 2, 3, 4, 5, 6, 7, 8, 9
-        )
+        var data_stack: InlineArray[Float32, 9] = [
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+        ]
         var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
             data_stack
         )
 
-        var indices_stack = InlineArray[Int32, 6](Int32(1), 2, 0, 2, 0, 0)
+        var indices_stack: InlineArray[Int32, 6] = [Int32(1), 2, 0, 2, 0, 0]
         var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
             indices_stack
         )
@@ -82,14 +90,22 @@ def main():
     fn test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
 
-        var data_stack = InlineArray[Float32, 9](
-            Float32(1), 2, 3, 4, 5, 6, 7, 8, 9
-        )
+        var data_stack: InlineArray[Float32, 9] = [
+            Float32(1),
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+        ]
         var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
             data_stack
         )
 
-        var indices_stack = InlineArray[Int32, 6](Int32(-1), -2, 0, -2, 0, 0)
+        var indices_stack: InlineArray[Int32, 6] = [Int32(-1), -2, 0, -2, 0, 0]
         var indices = LayoutTensor[DType.int32, Layout.row_major(2, 3)](
             indices_stack
         )

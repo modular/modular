@@ -263,7 +263,7 @@ fn run_producer[
     simd_width: Int,
     warps_processed_per_producer: Int,
     tile_count: Int,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
 ](
     matrix: GlobalTensor[dtype, layout],
     mut ring_buffer: RingBuffer,
@@ -339,7 +339,9 @@ fn run_producer[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
+        Int32(
+            (a_producer_warps + b_producer_warps + consumer_warps) * WARP_SIZE
+        )
     )
 )
 fn warp_specialized_matmul_kernel[

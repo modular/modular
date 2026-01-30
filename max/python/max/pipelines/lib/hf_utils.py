@@ -28,7 +28,7 @@ import time
 from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
@@ -385,20 +385,18 @@ class HuggingFaceRepo:
 
     @cached_property
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
-        safetensor_search_pattern = "*.safetensors"
-        gguf_search_pattern = "*.gguf"
-        pytorch_search_pattern = "*.bin"
+        safetensor_search_pattern = "**/*.safetensors"
+        gguf_search_pattern = "**/*.gguf"
 
         weight_files = {}
         if self.repo_type == RepoType.local:
             safetensor_paths = glob.glob(
-                os.path.join(self.repo_id, safetensor_search_pattern)
+                os.path.join(self.repo_id, safetensor_search_pattern),
+                recursive=True,
             )
             gguf_paths = glob.glob(
-                os.path.join(self.repo_id, gguf_search_pattern)
-            )
-            pytorch_paths = glob.glob(
-                os.path.join(self.repo_id, pytorch_search_pattern)
+                os.path.join(self.repo_id, gguf_search_pattern),
+                recursive=True,
             )
         elif self.repo_type == RepoType.online:
             fs = huggingface_hub.HfFileSystem()
@@ -408,9 +406,6 @@ class HuggingFaceRepo:
             )
             gguf_paths = cast(
                 list[str], fs.glob(f"{self.repo_id}/{gguf_search_pattern}")
-            )
-            pytorch_paths = cast(
-                list[str], fs.glob(f"{self.repo_id}/{pytorch_search_pattern}")
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
@@ -465,38 +460,9 @@ class HuggingFaceRepo:
                     ),
                     "rb",
                 ) as file:
-                    # Read the first 8 bytes of the file
-                    length_bytes = file.read(8)
-                    # Interpret the bytes as a little-endian unsigned 64-bit integer
-                    length_of_header = struct.unpack("<Q", length_bytes)[0]
-                    # Read length_of_header bytes
-                    header_bytes = file.read(length_of_header)
-                    # Interpret the bytes as a JSON object
-                    header = json.loads(header_bytes)
-
-                    encoding = None
-                    for weight_value in header.values():
-                        if weight_dtype := weight_value.get("dtype", None):
-                            if weight_dtype == "F32":
-                                supported_encodings.add(
-                                    SupportedEncoding.float32
-                                )
-                            elif weight_dtype == "BF16":
-                                supported_encodings.add(
-                                    SupportedEncoding.bfloat16
-                                )
-                            elif weight_dtype == "F8_E4M3":
-                                supported_encodings.add(
-                                    SupportedEncoding.float8_e4m3fn
-                                )
-                            elif weight_dtype == "U8":
-                                supported_encodings.add(
-                                    SupportedEncoding.float4_e2m1fnx2
-                                )
-                            else:
-                                logger.warning(
-                                    f"unknown dtype found in safetensors file: {weight_dtype}"
-                                )
+                    supported_encodings.update(
+                        self._get_safetensors_encoding(file)
+                    )
 
                 # Workaround for FP8/FP4 models that don't have proper safetensors metadata.
                 # Check the path for fp8/fp4 hints (works for both local paths and HF cache paths
@@ -540,6 +506,18 @@ class HuggingFaceRepo:
                             supported_encodings.add(SupportedEncoding.bfloat16)
                         elif "F32" in params:
                             supported_encodings.add(SupportedEncoding.float32)
+                else:
+                    fs = huggingface_hub.HfFileSystem()
+                    for weight_file in self.weight_files[
+                        WeightsFormat.safetensors
+                    ]:
+                        with fs.open(
+                            f"{self.repo_id}/{weight_file}", "rb"
+                        ) as file:
+                            supported_encodings.update(
+                                self._get_safetensors_encoding(file)
+                            )
+
                 if safetensors_config := self.info.config:
                     if quant_config := safetensors_config.get(
                         "quantization_config"
@@ -550,6 +528,35 @@ class HuggingFaceRepo:
                 raise ValueError(f"Unsupported repo_type: {self.repo_type}")
 
         return list(supported_encodings)
+
+    def _get_safetensors_encoding(
+        self, file: BinaryIO
+    ) -> set[SupportedEncoding]:
+        # Read the first 8 bytes of the file
+        length_bytes = file.read(8)
+        # Interpret the bytes as a little-endian unsigned 64-bit integer
+        length_of_header = struct.unpack("<Q", length_bytes)[0]
+        # Read length_of_header bytes
+        header_bytes = file.read(length_of_header)
+        # Interpret the bytes as a JSON object
+        header = json.loads(header_bytes)
+
+        supported_encodings = set([])
+        for weight_value in header.values():
+            if weight_dtype := weight_value.get("dtype", None):
+                if weight_dtype == "F32":
+                    supported_encodings.add(SupportedEncoding.float32)
+                elif weight_dtype == "BF16":
+                    supported_encodings.add(SupportedEncoding.bfloat16)
+                elif weight_dtype == "F8_E4M3":
+                    supported_encodings.add(SupportedEncoding.float8_e4m3fn)
+                elif weight_dtype == "U8":
+                    supported_encodings.add(SupportedEncoding.float4_e2m1fnx2)
+                else:
+                    logger.warning(
+                        f"unknown dtype found in safetensors file: {weight_dtype}"
+                    )
+        return supported_encodings
 
     def _get_gguf_files_for_encoding(
         self, encoding: SupportedEncoding

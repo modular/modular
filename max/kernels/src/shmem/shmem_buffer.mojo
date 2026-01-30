@@ -43,10 +43,6 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     fn get_type_name() -> String:
         return String("SHMEMBuffer[", String(Self.dtype), "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @doc_private
     @always_inline
     fn __init__(

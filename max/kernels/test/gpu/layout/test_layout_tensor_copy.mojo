@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
 from sys import simd_width_of
 
@@ -536,7 +535,7 @@ fn copy_sram_to_dram_kernel[
     skew_M: Int,
     num_threads: Int,
     block_dim_count: Int,
-    binary_op: OptionalReg[binary_op_type] = None,
+    binary_op: Optional[binary_op_type] = None,
 ](input: LayoutTensor[dtype, layout, MutAnyOrigin]):
     comptime simd_size = simd_width_of[dtype]()
 
@@ -574,7 +573,7 @@ fn test_copy_sram_to_dram[
     block_dim_z: Int = 1,
     block_dim_count: Int = 1,
     skew_M: Int = 0,
-    binary_op: OptionalReg[binary_op_type] = None,
+    binary_op: Optional[binary_op_type] = None,
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 

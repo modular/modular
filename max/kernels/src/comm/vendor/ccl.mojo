@@ -42,7 +42,7 @@ struct ncclResult_t(Equatable, TrivialRegisterType, Writable):
     comptime ncclSuccess = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -57,7 +57,7 @@ struct ncclRedOp_t(TrivialRegisterType):
     comptime ncclSum = Self(0)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 @fieldwise_init
@@ -68,7 +68,7 @@ struct ncclDataType_t(TrivialRegisterType):
     comptime ncclBfloat16 = Self(9)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
 
 comptime RCCL_LIBRARY_PATHS: List[Path] = [
@@ -107,7 +107,7 @@ fn _get_ccl_function[
 
 
 # Common function signatures for CCL APIs (shared by RCCL/NCCL)
-comptime CCLAllReduceFn = fn (
+comptime CCLAllReduceFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -117,7 +117,7 @@ comptime CCLAllReduceFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-comptime CCLAllGatherFn = fn (
+comptime CCLAllGatherFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -126,7 +126,7 @@ comptime CCLAllGatherFn = fn (
     OpaquePointer,
 ) -> ncclResult_t
 
-comptime CCLBroadcastFn = fn (
+comptime CCLBroadcastFn = fn(
     OpaquePointer,
     OpaquePointer,
     Int,
@@ -144,12 +144,12 @@ struct _Group:
 
     fn __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", fn () -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", fn() -> ncclResult_t]()()
         )
 
     fn __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", fn () -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", fn() -> ncclResult_t]()()
         )
 
 
@@ -162,7 +162,7 @@ fn ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        fn (
+        fn(
             UnsafePointer[ncclComm_t], Int, UnsafePointer[Int32]
         ) -> ncclResult_t,
     ]()(comms, ndev, devlist)
@@ -355,7 +355,7 @@ fn _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, fn () -> ncclResult_t]()
+        _ = _get_ccl_function[name, fn() -> ncclResult_t]()
         return True
     except:
         return False

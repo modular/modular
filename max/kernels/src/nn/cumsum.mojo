@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
 from utils.numerics import get_accum_type
@@ -23,8 +25,8 @@ fn cumsum[
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: LayoutTensor[mut=True, dtype, ...],
-    input: LayoutTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    input: TileTensor[dtype, ...],
     axis: Int,
 ):
     """
@@ -57,7 +59,7 @@ fn cumsum[
     )
     var axis_pos = axis if axis >= 0 else axis + input.rank
 
-    var shape = input.runtime_layout.shape.value
+    var shape = coord_to_index_list(input.layout.shape)
 
     var inner = 1
     var outer = 1
@@ -70,17 +72,13 @@ fn cumsum[
         else:
             depth = shape[i]
 
-    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), ...](
+    var output_data = TileTensor(
         output.ptr,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](output.size())
-        ),
+        row_major(Coord(Idx(output.numel()))),
     )
-    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), ...](
+    var input_data = TileTensor(
         input.ptr,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](input.size())
-        ),
+        row_major(Coord(Idx(input.numel()))),
     )
 
     for outer_index in range(outer):
@@ -121,10 +119,10 @@ fn cumsum[
                 if exclusive:
                     output_data[index] = accumulator.cast[dtype]()
                     accumulator = (
-                        accumulator + input_data[index][0].cast[accum_type]()
+                        accumulator + input_data[index].cast[accum_type]()
                     )
                 else:
                     accumulator = (
-                        accumulator + input_data[index][0].cast[accum_type]()
+                        accumulator + input_data[index].cast[accum_type]()
                     )
                     output_data[index] = accumulator.cast[dtype]()

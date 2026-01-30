@@ -28,10 +28,7 @@ struct Result(Equatable, TrivialRegisterType, Writable):
     comptime LICENSE_ERROR = Self(16)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int32(value)
 
     @no_inline
     fn __str__(self) -> String:

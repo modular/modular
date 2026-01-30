@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Layout, LayoutTensor
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
 from utils.index import IndexList
@@ -49,10 +50,7 @@ fn test_repeat_interleave_1d() raises:
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[
-        type,
-        Layout.row_major(4),
-    ](input_stack)
+    var input = TileTensor(input_stack, row_major[4]())
 
     input[0] = 0
     input[1] = 1
@@ -65,10 +63,7 @@ fn test_repeat_interleave_1d() raises:
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = LayoutTensor[
-        type_repeats,
-        Layout.row_major(4),
-    ](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[4,]())
 
     repeats[0] = 1
     repeats[1] = 2
@@ -76,11 +71,7 @@ fn test_repeat_interleave_1d() raises:
     repeats[3] = 4
 
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = LayoutTensor[
-        mut=True,
-        type,
-        Layout.row_major(10),
-    ](output_stack)
+    var output = TileTensor(output_stack, row_major[10]())
 
     repeat_interleave(input, repeats, 0, output)
 
@@ -99,10 +90,7 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[
-        type,
-        Layout.row_major(4),
-    ](input_stack)
+    var input = TileTensor(input_stack, row_major[4]())
 
     input[0] = 0
     input[1] = 1
@@ -115,18 +103,12 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
-    var repeats = LayoutTensor[
-        type_repeats,
-        Layout.row_major(1),
-    ](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[1]())
 
     repeats[0] = 2
 
     var output_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var output = LayoutTensor[
-        type,
-        Layout.row_major(8),
-    ](output_stack)
+    var output = TileTensor(output_stack, row_major[8]())
 
     repeat_interleave(input, repeats, 0, output)
 
@@ -145,10 +127,7 @@ fn test_repeat_interleave_2d_axis_0() raises:
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[
-        type,
-        Layout.row_major(2, 2),
-    ](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
     input[0, 1] = 1
@@ -161,20 +140,14 @@ fn test_repeat_interleave_2d_axis_0() raises:
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = LayoutTensor[
-        type_repeats,
-        Layout.row_major(2),
-    ](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = LayoutTensor[
-        type,
-        Layout.row_major(5, 2),
-    ](output_stack)
+    var output = TileTensor(output_stack, row_major[5, 2]())
 
     repeat_interleave(input, repeats, 0, output)
 
@@ -199,10 +172,7 @@ fn test_repeat_interleave_2d_axis_1() raises:
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[
-        type,
-        Layout.row_major(2, 2),
-    ](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
     input[0, 1] = 1
@@ -215,20 +185,14 @@ fn test_repeat_interleave_2d_axis_1() raises:
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[
-        type_repeats,
-        Layout.row_major(2),
-    ](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
-    var output = LayoutTensor[
-        type,
-        Layout.row_major(2, 5),
-    ](output_stack)
+    var output = TileTensor(output_stack, row_major[2, 5]())
 
     repeat_interleave(input, repeats, 1, output)
 
@@ -250,10 +214,7 @@ fn test_repeat_interleave_3d() raises:
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 8](uninitialized=True)
-    var input = LayoutTensor[
-        type,
-        Layout.row_major(2, 2, 2),
-    ](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -271,20 +232,14 @@ fn test_repeat_interleave_3d() raises:
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[
-        type_repeats,
-        Layout.row_major(2),
-    ](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
 
     # Result is 2x5
     var output_stack = InlineArray[Scalar[type], 20](uninitialized=True)
-    var output = LayoutTensor[
-        type,
-        Layout.row_major(2, 5, 2),
-    ](output_stack)
+    var output = TileTensor(output_stack, row_major[2, 5, 2]())
 
     repeat_interleave(input, repeats, 1, output)
 

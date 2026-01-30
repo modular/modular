@@ -270,7 +270,7 @@ fn _write_int[
         var zero_char = digit_chars_array[0]
 
         # Construct a null-terminated buffer of single-byte char.
-        var zero_buf = InlineArray[UInt8, 2](zero_char, 0)
+        var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
 
         # TODO(MSTDL-720):
         #   Support printing non-null-terminated strings on GPU and switch
@@ -307,8 +307,8 @@ fn _write_int[
 
     @parameter
     fn process_digits[
-        get_digit_value: fn (Scalar[dtype]) -> Scalar[dtype],
-        div_fn: fn (Scalar[dtype]) -> Scalar[dtype],
+        get_digit_value: fn(Scalar[dtype]) -> Scalar[dtype],
+        div_fn: fn(Scalar[dtype]) -> Scalar[dtype],
     ]():
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)

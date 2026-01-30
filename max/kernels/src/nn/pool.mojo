@@ -746,7 +746,7 @@ fn avg_pool_cpu[
         var window_w = pool_dim_size(
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
-        var res = val / (window_h * window_w)
+        var res = val / Scalar[dtype](window_h * window_w)
 
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
@@ -771,7 +771,7 @@ fn avg_pool_cpu[
     fn avg_pool_compute_finalize[
         simd_width: Int
     ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
         ]()
@@ -1064,7 +1064,7 @@ fn avg_pool_gpu[
         var window_w = pool_dim_size(
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
-        var res = val / (window_h * window_w)
+        var res = val / Scalar[dtype](window_h * window_w)
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
         ]()
@@ -1087,7 +1087,7 @@ fn avg_pool_gpu[
     fn avg_pool_compute_finalize[
         simd_width: Int
     ](point: IndexList[output.rank, ...], val: SIMD[dtype, simd_width],):
-        var res = val / (pool_window_h * pool_window_w)
+        var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         var indices = IndexList[
             output.rank, element_type = output.layout_int_type
         ]()

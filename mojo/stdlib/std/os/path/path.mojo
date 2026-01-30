@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables = InlineArray[Int, 17](
+    comptime shell_variables: InlineArray[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
@@ -621,7 +621,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("7"),
         ord("8"),
         ord("9"),
-    )
+    ]
     return Int(byte) in materialize[shell_variables]()
 
 
