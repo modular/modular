@@ -27,7 +27,9 @@ from bit import byte_swap
 from memory import Span, bitcast, memcpy
 
 
-struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
+struct _SequenceWriter[W: Writer, origin: MutOrigin, sep_origin: ImmutOrigin](
+    Movable, Writer
+):
     """A writer that handles sequences of elements with separators.
 
     This writer ensures separators are only inserted between elements, even
@@ -37,9 +39,13 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
     var writer: Pointer[Self.W, Self.origin]
     var is_first_element: Bool
     var at_element_start: Bool
-    var sep: StaticString
+    var sep: StringSlice[Self.sep_origin]
 
-    fn __init__(out self, ref[Self.origin] writer: Self.W, sep: StaticString):
+    fn __init__(
+        out self,
+        ref[Self.origin] writer: Self.W,
+        sep: StringSlice[Self.sep_origin],
+    ):
         self.writer = Pointer(to=writer)
         self.is_first_element = True
         self.at_element_start = True
@@ -70,12 +76,16 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
 # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 fn write_sequence_to[
-    W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
+    W: Writer,
+    ElementFn: fn[T: Writer](mut T) raises StopIteration capturing,
+    O1: ImmutOrigin = StaticConstantOrigin,
+    O2: ImmutOrigin = StaticConstantOrigin,
+    O3: ImmutOrigin = StaticConstantOrigin,
 ](
     mut writer: W,
-    open: StaticString = "[",
-    close: StaticString = "]",
-    sep: StaticString = ", ",
+    open: StringSlice[O1] = rebind[StringSlice[O1]](StaticString("[")),
+    close: StringSlice[O2] = rebind[StringSlice[O2]](StaticString("]")),
+    sep: StringSlice[O3] = rebind[StringSlice[O3]](StaticString(", ")),
 ):
     """Writes a sequence of elements to a writer using a callback function.
 
@@ -92,6 +102,9 @@ fn write_sequence_to[
         ElementFn: A callback function that writes a single element. It receives
             a mutable writer and should raise `StopIteration` when the sequence
             is exhausted.
+        O1: The origin of the open `StringSlice`.
+        O2: The origin of the close `StringSlice`.
+        O3: The origin of the separator `StringSlice`.
 
     Args:
         writer: The writer to write to.
@@ -114,13 +127,13 @@ fn write_sequence_to[
 
 @always_inline
 fn write_sequence_to[
-    *Ts: Writable,
+    *Ts: Writable, O1: ImmutOrigin = StaticConstantOrigin
 ](
     mut writer: Some[Writer],
     *args: *Ts,
-    open: StaticString,
-    close: StaticString,
-    sep: StaticString = ", ",
+    open: StringSlice,
+    close: StringSlice,
+    sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString(", ")),
 ):
     """Writes a sequence of writable values to a writer with delimiters.
 
@@ -129,6 +142,7 @@ fn write_sequence_to[
 
     Parameters:
         Ts: Types of the values to write. Must conform to `Writable`.
+        O1: The origin of the separator `StringSlice`.
 
     Args:
         writer: The writer to write to.
@@ -142,13 +156,13 @@ fn write_sequence_to[
 
 @always_inline
 fn write_sequence_to[
-    *Ts: Writable,
+    *Ts: Writable, O1: ImmutOrigin = StaticConstantOrigin
 ](
     mut writer: Some[Writer],
     pack: VariadicPack[_, Writable, *Ts],
-    open: StaticString,
-    close: StaticString,
-    sep: StaticString = ", ",
+    open: StringSlice,
+    close: StringSlice,
+    sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString(", ")),
 ):
     """Writes a sequence of writable values from a pack to a writer with delimiters.
 
@@ -158,6 +172,7 @@ fn write_sequence_to[
 
     Parameters:
         Ts: Types of the values in the pack. Must conform to `Writable`.
+        O1: The origin of the separator `StringSlice`.
 
     Args:
         writer: The writer to write to.
@@ -528,7 +543,7 @@ fn _hex_digits_to_hex_chars(
     %# from memory import memset_zero
     %# from testing import assert_equal
     %# from utils import StringSlice
-    %# from io.write import _hex_digits_to_hex_chars
+    %# from format._utils import _hex_digits_to_hex_chars
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
@@ -558,7 +573,7 @@ fn _write_hex[
     %# from memory import memset_zero
     %# from testing import assert_equal
     %# from utils import StringSlice
-    %# from io.write import _write_hex
+    %# from format._utils import _write_hex
     var s = String()
     _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
     assert_equal("\\U0001f525", s)
