@@ -119,7 +119,6 @@ _FILECHECK_TESTS = [
         copts = [],
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            "//:amd_gpu": False,
             "//conditions:default": src not in [
                 "test_layer_norm.mojo",
                 "test_topk_gpu_fi.mojo",  # Extreme register pressure, even simplified assertions cause issues
@@ -128,6 +127,7 @@ _FILECHECK_TESTS = [
                 "test_mha_causal_mask.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_mla.mojo",  # KERN-2339: bounds check reveals kernel bug
                 "test_flash_attention.mojo",  # KERN-2339: bounds check reveals kernel bug
+                "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
             ],
         }),
         exec_properties = {
