@@ -387,7 +387,6 @@ class HuggingFaceRepo:
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
         safetensor_search_pattern = "*.safetensors"
         gguf_search_pattern = "*.gguf"
-        pytorch_search_pattern = "*.bin"
 
         weight_files = {}
         if self.repo_type == RepoType.local:
@@ -397,9 +396,6 @@ class HuggingFaceRepo:
             gguf_paths = glob.glob(
                 os.path.join(self.repo_id, gguf_search_pattern)
             )
-            pytorch_paths = glob.glob(
-                os.path.join(self.repo_id, pytorch_search_pattern)
-            )
         elif self.repo_type == RepoType.online:
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
@@ -408,9 +404,6 @@ class HuggingFaceRepo:
             )
             gguf_paths = cast(
                 list[str], fs.glob(f"{self.repo_id}/{gguf_search_pattern}")
-            )
-            pytorch_paths = cast(
-                list[str], fs.glob(f"{self.repo_id}/{pytorch_search_pattern}")
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
@@ -617,9 +610,6 @@ class HuggingFaceRepo:
             raise ValueError(
                 f"gguf file, but encoding not found in file name: {file}"
             )
-        elif str(file).endswith(".bin"):
-            # If this file is pytorch, return the first encoding, as Pytorch repos only likely have one.
-            return self.supported_encodings[0]
         else:
             raise ValueError(
                 f"weight path: {file} not gguf or safetensors, cannot infer encoding from file."
