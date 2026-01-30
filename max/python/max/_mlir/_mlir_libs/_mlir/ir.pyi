@@ -904,7 +904,7 @@ class Value(Generic[_T]):
         """Dumps a debug representation of the object to stderr."""
 
     @property
-    def owner(self) -> OpView:
+    def owner(self) -> OpView | Block:
         """
         Returns the owner of the value (`Operation` for results, `Block` for arguments).
         """
@@ -2261,14 +2261,14 @@ class IntegerAttr(Attribute):
     """(arg: object, /) -> str"""
 
     @staticmethod
-    def get(type: Type, value: int) -> IntegerAttr:
+    def get(type: Type, value: object) -> IntegerAttr:
         """Gets an uniqued integer attribute associated to a type"""
 
     @property
-    def value(self) -> int:
+    def value(self) -> object:
         """Returns the value of the integer attribute"""
 
-    def __int__(self) -> int:
+    def __int__(self) -> object:
         """Converts the value of the integer attribute to a Python int"""
 
 class IntegerSetAttr(Attribute):

@@ -65,9 +65,9 @@ http_archive(
 )
 
 # NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
-LLVM_COMMIT = "b76089c7f3d6593d2e2c83db7dbf4965b656bd8c"
+LLVM_COMMIT = "3b0880a2c270c3bd493f39b2812afc7984198d8c"
 
-LLVM_SHA = "0d6a20eb8546cfc2693bbdc2b4a0c0eca48856b29103660d6c0a1611082af3ba"
+LLVM_SHA = "f5b48d9c444fd4bcc19e97e560ff05d209abcd2244e12209fa274cb5bcca42c7"
 
 http_archive(
     name = "llvm-raw",
