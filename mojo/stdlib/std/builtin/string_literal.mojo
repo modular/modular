@@ -592,7 +592,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).ascii_ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.
 
         Pads the string literal on both sides with the specified fill character so
@@ -622,7 +622,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).center(width, fillchar)
+        return StringSlice(self).ascii_center(width, fillchar)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1

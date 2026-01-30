@@ -2386,7 +2386,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self._justify(0, width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice center justified in a string of specified width.
 
         Pads the string slice on both sides with the specified fill character so

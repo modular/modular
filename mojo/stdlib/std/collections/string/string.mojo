@@ -2085,7 +2085,7 @@ struct String(
         """
         return StringSlice(self).ascii_ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Pads the string on both sides with the specified fill character so that
@@ -2114,7 +2114,7 @@ struct String(
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).center(width, fillchar)
+        return StringSlice(self).ascii_center(width, fillchar)
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not

@@ -929,10 +929,10 @@ def test_ascii_ljust():
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
-def test_center():
-    assert_equal(StringSlice("hello").center(4), "hello")
-    assert_equal(StringSlice("hello").center(8), " hello  ")
-    assert_equal(StringSlice("hello").center(8, "*"), "*hello**")
+def test_ascii_center():
+    assert_equal(StringSlice("hello").ascii_center(4), "hello")
+    assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
+    assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
 def test_count():
