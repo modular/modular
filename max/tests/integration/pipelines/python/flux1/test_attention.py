@@ -46,7 +46,6 @@ class FluxAttentionWrapper(MaxFluxAttention):
         return super().forward(
             hidden_states,
             encoder_hidden_states,
-            attention_mask=None,
             image_rotary_emb=(image_rotary_emb_0, image_rotary_emb_1),
         )
 
@@ -134,7 +133,6 @@ def generate_max_outputs(
             added_kv_proj_dim=query_dim,  # For dual-stream attention
             added_proj_bias=True,  # Encoder projections have bias
             out_bias=True,  # Output projections have bias
-            dtype=DType.bfloat16,
         )
         attention.to(device_ref)
 

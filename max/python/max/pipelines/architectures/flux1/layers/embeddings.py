@@ -311,14 +311,12 @@ class CombinedTimestepTextProjEmbeddings(Module[[Tensor, Tensor], Tensor]):
         self,
         embedding_dim: int,
         pooled_projection_dim: int,
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize combined timestep and text projection embeddings module.
 
         Args:
             embedding_dim: Dimension of the embedding.
             pooled_projection_dim: Dimension of the pooled projection.
-            dtype: Data type for the module.
         """
         super().__init__()
 

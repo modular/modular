@@ -48,8 +48,6 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         out_dim: int | None = None,
         context_pre_only: bool | None = None,
         pre_only: bool = False,
-        elementwise_affine: bool = True,
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize Flux attention module.
 
@@ -66,8 +64,7 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
             out_dim: Optional output dimension.
             context_pre_only: Whether to use context pre-processing only.
             pre_only: Whether to use pre-processing only.
-            elementwise_affine: Whether to use elementwise affine in normalization.
-            dtype: Data type for the module.
+
         """
         super().__init__()
 
@@ -82,7 +79,6 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         self.heads = out_dim // dim_head if out_dim is not None else heads
         self.added_kv_proj_dim = added_kv_proj_dim
         self.added_proj_bias = added_proj_bias
-        self.dtype = dtype
 
         self.norm_q = RMSNorm(dim_head, eps=eps)
         self.norm_k = RMSNorm(dim_head, eps=eps)
@@ -110,8 +106,8 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
             )
 
         if added_kv_proj_dim is not None:
-            self.norm_added_q = RMSNorm(dim_head, eps=eps)
-            self.norm_added_k = RMSNorm(dim_head, eps=eps)
+            self.norm_added_q = RMSNorm(dim_head, eps=eps)  # elementwise_affine
+            self.norm_added_k = RMSNorm(dim_head, eps=eps)  # elementwise_affine
             self.add_q_proj = Linear(
                 added_kv_proj_dim,
                 self.inner_dim,
@@ -137,7 +133,6 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor | None = None,
-        attention_mask: Tensor | None = None,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor | tuple[Tensor, Tensor]:
         """Apply Flux attention to hidden states.
@@ -145,7 +140,6 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
         Args:
             hidden_states: Input hidden states.
             encoder_hidden_states: Optional encoder hidden states for cross-attention.
-            attention_mask: Optional attention mask.
             image_rotary_emb: Optional rotary embeddings for position encoding.
 
         Returns:
@@ -205,6 +199,7 @@ class FluxAttention(Module[..., Tensor | tuple[Tensor, Tensor]]):
             query = apply_rotary_emb(query, image_rotary_emb, sequence_dim=1)
             key = apply_rotary_emb(key, image_rotary_emb, sequence_dim=1)
 
+        # TODO: Support arbitrary attention mask
         hidden_states = flash_attention_gpu(
             query,
             key,
@@ -237,7 +232,7 @@ class FeedForward(Module[[Tensor], Tensor]):
         dim: int,
         dim_out: int | None = None,
         mult: int = 4,
-        activation_fn: str = "geglu",
+        activation_fn: str = "gelu",
         inner_dim: int | None = None,
         bias: bool = True,
     ):
@@ -286,8 +281,6 @@ class FeedForward(Module[[Tensor], Tensor]):
 
         Args:
             hidden_states: Input hidden states.
-            *args: Additional positional arguments (unused).
-            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Output hidden states after feedforward network.

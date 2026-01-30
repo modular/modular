@@ -27,7 +27,6 @@ class AdaLayerNormZeroSingle(Module[..., tuple[Tensor, Tensor]]):
         embedding_dim: int,
         norm_type: str = "layer_norm",
         bias: bool = True,
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize adaptive layer normalization zero single module.
 
@@ -35,8 +34,7 @@ class AdaLayerNormZeroSingle(Module[..., tuple[Tensor, Tensor]]):
             embedding_dim: Size of each embedding vector.
             norm_type: Type of normalization to use ("layer_norm").
             bias: Whether to use bias in linear projection.
-            device: Device to place the module on.
-            dtype: Data type for the module.
+
         """
         super().__init__()
         self.linear = Linear(
@@ -91,7 +89,6 @@ class AdaLayerNormZero(
         num_embeddings: int | None = None,
         norm_type: str = "layer_norm",
         bias: bool = True,
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize adaptive layer normalization zero module.
 
@@ -100,7 +97,6 @@ class AdaLayerNormZero(
             num_embeddings: Optional size of the embeddings dictionary.
             norm_type: Type of normalization to use ("layer_norm" or "fp32_layer_norm").
             bias: Whether to use bias in linear projection.
-            dtype: Data type for the module.
         """
         super().__init__()
         if num_embeddings is not None:
@@ -172,7 +168,7 @@ class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
         elementwise_affine (`bool`, defaults to `True`):
             Boolean flag to denote if affine transformation should be applied.
         eps (`float`, defaults to 1e-5): Epsilon factor.
-        bias (`bias`, defaults to `True`): Boolean flag to denote if bias should be use.
+        bias (`bool`, defaults to `True`): Boolean flag to denote if bias should be used.
         norm_type (`str`, defaults to `"layer_norm"`):
             Normalization layer to use. Values supported: "layer_norm", "rms_norm".
     """
@@ -181,16 +177,9 @@ class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
         self,
         embedding_dim: int,
         conditioning_embedding_dim: int,
-        # NOTE: It is a bit weird that the norm layer can be configured to have scale and shift parameters
-        # because the output is immediately scaled and shifted by the projected conditioning embeddings.
-        # Note that AdaLayerNorm does not let the norm layer have scale and shift parameters.
-        # However, this is how it was implemented in the original code, and it's rather likely you should
-        # set `elementwise_affine` to False.
-        # elementwise_affine=True,
         eps: float = 1e-5,
         bias: bool = True,
         norm_type: str = "layer_norm",
-        dtype: DType = DType.bfloat16,
     ):
         """Initialize adaptive layer normalization continuous module.
 
@@ -200,7 +189,6 @@ class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
             eps: Epsilon factor for normalization.
             bias: Whether to use bias in linear projection.
             norm_type: Type of normalization to use ("layer_norm" or "rms_norm").
-            dtype: Data type for the module.
         """
         super().__init__()
         self.silu = F.silu

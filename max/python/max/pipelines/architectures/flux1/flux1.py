@@ -12,16 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-import os
 from collections.abc import Sequence
-from os import PathLike
 from typing import Any
 
 from max import functional as F
-from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import TensorType
-from max.graph.weights import SafetensorWeights
 from max.nn import Linear, Module
 from max.nn.norm import LayerNorm  # type: ignore[attr-defined]
 from max.nn.sequential import ModuleList
@@ -40,18 +36,6 @@ from .layers.normalizations import (
 from .model_config import FluxConfigBase
 
 logger = logging.getLogger(__name__)
-
-
-def get_weight_registry_from_diffusers(
-    safe_tensor_folder: PathLike[str],
-) -> dict[str, DLPackArray]:
-    weight_files = [
-        os.path.join(safe_tensor_folder, f)
-        for f in os.listdir(safe_tensor_folder)
-        if f.endswith(".safetensors")
-    ]
-    weights = SafetensorWeights(weight_files)  # type: ignore[arg-type]
-    return {name: weight.data().data for name, weight in weights.items()}
 
 
 class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
@@ -126,7 +110,6 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         attn_output = self.attn(
             hidden_states=norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
-            **joint_attention_kwargs,
         )
 
         hidden_states = F.concat([attn_output, mlp_hidden_states], axis=2)
@@ -212,7 +195,6 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         encoder_hidden_states: Tensor,
         temb: Tensor,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
-        joint_attention_kwargs: dict[str, Any] | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Apply transformer block with dual-stream attention and feedforward.
 
@@ -221,7 +203,6 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             encoder_hidden_states: Encoder hidden states for cross-attention.
             temb: Time embedding.
             image_rotary_emb: Optional rotary position embeddings.
-            joint_attention_kwargs: Optional attention kwargs.
 
         Returns:
             Tuple of (encoder_hidden_states, hidden_states).
@@ -244,7 +225,6 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
-            **joint_attention_kwargs,
         )
 
         assert isinstance(attention_outputs, tuple)
@@ -435,11 +415,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor | None = None,
-        joint_attention_kwargs: dict[str, Any] | None = None,
-        controlnet_block_samples: Any | None = None,
-        controlnet_single_block_samples: Any | None = None,
-        return_dict: bool = True,
-        controlnet_blocks_repeat: bool = False,
     ) -> tuple[Tensor]:
         """Apply Flux Transformer 2D model forward pass.
 
@@ -451,17 +426,10 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
             img_ids: Image position IDs.
             txt_ids: Text position IDs.
             guidance: Guidance scale values.
-            joint_attention_kwargs: Additional attention arguments.
-            controlnet_block_samples: Optional controlnet block samples.
-            controlnet_single_block_samples: Optional controlnet single block samples.
-            return_dict: Whether to return as dictionary.
-            controlnet_blocks_repeat: Whether to repeat controlnet blocks.
 
         Returns:
             Tuple containing output tensor.
         """
-        if joint_attention_kwargs is not None:
-            joint_attention_kwargs = joint_attention_kwargs.copy()
 
         hidden_states = self.x_embedder(hidden_states)
 
@@ -493,7 +461,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
                 encoder_hidden_states=encoder_hidden_states,
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
-                joint_attention_kwargs=joint_attention_kwargs,
             )
 
         for single_block in self.single_transformer_blocks:
@@ -502,7 +469,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
                 encoder_hidden_states=encoder_hidden_states,
                 temb=temb,
                 image_rotary_emb=image_rotary_emb,
-                joint_attention_kwargs=joint_attention_kwargs,
             )
 
         hidden_states = self.norm_out(hidden_states, temb)
