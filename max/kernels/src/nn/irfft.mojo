@@ -114,9 +114,9 @@ fn _get_fft_plan[
     check_error(
         cufftMakePlan1d(
             plan,
-            output_size,
+            Int32(output_size),
             Type.CUFFT_C2R,
-            batch_size,
+            Int32(batch_size),
             UnsafePointer(to=mem_size),
         )
     )
@@ -224,7 +224,10 @@ fn _irfft[
     var work_size: Int = 0
     check_error(
         cufftEstimate1d(
-            output_size, Type.CUFFT_C2R, batch_size, UnsafePointer(to=work_size)
+            Int32(output_size),
+            Type.CUFFT_C2R,
+            Int32(batch_size),
+            UnsafePointer(to=work_size),
         )
     )
 
@@ -255,9 +258,9 @@ fn _irfft[
             try:
                 check_error(
                     cufftEstimate1d(
-                        output_size,
+                        Int32(output_size),
                         Type.CUFFT_C2R,
-                        reduced_batch_size,
+                        Int32(reduced_batch_size),
                         UnsafePointer(to=work_size),
                     )
                 )

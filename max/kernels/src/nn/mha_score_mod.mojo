@@ -66,10 +66,6 @@ struct AlibiScoreMod[
     fn get_type_name() -> String:
         return "AlibiScoreMod"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn _generate_alibi_bias[
         coords_dtype: DType,
@@ -168,10 +164,6 @@ struct IdentityScoreMod(ScoreModTrait, TrivialRegisterType):
     @staticmethod
     fn get_type_name() -> String:
         return "IdentityScoreMod"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn score_mod[

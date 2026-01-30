@@ -14,7 +14,6 @@
 
 from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
@@ -698,14 +697,14 @@ struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
     var K: Int
     comptime block_size: Int = Self._block_size
     var batch_size: Int
-    var num_blocks_per_input: OptionalReg[Int]
+    var num_blocks_per_input: Optional[Int]
 
     fn __init__(
         out self,
         N: Int,
         K: Int,
         batch_size: Int,
-        num_blocks_per_input: OptionalReg[Int] = None,
+        num_blocks_per_input: Optional[Int] = None,
     ):
         self.N = N
         self.K = K

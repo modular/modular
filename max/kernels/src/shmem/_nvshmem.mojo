@@ -162,7 +162,7 @@ struct NVSHMEMXInitAttr:
         __comptime_assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXInitAttr]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
         self.mpi_comm = mpi_comm
         self.args = NVSHMEMXInitArgs()
 
@@ -176,7 +176,7 @@ struct NVSHMEMXInitArgs:
         __comptime_assert (
             size_of[Self]() == 128
         ), "NVSHMEMXInitArgs must be 128 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXInitArgs]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
         self.uid_args = NVSHMEMXUniqueIDArgs()
         self.content = InlineArray[Byte, 96](fill=0)
 
@@ -191,7 +191,7 @@ struct NVSHMEMXUniqueIDArgs:
         __comptime_assert (
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXUniqueIDArgs]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
         self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
         self.myrank = 0
         self.nranks = 0
@@ -205,7 +205,7 @@ struct NVSHMEMXUniqueID:
         __comptime_assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
-        self.version = (1 << 16) + size_of[NVSHMEMXUniqueID]()
+        self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())
         self.internal = InlineArray[Byte, 124](fill=0)
 
 
@@ -346,7 +346,7 @@ fn nvshmemx_init_thread(
     var mpi_comm = get_mpi_comm_world()
     var attr = NVSHMEMXInitAttr(UnsafePointer(to=mpi_comm))
     attr.args.uid_args.myrank = Int32(ctx.id())
-    attr.args.uid_args.nranks = nranks
+    attr.args.uid_args.nranks = c_int(nranks)
 
     var status = nvshmemx_hostlib_init_attr(
         NVSHMEMX_INIT_WITH_MPI_COMM, UnsafePointer(to=attr)

@@ -559,19 +559,6 @@ struct SIMD[dtype: DType, size: Int](
         """
         return String("SIMD[", repr(Self.dtype), ", ", repr(Self.size), "]")
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
-
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#

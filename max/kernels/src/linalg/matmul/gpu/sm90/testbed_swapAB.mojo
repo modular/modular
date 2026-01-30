@@ -21,7 +21,6 @@ Both kernels compute: C[M,N] = A[M,K] @ B[N,K]^T
 The swapAB version just does it via: (B @ A^T)^T stored transposed = A @ B^T
 """
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from sys import align_of
 

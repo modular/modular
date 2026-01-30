@@ -150,7 +150,7 @@ struct _TypeErasedWriter(Writer):
 
     fn __init__[
         W: Writer, //, origin: MutOrigin
-    ](out self, ref [origin]writer: W):
+    ](out self, ref[origin] writer: W):
         """Construct an erased writer, capturing the concrete type `W`."""
         self._writer = _make_opaque(writer)
         self._write_fn = Self._write_to_impl[W]
@@ -201,6 +201,12 @@ struct _VTableErrorOp(Equatable, TrivialRegisterType):
     comptime DEL: Self = Self(0)
     comptime COPY: Self = Self(1)
     comptime WRITE_TO: Self = Self(2)
+
+    # Note: Keep this manual __eq__ to avoid a compiler crash in the
+    # reflection-based default Equatable.__eq__.
+    @always_inline
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
 
 
 fn _make_opaque[T: AnyType, //](ref t: T) -> OpaquePointer[MutAnyOrigin]:

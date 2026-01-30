@@ -86,10 +86,6 @@ struct TileTensor[
     fn get_type_name() -> String:
         return "TileTensor"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     comptime GenericType = TileTensor[
         shape_types = Self.shape_types,
         stride_types = Self.stride_types,
@@ -110,7 +106,7 @@ struct TileTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericType,
-        ref [Self.origin]device_buffer: DeviceBuffer[Self.dtype],
+        ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
@@ -167,7 +163,7 @@ struct TileTensor[
     @always_inline
     fn __init__(
         out self: Self.GenericType,
-        ref [Self.origin]host_buffer: HostBuffer[Self.dtype],
+        ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         var layout: Layout[Self.shape_types, Self.stride_types],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`. The layout must have

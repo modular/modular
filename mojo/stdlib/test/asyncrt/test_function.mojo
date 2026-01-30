@@ -43,10 +43,6 @@ struct OneS(DevicePassable):
     fn get_type_name() -> String:
         return "OneS"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return "TwoS"
-
     var s: S
 
     fn __init__(out self, s: S):

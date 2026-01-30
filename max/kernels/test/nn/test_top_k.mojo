@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import iota
 from random import rand, seed
 
@@ -112,7 +111,7 @@ fn test_case_sampling[
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
     comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var temperature_buf = OptionalReg(
+    var temperature_buf = Optional(
         LayoutTensor[DType.float32, layout_1d, MutAnyOrigin](
             temperature_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
@@ -122,7 +121,7 @@ fn test_case_sampling[
     var seed_ptr = UnsafePointer[UInt64].alloc(batch_size)
     for i in range(batch_size):
         seed_ptr[i] = 12
-    var seed_buf = OptionalReg(
+    var seed_buf = Optional(
         LayoutTensor[DType.uint64, layout_1d, MutAnyOrigin](
             seed_ptr,
             RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),

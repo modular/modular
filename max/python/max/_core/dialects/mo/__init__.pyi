@@ -156,9 +156,8 @@ class TensorType(max._core.Type):
     device ref, and an optional dictionary of metadata (e.g., layout, etc.).
 
     The `shapeAttr` is one of:
-    1. `KGEN::UnknownAttr` for unparameterized shape of unknown rank, e.g., `?`.
-    2. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
-    3. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
+    1. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
+    2. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
 
     The element type is an M::DType, with `invalid` denoting an unknown type.
     The type implements a subset of the methods in ShapedTypeInterface.

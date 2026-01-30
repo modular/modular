@@ -42,10 +42,6 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable):
     fn get_type_name() -> String:
         return "ZeroSized"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn value(self) -> S:
         return 2
@@ -71,10 +67,6 @@ struct NotZeroSized(
     @staticmethod
     fn get_type_name() -> String:
         return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     var val: S
 

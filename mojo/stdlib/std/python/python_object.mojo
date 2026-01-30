@@ -1757,7 +1757,7 @@ struct PythonObject(
 
     fn unchecked_downcast_value_ptr[
         mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDestructible
-    ](ref [origin]self) -> UnsafePointer[T, origin]:
+    ](ref[origin] self) -> UnsafePointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an

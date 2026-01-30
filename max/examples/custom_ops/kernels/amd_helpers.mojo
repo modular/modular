@@ -325,7 +325,7 @@ struct MMATileBuffers[
     @always_inline
     fn __init__(
         out self,
-        ref [Self.tensor_origin]tensor: Self.tensor_type,
+        ref[Self.tensor_origin] tensor: Self.tensor_type,
         warp_idx: Int,
         warp_k_idx: Int,
         block_idx: Int,

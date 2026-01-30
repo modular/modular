@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv, exp2, recip, align_up
 from math.constants import log2e
 
@@ -20,6 +19,7 @@ from sys import align_of, simd_width_of, size_of
 from gpu import warp_id
 import gpu.primitives.warp as warp
 from algorithm.functional import unswitch
+from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,

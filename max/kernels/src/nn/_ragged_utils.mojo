@@ -119,13 +119,15 @@ fn merge_ragged_tensors[
                 is_first_element = False
 
         if is_first_element:
-            c_row_offsets.store[width=1](IndexList[1](batch_id), dst_row_idx)
+            c_row_offsets.store[width=1](
+                IndexList[1](batch_id), UInt32(dst_row_idx)
+            )
 
             # If this is the last batch, also update the last row offset to the total size
             if batch_id == c_row_offsets.dim[0]() - 2:
                 var total_size = a.dim[0]() + b.dim[0]()
                 c_row_offsets.store[width=1](
-                    IndexList[1](batch_id + 1), total_size
+                    IndexList[1](batch_id + 1), UInt32(total_size)
                 )
 
     comptime compile_target = _current_target() if is_cpu[

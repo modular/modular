@@ -551,7 +551,7 @@ fn mgp_buffer_constant_external(
         )
 
     var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
-    if (Int(weight_ptr) % align) != 0:
+    if (UInt64(Int(weight_ptr)) % align) != 0:
         raise Error(
             "invalid alignment for address ",
             weight_ptr,
@@ -569,7 +569,7 @@ fn fill_buffer[
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
-        ptr.store(offset, val)
+        ptr.store(offset, Scalar[dtype](val))
         offset += 1
 
 
@@ -831,8 +831,8 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    __comptime_assert (
-        axis < spec_rank
+    __comptime_assert axis < UInt64(
+        spec_rank
     ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
 

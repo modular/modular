@@ -15,7 +15,6 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of
-from collections import OptionalReg
 from gpu import WARP_SIZE
 from gpu.compute.mma import mma
 from itertools import product
@@ -152,11 +151,11 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
     var __repr: Int32
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = 0
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -165,7 +164,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
         return load_acquire(bar)
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -174,7 +173,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterType):
         store_release(bar, load_acquire(bar) + 1)
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
@@ -185,11 +184,11 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
     var __repr: StaticTuple[Int32, Self.size]
 
     @always_inline
-    fn initialize(ref [AddressSpace.SHARED, MutAnyOrigin]self):
+    fn initialize(ref[AddressSpace.SHARED, MutAnyOrigin] self):
         self.__repr = StaticTuple[Int32, Self.size](fill=0)
 
     @always_inline
-    fn value(ref [AddressSpace.SHARED]self) -> Int32:
+    fn value(ref[AddressSpace.SHARED] self) -> Int32:
         var sum: Int32 = 0
 
         @parameter
@@ -198,7 +197,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
         return sum
 
     @always_inline
-    fn increment(ref [AddressSpace.SHARED, MutAnyOrigin]self, warp_id: Int):
+    fn increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
             UnsafePointer[
                 Scalar[DType.int32], address_space = AddressSpace.SHARED
@@ -207,7 +206,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterType):
         bar[warp_id] += 1
 
     @always_inline
-    fn wait_until_greater_or_equal_to(ref [AddressSpace.SHARED]self, v: Int32):
+    fn wait_until_greater_or_equal_to(ref[AddressSpace.SHARED] self, v: Int32):
         while self.value() < v:
             inlined_assembly[
                 "s_sleep 0", NoneType, constraints="", has_side_effect=True
@@ -255,7 +254,7 @@ struct AmdTileOperator[
     warp_block_layout_a: Layout,
     warp_block_layout_b: Layout,
     mma_shape: IndexList[3],
-    swizzle: OptionalReg[Swizzle] = None,
+    swizzle: Optional[Swizzle] = None,
     transpose_b: Bool = True,
 ](TrivialRegisterType):
     """Manages tensor core operations for matrix multiplication on AMD GPUs.

@@ -37,32 +37,14 @@ from collections.abc import Iterator, Sequence
 from typing import Any
 
 from max import _core, driver
-from max._core.dialects import builtin, mo
+from max._core.dialects import builtin, kgen, mo, mosh
 from max.graph import Graph
 
 # Import handlers to register them (side effect import)
-from ._interpreter_ops import (
-    _get_operand_value,
-    lookup_handler,
-)
+from ._interpreter_ops import lookup_handler
 
 # Type alias for interpreter slots
 InterpreterSlots = dict[Any, driver.Buffer | None]
-
-
-def _get_op_name(op: _core.Operation) -> str:
-    """Get the operation name.
-
-    Args:
-        op: The operation.
-
-    Returns:
-        The operation name as a string (e.g., "mo.add").
-    """
-    # _core Operations have a name property
-    if hasattr(op, "name"):
-        return str(op.name)
-    return type(op).__name__
 
 
 class MOInterpreter:
@@ -159,10 +141,10 @@ class MOInterpreter:
         if output_op is None:
             raise RuntimeError("Graph has no output terminator")
         outputs = []
-        # op.operands can return either OpOperand or Value objects
+        # mo.OutputOp.operands returns Value directly (not OpOperand)
         for operand in output_op.operands:
             try:
-                outputs.append(slots[_get_operand_value(operand)])
+                outputs.append(slots[operand])
             except RuntimeError as e:
                 raise RuntimeError(
                     f"Output value not computed: {operand}"
@@ -203,16 +185,18 @@ class MOInterpreter:
         """
         skip_types = (
             mo.ChainCreateOp,  # Sequencing (interpreter executes sequentially)
+            kgen.ParamDeclareOp,  # Shape parameter declarations
+            mosh.ParamFromValueOp,  # Records values into params (not needed)
         )
-
         if isinstance(op, skip_types):
             return False
 
-        return _get_op_name(op) not in (
-            "kgen.param.declare",  # Shape parameter declarations
-            "kgen.param.constant",  # Constant parameter declarations
-            "mosh.param.from_value",  # Records values into params (not needed)
+        # TODO(EMF-104): Check type for these
+        skip_names = (
+            "ParamConstantOp",  # Constant parameter declarations
         )
+
+        return type(op).__name__ not in skip_names
 
     def _dispatch_op(
         self, op: _core.Operation, slots: dict[Any, driver.Buffer | None]
@@ -228,18 +212,15 @@ class MOInterpreter:
         """
         # Check handler registry
         if (handler := lookup_handler(op)) is not None:
-            # op.operands can return either OpOperand or Value objects
+            # Operation.operands returns OpOperand, use .value to get the Value.
             # Use .get() with default None for chain values (ChainCreateOp is
             # skipped, so chain values are not stored in slots)
             input_buffers = [
-                slots.get(_get_operand_value(operand))
-                for operand in op.operands
+                slots.get(operand.value) for operand in op.operands
             ]
             outputs = handler(self.devices, op, input_buffers)
         else:
-            raise NotImplementedError(
-                f"No handler for op: {_get_op_name(op)} ({type(op).__name__})"
-            )
+            raise NotImplementedError(f"No handler for op: {type(op).__name__}")
 
         # Store outputs
         for result, output_buf in zip(op.results, outputs, strict=True):

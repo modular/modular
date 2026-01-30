@@ -21,18 +21,15 @@ from os import abort
 
 
 @fieldwise_init
-struct Handle(Defaultable, TrivialRegisterType):
+struct Handle(Defaultable, Equatable, TrivialRegisterType):
     var _value: OpaquePointer
 
     fn __init__(out self):
         self._value = OpaquePointer()
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
 
 @fieldwise_init
-struct Operation(TrivialRegisterType):
+struct Operation(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(111)
@@ -42,18 +39,12 @@ struct Operation(TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct Fill(TrivialRegisterType):
+struct Fill(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime UPPER = Self(121)
@@ -63,18 +54,12 @@ struct Fill(TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct Diagonal(TrivialRegisterType):
+struct Diagonal(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime NON_UNIT = Self(131)
@@ -83,18 +68,12 @@ struct Diagonal(TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct Side(TrivialRegisterType):
+struct Side(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime LEFT = Self(141)
@@ -104,18 +83,12 @@ struct Side(TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct DataType(TrivialRegisterType):
+struct DataType(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime F16_R = Self(150)
@@ -159,17 +132,11 @@ struct DataType(TrivialRegisterType):
                 "the dtype '", dtype, "' is not currently handled by rocBLAS"
             )
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
-struct ComputeType(TrivialRegisterType):
+struct ComputeType(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime F32 = Self(300)
@@ -181,12 +148,6 @@ struct ComputeType(TrivialRegisterType):
 
     fn __init__(out self, value: Int):
         self._value = Int32(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -215,9 +176,6 @@ struct Status(Equatable, TrivialRegisterType, Writable):
 
     fn __init__(out self, value: Int):
         self._value = Int32(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -265,7 +223,7 @@ struct Status(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct PointerMode(TrivialRegisterType):
+struct PointerMode(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime HOST = Self(0)
@@ -273,12 +231,6 @@ struct PointerMode(TrivialRegisterType):
 
     fn __init__(out self, value: Int):
         self._value = Int32(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -290,7 +242,7 @@ struct MallocBase(TrivialRegisterType):
 
 
 @fieldwise_init
-struct Algorithm(TrivialRegisterType):
+struct Algorithm(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime STANDARD = Self(0)
@@ -299,18 +251,12 @@ struct Algorithm(TrivialRegisterType):
     fn __init__(out self, value: Int):
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct GEAMExOp(TrivialRegisterType):
+struct GEAMExOp(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime MIN_PLUS = Self(0)
@@ -318,12 +264,6 @@ struct GEAMExOp(TrivialRegisterType):
 
     fn __init__(out self, value: Int):
         self._value = Int32(value)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
 
     fn __int__(self) -> Int:
         return Int(self._value)

@@ -40,6 +40,7 @@ from max.interfaces import (
 )
 
 CHUNK_SIZE = 128
+FUTURE_TOKEN = -999
 
 
 @dataclass(kw_only=True)
@@ -186,12 +187,24 @@ class TextContext:
                 final_status=self.status,
             )
 
-        # Retrieve Log Probabilities
-        log_probabilities: list[LogProbabilities] | None = None
         element_ids = range(
             self.tokens._completion_range.start,
             self.tokens._completion_range.end,
         )
+        # Consume Generated Tokens
+        if len(element_ids) > 0:
+            generated_tokens = [
+                int(x) for x in self.tokens.consume_recently_generated_tokens()
+            ]
+            if FUTURE_TOKEN in generated_tokens:
+                raise ValueError(
+                    "Attempted to create generation output while future token is not yet realized."
+                )
+        else:
+            generated_tokens = []
+
+        # Retrieve Log Probabilities
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in element_ids:
             if token_idx in self._log_probabilities_data:
                 if log_probabilities is None:
@@ -200,14 +213,6 @@ class TextContext:
                 log_probabilities.append(
                     self._log_probabilities_data.pop(token_idx)
                 )
-
-        # Consume Generated Tokens
-        if len(element_ids) > 0:
-            generated_tokens: list[int] = [
-                int(x) for x in self.tokens.consume_recently_generated_tokens()
-            ]
-        else:
-            generated_ids: list[int] = []
 
         return TextGenerationOutput(
             request_id=self.request_id,
@@ -260,6 +265,9 @@ class TextContext:
                 log_probabilities
             )
 
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot append a token after a future token.")
+
         self.tokens.advance_with_token(new_token)
 
         if self._is_eos(new_token):
@@ -272,6 +280,51 @@ class TextContext:
             assert self.matcher.consume_token(new_token)
 
         self._is_initial_prompt = False
+
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+
+        if self.matcher:
+            raise ValueError(
+                "Cannot use future tokens when a matcher is present."
+            )
+
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot have multiple future tokens.")
+
+        self.update(new_token=FUTURE_TOKEN)
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
+        """
+        if self.tokens.generated_length == 0:
+            raise ValueError(
+                "Cannot realize a future token when there are no generated tokens."
+            )
+
+        if self.tokens.all[-1] != FUTURE_TOKEN:
+            raise ValueError(
+                "Attempted to realize a non-future token. Found token: ",
+                self.tokens.all[-1],
+            )
+
+        # Overwrite the log probabilities data
+        if log_probabilities:
+            self._log_probabilities_data[self.tokens.current_position - 1] = (
+                log_probabilities
+            )
+
+        self.tokens.overwrite_last_token(new_token)
+
+        if self._is_eos(new_token):
+            self.status = GenerationStatus.END_OF_SEQUENCE
 
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""

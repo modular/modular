@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 from memory import LegacyUnsafePointer
 
@@ -230,7 +229,7 @@ fn multistage_mma[
     num_iters: Int,
     /,
     *,
-    num_b_rows: OptionalReg[Int] = None,
+    num_b_rows: Optional[Int] = None,
     next_op_b_iter: LayoutTensorIter[
         b_type,
         b_next_gmem_layout,
@@ -438,7 +437,7 @@ fn multistage_mma[
 
     comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
-    ]() if swizzle_a else OptionalReg[Swizzle](None)
+    ]() if swizzle_a else Optional[Swizzle]()
 
     @parameter
     for i in range(k_group_size):

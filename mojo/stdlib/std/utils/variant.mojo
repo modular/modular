@@ -234,7 +234,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -260,7 +260,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+    fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         __comptime_assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
@@ -271,7 +271,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         return discr_ptr
 
     @always_inline("nodebug")
-    fn _get_discr(ref self) -> ref [self] UInt8:
+    fn _get_discr(ref self) -> ref[self] UInt8:
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
@@ -404,7 +404,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         comptime idx = Self._check[T]()
         return self._get_discr() == UInt8(idx)
 
-    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!

@@ -16,7 +16,7 @@ This module re-exports configuration types from sm100_structured for backward
 compatibility. New code should import directly from sm100_structured.config.
 """
 
-from ..sm100_structured.config import (
+from ..sm100_structured.structured_kernels.config import (
     MatmulConfig,
     BlockScaledMatmulConfig,
     choose_config,

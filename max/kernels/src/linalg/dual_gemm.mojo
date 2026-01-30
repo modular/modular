@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv, exp
 from os import abort
 from sys import align_of, is_defined, simd_width_of
@@ -19,6 +18,7 @@ from sys import align_of, is_defined, simd_width_of
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
+from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -129,7 +129,7 @@ fn multistage_dual_mma[
     num_iters: Int,
     /,
     *,
-    num_b_rows: OptionalReg[Int] = None,
+    num_b_rows: Optional[Int] = None,
 ):
     __comptime_assert (
         b0_iter_arg.address_space == b1_iter_arg.address_space
@@ -332,7 +332,7 @@ fn multistage_dual_mma[
 
     comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
-    ]() if swizzle_a else OptionalReg[Swizzle](None)
+    ]() if swizzle_a else Optional[Swizzle]()
 
     @parameter
     for i in range(k_group_size):

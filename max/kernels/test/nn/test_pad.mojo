@@ -72,7 +72,11 @@ fn test_pad_reflect_1d() raises:
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](1, 2, 3)
+    var input_stack: InlineArray[Scalar[DType.int], in_layout.size()] = [
+        1,
+        2,
+        3,
+    ]
     var input = LayoutTensor[DType.int, in_layout](input_stack)
 
     # Create an output matrix of the form
@@ -84,7 +88,7 @@ fn test_pad_reflect_1d() raises:
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings_stack = InlineArray[Scalar[DType.int], 2](3, 2)
+    var paddings_stack: InlineArray[Scalar[DType.int], 2] = [3, 2]
     var paddings = LayoutTensor[DType.int, Layout.row_major(2)](paddings_stack)
 
     # pad
@@ -112,7 +116,11 @@ fn test_pad_repeat_1d() raises:
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](1, 2, 3)
+    var input_stack: InlineArray[Scalar[DType.int], in_layout.size()] = [
+        1,
+        2,
+        3,
+    ]
     var input = LayoutTensor[DType.int, in_layout](input_stack)
 
     # Create an output matrix of the form
@@ -124,7 +132,7 @@ fn test_pad_repeat_1d() raises:
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings_stack = InlineArray[Scalar[DType.int], 2](3, 2)
+    var paddings_stack: InlineArray[Scalar[DType.int], 2] = [3, 2]
     var paddings = LayoutTensor[DType.int, Layout.row_major(2)](paddings_stack)
 
     # pad
@@ -164,7 +172,7 @@ fn test_pad_2d() raises:
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
-    var paddings_stack = InlineArray[Scalar[DType.int], 4](1, 0, 1, 1)
+    var paddings_stack: InlineArray[Scalar[DType.int], 4] = [1, 0, 1, 1]
     var paddings = LayoutTensor[DType.int, Layout.row_major(4)](paddings_stack)
 
     # Create an output matrix of the form
@@ -221,7 +229,7 @@ fn test_pad_reflect_2d() raises:
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
-    var paddings_stack = InlineArray[Scalar[DType.int], 4](2, 2, 1, 0)
+    var paddings_stack: InlineArray[Scalar[DType.int], 4] = [2, 2, 1, 0]
     var paddings = LayoutTensor[DType.int, Layout.row_major(4)](paddings_stack)
 
     # Create an output matrix of the form

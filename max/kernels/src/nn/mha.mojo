@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, recip
 from math.constants import log2e
+from collections import OptionalReg
 from sys import (
     CompilationTarget,
     align_of,
@@ -136,7 +136,7 @@ fn flash_attention[
     mask: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     scale: Float32,
     context: DeviceContextPtr = DeviceContextPtr(),
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -299,13 +299,13 @@ fn flash_attention[
     ],
     scale: Float32,
     ctx: DeviceContext,
-    q_max_seq_len: OptionalReg[Int] = None,
+    q_max_seq_len: Optional[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -491,7 +491,7 @@ fn flash_attention_dispatch[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
@@ -1150,7 +1150,7 @@ fn flash_attention[
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     valid_length: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -1260,7 +1260,7 @@ fn flash_attention_ragged[
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
@@ -2670,7 +2670,7 @@ fn mha_single_batch_pipelined[
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
-        var num_b_rows = None if not_last_iter else OptionalReg[Int](
+        var num_b_rows = Optional[Int]() if not_last_iter else Optional[Int](
             kv_tile_num_rows
         )
 

@@ -205,23 +205,6 @@ def _get_output_device(op: _core.Operation, devices: list[Device]) -> Device:
     return _find_device(devices, "cpu", 0)
 
 
-def _get_operand_value(operand: Any) -> Any:
-    """Get the Value from an operand, handling both OpOperand and Value types.
-
-    op.operands can return either OpOperand objects (which have a .value property)
-    or Value objects directly. This helper handles both cases.
-
-    Args:
-        operand: Either an OpOperand or a Value.
-
-    Returns:
-        The underlying Value object.
-    """
-    if hasattr(operand, "value"):
-        return operand.value
-    return operand
-
-
 def _extract_static_shape(shape_attr: Any) -> list[int] | None:
     """Extract static shape from a shape attribute.
 

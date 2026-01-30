@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import align_down, ceildiv
 from memory import LegacyUnsafePointer
 
@@ -1580,7 +1579,7 @@ fn conv_transposed_gpu[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    elementwise_epilogue: OptionalReg[elementwise_simd_epilogue_type] = None,
+    elementwise_epilogue: Optional[elementwise_simd_epilogue_type] = None,
 ](
     output: LayoutTensor[
         mut=True,

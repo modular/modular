@@ -603,11 +603,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             tokens = Buffer(
                 shape=[0], dtype=DType.int64, device=device0, pinned=pinned
             )
+            if pinned:
+                tokens.disable_auto_sync()
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
 
             pinned_input_row_offsets = Buffer.zeros(
                 shape=[1], dtype=DType.uint32, device=device0, pinned=pinned
             )
+            if pinned:
+                pinned_input_row_offsets.disable_auto_sync()
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
@@ -618,6 +622,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 device=device0,
                 pinned=pinned,
             )
+            if pinned:
+                tokens_host.disable_auto_sync()
             np.concatenate(
                 [ctx.tokens.active for ctx in context_batch],
                 out=tokens_host.to_numpy(),
@@ -647,6 +653,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 device=device0,
                 pinned=pinned,
             )
+            if pinned:
+                pinned_input_row_offsets.disable_auto_sync()
             pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
 

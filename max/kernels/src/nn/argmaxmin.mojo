@@ -149,7 +149,7 @@ fn _argn[
             var last_simd_index = align_down(axis_size, simd_width)
             for j in range(simd_width, last_simd_index, simd_width):
                 var curr_values = input_dim_ptr.load[width=simd_width](j)
-                indices += simd_width
+                indices += Scalar[output.dtype](simd_width)
 
                 var mask = cmpeq(curr_values, global_values)
                 global_indices = mask.select(global_indices, indices)
@@ -168,7 +168,7 @@ fn _argn[
                 var elem = input_dim_ptr.load(j)
                 if cmp(global_val, elem):
                     global_val = elem
-                    idx = j
+                    idx = Scalar[output.dtype](j)
                     found_min = True
 
             # handle the case where min wasn't in trailing values

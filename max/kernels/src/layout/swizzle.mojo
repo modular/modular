@@ -33,7 +33,6 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from collections import OptionalReg
 from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
@@ -574,7 +573,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
 
 
 struct ComposedLayout[
-    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
+    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: Optional[Int] = 0
 ](LayoutTrait):
     """Layout composed of two layouts applied sequentially.
 
