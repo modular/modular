@@ -42,6 +42,7 @@ from nn.mha_sm100_2q import (
     STMatrixLayout,
     elect_mma_arrive,
     TMADestination,
+    sub_ftz,
 )
 from nn.mha_fa3_utils import (
     get_seq_info,
@@ -1116,6 +1117,10 @@ struct SM100MLA[
 
         var o_phase: UInt32 = 0  # initial wait is phase 0
 
+        comptime rescale_threshold: Float32 = Float32(-8) if size_of[
+            Self.qkv_type
+        ]() >= 2 else Float32(0)
+
         # TODO: add ordering barriers to prevent overlap
         # between the two softmax warpgroups
         @parameter
@@ -1144,8 +1149,22 @@ struct SM100MLA[
                     new_row_max = load_mask_max[mask_strategy=mask_strategy](
                         kv_row
                     )
-                    row_max = max(old_max, new_row_max)
-                    correction = exp2(old_max - row_max)
+                    new_row_max = max(old_max, new_row_max)
+                    diff = sub_ftz(old_max, new_row_max)
+                    var correction: Float32
+
+                    @parameter
+                    if rescale_threshold < 0:
+                        # old_max - new_row_max < -8
+                        # 8 < new_row_max - old_max
+                        if _vote_nvidia_helper(diff < rescale_threshold) != 0:
+                            row_max = new_row_max
+                            correction = exp2(diff)
+                        else:
+                            correction = 1
+                    else:
+                        row_max = new_row_max
+                        correction = exp2(diff)
                     pipeline_c.acquire()
                     correction_smem[] = correction
                     pipeline_c.commit()
@@ -1174,8 +1193,22 @@ struct SM100MLA[
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.OUT_OF_BOUNDS
                     ](kv_row)
-                row_max = max(old_max, new_row_max)
-                correction = exp2(old_max - row_max)
+                new_row_max = max(old_max, new_row_max)
+                diff = sub_ftz(old_max, new_row_max)
+                var correction: Float32
+
+                @parameter
+                if rescale_threshold < 0:
+                    # old_max - new_row_max < -8
+                    # 8 < new_row_max - old_max
+                    if _vote_nvidia_helper(diff < rescale_threshold) != 0:
+                        row_max = new_row_max
+                        correction = exp2(diff)
+                    else:
+                        correction = 1
+                else:
+                    row_max = new_row_max
+                    correction = exp2(diff)
                 pipeline_c.acquire()
                 correction_smem[] = correction
                 pipeline_c.commit()

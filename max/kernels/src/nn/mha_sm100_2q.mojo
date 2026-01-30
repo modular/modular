@@ -4060,8 +4060,6 @@ struct SM100MHA2Q[
                     ](kv_row)
                 new_row_max = max(old_max, new_row_max)
                 diff = sub_ftz(old_max, new_row_max)
-                if thread_idx.x % 128 == 0:
-                    print(diff)
                 var correction: Float32
 
                 @parameter
