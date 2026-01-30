@@ -69,7 +69,7 @@ def _elementwise_binary(op):  # noqa: ANN001, ANN202
 
 
 add = _elementwise_binary(rmo.add)
-"""
+add.__doc__ = """
 Adds two symbolic tensors.
 
 Creates a new op node to compute the addition of two symbol tensor values
@@ -89,11 +89,10 @@ The following shows an example of the `add()` function with two inputs:
             out = ops.add(x, y)
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
-        to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
-        same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
+    to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to the
+    same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the addition.
@@ -151,7 +150,7 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
 
 
 max = _elementwise_binary(rmo.max)
-"""
+max.__doc__ = """
 Computes the elementwise maximum of two symbolic tensors.
 
 Creates a new op node to compute the maximum of two symbol tensor values
@@ -166,11 +165,10 @@ and adds it to the graph, returning the symbolic result.
             out = ops.max(graph.inputs[0], graph.inputs[1])
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the maximum operation.
@@ -188,7 +186,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 min = _elementwise_binary(rmo.min)
-"""
+min.__doc__ = """
 Computes the elementwise minimum of two symbolic tensors.
 
 Creates a new op node to compute the minimum of two symbol tensor values
@@ -203,11 +201,10 @@ and adds it to the graph, returning the symbolic result.
             out = ops.min(graph.inputs[0], graph.inputs[1])
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the minimum operation.
@@ -225,17 +222,16 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 mod = _elementwise_binary(rmo.mod)
-"""
+mod.__doc__ = """
 Computes the elementwise modulus of two symbolic tensors.
 
 Creates a new op node to compute the modulus of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the modulus operation.
@@ -253,17 +249,16 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 mul = _elementwise_binary(rmo.mul)
-"""
+mul.__doc__ = """
 Computes the elementwise multiplication of two symbolic tensors.
 
 Creates a new op node to compute the multiplication of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the multiplication.
@@ -281,17 +276,16 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 pow = _elementwise_binary(rmo.pow)
-"""
+pow.__doc__ = """
 Computes the elementwise exponentiation of two symbolic tensors.
 
 Creates a new op node to compute the exponentiation of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the exponentiation.
@@ -309,7 +303,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 sub = _elementwise_binary(rmo.sub)
-"""
+sub.__doc__ = """
 Computes the elementwise subtraction of two symbolic tensors.
 
 Creates a new op node to compute the subtraction of two symbol tensor values
@@ -327,11 +321,10 @@ and adds it to the graph, returning the symbolic result.
             out = ops.sub(x, y)
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the subtraction.
@@ -349,7 +342,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 equal = _elementwise_binary(rmo.equal)
-"""
+equal.__doc__ = """
 Computes the elementwise equality comparison between two symbolic tensors.
 
 Creates a new op node to compute the equality comparison of two symbol
@@ -367,11 +360,10 @@ tensor values and adds it to the graph, returning the symbolic result.
             out = ops.equal(x, y)
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the equality comparison.
@@ -389,12 +381,11 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 greater = _elementwise_binary(rmo.greater)
-"""
+greater.__doc__ = """
 Computes the elementwise greater than comparison between two symbolic tensors.
 
 Creates a new op node to compute the greater than comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
-
 
 .. code-block:: python
 
@@ -408,11 +399,10 @@ tensor values and adds it to the graph, returning the symbolic result.
             out = ops.greater(x, y)
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the greater than comparison.
@@ -430,17 +420,16 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 greater_equal = _elementwise_binary(rmo.greater_equal)
-"""
+greater_equal.__doc__ = """
 Computes the elementwise greater-or-equal comparison between two symbolic tensors.
 
 Creates a new op node to compute the equality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the greater-or-equal comparison.
@@ -458,12 +447,11 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 not_equal = _elementwise_binary(rmo.not_equal)
-"""
+not_equal.__doc__ = """
 Computes the elementwise inequality comparison between two symbolic tensors.
 
 Creates a new op node to compute the inequality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
-
 
 .. code-block:: python
 
@@ -477,11 +465,10 @@ tensor values and adds it to the graph, returning the symbolic result.
             out = ops.not_equal(x, y)
             graph.output(out)
 
--
-    - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
-      according to the dtype promotion rules before the operation.
-    - If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
-      the same shape according to broadcasting rules` before the operation.
+- If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
+  according to the dtype promotion rules before the operation.
+- If ``lhs`` and ``rhs`` have different shapes, they will be broadcast to
+  the same shape according to broadcasting rules` before the operation.
 
 Args:
     lhs: The symbol to use as left side of the inequality comparison.
@@ -500,7 +487,7 @@ Raises:
 """
 
 logical_and = _elementwise_binary(rmo.and_)
-"""
+logical_and.__doc__ = """
 Computes the logical and between two symbolic tensors.
 
 Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
@@ -523,7 +510,7 @@ Raises:
 """
 
 logical_or = _elementwise_binary(rmo.or_)
-"""
+logical_or.__doc__ = """
 Computes the logical or between two symbolic tensors.
 
 Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
@@ -546,7 +533,7 @@ Raises:
 """
 
 logical_xor = _elementwise_binary(rmo.xor)
-"""
+logical_xor.__doc__ = """
 Computes the logical xor between two symbolic tensors.
 
 Only supports boolean inputs. If ``lhs`` and ``rhs`` have different shapes,
@@ -602,7 +589,7 @@ def _elementwise_unary_predicate(
 
 
 abs = _elementwise_unary(rmo.mo_abs)
-"""
+abs.__doc__ = """
 Computes the elementwise absolute value of a symbolic tensor.
 
 Creates a new op node to compute the elementwise absolute value of a
@@ -633,7 +620,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 exp = _elementwise_unary(rmo.mo_exp)
-"""
+exp.__doc__ = """
 Computes the elementwise exp function of a symbolic tensor.
 
 Creates a new op node to compute the elementwise exp function of a
@@ -653,7 +640,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 erf = _elementwise_unary(rmo.mo_erf)
-"""
+erf.__doc__ = """
 Computes the elementwise error function of a symbolic tensor.
 
 Creates a new op node to compute the elementwise error function of a
@@ -803,7 +790,7 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
 
 
 log = _elementwise_unary(rmo.mo_log)
-"""
+log.__doc__ = """
 Computes the elementwise natural logarithm of a symbolic tensor.
 
 Creates a new op node to compute the elementwise natural logarithm of a
@@ -829,7 +816,7 @@ Raises:
 """
 
 log1p = _elementwise_unary(rmo.mo_log1p)
-"""
+log1p.__doc__ = """
 Computes the elementwise logarithm of 1 plus a symbolic tensor.
 
 Creates a new op node to compute the elementwise log1p of a
@@ -875,7 +862,7 @@ def _softmax_like(op):  # noqa: ANN001, ANN202
 
 
 logsoftmax = _softmax_like(rmo.mo_logsoftmax)
-"""
+logsoftmax.__doc__ = """
 Computes the elementwise logsoftmax of a symbolic tensor.
 
 Creates a new op node to compute the elementwise logsoftmax of a
@@ -895,7 +882,7 @@ Raises:
 """
 
 relu = _elementwise_unary(rmo.mo_relu)
-"""
+relu.__doc__ = """
 Computes the elementwise relu of a symbolic tensor.
 
 Creates a new op node to compute the elementwise relu of a
@@ -961,7 +948,7 @@ def silu(x: TensorValue):  # noqa: ANN201
 
 
 softmax = _softmax_like(rmo.mo_softmax)
-"""
+softmax.__doc__ = """
 Computes the elementwise softmax of a symbolic tensor.
 
 Creates a new op node to compute the elementwise softmax of a
@@ -982,7 +969,7 @@ Raises:
 """
 
 cos = _elementwise_unary(rmo.mo_cos)
-"""
+cos.__doc__ = """
 Computes the elementwise cosine of a symbolic tensor.
 
 Creates a new op node to compute the elementwise cosine of a
@@ -1002,7 +989,7 @@ Raises:
 """
 
 floor = _elementwise_unary(rmo.mo_floor)
-"""
+floor.__doc__ = """
 Computes the elementwise floor of a symbolic tensor.
 
 Creates a new op node to compute the elementwise floor of a
@@ -1022,7 +1009,7 @@ Raises:
 """
 
 round = _elementwise_unary(rmo.mo_round)
-"""
+round.__doc__ = """
 Computes the elementwise round of a symbolic tensor.
 
 
@@ -1056,7 +1043,7 @@ Raises:
 """
 
 rsqrt = _elementwise_unary(rmo.mo_rsqrt)
-"""
+rsqrt.__doc__ = """
 Computes the elementwise inverse-square-root of a symbolic tensor.
 
 Creates a new op node to compute the elementwise rsqrt of a
@@ -1075,7 +1062,7 @@ Raises:
 """
 
 sqrt = _elementwise_unary(rmo.mo_sqrt)
-"""
+sqrt.__doc__ = """
 Computes the elementwise sqrt of a symbolic tensor.
 
 Creates a new op node to compute the elementwise sqrt of a
@@ -1094,7 +1081,7 @@ Raises:
 """
 
 sin = _elementwise_unary(rmo.mo_sin)
-"""
+sin.__doc__ = """
 Computes the elementwise sine of a symbolic tensor.
 
 Creates a new op node to compute the elementwise sine of a
@@ -1112,7 +1099,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 tanh = _elementwise_unary(rmo.mo_tanh)
-"""
+tanh.__doc__ = """
 Computes the elementwise tanh of a symbolic tensor.
 
 Creates a new op node to compute the elementwise tanh of a
@@ -1131,7 +1118,7 @@ Raises:
 """
 
 atanh = _elementwise_unary(rmo.mo_atanh)
-"""
+atanh.__doc__ = """
 Computes the elementwise atanh of a symbolic tensor.
 
 Creates a new op node to compute the elementwise tanh of a
@@ -1150,7 +1137,7 @@ Raises:
 """
 
 trunc = _elementwise_unary(rmo.mo_trunc)
-"""
+trunc.__doc__ = """
 Computes the elementwise truncation of a symbolic tensor.
 
 Creates a new op node to compute the elementwise truncation of a
@@ -1170,7 +1157,7 @@ Raises:
 """
 
 is_nan = _elementwise_unary_predicate(rmo.mo_is_nan)
-"""
+is_nan.__doc__ = """
 Computes the elementwise is_nan of a symbolic tensor.
 
 Creates a new op node to compute the elementwise is_nan of a
@@ -1192,7 +1179,7 @@ Raises:
 
 
 is_inf = _elementwise_unary_predicate(rmo.mo_is_inf)
-"""
+is_inf.__doc__ = """
 Computes the elementwise :obj:`is_inf()` of a symbolic tensor.
 
 Creates a new op node to compute the elementwise :obj:`is_inf()` of a
@@ -1213,7 +1200,7 @@ Raises:
 """
 
 logical_not = _elementwise_unary(rmo.mo_not)
-"""
+logical_not.__doc__ = """
 Computes the elementwise logical_not of a symbolic tensor.
 
 Creates a new op node to compute the elementwise logical_not of a
@@ -1234,7 +1221,7 @@ Raises:
 """
 
 negate = _elementwise_unary(rmo.mo_negative)
-"""
+negate.__doc__ = """
 Computes the elementwise negation of a symbolic tensor.
 
 Creates a new op node to compute the elementwise negation of a
