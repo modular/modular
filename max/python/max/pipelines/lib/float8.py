@@ -576,7 +576,7 @@ def _parse_float4_config(
                 quant_method_override=standalone_config.get("quant_method"),
                 quant_algo_override=standalone_config.get("quant_algo"),
             )
-        # No quantization_config, no weight_scale_2, and no standalone config
+        # No quantization_config, no weight_scale_2, and no standalone config, and no nufin
         return None
 
     quant_method = hf_quant_config.get("quant_method")
@@ -600,17 +600,6 @@ def parse_float8_config(  # TODO: rename to generic
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
-    quant_config = getattr(huggingface_config, "quantization_config", {})
-    quant_method = quant_config.get("quant_method")
-    quant_algo = quant_config.get("quant_algo")
-    if quant_method == "modelopt" and quant_algo == "NVFP4":
-        return _parse_float4_config(
-            huggingface_config,
-            state_dict,
-            dtype,
-            state_dict_name_prefix,
-            ignored_modules_prefix,
-        )
     if dtype in (DType.uint8, DType.float4_e2m1fn):
         return _parse_float4_config(
             huggingface_config,
