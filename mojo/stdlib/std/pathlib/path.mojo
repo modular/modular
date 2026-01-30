@@ -10,7 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements `Path` and related functions.
+"""Path manipulation module.
+
+This module defines a platform-independent API for working with filesystem
+paths. `Path`, its core type, represents a filesystem path. It exposes
+operations such as path composition, existence checks, file I/O, and
+access to file attributes.
+
+To use these features import the `Path` type from this module.
+
+Example:
+
+```mojo
+from pathlib import Path
+var p = Path("a") / "b" / "c.txt"
+print(p)  # a/b/c.txt
+```
 """
 
 import os
