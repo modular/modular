@@ -4,7 +4,7 @@ version = "0"
 requires-python = ">= 3.10"
 
 
-# TODO: restrict utils/packaging/conda/test_inputs to only test_format.mojo
+# TODO: restrict utils/packaging/tests to only test_format.mojo
 [tool.black]
 include = '\.mojo$'
 line-length = 80
@@ -21,7 +21,7 @@ force-exclude = '''
     | KGEN/test/mojo-parser
     | KGEN/test/mojo-tool/format
     | max/python/max/serve/schemas
-    | utils/packaging/conda/test_inputs
+    | utils/packaging/tests
   )/
 )
 '''
