@@ -385,7 +385,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: __TypeOfAllTypes](
+struct _VariadicListIter[type: TrivialRegisterType](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
