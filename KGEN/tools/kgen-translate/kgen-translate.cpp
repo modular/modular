@@ -14,6 +14,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -73,6 +74,16 @@ int main(int argc, char *argv[]) {
       "use-mlir-diagnostics", cl::desc("Whether to use MLIR diagnostics."),
       cl::init(true)};
 
+  M::cl::MOpt<DiagnosticFormat> diagnosticFormat{
+      "diagnostic-format",
+      cl::desc("The format in which diagnostics are printed. "
+               "JSON format requires --use-mlir-diagnostics=false."),
+      cl::values(clEnumValN(DiagnosticFormat::Text, "text",
+                            "Print diagnostics as plain text (default)"),
+                 clEnumValN(DiagnosticFormat::JSON, "json",
+                            "Print diagnostics as JSON Lines")),
+      cl::init(DiagnosticFormat::Text)};
+
   M::cl::MOpt<std::string> parserBytecodeOutput{
       "bytecode-output",
       cl::desc("If specified, the parser output is also printed as bytecode."),
@@ -89,6 +100,19 @@ int main(int argc, char *argv[]) {
           MLIRContext *context) -> OwningOpRef<ModuleOp> {
         sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
 
+        // Handle diagnostic format - JSON diagnostics require SourceMgr
+        // diagnostics, not MLIR diagnostics.
+        bool effectiveUseMLIRDiagnostics = useMLIRDiagnostics;
+        if (diagnosticFormat == DiagnosticFormat::JSON) {
+          if (useMLIRDiagnostics) {
+            llvm::errs() << "error: --diagnostic-format=json is incompatible "
+                         << "with --use-mlir-diagnostics=true\n";
+            return {};
+          }
+          effectiveUseMLIRDiagnostics = false;
+        }
+        sourceMgr.setDiagHandler(getDiagHandler(diagnosticFormat));
+
         clOptions.useSingleThreadedWorkqueue();
         TraceProfiler profiler(clOptions.timeTrace,
                                clOptions.timeTraceGranularity);
@@ -103,7 +127,7 @@ int main(int argc, char *argv[]) {
         options.searchPaths = llvm::join(parserSearchPaths, ",");
         LIT::ParserConfig config(context, options);
         config.stripFilePrefix = clOptions.stripFilePrefix;
-        config.useMLIRDiagnostics = useMLIRDiagnostics;
+        config.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
         config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.disablePrebuiltPackages = !enablePrebuiltPackages;

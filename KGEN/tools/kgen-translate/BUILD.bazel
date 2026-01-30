@@ -19,6 +19,7 @@ modular_cc_binary(
         "//KGEN:Transforms",
         "//MLRT:AsyncRT/Runtime",
         "//MLRT:AsyncRT/RuntimeGlobals",
+        "//Support:Driver",
         "//Support:Globals",
         "//Support:MDialect",
         "@llvm-project//mlir:TranslateLib",
