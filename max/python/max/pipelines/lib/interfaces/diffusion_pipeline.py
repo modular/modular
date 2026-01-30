@@ -31,6 +31,7 @@ from tqdm import tqdm
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession
+    from max.pipelines import PixelContext
 
     from ..config import PipelineConfig
 
@@ -64,10 +65,21 @@ class DiffusionPipeline(ABC):
     def init_remaining_components(self) -> None:
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
+    @abstractmethod
+    def prepare_inputs(
+        self, flat_batch: PixelContext
+    ) -> type[PixelModelInputs]:
+        raise NotImplementedError(
+            f"prepare_inputs is not implemented for {self.__class__.__name__}"
+        )
+
     def finalize_pipeline_config(self) -> None:
         """Hook for finalizing pipeline configuration. Override if needed."""
+        pass
 
-    def _load_sub_models(self, weight_paths: list[Path]) -> dict[str, ComponentModel]:
+    def _load_sub_models(
+        self, weight_paths: list[Path]
+    ) -> dict[str, ComponentModel]:
         """Load all ComponentModel sub-components defined in `components`."""
         if not self.components:
             raise ValueError(
@@ -76,7 +88,9 @@ class DiffusionPipeline(ABC):
 
         diffusers_config = self.pipeline_config.model.diffusers_config
         if not diffusers_config:
-            raise ValueError("diffusers_config is required for DiffusionPipeline.")
+            raise ValueError(
+                "diffusers_config is required for DiffusionPipeline."
+            )
 
         components_config = diffusers_config.get("components")
         if not components_config:
@@ -91,7 +105,9 @@ class DiffusionPipeline(ABC):
             if not issubclass(component_cls, ComponentModel):
                 continue
 
-            config_dict = self._get_component_config_dict(components_config, name)
+            config_dict = self._get_component_config_dict(
+                components_config, name
+            )
             abs_paths = self._resolve_absolute_paths(
                 weight_paths, relative_paths[name]
             )
@@ -148,9 +164,7 @@ class DiffusionPipeline(ABC):
         ]
 
         if not absolute_paths:
-            raise ValueError(
-                f"Component weights not found: {relative_paths}"
-            )
+            raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
 
     def _execution_device(self) -> DeviceRef:
@@ -410,7 +424,7 @@ class PixelModelInputs:
             )
 
     @classmethod
-    def from_context(cls, context: dict[str, Any]) -> PixelModelInputs:
+    def from_context(cls, context: PixelContext) -> PixelModelInputs:
         """
         Build an instance from a context-like dict.
 
@@ -423,7 +437,7 @@ class PixelModelInputs:
         fmap = {f.name: f for f in fields(cls)}
         kwargs: dict[str, Any] = {}
 
-        for k, v in context.items():
+        for k, v in context.__dict__.items():
             if k not in fmap:
                 continue
 

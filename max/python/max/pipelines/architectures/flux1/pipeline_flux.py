@@ -16,13 +16,11 @@ from queue import Queue
 from typing import Literal
 
 import numpy as np
-import PIL.Image
 from max import functional as F
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.interfaces import PixelGenerationOutput, TokenBuffer
-from max.pipelines.lib.image_processor import (
-    VaeImageProcessor,
-)
+from max.pipelines import PixelContext
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
@@ -75,7 +73,7 @@ class FluxPipelineOutput:
             passed to the decoder.
     """
 
-    images: list[PIL.Image.Image] | np.ndarray | Tensor
+    images: np.ndarray | Tensor
 
 
 class FluxPipeline(DiffusionPipeline):
@@ -87,18 +85,14 @@ class FluxPipeline(DiffusionPipeline):
     }
 
     def init_remaining_components(self) -> None:
-        image_processor_class = self.components.get(
-            "image_processor", VaeImageProcessor
-        )
         self.vae_scale_factor = (
             2 ** (len(self.vae.config.block_out_channels) - 1)
             if getattr(self, "vae", None)
             else 8
         )
-        image_processor = image_processor_class(
-            vae_scale_factor=self.vae_scale_factor * 2
-        )
-        self.image_processor = image_processor
+
+    def prepare_inputs(self, context: PixelContext) -> FluxModelInputs:
+        return FluxModelInputs.from_context(context)
 
     @staticmethod
     def _pack_latents(
@@ -229,8 +223,8 @@ class FluxPipeline(DiffusionPipeline):
         latents: Tensor,
         height: int,
         width: int,
-        output_type: Literal["np", "latent", "pil"] = "np",
-    ) -> Tensor:
+        output_type: Literal["np", "latent"] = "np",
+    ) -> Tensor | np.ndarray:
         if output_type == "latent":
             image = latents
         else:
@@ -242,10 +236,12 @@ class FluxPipeline(DiffusionPipeline):
                 latents / self.vae.config.scaling_factor
             ) + self.vae.config.shift_factor
             image = self.vae.decode(latents)
+            image = self._to_numpy(image)
+        return image
 
-            image = self.image_processor.postprocess(
-                image, output_type=output_type
-            )
+    def _to_numpy(self, image: Tensor) -> np.ndarray:
+        image = image.cast(DType.float32).to(DeviceRef.CPU())
+        image = np.from_dlpack(image)
         return image
 
     def _scheduler_step(
@@ -320,10 +316,8 @@ class FluxPipeline(DiffusionPipeline):
                 dtype=dtype,
             )
 
-        sigmas = (
-            Tensor.from_dlpack(model_inputs.sigmas)
-            .to(self.transformer.devices[0])
-            .cast(dtype)
+        sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(
+            self.transformer.devices[0]
         )
         batch_size = prompt_embeds.shape[0].dim
 
