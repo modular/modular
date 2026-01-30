@@ -15,8 +15,13 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from collections.abc import Mapping
+from typing import Any
 
+import huggingface_hub
 from max.dtype import DType
 from max.graph.weights import WeightData
 from max.nn.legacy.float8_config import (
@@ -429,16 +434,90 @@ def _parse_float8_config(
     )
 
 
+logger = logging.getLogger("max.pipelines")
+
+
+def _load_standalone_quant_config(
+    huggingface_config: AutoConfig,
+) -> dict[str, Any] | None:
+    """Try to load quantization config from a standalone hf_quant_config.json file.
+
+    Some models (e.g., nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
+    config in a separate hf_quant_config.json file rather than in the main config.json.
+
+    The standalone file has a different structure:
+    {
+        "producer": {"name": "modelopt", "version": "..."},
+        "quantization": {"quant_algo": "NVFP4", ...}
+    }
+
+    This function maps it to the standard format:
+    {"quant_method": "modelopt", "quant_algo": "NVFP4", ...}
+
+    Returns:
+        dict with quant_method and quant_algo if found, None otherwise.
+    """
+    model_path = getattr(huggingface_config, "_name_or_path", None)
+    if not model_path:
+        return None
+
+    quant_config_filename = "hf_quant_config.json"
+
+    try:
+        # Try local path first
+        if os.path.isdir(model_path):
+            local_path = os.path.join(model_path, quant_config_filename)
+            if os.path.exists(local_path):
+                with open(local_path) as f:
+                    standalone_config = json.load(f)
+            else:
+                return None
+        else:
+            # Try to download from HuggingFace
+            try:
+                downloaded_path = huggingface_hub.hf_hub_download(
+                    repo_id=model_path,
+                    filename=quant_config_filename,
+                    local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
+                )
+                with open(downloaded_path) as f:
+                    standalone_config = json.load(f)
+            except Exception:
+                # File doesn't exist or can't be downloaded
+                return None
+
+        # Map the standalone format to the standard format
+        producer = standalone_config.get("producer", {})
+        quantization = standalone_config.get("quantization", {})
+
+        quant_method = producer.get("name")
+        quant_algo = quantization.get("quant_algo")
+
+        if quant_method and quant_algo:
+            return {"quant_method": quant_method, "quant_algo": quant_algo}
+        return None
+
+    except Exception as e:
+        logger.debug(f"Failed to load standalone quant config: {e}")
+        return None
+
+
 def _parse_modelopt_float4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
     dtype: DType,
+    *,
+    quant_method_override: str | None = None,
+    quant_algo_override: str | None = None,
 ) -> Float8Config | None:
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
-    if not hf_quant_config:
+    quant_method = quant_method_override
+    quant_algo = quant_algo_override
+    if hf_quant_config:
+        quant_method = hf_quant_config.get("quant_method", quant_method)
+        quant_algo = hf_quant_config.get("quant_algo", quant_algo)
+    if not quant_method or not quant_algo:
         return None
-    quant_method = hf_quant_config.get("quant_method")
-    quant_algo = hf_quant_config.get("quant_algo")
 
     input_spec = Float8InputScaleSpec(
         granularity=Float8ScaleGranularity.BLOCK,
@@ -479,10 +558,26 @@ def _parse_float4_config(
 
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if not hf_quant_config:
-        raise ValueError(
-            "expected a `quantization_config` field in Hugging Face config when "
-            "the dtype is float4"
-        )
+        if any("weight_scale_2" in name for name in state_dict):
+            return _parse_modelopt_float4_config(
+                huggingface_config,
+                state_dict,
+                dtype,
+                quant_method_override="modelopt",
+                quant_algo_override="NVFP4",
+            )
+        # Try loading from standalone hf_quant_config.json file
+        standalone_config = _load_standalone_quant_config(huggingface_config)
+        if standalone_config:
+            return _parse_modelopt_float4_config(
+                huggingface_config,
+                state_dict,
+                dtype,
+                quant_method_override=standalone_config.get("quant_method"),
+                quant_algo_override=standalone_config.get("quant_algo"),
+            )
+        # No quantization_config, no weight_scale_2, and no standalone config
+        return None
 
     quant_method = hf_quant_config.get("quant_method")
 
@@ -509,6 +604,14 @@ def parse_float8_config(  # TODO: rename to generic
     quant_method = quant_config.get("quant_method")
     quant_algo = quant_config.get("quant_algo")
     if quant_method == "modelopt" and quant_algo == "NVFP4":
+        return _parse_float4_config(
+            huggingface_config,
+            state_dict,
+            dtype,
+            state_dict_name_prefix,
+            ignored_modules_prefix,
+        )
+    if dtype in (DType.uint8, DType.float4_e2m1fn):
         return _parse_float4_config(
             huggingface_config,
             state_dict,

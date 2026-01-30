@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from max.dtype import DType
@@ -50,7 +52,7 @@ from max.nn.legacy.linear import (
     ColumnParallelLinear,
     DistributedGemmConfig,
 )
-from max.nn.legacy.moe import MoE, MoEFp8
+from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -66,6 +68,72 @@ from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
 
 
+def _unpack_kv_collections(
+    kv_collections: Sequence[PagedCacheValues],
+) -> tuple[
+    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+]:
+    """Unpack KV collections into component lists.
+
+    Returns:
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+    """
+    return (
+        [kv.kv_blocks for kv in kv_collections],
+        [kv.cache_lengths for kv in kv_collections],
+        [kv.lookup_table for kv in kv_collections],
+        [kv.max_lengths for kv in kv_collections],
+    )
+
+
+@dataclass(frozen=True)
+class _ParallelismPolicy:
+    use_data_parallel_attention: bool
+    ep_enabled: bool
+
+    @classmethod
+    def from_config(cls, config: DeepseekV3Config) -> _ParallelismPolicy:
+        num_devices = len(config.devices)
+        if config.data_parallel_degree not in (1, num_devices):
+            raise ValueError(
+                "data_parallel_degree must be 1 (TP attention) or match the "
+                f"number of devices ({num_devices})."
+            )
+        use_dp_attention = (
+            num_devices > 1 and config.data_parallel_degree == num_devices
+        )
+        ep_enabled = config.ep_config is not None
+        if ep_enabled and not use_dp_attention:
+            raise ValueError(
+                "Expert-parallel MoE/MLP is only compatible with "
+                "data-parallel attention."
+            )
+        if not ep_enabled and use_dp_attention:
+            raise ValueError(
+                "Tensor-parallel MoE/MLP is only compatible with "
+                "tensor-parallel attention."
+            )
+        return cls(
+            use_data_parallel_attention=use_dp_attention,
+            ep_enabled=ep_enabled,
+        )
+
+    def mlp_sharding_strategy(
+        self, num_devices: int, *, is_moe: bool
+    ) -> ShardingStrategy:
+        if self.ep_enabled:
+            return (
+                ShardingStrategy.expert_parallel(num_devices)
+                if is_moe
+                else ShardingStrategy.replicate(num_devices)
+            )
+        return ShardingStrategy.tensor_parallel(num_devices)
+
+    @property
+    def should_allreduce_mlp(self) -> bool:
+        return not self.use_data_parallel_attention and not self.ep_enabled
+
+
 class DeepseekV3DecoderLayer(Module):
     def __init__(
         self,
@@ -79,13 +147,9 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
-        if config.data_parallel_degree not in (1, num_devices):
-            raise ValueError(
-                "data_parallel_degree must be 1 (TP attention) or match the "
-                f"number of devices ({num_devices})."
-            )
+        self._parallelism = _ParallelismPolicy.from_config(config)
         self.use_data_parallel_attention = (
-            num_devices > 1 and config.data_parallel_degree == num_devices
+            self._parallelism.use_data_parallel_attention
         )
 
         # Create Multi-head Latent Attention layer.
@@ -111,7 +175,16 @@ class DeepseekV3DecoderLayer(Module):
             | type[DataParallelLatentAttentionWithRopeFp8]
             | type[TensorParallelLatentAttentionWithRopeFp8]
         )
-        if config.float8_config is not None:
+        nvfp4_enabled = (
+            config.float8_config is not None and config.float8_config.is_nvfp4
+        )
+        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+
+        if config.float8_config is not None and nvfp4_enabled:
+            mla_kwargs["o_proj_float8_config"] = config.float8_config
+            mla_kwargs["o_proj_dtype"] = config.dtype
+
+        if use_fp8_mla:
             mla_kwargs["float8_config"] = config.float8_config
             mla_cls = (
                 DataParallelLatentAttentionWithRopeFp8
@@ -119,7 +192,7 @@ class DeepseekV3DecoderLayer(Module):
                 else TensorParallelLatentAttentionWithRopeFp8
             )
         else:
-            mla_kwargs["dtype"] = config.dtype
+            mla_kwargs["dtype"] = DType.bfloat16
             mla_cls = (
                 DataParallelLatentAttentionWithRope
                 if self.use_data_parallel_attention
@@ -210,28 +283,14 @@ class DeepseekV3DecoderLayer(Module):
 
             moe: MoE
             if config.float8_config is not None:
-                moe = MoEFp8(**moe_kwargs)
+                moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
 
-            if config.ep_config is not None:
-                if not self.use_data_parallel_attention:
-                    raise ValueError(
-                        "Expert-parallel MoE/MLP is only compatible with "
-                        "data-parallel attention."
-                    )
-                moe.sharding_strategy = ShardingStrategy.expert_parallel(
-                    len(config.devices)
-                )
-            else:
-                if self.use_data_parallel_attention:
-                    raise ValueError(
-                        "Tensor-parallel MoE/MLP is only compatible with "
-                        "tensor-parallel attention."
-                    )
-                moe.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    len(config.devices)
-                )
+            moe.sharding_strategy = self._parallelism.mlp_sharding_strategy(
+                len(config.devices),
+                is_moe=True,
+            )
             return moe
         else:
             mlp = MLP(
@@ -242,14 +301,10 @@ class DeepseekV3DecoderLayer(Module):
                 devices=config.devices,
                 float8_config=config.float8_config,
             )
-            if config.ep_config is not None:
-                mlp.sharding_strategy = ShardingStrategy.replicate(
-                    len(config.devices)
-                )
-            else:
-                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    len(config.devices)
-                )
+            mlp.sharding_strategy = self._parallelism.mlp_sharding_strategy(
+                len(config.devices),
+                is_moe=False,
+            )
             return mlp
 
     def __call__(
@@ -327,7 +382,8 @@ class DeepseekV3DecoderLayer(Module):
                     "Split matmul + allreduce is not supported for MoE models."
                 )
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+            if self._parallelism.should_allreduce_mlp:
+                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
@@ -347,11 +403,14 @@ class DeepseekV3(Module):
         num_devices = len(config.devices)
         devices = config.devices
 
+        self._parallelism = _ParallelismPolicy.from_config(config)
         self.use_data_parallel_attention = (
-            num_devices > 1 and config.data_parallel_degree == num_devices
+            self._parallelism.use_data_parallel_attention
         )
 
         embedding_output_dtype = config.dtype
+        if embedding_output_dtype == DType.uint8:
+            embedding_output_dtype = DType.bfloat16
         if config.float8_config and config.float8_config.embedding_output_dtype:
             embedding_output_dtype = config.float8_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
@@ -488,14 +547,19 @@ class DeepseekV3(Module):
                 ]
             )
 
+        # Unpack KV collections once for use throughout the method
+        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
+            _unpack_kv_collections(kv_collections)
+        )
+
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
             [hidden.type for hidden in h],
             [signal_buffer.type for signal_buffer in signal_buffers],
-            [kv_collection[0].type for kv_collection in kv_collections],
-            [kv_collection[1].type for kv_collection in kv_collections],
-            [kv_collection[2].type for kv_collection in kv_collections],
-            [kv_collection[3].type for kv_collection in kv_collections],
+            [block.type for block in kv_blocks],
+            [length.type for length in cache_lengths],
+            [table.type for table in lookup_tables],
+            [length.type for length in max_lengths],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
@@ -535,22 +599,10 @@ class DeepseekV3(Module):
                             ),
                             *h,
                             *signal_buffers,
-                            *[
-                                kv_collection[0]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[1]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[2]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[3]
-                                for kv_collection in kv_collections
-                            ],
+                            *kv_blocks,
+                            *cache_lengths,
+                            *lookup_tables,
+                            *max_lengths,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
@@ -564,10 +616,10 @@ class DeepseekV3(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    [kv_collection[0] for kv_collection in kv_collections],
-                    [kv_collection[1] for kv_collection in kv_collections],
-                    [kv_collection[2] for kv_collection in kv_collections],
-                    [kv_collection[3] for kv_collection in kv_collections],
+                    kv_blocks,
+                    cache_lengths,
+                    lookup_tables,
+                    max_lengths,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,

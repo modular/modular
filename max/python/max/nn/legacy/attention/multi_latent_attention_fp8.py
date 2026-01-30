@@ -30,7 +30,7 @@ from max.graph import (
 from max.support.math import ceildiv
 
 from ..comm import Allreduce
-from ..float8_config import Float8Config
+from ..float8_config import Float8Config, nvfp4_packed_k
 from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
@@ -145,19 +145,23 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         assert float8_config.input_scale.block_size is not None
         self.weight_block_size = float8_config.weight_scale.block_size
 
-        if float8_config.input_scale.block_size[1] != self.weight_block_size[1]:
+        k_block = self.weight_block_size[1]
+        input_k_block = float8_config.input_scale.block_size[1]
+        if input_k_block != k_block:
             raise ValueError(
                 "Input scale and weight scale must have the same K block size"
             )
+
         self.scales_granularity_mnk = (
             float8_config.input_scale.block_size[0],
             self.weight_block_size[0],
-            self.weight_block_size[1],
+            input_k_block,
         )
 
+        proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
             name="q_a_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.q_lora_rank, self.hidden_size),
             device=self.devices[0],
         )
@@ -171,7 +175,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.q_a_proj.shape[1]),
-                    float8_config.weight_scale.block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -186,7 +190,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.q_b_proj = Weight(
             name="q_b_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
             device=self.devices[0],
         )
@@ -200,7 +204,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.q_b_proj.shape[1]),
-                    float8_config.weight_scale.block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -215,7 +219,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_a_proj_with_mqa = Weight(
             name="kv_a_proj_with_mqa.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.cache_head_dim, self.hidden_size),
             device=self.devices[0],
         )
@@ -229,7 +233,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.kv_a_proj_with_mqa.shape[1]),
-                    self.weight_block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -237,7 +241,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_b_proj = Weight(
             name="kv_b_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(
                 self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
                 self.kv_lora_rank,
@@ -254,18 +258,22 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.kv_b_proj.shape[1]),
-                    self.weight_block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
         )
 
+        o_proj_float8_config = float8_config
+        o_proj_in_dim = nvfp4_packed_k(
+            self.n_heads * self.v_head_dim, float8_config
+        )
         self.o_proj = linear_cls(
-            in_dim=self.n_heads * self.v_head_dim,
+            in_dim=o_proj_in_dim,
             out_dim=self.hidden_size,
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             device=self.devices[0],
-            float8_config=float8_config,
+            float8_config=o_proj_float8_config,
         )
 
     def create_mla_prefill_metadata(
@@ -342,7 +350,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 strategy.num_devices
             )
 
-            self.o_proj.weight.sharding_strategy = ShardingStrategy.columnwise(
+            self.o_proj.weight.sharding_strategy = ShardingStrategy.rowwise(
                 strategy.num_devices
             )
             if self.o_proj.input_scale is not None:
@@ -351,7 +359,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 )
             if self.o_proj.weight_scale is not None:
                 self.o_proj.weight_scale.sharding_strategy = (
-                    ShardingStrategy.columnwise(strategy.num_devices)
+                    ShardingStrategy.rowwise(strategy.num_devices)
                 )
         elif strategy.is_replicate:
             # Data parallelism: replicate the entire module's weights to each device.

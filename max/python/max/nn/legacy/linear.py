@@ -34,6 +34,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.legacy.float8_config import (
     Float8Config,
     Float8ScaleGranularity,
+    nvfp4_packed_k,
 )
 from max.nn.legacy.float8_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
@@ -127,14 +128,7 @@ class Linear(Module, Shardable):
             self.weight = Weight(
                 name=f"{name}.weight" if name else "weight",
                 dtype=dtype,
-                shape=(
-                    out_dim,
-                    in_dim // 2
-                    if float8_config
-                    and float8_config.quant_method == "modelopt"
-                    and float8_config.quant_algo == "NVFP4"
-                    else in_dim,
-                ),
+                shape=(out_dim, nvfp4_packed_k(in_dim, float8_config)),
                 device=device,
                 quantization_encoding=quantization_encoding,
             )
@@ -190,11 +184,7 @@ class Linear(Module, Shardable):
                 device=DeviceRef.CPU(),
                 quantization_encoding=quantization_encoding,
             )
-            if (
-                float8_config
-                and float8_config.quant_method == "modelopt"
-                and float8_config.quant_algo == "NVFP4"
-            ):
+            if float8_config.is_nvfp4:
                 self.weight_scale_2 = Weight(
                     name=f"{name}.weight_scale_2" if name else "weight_scale_2",
                     dtype=float8_config.input_scale.dtype,
@@ -434,6 +424,12 @@ class Linear(Module, Shardable):
                         if len(self.weight_scale.shape) == 0
                         else sharded_weight_scales[shard_idx]
                     )
+                if (
+                    self.float8_config is not None
+                    and self.float8_config.is_nvfp4
+                    and hasattr(self, "weight_scale_2")
+                ):
+                    sharded.weight_scale_2 = self.weight_scale_2
 
             shards.append(sharded)
 

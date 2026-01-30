@@ -473,10 +473,14 @@ def _array_from_weight_loader(
         # Treat the data as if it has the correct shape.
         data.shape = Shape(weight._shape)
     elif weight.shape != data.shape:
-        raise ValueError(
-            f"Value provided to weight '{name}' had different shape"
-            f" (expected={weight.shape}, actual={data.shape})"
-        )
+        if weight.dtype == DType.uint8 and data.dtype == DType.uint8:
+            weight._shape = data.shape
+            data.shape = Shape(weight._shape)
+        else:
+            raise ValueError(
+                f"Value provided to weight '{name}' had different shape"
+                f" (expected={weight.shape}, actual={data.shape})"
+            )
 
     if weight.quantization_encoding != data.quantization_encoding:
         if (
