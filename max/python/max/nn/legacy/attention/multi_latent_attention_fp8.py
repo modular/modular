@@ -29,7 +29,6 @@ from max.graph import (
 )
 from max.support.math import ceildiv
 
-from ..comm import Allreduce
 from ..float8_config import Float8Config, nvfp4_packed_k
 from ..float8_ops import matmul_float8
 from ..kernels import (
@@ -308,60 +307,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         Args:
             strategy: The strategy describing the Module sharding.
         """
-        if strategy.is_tensor_parallel:
-            self._sharding_strategy = strategy
-
-            if (self.n_heads / strategy.num_devices) % 16 != 0:
-                raise ValueError(
-                    "MLA head per device must be a multiple of 16."
-                )
-
-            self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(
-                strategy.num_devices
-            )
-            self.q_a_proj_scale.sharding_strategy = ShardingStrategy.replicate(
-                strategy.num_devices
-            )
-            self.q_a_layernorm.weight.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-
-            self.q_b_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            self.q_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-
-            self.kv_a_proj_layernorm.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-            self.kv_a_proj_with_mqa.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-            self.kv_a_proj_with_mqa_scale.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-
-            self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            self.kv_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-
-            self.o_proj.weight.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            if self.o_proj.input_scale is not None:
-                self.o_proj.input_scale.sharding_strategy = (
-                    ShardingStrategy.replicate(strategy.num_devices)
-                )
-            if self.o_proj.weight_scale is not None:
-                self.o_proj.weight_scale.sharding_strategy = (
-                    ShardingStrategy.rowwise(strategy.num_devices)
-                )
-        elif strategy.is_replicate:
+        if strategy.is_replicate:
             # Data parallelism: replicate the entire module's weights to each device.
             self._sharding_strategy = strategy
 
@@ -390,7 +336,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 )
         else:
             raise ValueError(
-                "Only tensor parallel or replicate sharding strategies are supported for LatentAttentionWithRope"
+                "Only replicate sharding strategy is supported for LatentAttentionWithRopeFp8"
             )
 
     def shard(
@@ -771,86 +717,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
         return self.o_proj(attn_out)
-
-
-class TensorParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
-    """Distributed tensor parallel implementation of the Latent Attention with
-    Rope (FP8). Note that using tensor parallelism for MLA will cause the
-    KV-cache to be duplicated across all devices, which is not efficient.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        num_devices = len(self.devices)
-        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
-        self.allreduce = Allreduce(num_devices)
-        self.list_of_attentions = self.shard(self.devices)
-
-    def create_mla_prefill_metadata(  # type: ignore[override]
-        self,
-        input_row_offsets_: list[TensorValue],
-        kv_collections: list[PagedCacheValues],
-    ) -> list[MLAPrefillMetadata]:
-        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
-
-        for input_row_offsets, kv_collection in zip(
-            input_row_offsets_, kv_collections, strict=True
-        ):
-            multi_mla_prefill_metadata.append(
-                super().create_mla_prefill_metadata(
-                    input_row_offsets, kv_collection
-                )
-            )
-
-        return multi_mla_prefill_metadata
-
-    def __call__(  # type: ignore[override]
-        self,
-        layer_idx: TensorValue,
-        xs: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedCacheValues],
-        freqs_cis: Sequence[TensorValue],
-        input_row_offsets: Sequence[TensorValue],
-        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-    ) -> list[TensorValue]:
-        if not self.devices:
-            raise ValueError("devices cannot be None or empty")
-        if len(input_row_offsets) != len(self.devices):
-            raise ValueError(
-                f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
-            )
-        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
-            raise TypeError(
-                "All elements in input_row_offsets must be TensorValue instances"
-            )
-
-        n = len(self.devices)
-        inputs: list[TensorValue] = []
-        for i in range(n):
-            mla_prefill_metadata_i: MLAPrefillMetadata | None
-            if (
-                mla_prefill_metadata is not None
-                and len(mla_prefill_metadata) == n
-            ):
-                mla_prefill_metadata_i = mla_prefill_metadata[i]
-            else:
-                mla_prefill_metadata_i = None
-            inputs.append(
-                self.list_of_attentions[i](
-                    layer_idx,
-                    xs[i],
-                    kv_collections[i],
-                    freqs_cis=freqs_cis[i],
-                    input_row_offsets=input_row_offsets[i],
-                    mla_prefill_metadata=mla_prefill_metadata_i,
-                )
-            )
-
-        return self.allreduce(
-            inputs=inputs,
-            signal_buffers=signal_buffers,
-        )
 
 
 class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
