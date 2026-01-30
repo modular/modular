@@ -92,13 +92,13 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     }], "void", "setHasStableDecorator", (ins "bool":$stable)>,
 
     InterfaceMethod<[{
-      Return the deprecation warning message if this decl has an @deprecated
+      Return the deprecation info attribute if this decl has an @deprecated
       decorator, or nullptr if not deprecated.
-    }], "StringAttr", "getDeprecationWarningAttr", (ins)>,
+    }], "DeprecationInfoAttr", "getDeprecationInfoAttr", (ins)>,
 
     InterfaceMethod<[{
-      Set the deprecation warning message for this decl.
-    }], "void", "setDeprecationWarningAttr", (ins "StringAttr":$warning)>,
+      Set the deprecation info attribute for this decl.
+    }], "void", "setDeprecationInfoAttr", (ins "DeprecationInfoAttr":$deprecation)>,
   ];
 
   let extraSharedClassDeclaration = [{
@@ -106,7 +106,21 @@ def StabilityDecoratorInterface : OpInterface<"StabilityDecoratorInterface",
     bool isStable() { return $_op.getHasStableDecorator(); }
 
     /// Returns true if the declaration is marked deprecated.
-    bool isDeprecated() { return $_op.getDeprecationWarningAttr() != nullptr; }
+    bool isDeprecated() { return $_op.getDeprecationInfoAttr() != nullptr; }
+
+    /// Returns the deprecation warning message, or nullptr if not deprecated.
+    StringAttr getDeprecationWarningAttr() {
+      if (auto info = $_op.getDeprecationInfoAttr())
+        return info.getWarning();
+      return nullptr;
+    }
+
+    /// Returns the deprecation replacement identifier, or nullptr if not specified.
+    StringAttr getDeprecationReplacementAttr() {
+      if (auto info = $_op.getDeprecationInfoAttr())
+        return info.getReplacement();
+      return nullptr;
+    }
   }];
 }
 

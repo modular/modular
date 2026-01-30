@@ -12,6 +12,7 @@
 #define MOJOPARSER_STABILITYMARKERS_H
 
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/CallOperands.h"
 #include "Support/Compiler/Diags.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SMLoc.h"
@@ -46,13 +47,22 @@ void checkStabilityAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
 /// This should be called from name resolution when a symbol is referenced.
 ///
 /// A warning is emitted when the declaration has a @deprecated decorator.
+/// If the declaration has a replacement identifier (from @deprecated(use=X)),
+/// a fixit will be emitted for direct calls (not for operator/subscript
+/// syntax).
 ///
 /// \param decl The declaration being accessed
 /// \param useLoc Location of the use site (for warning emission)
 /// \param shared SharedState for diagnostics
 /// \param range Source range to highlight in the diagnostic
+/// \param syntax The call syntax (used to determine if fixit should be emitted)
+/// \param fixitLoc Location for fixit replacement (defaults to useLoc if
+///                 invalid). For method calls, this should be the method
+///                 identifier location, not the full expression location.
 void checkDeprecationAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
-                             SharedState &shared, M::SourceRange range);
+                             SharedState &shared, M::SourceRange range,
+                             CallSyntax syntax = CallSyntax::kDirectCall,
+                             llvm::SMLoc fixitLoc = {});
 
 /// Unified function to check for both deprecation and stability warnings.
 /// This should be the primary entry point for callers who want to check
@@ -67,9 +77,15 @@ void checkDeprecationAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
 /// \param useSiteDecl The declaration scope at the use site
 /// \param shared SharedState for diagnostics and options
 /// \param range Source range to highlight in the diagnostic
+/// \param syntax The call syntax (used to determine if fixit should be emitted)
+/// \param fixitLoc Location for fixit replacement (defaults to useLoc if
+///                 invalid). For method calls, this should be the method
+///                 identifier location, not the full expression location.
 void checkDeclUsageWarnings(ASTDecl &decl, llvm::SMLoc useLoc,
                             ASTDecl &useSiteDecl, SharedState &shared,
-                            M::SourceRange range);
+                            M::SourceRange range,
+                            CallSyntax syntax = CallSyntax::kDirectCall,
+                            llvm::SMLoc fixitLoc = {});
 
 /// Check for API author error: when a stable struct implements a stable trait,
 /// the implementing member (method or alias) must also be stable if the trait

@@ -220,7 +220,7 @@ fn register_internal(x: StaticString):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder1
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder1"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder1">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder1
 @register_internal("custom.op")
@@ -231,7 +231,7 @@ struct DecoratorOrder1(TrivialRegisterType):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder2"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
 @deprecated("DecoratorOrder2")
@@ -242,7 +242,7 @@ struct DecoratorOrder2(TrivialRegisterType):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder3"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
 @fieldwise_init
@@ -253,7 +253,7 @@ struct DecoratorOrder3(TrivialRegisterType):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder4"
+# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder4">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
 @fieldwise_init

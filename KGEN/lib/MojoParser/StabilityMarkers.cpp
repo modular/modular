@@ -112,7 +112,8 @@ void M::KGEN::LIT::checkStabilityAndWarn(ASTDecl &decl, SMLoc useLoc,
 
 void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
                                            SharedState &shared,
-                                           SourceRange range) {
+                                           SourceRange range, CallSyntax syntax,
+                                           SMLoc fixitLoc) {
   // Check if the declaration has a @deprecated decorator.
   // Use StabilityDecoratorInterface which now handles both @stable and
   // @deprecated.
@@ -126,6 +127,16 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
   if (range.isValid())
     diag << range;
 
+  // Add fixit for direct and method calls (not operator/subscript syntax,
+  // where replacing the magic method name wouldn't make syntactic sense).
+  if (syntax == CallSyntax::kDirectCall || syntax == CallSyntax::kMethodCall) {
+    if (StringAttr replacement = stabilityItf.getDeprecationReplacementAttr()) {
+      // Use fixitLoc if provided, otherwise fall back to useLoc.
+      SMLoc loc = fixitLoc.isValid() ? fixitLoc : useLoc;
+      diag << FixIt::replaceToken(loc, replacement.getValue());
+    }
+  }
+
   StringRef declName = getDeclName(decl);
   diag.attachNote(decl.getLoc()) << "'" << declName << "' declared here";
 }
@@ -133,9 +144,10 @@ void M::KGEN::LIT::checkDeprecationAndWarn(ASTDecl &decl, SMLoc useLoc,
 void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
                                           ASTDecl &useSiteDecl,
                                           SharedState &shared,
-                                          SourceRange range) {
+                                          SourceRange range, CallSyntax syntax,
+                                          SMLoc fixitLoc) {
   // Check for deprecation warning first.
-  checkDeprecationAndWarn(decl, useLoc, shared, range);
+  checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
 
   // Check for stability warning.
   checkStabilityAndWarn(decl, useLoc, useSiteDecl, shared, range);

@@ -52,12 +52,33 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
 
 SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 
+/// For method and static method calls, extract the location of the method
+/// name identifier from the expression. This is used for fixit suggestions
+/// so that `obj.old_method()` -> `obj.new_method()` or
+/// `Type.old_static()` -> `Type.new_static()` replaces only the method name.
+/// Returns an invalid SMLoc for non-attribute-reference expressions.
+static SMLoc getAttributeNameLoc(const ExprNode *expr) {
+  // Unwrap CallNode to get to the underlying callee expression.
+  if (auto *callNode = dyn_cast<CallNode>(expr))
+    expr = callNode->callee;
+  // Extract the identifier location from attribute reference.
+  if (auto *attrRef = dyn_cast<AttributeRefNode>(expr))
+    return attrRef->getAttributeNameRange().getStart();
+  return {};
+}
+
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings) {
+static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
+                        CallSyntax syntax) {
   // Check deprecation and stability warnings for the resolved function.
+  // For method calls (instance or static via attribute access), compute the
+  // fixit location as the method identifier, not the full expression.
+  SMLoc fixitLoc;
+  if (syntax == CallSyntax::kMethodCall || syntax == CallSyntax::kDirectCall)
+    fixitLoc = getAttributeNameLoc(paramBindings.getExpr());
   checkDeclUsageWarnings(*fnDecl, paramBindings.getExprLoc(),
                          paramBindings.declScope, paramBindings.shared,
-                         paramBindings.getExpr()->getRange());
+                         paramBindings.getExpr()->getRange(), syntax, fixitLoc);
   return paramBindings.getBoundConstAttrForFn(*fnDecl);
 }
 
@@ -371,7 +392,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : bestFitness.getParamBindings())
       newBindings.addPrechecked(getExpr(), bind);
-    return getCallee(selectedDecl, newBindings);
+    return getCallee(selectedDecl, newBindings, syntax);
   }
   if (isErroneous())
     return {};
@@ -676,7 +697,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       ParamBindings newBindings(paramBindings.declScope, getExpr());
       for (TypedAttr bind : fitness.getParamBindings())
         newBindings.addPrechecked(getExpr(), bind);
-      return getCallee(selectedDecl, newBindings);
+      return getCallee(selectedDecl, newBindings, syntax);
     };
 
     PValue boundFunction = newBindings(bestFitness);
@@ -846,7 +867,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_InvalidContext);
-    PValue callee = getCallee(selectedMethod, newBindings);
+    PValue callee = getCallee(selectedMethod, newBindings, syntax);
     PValue result = emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
                                        functionType);
     return {result, selectedMethod};
@@ -900,7 +921,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], paramBindings);
+    return getCallee(fnDecls[0], paramBindings, syntax);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1081,8 +1102,12 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
     // This is an unbound function. Just return a reference.
     if (paramBindings.empty()) {
       // Check deprecation and stability warnings for the function reference.
+      // For static method references (e.g., Type.method), compute the fixit
+      // location as the method identifier, not the full expression.
+      SMLoc fixitLoc = getAttributeNameLoc(getExpr());
       checkDeclUsageWarnings(*fnDecls.front(), getExprLoc(), declScope,
-                             getShared(), getExpr()->getRange());
+                             getShared(), getExpr()->getRange(),
+                             CallSyntax::kDirectCall, fixitLoc);
       return cast<FnOp>(fnDecls.front()->getIfOperation())
           .getBoundReference(getShared().getEvaluationContext());
     }

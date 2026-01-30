@@ -207,8 +207,8 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
       return success();
     }
 
-    stabilityInterface.setDeprecationWarningAttr(
-        StringAttr::get(getContext(), strExpr->getValue()));
+    stabilityInterface.setDeprecationInfoAttr(DeprecationInfoAttr::get(
+        StringAttr::get(getContext(), strExpr->getValue())));
 
     return success();
   }
@@ -252,9 +252,11 @@ LogicalResult Decorators::handleDeprecated(ExprNode *expr, ASTDecl &decl) {
       sourceName = "<unhandled case>";
     }
 
-    stabilityInterface.setDeprecationWarningAttr(StringAttr::get(
-        getContext(), llvm::formatv("'{0}' is deprecated, use '{1}' instead",
-                                    sourceName, target->spelling)));
+    stabilityInterface.setDeprecationInfoAttr(DeprecationInfoAttr::get(
+        StringAttr::get(getContext(),
+                        llvm::formatv("'{0}' is deprecated, use '{1}' instead",
+                                      sourceName, target->spelling)),
+        StringAttr::get(getContext(), target->spelling)));
 
     return success();
   } else {
