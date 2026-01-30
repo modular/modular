@@ -13,7 +13,6 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
 
 from max import functional as F
 from max.dtype import DType
@@ -59,7 +58,7 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         super().__init__()
         self.mlp_hidden_dim = int(dim * mlp_ratio)
 
-        self.norm = AdaLayerNormZeroSingle(dim, dtype=dtype)
+        self.norm = AdaLayerNormZeroSingle(dim)
         self.proj_mlp = Linear(dim, self.mlp_hidden_dim, bias=True)
         self.act_mlp = F.gelu
         self.proj_out = Linear(
@@ -75,7 +74,6 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             bias=True,
             eps=1e-6,
             pre_only=True,
-            dtype=dtype,
         )
 
     def forward(
@@ -84,7 +82,6 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         encoder_hidden_states: Tensor,
         temb: Tensor,
         image_rotary_emb: tuple[Tensor, Tensor] | None = None,
-        joint_attention_kwargs: dict[str, Any] | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Apply single transformer block with attention and MLP.
 
@@ -93,7 +90,6 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             encoder_hidden_states: Encoder hidden states for cross-attention.
             temb: Time embedding.
             image_rotary_emb: Optional rotary position embeddings.
-            joint_attention_kwargs: Optional attention kwargs.
 
         Returns:
             Tuple of (encoder_hidden_states, hidden_states).
@@ -106,7 +102,7 @@ class FluxSingleTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         mlp_hidden_states = self.act_mlp(
             self.proj_mlp(norm_hidden_states), approximate="tanh"
         )
-        joint_attention_kwargs = joint_attention_kwargs or {}
+
         attn_output = self.attn(
             hidden_states=norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
@@ -148,8 +144,8 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         """
         super().__init__()
 
-        self.norm1 = AdaLayerNormZero(dim, dtype=dtype)
-        self.norm1_context = AdaLayerNormZero(dim, dtype=dtype)
+        self.norm1 = AdaLayerNormZero(dim)
+        self.norm1_context = AdaLayerNormZero(dim)
 
         self.attn = FluxAttention(
             query_dim=dim,
@@ -160,7 +156,6 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             context_pre_only=False,
             bias=True,
             eps=eps,
-            dtype=dtype,
         )
 
         self.norm2 = LayerNorm(
@@ -218,7 +213,6 @@ class FluxTransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             c_scale_mlp,
             c_gate_mlp,
         ) = self.norm1_context(encoder_hidden_states, emb=temb)
-        joint_attention_kwargs = joint_attention_kwargs or {}
 
         # Attention.
         attention_outputs = self.attn(
@@ -306,7 +300,6 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         self.time_text_embed = text_time_guidance_cls(
             embedding_dim=self.inner_dim,
             pooled_projection_dim=pooled_projection_dim,
-            dtype=dtype,
         )
         self.context_embedder = Linear(
             joint_attention_dim,
@@ -346,7 +339,7 @@ class FluxTransformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
         self.norm_out = AdaLayerNormContinuous(
-            self.inner_dim, self.inner_dim, eps=1e-6, dtype=dtype
+            self.inner_dim, self.inner_dim, eps=1e-6
         )
         self.proj_out = Linear(
             self.inner_dim,
