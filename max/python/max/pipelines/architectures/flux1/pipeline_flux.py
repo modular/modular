@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from max import functional as F
@@ -100,9 +100,7 @@ class FluxPipeline(DiffusionPipeline):
             else 8
         )
 
-    def prepare_inputs(
-        self, context: PixelContext
-    ) -> FluxModelInputs:
+    def prepare_inputs(self, context: PixelContext) -> FluxModelInputs:
         return FluxModelInputs.from_context(context)
 
     @staticmethod

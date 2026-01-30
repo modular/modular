@@ -76,7 +76,7 @@ class DiffusionPipeline(ABC):
         )
 
     @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:  # noqa: B027
+    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
         """Hook for finalizing pipeline configuration. Override if needed."""
         del pipeline_config
 

@@ -31,7 +31,7 @@ flux1_arch = SupportedArchitecture(
         "black-forest-labs/FLUX.1-dev",
         "black-forest-labs/FLUX.1-schnell",
     ],
-    pipeline_model=FluxPipeline, # type: ignore[arg-type]
+    pipeline_model=FluxPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
