@@ -7,6 +7,11 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# TODO(SERVOPT-949): Tests that timeout on macOS
+_MACOS_INCOMPATIBLE_TESTS = [
+    "test_paged_scheduler.py",
+]
+
 # Normal CPU tests
 [
     modular_py_test(
@@ -21,6 +26,10 @@ package(default_visibility = [
                 "test_paged_scheduler.py",
             ] else []  # Times out if run with too many other tests
         ),
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in _MACOS_INCOMPATIBLE_TESTS else [],
         deps = [
             ":common",
             requirement("pytest-asyncio"),

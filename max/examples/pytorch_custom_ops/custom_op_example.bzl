@@ -28,6 +28,7 @@ def custom_op_example_py_binary(
     )
 
     # Run each example as a simple non-zero-exit-code test.
+    # The test inherits target_compatible_with from the binary dependency.
     if create_test:
         modular_run_binary_test(
             name = name + ".example-test",
