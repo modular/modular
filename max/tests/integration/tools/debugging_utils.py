@@ -42,6 +42,7 @@ from run_models import (
     maybe_log_hf_downloads,
     run_max_model,
     run_torch_model,
+    run_vllm_model,
 )
 from test_common import torch_print_hook
 from test_common.github_utils import github_log_group
@@ -178,13 +179,15 @@ def run_debug_model(
         evaluation_batch_size = max_batch_size
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
-    with (
-        debug_context(
-            output_directory=output_path,
-            hf_config_overrides=hf_config_overrides,
-        ),
-        github_log_group(title),
-    ):
+    with ExitStack() as stack:
+        stack.enter_context(github_log_group(title))
+        if framework_name in {"max", "torch"}:
+            stack.enter_context(
+                debug_context(
+                    output_directory=output_path,
+                    hf_config_overrides=hf_config_overrides,
+                )
+            )
         if framework_name == "max":
             if encoding_name is None:
                 max_encoding_name = get_max_default_encoding(
@@ -271,6 +274,25 @@ def run_debug_model(
                 device=torch_device,
                 inputs=inputs,
                 num_steps=num_steps,
+            )
+        elif framework_name == "vllm":
+            # vLLM does not support print hooks or intermediate tensors.
+            if output_path is not None:
+                print(
+                    "Warning: vLLM does not export intermediate tensors; "
+                    "ignoring --output."
+                )
+            print(f"Running {pipeline_name} model on vLLM")
+            vllm_pipeline = pipeline_oracle.create_vllm_pipeline(
+                encoding=encoding_name,
+                device_specs=device_specs,
+            )
+            run_vllm_model(
+                pipeline_oracle=pipeline_oracle,
+                vllm_pipeline=vllm_pipeline,
+                inputs=inputs,
+                num_steps=num_steps,
+                max_batch_size=max_batch_size,
             )
         else:
             raise NotImplementedError(

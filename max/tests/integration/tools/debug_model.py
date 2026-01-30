@@ -42,7 +42,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--framework",
     "framework_name",
-    type=click.Choice(["max", "torch"]),
+    type=click.Choice(["max", "torch", "vllm"]),
     default="max",
     help="Framework to run pipeline with",
 )
