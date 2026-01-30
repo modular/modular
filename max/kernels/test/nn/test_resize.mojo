@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -25,21 +26,17 @@ def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
         var output_stack = InlineArray[Float32, 24](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 6)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 4, 6]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
 
         for i in range(24):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_upsample_sizes_nearest_1
@@ -58,21 +55,17 @@ def main():
             7,
             8,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 4]())
 
         var output_stack = InlineArray[Float32, 2](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 1, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 1, 2]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
 
         for i in range(2):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_downsample_sizes_nearest
@@ -99,21 +92,17 @@ def main():
             14,
             15,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 4, 4]())
 
         var output_stack = InlineArray[Float32, 2](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 1, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 1, 2]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel1D, RoundMode.HalfDown
         ](input, output)
 
         for i in range(2):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_downsample_sizes_nearest_half_pixel_1D
@@ -123,21 +112,17 @@ def main():
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
         var output_stack = InlineArray[Float32, 56](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 7, 8)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 7, 8]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
 
         for i in range(56):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_upsample_sizes_nearest_2
@@ -164,21 +149,17 @@ def main():
             15,
             16,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 4, 4]())
 
         var output_stack = InlineArray[Float32, 64](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 8, 8)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 8, 8]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.AlignCorners, RoundMode.Floor
         ](input, output)
 
         for i in range(64):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_upsample_sizes_nearest_floor_align_corners
@@ -205,21 +186,17 @@ def main():
             15,
             16,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 4, 4]())
 
         var output_stack = InlineArray[Float32, 64](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 8, 8)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 8, 8]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.Asymmetric, RoundMode.HalfUp
         ](input, output)
 
         for i in range(64):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_upsample_sizes_nearest_round_half_up_asymmetric
@@ -246,21 +223,17 @@ def main():
             15,
             16,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 4, 4]())
 
         var output_stack = InlineArray[Float32, 64](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 8, 8)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 8, 8]())
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.Ceil
         ](input, output)
 
         for i in range(64):
-            print(output.ptr[i], end=",")
+            print(output_stack[i], end=",")
         print("")
 
     # CHECK-LABEL: test_upsample_sizes_nearest_ceil_half_pixel
@@ -270,14 +243,10 @@ def main():
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
         var output_stack = InlineArray[Float32, 16](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 4, 4]())
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
@@ -309,7 +278,7 @@ def main():
 
         for i in range(16):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_upsample_sizes_linear
@@ -319,14 +288,10 @@ def main():
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
         var output_stack = InlineArray[Float32, 16](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 4, 4]())
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
@@ -358,7 +323,7 @@ def main():
 
         for i in range(16):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_upsample_sizes_linear_align_corners
@@ -377,14 +342,10 @@ def main():
             7,
             8,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 4]())
 
         var output_stack = InlineArray[Float32, 2](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 1, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 1, 2]())
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
@@ -400,7 +361,7 @@ def main():
 
         for i in range(2):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_downsample_sizes_linear
@@ -419,14 +380,10 @@ def main():
             7,
             8,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 4]())
 
         var output_stack = InlineArray[Float32, 2](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 1, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 1, 2]())
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(
@@ -441,7 +398,7 @@ def main():
 
         for i in range(2):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_downsample_sizes_linear_align_corners
@@ -468,14 +425,10 @@ def main():
             14,
             15,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 4, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 4, 2, 2]())
 
         var output_stack = InlineArray[Float32, 96](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 6, 4, 4)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 6, 4, 4]())
 
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 2, 2))
@@ -508,7 +461,7 @@ def main():
 
         for i in range(96):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_upsample_sizes_trilinear
@@ -535,14 +488,10 @@ def main():
             14,
             15,
         ]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 4, 4)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 4, 4]())
 
         var output_stack = InlineArray[Float32, 4](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 2, 2]())
 
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 4))
@@ -563,7 +512,7 @@ def main():
 
         for i in range(4):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     # CHECK-LABEL: test_downsample_sizes_linear_antialias
@@ -573,14 +522,10 @@ def main():
     fn test_no_resize() raises:
         print("== test_no_resize")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 1, 1, 1]
-        var input = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            input_stack
-        )
+        var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
         var output_stack = InlineArray[Float32, 4](uninitialized=True)
-        var output = LayoutTensor[DType.float32, Layout.row_major(1, 1, 2, 2)](
-            output_stack
-        )
+        var output = TileTensor(output_stack, row_major[1, 1, 2, 2]())
 
         var reference_stack: InlineArray[Float32, 4] = [
             Float32(1.0000),
@@ -595,7 +540,7 @@ def main():
 
         for i in range(4):
             assert_almost_equal(
-                output.ptr[i], reference_stack[i], atol=1e-5, rtol=1e-4
+                output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
     test_no_resize()

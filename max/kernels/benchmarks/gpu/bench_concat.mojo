@@ -18,11 +18,10 @@ from sys import env_get_int, size_of
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
-from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from gpu.host import DeviceContext, HostBuffer
+from layout._coord import Coord, CoordLike, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -39,63 +38,97 @@ fn bench_concat[
     comptime type = DType.float32
     if num_inputs != len(shapes):
         raise Error("num_inputs does not match number of shapes provided")
-    comptime layout = Layout.row_major[rank]()
-    var inputs = StaticTuple[
-        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
-    ]()
-    var inputs_host = StaticTuple[
-        LayoutTensor[type, layout, MutAnyOrigin], num_inputs
-    ]()
+
     var out_axis = 0
     var name = String()
 
-    # TODO: Generalize for arbitrary num of inputs.
-    var shape = shapes[0]
-    var size = shape.flattened_length()
-    var input0_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[0] = LayoutTensor[type, layout](
-        input0_ptr, RuntimeLayout[layout].row_major(shape)
-    ).as_any_origin()
-    inputs_host[0] = LayoutTensor[type, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[type]].alloc(size),
-        RuntimeLayout[layout].row_major(shape),
-    )
-    randn(inputs_host[0].ptr, size)
-    ctx.enqueue_copy(input0_ptr, inputs_host[0].ptr)
-    name += String(shape)
-    out_axis += shape[axis]
+    # Create host and device buffers for input 0
+    var shape0 = shapes[0]
+    var size0 = shape0.flattened_length()
+    var input0_host_buffer = ctx.enqueue_create_host_buffer[type](size0)
+    var input0_device_buffer = ctx.enqueue_create_buffer[type](size0)
+    ctx.synchronize()
+    randn(input0_host_buffer.unsafe_ptr(), size0)
+    ctx.enqueue_copy(input0_device_buffer, input0_host_buffer)
+    name += String(shape0)
+    out_axis += shape0[axis]
 
-    shape = shapes[1]
-    size = shape.flattened_length()
-    var input1_ptr = ctx.enqueue_create_buffer[type](size)
-    inputs[1] = LayoutTensor[type, layout, MutAnyOrigin](
-        input1_ptr, RuntimeLayout[layout].row_major(shape)
-    )
-    inputs_host[1] = LayoutTensor[type, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[type]].alloc(size),
-        RuntimeLayout[layout].row_major(shape),
-    )
-    randn(inputs_host[1].ptr, size)
-    ctx.enqueue_copy(input1_ptr, inputs_host[1].ptr)
-    name += String(shape)
-    out_axis += shape[axis]
+    # Create host and device buffers for input 1
+    var shape1 = shapes[1]
+    var size1 = shape1.flattened_length()
+    var input1_host_buffer = ctx.enqueue_create_host_buffer[type](size1)
+    var input1_device_buffer = ctx.enqueue_create_buffer[type](size1)
+    ctx.synchronize()
+    randn(input1_host_buffer.unsafe_ptr(), size1)
+    ctx.enqueue_copy(input1_device_buffer, input1_host_buffer)
+    name += String(shape1)
+    out_axis += shape1[axis]
 
+    # Create output buffers
     var out_shape = shapes[0]
     out_shape[axis] = out_axis
     name += String("->", out_shape)
-    var output_ptr = ctx.enqueue_create_buffer[type](
-        out_shape.flattened_length()
-    )
-    var output = LayoutTensor[type, layout](
-        output_ptr, RuntimeLayout[layout].row_major(out_shape)
-    )
-    var output_host = LayoutTensor[type, layout](
-        UnsafePointer[Scalar[type]].alloc(output.size()),
-        RuntimeLayout[layout].row_major(out_shape),
-    )
-    randn(output_host.ptr, output.size())
+    var output_size = out_shape.flattened_length()
+    var output_host_buffer = ctx.enqueue_create_host_buffer[type](output_size)
+    var output_device_buffer = ctx.enqueue_create_buffer[type](output_size)
+    ctx.synchronize()
+    randn(output_host_buffer.unsafe_ptr(), output_size)
+    ctx.enqueue_copy(output_device_buffer, output_host_buffer)
 
-    ctx.enqueue_copy(output_ptr, output_host.ptr)
+    # Create TileTensors with dynamic layouts
+    var input0_device = TileTensor(
+        input0_device_buffer.unsafe_ptr(),
+        row_major(Coord(shape0)),
+    )
+    var input1_device = TileTensor(
+        input1_device_buffer.unsafe_ptr(),
+        row_major(Coord(shape1)),
+    )
+    var output_device = TileTensor(
+        output_device_buffer.unsafe_ptr(),
+        row_major(Coord(out_shape)),
+    )
+
+    # Create input tuple for kernel
+    var inputs = StaticTuple[
+        TileTensor[
+            shape_types = input0_device.shape_types,
+            stride_types = input0_device.stride_types,
+            type,
+            ImmutAnyOrigin,
+        ],
+        num_inputs,
+    ](
+        input0_device.as_any_origin().as_immut(),
+        input1_device.as_any_origin().as_immut(),
+    )
+
+    # Create host TileTensors for verification
+    var input0_host = TileTensor(
+        input0_host_buffer,
+        row_major(Coord(shape0)),
+    )
+    var input1_host = TileTensor(
+        input1_host_buffer,
+        row_major(Coord(shape1)),
+    )
+    var output_host = TileTensor(
+        output_host_buffer,
+        row_major(Coord(out_shape)),
+    )
+
+    var inputs_host = StaticTuple[
+        TileTensor[
+            shape_types = input0_host.shape_types,
+            stride_types = input0_host.stride_types,
+            type,
+            MutAnyOrigin,
+        ],
+        num_inputs,
+    ](
+        input0_host.as_any_origin(),
+        input1_host.as_any_origin(),
+    )
 
     @parameter
     @always_inline
@@ -104,7 +137,7 @@ fn bench_concat[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _concat_gpu_elementwise[epilogue_fn=None](
-                output.as_any_origin(), axis, inputs, ctx
+                output_device.as_any_origin(), axis, inputs, ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -121,11 +154,13 @@ fn bench_concat[
         ],
     )
 
-    ctx.enqueue_copy(output_host.ptr, output_ptr)
+    ctx.enqueue_copy(output_host_buffer, output_device_buffer)
+    ctx.synchronize()
 
     var offset = 0
     for i in range(num_inputs):
         var input = inputs_host[i]
+        var input_shape = shapes[i]
 
         @parameter
         fn check[
@@ -133,13 +168,21 @@ fn bench_concat[
         ](coords: IndexList[_rank]):
             var out_coords = coords
             out_coords[axis] += offset
-            if output_host.load[width=1](out_coords) != input.load[width=1](
-                coords
+            var out_coord = Coord(out_coords)
+            var in_coord = Coord(coords)
+            __comptime_assert out_coord.rank == output_host.rank
+            __comptime_assert in_coord.rank == input.rank
+            if output_host.load[width=1](out_coord) != input.load[width=1](
+                in_coord
             ):
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[check, 1](input.runtime_layout.shape.value)
-        offset += input.runtime_layout.shape.value[axis]
+        elementwise[check, 1](input_shape)
+        offset += input_shape[axis]
+
+    _ = input0_device_buffer
+    _ = input1_device_buffer
+    _ = output_device_buffer
 
 
 def main():

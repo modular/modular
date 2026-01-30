@@ -46,6 +46,9 @@ from layout import (
     RuntimeTuple,
 )
 from layout.int_tuple import fill_like
+from layout._tile_tensor import TileTensor
+from layout._coord import DynamicCoord, RuntimeInt, coord_to_index_list
+from layout._layout import Layout as TileLayout
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -55,6 +58,41 @@ from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList, StaticTuple, product
 from utils.numerics import max_or_inf, min_or_neg_inf
+
+
+@always_inline
+fn _to_tile_tensor[
+    rank: Int,
+    dtype: DType,
+](tensor: LayoutTensor[dtype, ...]) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, rank].element_types,
+    stride_types = DynamicCoord[DType.int64, rank].element_types,
+    dtype,
+    tensor.origin,
+    address_space = tensor.address_space,
+]:
+    """Convert a LayoutTensor to a TileTensor with all runtime dimensions.
+
+    This helper avoids using the TileTensor(LayoutTensor) constructor which
+    can trigger a compiler bug when the LayoutTensor has variadic parameters.
+
+    Parameters:
+        rank: The rank of the tensor (must match tensor.rank).
+        dtype: The data type of the tensor elements (inferred from tensor).
+    """
+    var shape = DynamicCoord[DType.int64, rank]()
+    var stride = DynamicCoord[DType.int64, rank]()
+
+    @parameter
+    for i in range(rank):
+        shape[i] = rebind[shape.element_types[i]](
+            RuntimeInt[DType.int64](tensor.runtime_layout.shape.value[i])
+        )
+        stride[i] = rebind[stride.element_types[i]](
+            RuntimeInt[DType.int64](tensor.runtime_layout.stride.value[i])
+        )
+
+    return TileTensor(tensor.ptr, TileLayout(shape, stride))
 
 
 @always_inline
@@ -519,11 +557,36 @@ fn _top_k_sampling[
         raise Error("Unsupported input rank. Must be >= 1.")
 
     internal_out_shape = IndexList[internal_rank](internal_bs, max_k)
-    internal_out_vals = reshape(out_vals, internal_out_shape)  # internal view
     internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
-    internal_out_idxs = reshape(
-        out_idxs, internal_out_idxs_shape
-    )  # internal view
+
+    var reshaped_out_idxs = reshape(
+        _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+    )
+    var internal_out_idxs = LayoutTensor[
+        DType.int64,
+        Layout.row_major[internal_rank](),
+        out_idxs.origin,
+        address_space = out_idxs.address_space,
+    ](
+        reshaped_out_idxs.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_out_idxs.layout.shape)
+        ),
+    )
+    var reshaped_out_vals = reshape(
+        _to_tile_tensor[out_vals.rank](out_vals), internal_out_shape
+    )
+    var internal_out_vals = LayoutTensor[
+        dtype,
+        Layout.row_major[internal_rank](),
+        out_vals.origin,
+        address_space = out_vals.address_space,
+    ](
+        reshaped_out_vals.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_out_vals.layout.shape)
+        ),
+    )
     # End reshape to internal rank
 
     var out_idxs_tmp = LayoutTensor[
@@ -534,8 +597,22 @@ fn _top_k_sampling[
             internal_out_shape
         ),  # topk returns K as last dim
     )
+    var reshaped_input = reshape(
+        _to_tile_tensor[input.rank](input), internal_in_shape
+    )
+    var internal_input = LayoutTensor[
+        dtype,
+        Layout.row_major[internal_rank](),
+        input.origin,
+        address_space = input.address_space,
+    ](
+        reshaped_input.ptr,
+        RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
+            coord_to_index_list(reshaped_input.layout.shape)
+        ),
+    )
     _top_k_cpu[dtype=dtype, largest=True](
-        reshape(input, internal_in_shape),
+        internal_input,
         max_k,
         axis=internal_rank - 1,  # Always operate on the last axis
         out_vals=internal_out_vals,
@@ -1618,9 +1695,33 @@ fn topk_gpu[
         var internal_out_vals_shape = IndexList[internal_rank](1, bound_max_k)
         var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
         # Reshape 1D inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        var reshaped_input = reshape(
+            _to_tile_tensor[input.rank](input), internal_in_shape
+        )
+        internal_input = type_of(internal_input)(
+            reshaped_input.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_input.layout.shape)
+            ),
+        )
+        var reshaped_out_idxs = reshape(
+            _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+        )
+        internal_out_idxs = type_of(internal_out_idxs)(
+            reshaped_out_idxs.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_idxs.layout.shape)
+            ),
+        )
+        var reshaped_out_vals = reshape(
+            _to_tile_tensor[out_vals.rank](out_vals), internal_out_vals_shape
+        )
+        internal_out_vals = type_of(internal_out_vals)(
+            reshaped_out_vals.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_vals.layout.shape)
+            ),
+        )
     elif input.rank == internal_rank:
         # Input is already 2D, no reshaping needed
         internal_bs = orig_in_shape[0]
@@ -1674,9 +1775,33 @@ fn topk_gpu[
         )
 
         # Reshape higher dimensional inputs to 2D
-        internal_input = reshape(input, internal_in_shape)
-        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+        var reshaped_input = reshape(
+            _to_tile_tensor[input.rank](input), internal_in_shape
+        )
+        internal_input = type_of(internal_input)(
+            reshaped_input.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_input.layout.shape)
+            ),
+        )
+        var reshaped_out_idxs = reshape(
+            _to_tile_tensor[out_idxs.rank](out_idxs), internal_out_idxs_shape
+        )
+        internal_out_idxs = type_of(internal_out_idxs)(
+            reshaped_out_idxs.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_idxs.layout.shape)
+            ),
+        )
+        var reshaped_out_vals = reshape(
+            _to_tile_tensor[out_vals.rank](out_vals), internal_out_vals_shape
+        )
+        internal_out_vals = type_of(internal_out_vals)(
+            reshaped_out_vals.ptr,
+            RuntimeLayout[internal_layout].row_major(
+                coord_to_index_list(reshaped_out_vals.layout.shape)
+            ),
+        )
 
     # Calculate the number of blocks per input
     var num_blocks_per_input_ = min(

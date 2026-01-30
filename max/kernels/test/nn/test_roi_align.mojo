@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.roi_align import roi_align_nhwc
 from testing import *
 
@@ -21,18 +22,18 @@ from utils import IndexList
 def test_roi_align_avg[scale_type: DType]():
     print("=== test_roi_align_avg")
 
-    comptime in_layout = Layout.row_major(1, 10, 10, 1)
-    comptime out_layout = Layout.row_major(1, 5, 5, 1)
-    comptime roi_layout = Layout.row_major(1, 5)
+    comptime in_layout = row_major[1, 10, 10, 1]()
+    comptime out_layout = row_major[1, 5, 5, 1]()
+    comptime roi_layout = row_major[1, 5]()
 
     var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
-    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var input = TileTensor(input_stack, in_layout)
     var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var output = TileTensor(output_stack, out_layout)
     var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
-    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
+    var rois = TileTensor(rois_stack, roi_layout)
 
     for i in range(10):
         for j in range(10):
@@ -44,16 +45,8 @@ def test_roi_align_avg[scale_type: DType]():
     rois[0, 3] = 4
     rois[0, 4] = 4
 
-    comptime out_layout_unknown = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     roi_align_nhwc[aligned=False](
-        LayoutTensor[type_of(output).dtype, out_layout_unknown](
-            output_stack,
-            RuntimeLayout[out_layout_unknown].row_major(
-                IndexList[4](1, 5, 5, 1)
-            ),
-        ),
+        output.make_dynamic[DType.int64](),
         input,
         rois,
         out_layout.shape[1].value(),
@@ -96,18 +89,18 @@ def test_roi_align_avg[scale_type: DType]():
 def test_roi_align_max():
     print("=== test_roi_align_max")
 
-    comptime in_layout = Layout.row_major(1, 10, 10, 1)
-    comptime out_layout = Layout.row_major(1, 5, 5, 1)
-    comptime roi_layout = Layout.row_major(1, 5)
+    comptime in_layout = row_major[1, 10, 10, 1]()
+    comptime out_layout = row_major[1, 5, 5, 1]()
+    comptime roi_layout = row_major[1, 5]()
 
     var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
-    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var input = TileTensor(input_stack, in_layout)
     var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var output = TileTensor(output_stack, out_layout)
     var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
-    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
+    var rois = TileTensor(rois_stack, roi_layout)
 
     for i in range(10):
         for j in range(10):
@@ -119,16 +112,8 @@ def test_roi_align_max():
     rois[0, 3] = 4
     rois[0, 4] = 4
 
-    comptime out_layout_unknown = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     roi_align_nhwc[aligned=False, mode="MAX"](
-        LayoutTensor[type_of(output).dtype, out_layout_unknown](
-            output_stack,
-            RuntimeLayout[out_layout_unknown].row_major(
-                IndexList[4](1, 5, 5, 1)
-            ),
-        ),
+        output.make_dynamic[DType.int64](),
         input,
         rois,
         out_layout.shape[1].value(),
@@ -171,18 +156,18 @@ def test_roi_align_max():
 def test_roi_align_KERN_692():
     print("=== test_roi_align_KERN_692")
 
-    comptime in_layout = Layout.row_major(1, 6, 6, 1)
-    comptime out_layout = Layout.row_major(1, 3, 3, 1)
-    comptime roi_layout = Layout.row_major(1, 5)
+    comptime in_layout = row_major[1, 6, 6, 1]()
+    comptime out_layout = row_major[1, 3, 3, 1]()
+    comptime roi_layout = row_major[1, 5]()
 
     var input_stack = InlineArray[Float32, in_layout.size()](uninitialized=True)
-    var input = LayoutTensor[DType.float32, in_layout](input_stack)
+    var input = TileTensor(input_stack, in_layout)
     var output_stack = InlineArray[Float32, out_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.float32, out_layout](output_stack)
+    var output = TileTensor(output_stack, out_layout)
     var rois_stack = InlineArray[Float32, roi_layout.size()](uninitialized=True)
-    var rois = LayoutTensor[DType.float32, roi_layout](rois_stack)
+    var rois = TileTensor(rois_stack, roi_layout)
 
     for i in range(6):
         for j in range(6):
@@ -194,16 +179,8 @@ def test_roi_align_KERN_692():
     rois[0, 3] = 22
     rois[0, 4] = 22
 
-    comptime out_layout_unknown = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     roi_align_nhwc[aligned=False](
-        LayoutTensor[type_of(output).dtype, out_layout_unknown](
-            output_stack,
-            RuntimeLayout[out_layout_unknown].row_major(
-                IndexList[4](1, 3, 3, 1)
-            ),
-        ),
+        output.make_dynamic[DType.int64](),
         input,
         rois,
         out_layout.shape[1].value(),

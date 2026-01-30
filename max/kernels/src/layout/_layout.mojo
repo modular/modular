@@ -32,7 +32,8 @@ from ._coord import (
     idx2crd,
     coord_to_int_tuple,
     _IntToComptimeInt,
-    _Splatted,
+    _CoordToDynamic,
+    DynamicCoord,
 )
 from .int_tuple import IntTuple
 from .layout import Layout as LegacyLayout
@@ -60,10 +61,10 @@ struct Layout[
     """The stride of the layout as a Coord."""
 
     comptime rank = Variadic.size(Self.shape_types)
-    comptime ALL_DIMS_KNOWN = Coord[*Self.shape_types].ALL_DIMS_KNOWN and Coord[
+    comptime all_dims_known = Coord[*Self.shape_types].all_dims_known and Coord[
         *Self.stride_types
-    ].ALL_DIMS_KNOWN
-    comptime STATIC_PRODUCT = Coord[*Self.shape_types].STATIC_PRODUCT
+    ].all_dims_known
+    comptime static_product = Coord[*Self.shape_types].static_product
 
     fn __init__(
         out self,
@@ -108,7 +109,7 @@ struct Layout[
     fn idx2crd[
         *,
         out_dtype: DType = DType.int64,
-    ](self, idx: Int) -> Coord[*_Splatted[RuntimeInt[out_dtype], Self.rank]]:
+    ](self, idx: Int) -> DynamicCoord[out_dtype, Self.rank]:
         """Maps a linear memory index back to logical coordinates.
 
         This is the inverse of `__call__` (crd2idx). Given a linear index,
@@ -131,7 +132,7 @@ struct Layout[
         """
         comptime Shape = Coord[*Self.shape_types]
         comptime Stride = Coord[*Self.stride_types]
-        return rebind[Coord[*_Splatted[RuntimeInt[out_dtype], Self.rank]]](
+        return rebind[DynamicCoord[out_dtype, Self.rank]](
             idx2crd[Shape, Stride, out_dtype](idx, self.shape, self.stride)
         )
 
@@ -165,6 +166,35 @@ struct Layout[
             coord_to_int_tuple(self.stride),
         )
 
+    @always_inline("nodebug")
+    fn make_dynamic[
+        dtype: DType
+    ](self) -> Layout[
+        _CoordToDynamic[dtype, *Self.shape_types],
+        _CoordToDynamic[dtype, *Self.stride_types],
+    ]:
+        """Convert all elements in shape and stride to RuntimeInt[dtype].
+
+        Parameters:
+            dtype: The data type for the resulting RuntimeInt values.
+
+        Returns:
+            A new Layout where all elements in shape and stride are
+            converted to RuntimeInt[dtype].
+
+        Examples:
+            ```mojo
+            from layout._layout import row_major
+            var layout = row_major[3, 4]()  # All compile-time
+            var dynamic = layout.make_dynamic[DType.int64]()
+            # dynamic has RuntimeInt[DType.int64] for all dimensions
+            ```
+        """
+        return Layout(
+            self.shape.make_dynamic[dtype](),
+            self.stride.make_dynamic[dtype](),
+        )
+
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[CoordLike],
@@ -185,13 +215,13 @@ comptime _RowMajorMapper[
             RuntimeInt[
                 From[idx - 1]
                 .DTYPE if not From[idx - 1]
-                .IS_STATIC_VALUE else Prev[0]
+                .is_static_value else Prev[0]
                 .DTYPE
             ],
-        ] if not From[idx - 1].IS_STATIC_VALUE
-        or not Prev[0].IS_STATIC_VALUE else Variadic.types[
+        ] if not From[idx - 1].is_static_value
+        or not Prev[0].is_static_value else Variadic.types[
             T=CoordLike,
-            ComptimeInt[From[idx - 1].STATIC_VALUE * Prev[0].STATIC_VALUE],
+            ComptimeInt[From[idx - 1].static_value * Prev[0].static_value],
         ]
     ),
     Prev,
@@ -208,9 +238,7 @@ fn row_major(
     comptime RowMajorTypes = _RowMajor[*shape.element_types]
     comptime rank = Variadic.size(shape.element_types)
 
-    var strides: Tuple[*RowMajorTypes]
-
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(strides))
+    var strides = Tuple[*RowMajorTypes]()
 
     # Compute row-major strides on the flattened shape
     # Row-major means rightmost dimension has stride 1,
@@ -230,9 +258,9 @@ fn row_major(
             comptime StrideType = RowMajorTypes[idx]
 
             @parameter
-            if StrideType.IS_STATIC_VALUE:
+            if StrideType.is_static_value:
                 # Stride is compile-time known (both shape and prev stride are compile-time)
-                comptime stride_val = StrideType.STATIC_VALUE
+                comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](Idx[stride_val]())
                 )
@@ -252,12 +280,32 @@ fn row_major(
     return Layout(shape, Coord(strides^))
 
 
+@always_inline("nodebug")
 fn row_major[
     *idxs: Int
 ]() -> Layout[
     shape_types = _IntToComptimeInt[*idxs],
     stride_types = _RowMajor[*_IntToComptimeInt[*idxs]],
 ]:
-    var shape: Coord[*_IntToComptimeInt[*idxs]]
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(shape))
+    var shape = Coord[*_IntToComptimeInt[*idxs]]()
     return row_major(shape)
+
+
+@always_inline("nodebug")
+fn row_major(
+    idx: ComptimeInt[...],
+) -> Layout[
+    shape_types = Variadic.types[type_of(idx)],
+    stride_types = Variadic.types[ComptimeInt[1]],
+]:
+    return Layout(Coord(idx), Coord(Idx[1]()))
+
+
+@always_inline("nodebug")
+fn row_major(
+    idx: RuntimeInt[...],
+) -> Layout[
+    shape_types = Variadic.types[type_of(idx)],
+    stride_types = Variadic.types[ComptimeInt[1]],
+]:
+    return Layout(Coord(idx), Coord(Idx[1]()))

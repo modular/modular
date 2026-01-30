@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from utils import IndexList
@@ -39,23 +39,15 @@ struct BoxCoords[dtype: DType](TrivialRegisterType):
         self.x2 = x2
 
 
-comptime unknown_layout_3d = Layout.row_major(
-    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-)
-
-
 fn fill_boxes[
     dtype: DType
-](batch_size: Int, box_list: VariadicList[BoxCoords[dtype]]) -> LayoutTensor[
-    dtype, unknown_layout_3d, MutAnyOrigin
-]:
+](
+    batch_size: Int,
+    box_list: VariadicList[BoxCoords[dtype]],
+    boxes: TileTensor[mut=True, dtype, ...],
+):
+    __comptime_assert boxes.rank == 3
     var num_boxes = len(box_list) // batch_size
-    var shape = IndexList[3](batch_size, num_boxes, 4)
-    var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
-    var boxes = LayoutTensor[dtype, unknown_layout_3d](
-        storage.as_any_origin(),
-        RuntimeLayout[unknown_layout_3d].row_major(shape),
-    )
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
             i, IndexList[2](batch_size, num_boxes)
@@ -64,8 +56,6 @@ fn fill_boxes[
         boxes[coords[0], coords[1], 1] = box_list[i].x1
         boxes[coords[0], coords[1], 2] = box_list[i].y2
         boxes[coords[0], coords[1], 3] = box_list[i].x2
-
-    return boxes
 
 
 fn linear_offset_to_coords[
@@ -83,21 +73,17 @@ fn linear_offset_to_coords[
 fn fill_scores[
     dtype: DType
 ](
-    batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[dtype]]
-) -> LayoutTensor[dtype, unknown_layout_3d, MutAnyOrigin]:
+    batch_size: Int,
+    num_classes: Int,
+    scores_list: VariadicList[Scalar[dtype]],
+    scores: TileTensor[mut=True, dtype, ...],
+):
+    __comptime_assert scores.rank == 3
     var num_boxes = len(scores_list) // batch_size // num_classes
-
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
-    var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
-    var scores = LayoutTensor[dtype, unknown_layout_3d](
-        storage.as_any_origin(),
-        RuntimeLayout[unknown_layout_3d].row_major(shape),
-    )
     for i in range(len(scores_list)):
         var coords = linear_offset_to_coords(i, shape)
         scores[coords[0], coords[1], coords[2]] = scores_list[i]
-
-    return scores
 
 
 fn test_case[
@@ -112,8 +98,23 @@ fn test_case[
     box_list: VariadicList[BoxCoords[dtype]],
     scores_list: VariadicList[Scalar[dtype]],
 ):
-    var boxes = fill_boxes[dtype](batch_size, box_list)
-    var scores = fill_scores[dtype](batch_size, num_classes, scores_list)
+    # Create boxes tensor
+    var boxes_shape = IndexList[3](batch_size, num_boxes, 4)
+    var boxes_storage = alloc[Scalar[dtype]](boxes_shape.flattened_length())
+    var boxes = TileTensor(
+        boxes_storage.as_any_origin(),
+        row_major(Coord(boxes_shape)),
+    )
+    fill_boxes[dtype](batch_size, box_list, boxes)
+
+    # Create scores tensor
+    var scores_shape = IndexList[3](batch_size, num_classes, num_boxes)
+    var scores_storage = alloc[Scalar[dtype]](scores_shape.flattened_length())
+    var scores = TileTensor(
+        scores_storage.as_any_origin(),
+        row_major(Coord(scores_shape)),
+    )
+    fill_scores[dtype](batch_size, num_classes, scores_list, scores)
 
     var shape = non_max_suppression_shape_func(
         boxes,
@@ -123,14 +124,10 @@ fn test_case[
         score_threshold,
     )
     var idxs_shape = IndexList[2](shape[0], shape[1])
-    var idxs_storage = UnsafePointer[Int64].alloc(idxs_shape.flattened_length())
-    var selected_idxs = LayoutTensor[
-        DType.int64, Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    ](
+    var idxs_storage = alloc[Int64](idxs_shape.flattened_length())
+    var selected_idxs = TileTensor(
         idxs_storage,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)].row_major(
-            idxs_shape
-        ),
+        row_major(Coord(idxs_shape)),
     )
     non_max_suppression(
         boxes,
@@ -141,7 +138,7 @@ fn test_case[
         score_threshold,
     )
 
-    for i in range(Int(selected_idxs.runtime_layout.shape[0])):
+    for i in range(selected_idxs.layout.shape[0].value()):
         print(selected_idxs[i, 0], end="")
         print(",", end="")
         print(selected_idxs[i, 1], end="")

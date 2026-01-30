@@ -13,15 +13,11 @@
 
 from math import isclose
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from layout._coord import Coord, CoordLike, coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from testing import assert_almost_equal
 from utils import Index, IndexList
@@ -41,37 +37,32 @@ test assertions.
 
 
 fn test_bicubic_kernel[
-    input_dim: DimList,
-    output_dim: DimList,
     dtype: DType,
-](ctx: DeviceContext) raises:
-    var input_dim_flattened = input_dim.product().get()
-    var output_dim_flattened = output_dim.product().get()
+](input_dim: Coord, output_dim: Coord, ctx: DeviceContext) raises where (
+    input_dim.all_dims_known
+    and output_dim.all_dims_known
+    and input_dim.rank == 4
+    and output_dim.rank == 4
+):
+    var input_dim_flattened = input_dim.static_product
+    var output_dim_flattened = output_dim.static_product
 
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_dim_flattened)
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_dim_flattened
-    )
-    var output_ref_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_dim_flattened
-    )
+    var input_host_ptr = alloc[Scalar[dtype]](input_dim_flattened)
+    var output_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
+    var output_ref_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
 
-    var input_host = NDBuffer[dtype, 4, _, input_dim](input_host_ptr, input_dim)
-    var output_host = NDBuffer[dtype, 4, _, output_dim](
-        output_host_ptr, output_dim
-    )
-    var output_ref_host = NDBuffer[dtype, 4, _, output_dim](
-        output_ref_host_ptr, output_dim
-    )
+    var input_host = TileTensor(input_host_ptr, row_major(input_dim))
+    var output_host = TileTensor(output_host_ptr, row_major(output_dim))
+    var output_ref_host = TileTensor(output_ref_host_ptr, row_major(output_dim))
 
     print("input_dim_flattened: ", input_dim_flattened)
     print("output_dim_flattened: ", output_dim_flattened)
     print("input_dim: ", input_dim)
     print("output_dim: ", output_dim)
 
-    input_host.zero()
-    output_host.zero()
-    output_ref_host.zero()
+    _ = input_host.fill(0)
+    _ = output_host.fill(0)
+    _ = output_ref_host.fill(0)
 
     print("input_host (zeroed): ", input_host)
     print("output_host (zeroed): ", output_host)
@@ -150,10 +141,7 @@ fn test_bicubic_kernel[
         " upsampling kernel--------------------------------"
     )
     # Call the bicubic upsampling kernel - convert to LayoutTensor
-    var input_tensor = from_ndbuffer_row_major(input_host)
-    var output_tensor = from_ndbuffer_row_major(output_host)
-    comptime layout_4d = Layout.row_major[4]()
-    resize_bicubic[target="cpu"](output_tensor, input_tensor, ctx)
+    resize_bicubic[target="cpu"](output_host, input_host, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -602,23 +590,19 @@ fn test_bicubic_kernel[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_dim_flattened)
 
-    var input_dev_nd = NDBuffer[dtype, 4, _, input_dim](
-        input_dev.unsafe_ptr(), input_dim
-    )
-    var output_dev_nd = NDBuffer[dtype, 4, _, output_dim](
-        output_dev.unsafe_ptr(), output_dim
+    var input_dev_nd = TileTensor(input_dev.unsafe_ptr(), row_major(input_dim))
+    var output_dev_nd = TileTensor(
+        output_dev.unsafe_ptr(), row_major(output_dim)
     )
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
 
-    comptime N = output_dim.get[0]()
-    comptime C = output_dim.get[1]()
-    comptime H = output_dim.get[2]()
-    comptime W = output_dim.get[3]()
+    comptime N = output_dim.element_types[0].static_value
+    comptime C = output_dim.element_types[1].static_value
+    comptime H = output_dim.element_types[2].static_value
+    comptime W = output_dim.element_types[3].static_value
 
-    var input_dev_tensor = from_ndbuffer_row_major(input_dev_nd)
-    var output_dev_tensor = from_ndbuffer_row_major(output_dev_nd)
-    resize_bicubic[target="gpu"](output_dev_tensor, input_dev_tensor, ctx)
+    resize_bicubic[target="gpu"](output_dev_nd, input_dev_nd, ctx)
 
     ctx.enqueue_copy(output_ref_host_ptr, output_dev)
     ctx.synchronize()
@@ -652,34 +636,24 @@ fn test_bicubic_kernel[
     input_host_ptr.free()
     output_host_ptr.free()
     output_ref_host_ptr.free()
-    _ = input_dev^
-    _ = output_dev^
 
 
 fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
     """
     # Test with 64x64 output which would exceed 1024 threads/block limit.
-    comptime input_dim = DimList(1, 3, 32, 32)
-    comptime output_dim = DimList(1, 3, 64, 64)
-    comptime input_dim_flattened = input_dim.product().get()
-    comptime output_dim_flattened = output_dim.product().get()
+    comptime input_dim = row_major[1, 3, 32, 32]()
+    comptime output_dim = row_major[1, 3, 64, 64]()
+    comptime input_dim_flattened = input_dim.shape.static_product
+    comptime output_dim_flattened = output_dim.shape.static_product
 
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_dim_flattened)
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_dim_flattened
-    )
-    var output_gpu_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_dim_flattened
-    )
+    var input_host_ptr = alloc[Scalar[dtype]](input_dim_flattened)
+    var output_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
+    var output_gpu_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
 
-    var input_host = NDBuffer[dtype, 4, _, input_dim](input_host_ptr, input_dim)
-    var output_host = NDBuffer[dtype, 4, _, output_dim](
-        output_host_ptr, output_dim
-    )
-    var output_gpu_host = NDBuffer[dtype, 4, _, output_dim](
-        output_gpu_host_ptr, output_dim
-    )
+    var input_host = TileTensor(input_host_ptr, input_dim)
+    var output_host = TileTensor(output_host_ptr, output_dim)
+    var output_gpu_host = TileTensor(output_gpu_host_ptr, output_dim)
 
     # Fill input with simple pattern
     for n in range(1):
@@ -691,44 +665,31 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
                     )
 
     # Run CPU version.
-    var input_host_tensor = from_ndbuffer_row_major(input_host)
-    var output_host_tensor = from_ndbuffer_row_major(output_host)
-    cpu_bicubic_kernel(output_host_tensor, input_host_tensor)
+    cpu_bicubic_kernel(output_host, input_host)
 
     # Run GPU version.
     var input_dev = ctx.enqueue_create_buffer[dtype](input_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_dim_flattened)
 
-    var input_dev_nd = NDBuffer[dtype, 4, _, input_dim](
-        input_dev.unsafe_ptr(), input_dim
-    )
-    var output_dev_nd = NDBuffer[dtype, 4, _, output_dim](
-        output_dev.unsafe_ptr(), output_dim
-    )
+    var input_dev_nd = TileTensor(input_dev, input_dim)
+    var output_dev_nd = TileTensor(output_dev, output_dim)
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
 
-    var input_dev_tensor = from_ndbuffer_row_major(input_dev_nd)
-    var output_dev_tensor = from_ndbuffer_row_major(output_dev_nd)
-    comptime layout_4d = Layout.row_major[4]()
     comptime kernel = gpu_bicubic_kernel[
-        dtype, layout_4d, layout_4d, output_dev_tensor.address_space
+        dtype,
+        output_origin = output_dev_nd.origin,
+        output_shape_types = output_dev_nd.shape_types,
+        output_stride_types = output_dev_nd.stride_types,
+        input_origin = ImmutOrigin(input_dev_nd.origin),
+        input_shape_types = input_dev_nd.shape_types,
+        input_stride_types = input_dev_nd.stride_types,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
     ctx.enqueue_function_experimental[kernel](
-        LayoutTensor[output_dev_tensor.dtype, layout_4d](
-            output_dev_tensor.ptr,
-            RuntimeLayout[layout_4d].row_major(
-                output_dev_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[input_dev_tensor.dtype, layout_4d](
-            input_dev_tensor.ptr,
-            RuntimeLayout[layout_4d].row_major(
-                input_dev_tensor.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        output_dev_nd,
+        input_dev_nd.as_immut(),
         grid_dim=(1, 3),
         block_dim=(256,),
     )
@@ -763,10 +724,10 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_bicubic_kernel[
-            DimList(1, 3, 5, 5),  # input  (NCHW)
-            DimList(1, 3, 10, 10),  # output (NCHW)
-            DType.float32,  # data_type
-        ](ctx)
+        test_bicubic_kernel[DType.float32,](  # data_type
+            coord[1, 3, 5, 5](),  # input  (NCHW)
+            coord[1, 3, 10, 10](),  # output (NCHW)
+            ctx,
+        )
 
         test_large_image_gpu_launch[DType.float32](ctx)

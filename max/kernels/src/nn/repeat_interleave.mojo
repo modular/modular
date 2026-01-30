@@ -14,15 +14,9 @@
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
-from layout.layout import is_row_major
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from tensor._indexing import _row_major_strides
 
 from utils import IndexList
@@ -56,10 +50,10 @@ fn repeat_interleave[
     dtype: DType,
     type_repeats: DType,
 ](
-    input: LayoutTensor[dtype, ...],
-    repeats: LayoutTensor[type_repeats, ...],
+    input: TileTensor[dtype, ...],
+    repeats: TileTensor[type_repeats, ...],
     axis: Int,
-    output: LayoutTensor[mut=True, dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
 ) raises:
     """
     Fill `output` by repeating values from `input` along `axis` based on the
@@ -74,32 +68,32 @@ fn repeat_interleave[
         axis: The axis along which to repeat values.
         output: The output buffer.
     """
-    __comptime_assert (is_row_major[input.rank](input.layout)) and (
-        is_row_major[output.rank](output.layout)
-    )
+    # __comptime_assert (is_row_major[input.rank](input.layout)) and (
+    #     is_row_major[output.rank](output.layout)
+    # )
     __comptime_assert input.rank == output.rank
     __comptime_assert repeats.rank == 1
 
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
     var collapsed_input_shape = _collapse_dims_around_axis(
-        input.runtime_layout.shape.value, axis
+        coord_to_index_list(input.layout.shape), axis
     )
     var collapsed_output_shape = _collapse_dims_around_axis(
-        output.runtime_layout.shape.value, axis
+        coord_to_index_list(output.layout.shape), axis
     )
 
     debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
     debug_assert(collapsed_output_shape[2] == collapsed_input_shape[2])
 
-    var collapsed_input = LayoutTensor[dtype, Layout.row_major[3](), _, ...](
+    var collapsed_input = TileTensor(
         input.ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(collapsed_input_shape),
+        row_major(Coord(collapsed_input_shape)),
     )
 
-    var collapsed_output = LayoutTensor[dtype, Layout.row_major[3](), _, ...](
+    var collapsed_output = TileTensor(
         output.ptr,
-        RuntimeLayout[Layout.row_major[3]()].row_major(collapsed_output_shape),
+        row_major(Coord(collapsed_output_shape)),
     )
 
     var input_repeat_dim = collapsed_input_shape[1]
@@ -130,22 +124,14 @@ fn repeat_interleave[
         var input_index = output_index
         input_index[1] = offset_mapping[output_index[1]]
 
-        var input_idx = collapsed_input.runtime_layout(
-            RuntimeTuple[
-                fill_like(collapsed_input.layout.shape, UNKNOWN_VALUE)
-            ](input_index)
-        )
+        var input_idx = collapsed_input.layout(Coord(input_index))
         var input_value = collapsed_input.ptr.load[width=width](input_idx)
 
-        var output_idx = collapsed_output.runtime_layout(
-            RuntimeTuple[
-                fill_like(collapsed_output.layout.shape, UNKNOWN_VALUE)
-            ](output_index)
-        )
+        var output_idx = collapsed_output.layout(Coord(output_index))
         collapsed_output.ptr.store(output_idx, input_value)
 
     elementwise[func, simd_width_of[output.dtype]()](
-        collapsed_output.runtime_layout.shape.value
+        coord_to_index_list(collapsed_output.layout.shape)
     )
 
 
@@ -153,15 +139,15 @@ fn repeat_interleave[
 fn repeat_interleave_shape[
     type_repeats: DType,
 ](
-    input: LayoutTensor[...],
-    repeats: LayoutTensor[type_repeats, _, _, ...],
+    input: TileTensor[...],
+    repeats: TileTensor[type_repeats, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     __comptime_assert type_repeats.is_integral()
     __comptime_assert repeats.rank == 1
 
     var repeats_size = repeats.dim[0]()
-    if repeats_size != 1 and repeats_size != input.dim(axis):
+    if repeats_size != 1 and repeats_size != Int(input.dim(axis)):
         raise Error(
             "repeat_interleave: repeats must be size 1 or equal to "
             "the size of input[axis]"
@@ -171,9 +157,7 @@ fn repeat_interleave_shape[
     for i in range(repeats_size):
         total_repeats += Int(repeats[i])
 
-    var result = rebind[IndexList[input.rank]](
-        input.runtime_layout.shape.value.canonicalize()
-    )
+    var result = coord_to_index_list(input.layout.shape)
 
     # If the repeats is size 1, the repeat is treated as a broadcast
     if repeats_size == 1:

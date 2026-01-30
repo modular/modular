@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.broadcast import broadcast
 
 
@@ -20,21 +21,21 @@ fn test_broadcast_empty_shape():
     print("== test_broadcast_empty_shape")
 
     # parameters
-    comptime input_layout = Layout.row_major(1)
-    comptime output_layout = Layout.row_major(0)
+    comptime input_layout = row_major[1]()
+    comptime output_layout = row_major[0]()
 
     # Create a 1D tensor of layout (1), of the form [1]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
-    var input = LayoutTensor[DType.int, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
     input[0] = 1
 
     # Create a 1D tensor of shape (0)
     # Note: output_layout.size() is 0, but we need to allocate a buffer for the
     # output tensor.
     var output_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
-    var output = LayoutTensor[DType.int, output_layout](output_stack)
+    var output = TileTensor(output_stack, output_layout)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -51,15 +52,15 @@ fn test_broadcast_same_shape():
     print("== test_broadcast_same_shape")
 
     # parameters
-    comptime input_layout = Layout.row_major(1, 2, 1)
-    comptime output_layout = Layout.row_major(1, 2, 1)
+    comptime input_layout = row_major[1, 2, 1]()
+    comptime output_layout = row_major[1, 2, 1]()
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
-    var input = LayoutTensor[DType.int, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
     input[0, 0, 0] = 1
     input[0, 1, 0] = 2
 
@@ -67,7 +68,7 @@ fn test_broadcast_same_shape():
     var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
+    var output = TileTensor(output_stack, output_layout).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -89,15 +90,15 @@ fn test_broadcast_single_axis():
     print("== test_broadcast_single_axis")
 
     # parameters
-    comptime input_layout = Layout.row_major(1, 2)
-    comptime output_layout = Layout.row_major(3, 2)
+    comptime input_layout = row_major[1, 2]()
+    comptime output_layout = row_major[3, 2]()
 
     # Create a 2D tensor of shape (1, 2), of the form
     # [[1, 2]]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
-    var input = LayoutTensor[DType.int, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
 
     input[0, 0] = 1
     input[0, 1] = 2
@@ -106,7 +107,7 @@ fn test_broadcast_single_axis():
     var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
+    var output = TileTensor(output_stack, output_layout).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -136,15 +137,15 @@ fn test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes")
 
     # parameters
-    comptime input_layout = Layout.row_major(1, 2, 1)
-    comptime output_layout = Layout.row_major(2, 2, 3)
+    comptime input_layout = row_major[1, 2, 1]()
+    comptime output_layout = row_major[2, 2, 3]()
 
     # Create a 3D tensor of shape (1, 2, 1), of the form
     # [[[1], [2]]]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
-    var input = LayoutTensor[DType.int, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
 
     input[0, 0, 0] = 1
     input[0, 1, 0] = 2
@@ -153,7 +154,7 @@ fn test_broadcast_multi_axes():
     var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
+    var output = TileTensor(output_stack, output_layout).fill(0)
 
     broadcast(output, input)
     # output tensor will have the form:
@@ -193,15 +194,15 @@ fn test_broadcast_multi_axes():
 
 fn test_broadcast_multi_axes_nested():
     # parameters
-    comptime input_layout = Layout.row_major(2, 1, 2, 1, 2)
-    comptime output_layout = Layout.row_major(2, 2, 2, 2, 2)
+    comptime input_layout = row_major[2, 1, 2, 1, 2]()
+    comptime output_layout = row_major[2, 2, 2, 2, 2]()
 
     # Create a 5D tensor of shape (2, 1, 2, 1, 2), of the form
     # [[[[[1, 2]], [[3, 4]]]], [[[[5, 6]], [[7, 8]]]]]
     var input_stack = InlineArray[Scalar[DType.int], input_layout.size()](
         uninitialized=True
     )
-    var input = LayoutTensor[DType.int, input_layout](input_stack)
+    var input = TileTensor(input_stack, input_layout)
 
     input[0, 0, 0, 0, 0] = 1
     input[0, 0, 0, 0, 1] = 2
@@ -216,7 +217,7 @@ fn test_broadcast_multi_axes_nested():
     var output_stack = InlineArray[Scalar[DType.int], output_layout.size()](
         uninitialized=True
     )
-    var output = LayoutTensor[DType.int, output_layout](output_stack).fill(0)
+    var output = TileTensor(output_stack, output_layout).fill(0)
 
     broadcast(output, input)
 

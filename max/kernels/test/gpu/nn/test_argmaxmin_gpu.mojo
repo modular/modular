@@ -21,6 +21,9 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import LegacyUnsafePointer
 
@@ -36,7 +39,7 @@ fn test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        LayoutTensor[mut=True, dtype, ...]
+        TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool = True,
     rank: Int = 2,
@@ -68,16 +71,15 @@ fn test_argmaxmin_gpu[
         out_size *= out_shape[i]
 
     # Allocate host memory
-    comptime layout = Layout.row_major[rank]()
     var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
-    var in_host = LayoutTensor[dtype, layout](
+    var in_host = TileTensor(
         in_host_ptr,
-        RuntimeLayout[layout].row_major(in_shape),
+        row_major(Coord(in_shape)),
     )
     var out_idxs_host_ptr = UnsafePointer[Scalar[output_type]].alloc(out_size)
-    var out_idxs_host = LayoutTensor[output_type, layout](
+    var out_idxs_host = TileTensor(
         out_idxs_host_ptr,
-        RuntimeLayout[layout].row_major(out_shape),
+        row_major(Coord(out_shape)),
     )
 
     # Fill the buffer with consecutive values
@@ -90,6 +92,7 @@ fn test_argmaxmin_gpu[
     ctx.enqueue_copy(device_in, in_host_ptr)
 
     # Create device LayoutTensors
+    comptime layout = Layout.row_major[rank]()
     var device_in_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
         device_in.unsafe_ptr(),
         RuntimeLayout[layout].row_major(in_shape),
@@ -118,9 +121,9 @@ fn test_argmaxmin_gpu[
 
     # Test for correctness against CPU reference
     var out_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(out_size)
-    var out_idxs_cpu = LayoutTensor[DType.int64, layout](
+    var out_idxs_cpu = TileTensor[DType.int64, layout](
         out_idxs_cpu_ptr,
-        RuntimeLayout[layout].row_major(out_shape),
+        row_major(Coord(out_shape)),
     )
 
     @parameter
@@ -156,7 +159,7 @@ fn test_argmaxmin_gpu[
 fn _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        LayoutTensor[mut=True, dtype, ...]
+        TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
@@ -174,7 +177,7 @@ fn _test_argmaxmin_gpu_helper_2[
 fn test_argmaxmin_gpu_helper[
     idx_type: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        LayoutTensor[mut=True, dtype, ...]
+        TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
@@ -188,10 +191,10 @@ def main():
     @parameter
     fn fill_random[
         rank: Int, dtype: DType
-    ](buffer: LayoutTensor[mut=True, dtype, ...]):
+    ](buffer: TileTensor[mut=True, dtype, ...]):
         comptime min_val = -1e9
         comptime max_val = 1e9
-        var total_elements = buffer.size()
+        var total_elements = buffer.numel()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
             buffer.ptr[i] = random_value.cast[dtype]()

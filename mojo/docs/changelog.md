@@ -29,6 +29,9 @@ what we publish.
 
 ### Library changes
 
+- Many kernels in `nn` have been migrated to use `TileTensor`. We will have
+  more documentation on `TileTensor` and its uses over the coming weeks.
+
 - `InlineArray` now requires explicitly using literals for construction. E.g.
 
   ```Mojo

@@ -15,13 +15,9 @@ from math import sqrt
 
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout._fillers import random
 from nn.normalization import *
 from testing import assert_almost_equal
@@ -37,11 +33,9 @@ fn run_rms_norm_fused_residual_add_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var runtime_layout = RuntimeLayout[layout].row_major(shape)
+    var runtime_layout = row_major(Coord(shape))
     var param_shape = Index(cols)
-    var param_runtime_layout = RuntimeLayout[layout_1d].row_major(param_shape)
+    var param_runtime_layout = row_major(Coord(param_shape))
 
     # Allocate device buffers
     var data_device = ctx.enqueue_create_buffer[dtype](shape.flattened_length())
@@ -62,21 +56,15 @@ fn run_rms_norm_fused_residual_add_gpu[
 
     # Initialize input data on host
     with data_device.map_to_host() as data_host:
-        var data_host_tensor = LayoutTensor[dtype, layout](
-            data_host, runtime_layout
-        )
+        var data_host_tensor = TileTensor(data_host, runtime_layout)
         random(data_host_tensor)
 
     with gamma1_device.map_to_host() as gamma1_host:
-        var gamma1_host_tensor = LayoutTensor[dtype, layout_1d](
-            gamma1_host, param_runtime_layout
-        )
+        var gamma1_host_tensor = TileTensor(gamma1_host, param_runtime_layout)
         random(gamma1_host_tensor)
 
     with gamma2_device.map_to_host() as gamma2_host:
-        var gamma2_host_tensor = LayoutTensor[dtype, layout_1d](
-            gamma2_host, param_runtime_layout
-        )
+        var gamma2_host_tensor = TileTensor(gamma2_host, param_runtime_layout)
         random(gamma2_host_tensor)
 
     # Initialize output buffers with zeros
@@ -97,23 +85,15 @@ fn run_rms_norm_fused_residual_add_gpu[
             host[i] = 0
 
     # Create device layout tensors
-    var data_buf = LayoutTensor[dtype, layout](data_device, runtime_layout)
-    var gamma1 = LayoutTensor[dtype, layout_1d](
-        gamma1_device, param_runtime_layout
-    )
-    var gamma2 = LayoutTensor[dtype, layout_1d](
-        gamma2_device, param_runtime_layout
-    )
-    var result_fused_buf = LayoutTensor[dtype, layout](
-        result_fused_device, runtime_layout
-    )
-    var result_unfused_buf = LayoutTensor[dtype, layout](
-        result_unfused_device, runtime_layout
-    )
-    var unfused_intermediate_buf = LayoutTensor[dtype, layout](
+    var data_buf = TileTensor(data_device, runtime_layout)
+    var gamma1 = TileTensor(gamma1_device, param_runtime_layout)
+    var gamma2 = TileTensor(gamma2_device, param_runtime_layout)
+    var result_fused_buf = TileTensor(result_fused_device, runtime_layout)
+    var result_unfused_buf = TileTensor(result_unfused_device, runtime_layout)
+    var unfused_intermediate_buf = TileTensor(
         unfused_intermediate_device, runtime_layout
     )
-    var residual_fused_output_buf = LayoutTensor[dtype, layout](
+    var residual_fused_output_buf = TileTensor(
         residual_fused_output_device, runtime_layout
     )
 
@@ -129,11 +109,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
     @parameter
@@ -142,11 +118,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
     @always_inline
@@ -155,11 +127,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn fused_output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
-        var idx = result_fused_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_fused_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var idx = result_fused_buf.layout(Coord(coords))
         result_fused_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     @always_inline
@@ -168,11 +136,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn fused_residual_output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) -> None:
-        var idx = residual_fused_output_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(residual_fused_output_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var idx = residual_fused_output_buf.layout(Coord(coords))
         residual_fused_output_buf.ptr.store[width=width, alignment=alignment](
             idx, val
         )
@@ -203,11 +167,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn unfused_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var idx = unfused_intermediate_buf.layout(Coord(coords))
         unfused_intermediate_buf.ptr.store[width=width, alignment=alignment](
             idx, val
         )
@@ -223,17 +183,9 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn sum_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](coords: IndexList[rank_]):
-        var data_idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var data_idx = data_buf.layout(Coord(coords))
         var residual_val = data_buf.ptr.load[width=width](data_idx)
-        var unfused_idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var unfused_idx = unfused_intermediate_buf.layout(Coord(coords))
         var result_val = unfused_intermediate_buf.ptr.load[width=width](
             unfused_idx
         )
@@ -242,7 +194,7 @@ fn run_rms_norm_fused_residual_add_gpu[
         )
 
     elementwise[sum_fn, simd_width_of[dtype](), target="gpu"](
-        unfused_intermediate_buf.runtime_layout.shape.value.canonicalize(),
+        coord_to_index_list(unfused_intermediate_buf.layout.shape),
         ctx,
     )
 
@@ -252,11 +204,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn unfused_input2_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var idx = unfused_intermediate_buf.layout(Coord(coords))
         return unfused_intermediate_buf.ptr.load[width=width](idx)
 
     # Test unfused operations for comparison
@@ -266,11 +214,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     fn unfused_output2_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = result_unfused_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_unfused_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
+        var idx = result_unfused_buf.layout(Coord(coords))
         result_unfused_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[

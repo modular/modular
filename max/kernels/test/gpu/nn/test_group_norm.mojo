@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import rsqrt
 from sys import simd_width_of
 
 from gpu.host import DeviceContext, get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
 
@@ -27,11 +27,12 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: LayoutTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
     Scalar[t],
     Scalar[t],
 ]:
     __comptime_assert vec.rank == 1, "vec must be rank 1"
+    __comptime_assert vec.element_size == 1
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
     for i in range(size):
@@ -60,10 +61,10 @@ fn run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(C)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(C)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](C)
+    var beta_h = alloc[Scalar[dtype]](C)
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
@@ -77,17 +78,9 @@ fn run_group_norm_gpu[
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
-    comptime layout = Layout.row_major[rank]()
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
-    var beta = LayoutTensor[dtype, layout_1d](
-        beta_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -100,11 +93,7 @@ fn run_group_norm_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
 
         return data_buf.ptr.load[width=width](idx)
 
@@ -112,18 +101,14 @@ fn run_group_norm_gpu[
     @always_inline
     @parameter
     fn gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = gamma.runtime_layout(
-            RuntimeTuple[fill_like(gamma.layout.shape, UNKNOWN_VALUE)](coords)
-        )
+        var idx = gamma.layout(Coord(coords))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
     fn beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = beta.runtime_layout(
-            RuntimeTuple[fill_like(beta.layout.shape, UNKNOWN_VALUE)](coords)
-        )
+        var idx = beta.layout(Coord(coords))
         return beta.ptr.load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
@@ -133,9 +118,9 @@ fn run_group_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             data_h + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]

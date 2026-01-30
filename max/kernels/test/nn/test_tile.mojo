@@ -11,20 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.tile import tile
 from testing import assert_equal
 
 from utils import IndexList
-
-comptime layout_unknown_1d = Layout.row_major(UNKNOWN_VALUE)
-comptime layout_unknown_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-comptime layout_unknown_3d = Layout.row_major(
-    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-)
-comptime layout_unknown_4d = Layout.row_major(
-    UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
-)
 
 
 # CHECK-LABEL: test_tile_eg1
@@ -34,24 +27,21 @@ comptime layout_unknown_4d = Layout.row_major(
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg1() raises:
     print("== test_tile_eg1")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
     input[0, 1] = 1
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 2
@@ -59,21 +49,12 @@ fn test_tile_eg1() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 16](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 4)](output_stack)
+    var output = TileTensor(output_stack, row_major[4, 4]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 4)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -93,24 +74,21 @@ fn test_tile_eg1() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg2() raises:
     print("== test_tile_eg2")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
     input[0, 1] = 1
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 3
     repeats[1] = 2
@@ -118,21 +96,12 @@ fn test_tile_eg2() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 4](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(6, 4)](output_stack)
+    var output = TileTensor(output_stack, row_major[6, 4]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](6, 4)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -150,24 +119,21 @@ fn test_tile_eg2() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg3() raises:
     print("== test_tile_eg3")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 0
     input[0, 1] = 1
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 3
@@ -175,21 +141,12 @@ fn test_tile_eg3() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 6)](output_stack)
+    var output = TileTensor(output_stack, row_major[4, 6]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 6)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -211,11 +168,10 @@ fn test_tile_eg3() raises:
 # CHECK: 6.0 ,7.0 ,
 fn test_tile_eg4() raises:
     print("== test_tile_eg4")
-    comptime rank = 3
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -227,36 +183,25 @@ fn test_tile_eg4() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[3]())
 
-    repeats[0] = 2
-    repeats[1] = 1
-    repeats[2] = 1
+    repeats[0,] = 2
+    repeats[1,] = 1
+    repeats[2,] = 1
 
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2 * 2](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 2, 2)](output_stack)
+    var output = TileTensor(output_stack, row_major[4, 2, 2]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_3d](
-            input_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type, layout_unknown_3d](
-            output_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 2, 2)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -280,11 +225,10 @@ fn test_tile_eg4() raises:
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,
 fn test_tile_eg5() raises:
     print("== test_tile_eg5")
-    comptime rank = 3
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -296,13 +240,11 @@ fn test_tile_eg5() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[3]())
 
     repeats[0] = 2
     repeats[1] = 1
@@ -311,21 +253,12 @@ fn test_tile_eg5() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2 * 4](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 2, 4)](output_stack)
+    var output = TileTensor(output_stack, row_major[4, 2, 4]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_3d](
-            input_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type, layout_unknown_3d](
-            output_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 2, 4)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -343,25 +276,21 @@ fn test_tile_eg5() raises:
 # CHECK: 3.0 ,4.0 ,3.0 ,4.0 ,
 fn test_tile_eg6() raises:
     print("== test_tile_eg6")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
-
-    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 1
     input[0, 1] = 2
     input[1, 0] = 3
     input[1, 1] = 4
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 1
     repeats[1] = 2
@@ -369,21 +298,12 @@ fn test_tile_eg6() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 2 * 4](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(2, 4)](output_stack)
+    var output = TileTensor(output_stack, row_major[2, 4]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 4)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -401,24 +321,21 @@ fn test_tile_eg6() raises:
 # CHECK: 3.0 ,4.0 ,
 fn test_tile_eg7() raises:
     print("== test_tile_eg7")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2]())
 
     input[0, 0] = 1
     input[0, 1] = 2
     input[1, 0] = 3
     input[1, 1] = 4
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 2
     repeats[1] = 1
@@ -426,21 +343,12 @@ fn test_tile_eg7() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 2](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 2)](output_stack)
+    var output = TileTensor(output_stack, row_major[4, 2]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 2)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -458,24 +366,21 @@ fn test_tile_eg7() raises:
 # CHECK: 1.0 ,2.0 ,3.0 ,4.0 ,
 fn test_tile_eg8() raises:
     print("== test_tile_eg8")
-    comptime rank = 2
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 4](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(1, 4)](input_stack)
+    var input = TileTensor(input_stack, row_major[1, 4]())
 
     input[0, 0] = 1
     input[0, 1] = 2
     input[0, 2] = 3
     input[0, 3] = 4
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 2](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(2)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[2]())
 
     repeats[0] = 4
     repeats[1] = 1
@@ -483,25 +388,12 @@ fn test_tile_eg8() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 4)](output_stack)
-
-    for i in range(4):
-        for j in range(4):
-            output[i, j] = 0
+    var output = TileTensor(output_stack, row_major[4, 4]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_2d](
-            input_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](1, 4)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](2)),
-        ),
-        LayoutTensor[type, layout_unknown_2d](
-            output_stack,
-            RuntimeLayout[layout_unknown_2d].row_major(IndexList[2](4, 4)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -531,11 +423,10 @@ fn test_tile_eg8() raises:
 # CHECK: 6.0 ,7.0 ,
 fn test_tile_eg9() raises:
     print("== test_tile_eg9")
-    comptime rank = 3
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -547,13 +438,11 @@ fn test_tile_eg9() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[3]())
 
     repeats[0] = 2
     repeats[1] = 2
@@ -562,26 +451,12 @@ fn test_tile_eg9() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 4 * 2](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(4, 4, 2)](output_stack)
-
-    for i in range(4):
-        for j in range(4):
-            for k in range(2):
-                output[i, j, k] = 0
+    var output = TileTensor(output_stack, row_major[4, 4, 2]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_3d](
-            input_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type, layout_unknown_3d](
-            output_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](4, 4, 2)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -621,11 +496,10 @@ fn test_tile_eg9() raises:
 # CHECK: 6.0 ,7.0 ,6.0 ,7.0 ,6.0 ,7.0 ,
 fn test_tile_eg10() raises:
     print("== test_tile_eg10")
-    comptime rank = 3
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -637,13 +511,11 @@ fn test_tile_eg10() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[3]())
 
     repeats[0] = 3
     repeats[1] = 2
@@ -652,21 +524,12 @@ fn test_tile_eg10() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 4 * 6](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(6, 4, 6)](output_stack)
+    var output = TileTensor(output_stack, row_major[6, 4, 6]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_3d](
-            input_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](2, 2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type, layout_unknown_3d](
-            output_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](6, 4, 6)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -718,11 +581,10 @@ fn test_tile_eg10() raises:
 # CHECK: 10.0 ,11.0 ,
 fn test_tile_eg11() raises:
     print("== test_tile_eg11")
-    comptime rank = 3
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 3 * 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(3, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[3, 2, 2]())
 
     input[0, 0, 0] = 0
     input[0, 0, 1] = 1
@@ -739,13 +601,11 @@ fn test_tile_eg11() raises:
     input[2, 1, 0] = 10
     input[2, 1, 1] = 11
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 3](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(3)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[3]())
 
     repeats[0] = 2
     repeats[1] = 3
@@ -754,26 +614,12 @@ fn test_tile_eg11() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 6 * 6 * 2](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(6, 6, 2)](output_stack)
-
-    for i in range(6):
-        for j in range(6):
-            for k in range(2):
-                output[i, j, k] = 0
+    var output = TileTensor(output_stack, row_major[6, 6, 2]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_3d](
-            input_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](3, 2, 2)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type, layout_unknown_3d](
-            output_stack,
-            RuntimeLayout[layout_unknown_3d].row_major(IndexList[3](6, 6, 2)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -793,24 +639,21 @@ fn test_tile_eg11() raises:
 # CHECK: 2.0 ,3.0 ,2.0 ,3.0 ,2.0 ,3.0 ,
 fn test_tile_eg12() raises:
     print("== test_tile_eg12")
-    comptime rank = 4
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(1, 1, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
     input[0, 0, 0, 0] = 0
     input[0, 0, 0, 1] = 1
     input[0, 0, 1, 0] = 2
     input[0, 0, 1, 1] = 3
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[4]())
 
     repeats[0] = 1
     repeats[1] = 1
@@ -820,31 +663,12 @@ fn test_tile_eg12() raises:
     # Output rank = input rank
     # output_dim[i] = input_dim[i] * repeats[i]
     var output_stack = InlineArray[Scalar[type], 4 * 6](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(1, 1, 4, 6)](output_stack)
-
-    for i in range(1):
-        for j in range(1):
-            for k in range(4):
-                for l in range(6):
-                    output[i, j, k, l] = 0
+    var output = TileTensor(output_stack, row_major[1, 1, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_4d](
-            input_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](1, 1, 2, 2)
-            ),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
-        ),
-        LayoutTensor[type, layout_unknown_4d](
-            output_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](1, 1, 4, 6)
-            ),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -878,13 +702,12 @@ fn test_tile_eg12() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 fn test_tile_eg13() raises:
     print("== test_tile_eg13")
-    comptime rank = 4
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
     )
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2, 2]())
 
     input[0, 0, 0, 0] = 0
     input[0, 0, 0, 1] = 1
@@ -906,13 +729,11 @@ fn test_tile_eg13() raises:
     input[1, 1, 1, 0] = 14
     input[1, 1, 1, 1] = 15
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[4]())
 
     repeats[0] = 1
     repeats[1] = 2
@@ -924,31 +745,12 @@ fn test_tile_eg13() raises:
     var output_stack = InlineArray[Scalar[type], 2 * 4 * 4 * 6](
         uninitialized=True
     )
-    var output = LayoutTensor[type, Layout.row_major(2, 4, 4, 6)](output_stack)
-
-    for i in range(2):
-        for j in range(4):
-            for k in range(4):
-                for l in range(6):
-                    output[i, j, k, l] = 0
+    var output = TileTensor(output_stack, row_major[2, 4, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_4d](
-            input_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](2, 2, 2, 2)
-            ),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
-        ),
-        LayoutTensor[type, layout_unknown_4d](
-            output_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](2, 4, 4, 6)
-            ),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -998,13 +800,12 @@ fn test_tile_eg13() raises:
 # CHECK: 14.0 ,15.0 ,14.0 ,15.0 ,14.0 ,15.0 ,
 fn test_tile_eg14() raises:
     print("== test_tile_eg14")
-    comptime rank = 4
     comptime type = DType.float32
 
     var input_stack = InlineArray[Scalar[type], 2 * 2 * 2 * 2](
         uninitialized=True
     )
-    var input = LayoutTensor[type, Layout.row_major(2, 2, 2, 2)](input_stack)
+    var input = TileTensor(input_stack, row_major[2, 2, 2, 2]())
 
     input[0, 0, 0, 0] = 0
     input[0, 0, 0, 1] = 1
@@ -1026,13 +827,11 @@ fn test_tile_eg14() raises:
     input[1, 1, 1, 0] = 14
     input[1, 1, 1, 1] = 15
 
-    # rank_repeats is always 1
-    comptime rank_repeats = 1
     # type_repeats is always DType.int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 4](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(4)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[4]())
 
     repeats[0] = 2
     repeats[1] = 2
@@ -1044,31 +843,12 @@ fn test_tile_eg14() raises:
     var output_stack = InlineArray[Scalar[type], 4 * 4 * 4 * 6](
         uninitialized=True
     )
-    var output = LayoutTensor[type, Layout.row_major(4, 4, 4, 6)](output_stack)
-
-    for i in range(4):
-        for j in range(4):
-            for k in range(4):
-                for l in range(6):
-                    output[i, j, k, l] = 0
+    var output = TileTensor(output_stack, row_major[4, 4, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_4d](
-            input_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](2, 2, 2, 2)
-            ),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](4)),
-        ),
-        LayoutTensor[type, layout_unknown_4d](
-            output_stack,
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](4, 4, 4, 6)
-            ),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     print()
@@ -1093,34 +873,25 @@ fn test_tile_1d() raises:
     comptime type_repeats = DType.int64
 
     var input_stack = InlineArray[Scalar[type], 3](uninitialized=True)
-    var input = LayoutTensor[type, Layout.row_major(3)](input_stack)
+    var input = TileTensor(input_stack, row_major[3]())
 
     input[0] = 1
     input[1] = 2
     input[2] = 3
 
     var repeats_stack = InlineArray[Scalar[type_repeats], 1](uninitialized=True)
-    var repeats = LayoutTensor[type_repeats, Layout.row_major(1)](repeats_stack)
+    var repeats = TileTensor(repeats_stack, row_major[1]())
 
     repeats[0] = 3  # Tile 3 times along the single dimension
 
     # Output: 3 * 3 = 9 elements
     var output_stack = InlineArray[Scalar[type], 9](uninitialized=True)
-    var output = LayoutTensor[type, Layout.row_major(9)](output_stack)
+    var output = TileTensor(output_stack, row_major[9]())
 
     tile[type, type_repeats](
-        LayoutTensor[type, layout_unknown_1d](
-            input_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](3)),
-        ),
-        LayoutTensor[type_repeats, layout_unknown_1d](
-            repeats_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](1)),
-        ),
-        LayoutTensor[type, layout_unknown_1d](
-            output_stack,
-            RuntimeLayout[layout_unknown_1d].row_major(IndexList[1](9)),
-        ),
+        input.make_dynamic[DType.int64](),
+        repeats.make_dynamic[DType.int64](),
+        output.make_dynamic[DType.int64](),
     )
 
     # Expected: [1, 2, 3] repeated 3 times

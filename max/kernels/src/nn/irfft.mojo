@@ -12,15 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
-from memory import (
-    UnsafePointer as UnsafePointerV2,
-)
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
 
 from sys.ffi import external_call
 
@@ -40,16 +31,17 @@ from _cufft.utils import check_error
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from layout import LayoutTensor
+from layout._coord import coord_to_index_list
+from layout._tile_tensor import TileTensor
 
 
 # This should eventually be moved to ffi.mojo with a more general global cache method
 # cache key is a string and cache value is a pointer.
 @always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        key.unsafe_ptr(), key.byte_length()
-    )
+fn global_cache_lookup(key: String) -> OpaquePointer[MutExternalOrigin]:
+    return external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
+    ](key.unsafe_ptr(), key.byte_length())
 
 
 @always_inline
@@ -62,7 +54,7 @@ fn global_cache_insert(key: String, value: OpaquePointer):
 
 fn _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
-) raises -> OpaquePointer:
+) raises -> OpaquePointer[MutExternalOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
@@ -82,7 +74,9 @@ fn _get_fft_workarea(
         device_ptr.bitcast[NoneType](),
     )
 
-    return device_ptr.bitcast[NoneType]()
+    return device_ptr.bitcast[NoneType]().unsafe_origin_cast[
+        MutExternalOrigin
+    ]()
 
 
 fn _get_fft_plan[
@@ -140,7 +134,7 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointerV2[NoneType, MutExternalOrigin](
+        UnsafePointer[NoneType, MutExternalOrigin](
             unsafe_from_address=Int(plan)
         ),
     )
@@ -151,18 +145,15 @@ fn _get_fft_plan[
 fn _irfft[
     input_type: DType,
     output_type: DType,
-    alignment: Int,
 ](
-    input: LayoutTensor[
+    input: TileTensor[
         input_type,
-        alignment=alignment,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True,
         output_type,
-        alignment=alignment,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -188,14 +179,14 @@ fn _irfft[
     cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = input.runtime_layout.shape.value
+    input_shape = coord_to_index_list(input.layout.shape)
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
     input_size = input_shape[axis] // 2
     output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = output.runtime_layout.shape.value
+    output_shape = coord_to_index_list(output.layout.shape)
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "
@@ -322,18 +313,15 @@ fn _irfft[
 fn irfft[
     input_type: DType,
     output_type: DType,
-    alignment: Int,
 ](
-    input: LayoutTensor[
+    input: TileTensor[
         input_type,
-        alignment=alignment,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True,
         output_type,
-        alignment=alignment,
         address_space = AddressSpace.GENERIC,
         ...,
     ],

@@ -13,18 +13,18 @@
 
 from random import randn
 
-from layout import LayoutTensor
+from layout._tile_tensor import TileTensor
 
 
 fn random_normal[
     dtype: DType,
     mean: Float64,
     variance: Float64,
-](output: LayoutTensor[mut=True, dtype, ...]):
+](output: TileTensor[mut=True, dtype, ...]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 
     Args:
         output: The output buffer.
     """
-    randn(output.ptr, output.size(), mean, variance)
+    randn(output.ptr, output.numel(), mean, variance)

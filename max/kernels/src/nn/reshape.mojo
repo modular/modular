@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, DynamicCoord, Idx
+from layout._layout import Layout
+from layout._tile_tensor import TileTensor
 from register import register_internal
 
 from utils.index import IndexList
@@ -26,11 +28,12 @@ fn reshape[
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input: LayoutTensor[dtype, ...],
+    input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
-) -> LayoutTensor[
+) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
-    Layout.row_major[output_rank](),
     input.origin,
     address_space = input.address_space,
 ]:
@@ -45,13 +48,9 @@ fn reshape[
         stride *= new_shape[i]
 
     # Return the a view with the new shape.
-    return LayoutTensor[
-        dtype,
-        Layout.row_major[output_rank](),
-        address_space = input.address_space,
-    ](
+    return TileTensor(
         input.ptr,
-        RuntimeLayout[Layout.row_major[output_rank]()](new_shape, stride_tuple),
+        Layout(Coord(new_shape), Coord(stride_tuple)),
     )
 
 
@@ -62,11 +61,12 @@ fn layout_tensor_reshape[
     dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: LayoutTensor[dtype, ...],
+    input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
-) -> LayoutTensor[
+) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
-    Layout.row_major[output_rank](),
     input.origin,
     address_space = input.address_space,
 ]:
@@ -83,13 +83,13 @@ fn reshape_shape[
     target_shape_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, ...],
-    target_shape_buf: LayoutTensor[target_shape_type, ...],
+    input_buf: TileTensor[input_type, ...],
+    target_shape_buf: TileTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
     __comptime_assert (
         target_shape_buf.rank == 1
     ), "target_shape_buf must be rank 1"
-    if output_rank != target_shape_buf.dim(0):
+    if output_rank != Int(target_shape_buf.dim(0)):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")
 
     # move the target shape from buffer into a static int tuple; also check and
@@ -112,7 +112,7 @@ fn reshape_shape[
         else:
             non_negative_dim_product *= target_dim
 
-    var input_num_elems = input_buf.size()
+    var input_num_elems = input_buf.numel()
     var output_num_elems = non_negative_dim_product
     # Infer a dimension as the remaining elements, if needed.
     if to_be_inferred_axis != -1:

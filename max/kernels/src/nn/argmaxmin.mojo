@@ -22,12 +22,12 @@ from sys.info import simd_width_of
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
 from builtin.math import min as _min
-from layout import LayoutTensor
+from layout._tile_tensor import TileTensor
 
 
 fn _argn[
     is_max: Bool
-](input: LayoutTensor, axis: Int, output: LayoutTensor[mut=True, ...]) raises:
+](input: TileTensor, axis: Int, output: TileTensor[mut=True, ...]) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -55,15 +55,15 @@ fn _argn[
 
     @parameter
     for subaxis in range(rank):
-        var output_subaxis = output.runtime_layout.dim(subaxis)
-        var input_subaxis = output.runtime_layout.dim(subaxis)
+        var output_subaxis = output.dim(subaxis)
+        var input_subaxis = output.dim(subaxis)
         if subaxis == canonical_axis:
             if output_subaxis != 1:
                 raise Error("expected axis to have size 1 in output")
         elif input_subaxis != output_subaxis:
             raise Error("input and output dims must match aside from 'axis'")
 
-    var axis_size = input.runtime_layout.dim(canonical_axis)
+    var axis_size = Int(input.dim(canonical_axis))
     var input_stride: Int
     var output_stride: Int
     var chunk_size: Int
@@ -71,19 +71,19 @@ fn _argn[
 
     @parameter
     if rank == 1:
-        input_stride = input.size()
-        output_stride = output.size()
+        input_stride = input.numel()
+        output_stride = output.numel()
         chunk_size = 1
     else:
-        input_stride = input.runtime_layout.stride.value[canonical_axis - 1]
-        output_stride = output.runtime_layout.stride.value[canonical_axis - 1]
+        input_stride = Int(input.dynamic_stride(canonical_axis - 1))
+        output_stride = Int(output.dynamic_stride(canonical_axis - 1))
 
         for i in range(canonical_axis):
-            parallel_size *= input.runtime_layout.dim(i)
+            parallel_size *= Int(input.dim(i))
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.runtime_layout.size()),
+            _get_num_workers(input.numel()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -189,9 +189,9 @@ fn _argn[
 
 
 fn argmax(
-    input: LayoutTensor,
+    input: TileTensor,
     axis: Int,
-    output: LayoutTensor[mut=True, ...],
+    output: TileTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -206,10 +206,10 @@ fn argmax(
 
 
 fn argmax(
-    input: LayoutTensor,
-    axis_buf: LayoutTensor,
-    output: LayoutTensor[mut=True, ...],
-) raises:
+    input: TileTensor,
+    axis_buf: TileTensor,
+    output: TileTensor[mut=True, ...],
+) raises where axis_buf.rank == 1:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -228,9 +228,9 @@ fn argmax(
 
 
 fn argmin(
-    input: LayoutTensor,
+    input: TileTensor,
     axis: Int,
-    output: LayoutTensor[mut=True, ...],
+    output: TileTensor[mut=True, ...],
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -245,10 +245,10 @@ fn argmin(
 
 
 fn argmin(
-    input: LayoutTensor,
-    axis_buf: LayoutTensor,
-    output: LayoutTensor[mut=True, ...],
-) raises:
+    input: TileTensor,
+    axis_buf: TileTensor,
+    output: TileTensor[mut=True, ...],
+) raises where axis_buf.rank == 1:
     """
     Finds the indices of the minimum element along the specified axis.
 

@@ -19,6 +19,8 @@ import algorithm.reduction
 from algorithm import vectorize
 from builtin.math import max as b_max
 from layout import LayoutTensor, UNKNOWN_VALUE
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
 
@@ -484,3 +486,61 @@ fn variance(
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
+
+
+fn variance(
+    src: TileTensor[...], correction: Int = 1
+) raises -> Scalar[src.dtype]:
+    """Computes the variance value of the elements in a buffer.
+
+    ```
+    variance(x) = sum((x - E(x))^2) / (size - correction)
+    ```
+
+    Args:
+        src: The buffer.
+        correction: Normalize variance by size - correction (Default=1).
+
+    Returns:
+        The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.variance[src.dtype, input_fn_1d](src.numel(), correction)
+
+
+fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+    """Computes the mean value of the elements in a buffer.
+
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+    __comptime_assert src.rank == 1, "src must be of rank 1"
+
+    debug_assert(src.numel() != 0, "input must not be empty")
+
+    @parameter
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.mean[src.dtype, input_fn_1d](src.numel())

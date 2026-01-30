@@ -20,7 +20,9 @@ from math import clamp, floor
 
 from gpu.host.info import is_gpu
 from gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout._coord import Coord, CoordLike, Idx, coord, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 from utils import Index
 from itertools import product
@@ -105,10 +107,10 @@ fn cubic_kernel(x: SIMD) -> type_of(x):
 
 
 fn cpu_bicubic_kernel(
-    output_host: LayoutTensor[mut=True, ...],
-    input_host: LayoutTensor[...],
+    output_host: TileTensor[mut=True, ...],
+    input_host: TileTensor[...],
 ) -> None:
-    """Perform bicubic interpolation on a LayoutTensor of form NCHW.
+    """Perform bicubic interpolation on a TileTensor of form NCHW.
 
     Args:
         output_host: Output tensor with desired dimensions.
@@ -120,8 +122,8 @@ fn cpu_bicubic_kernel(
     __comptime_assert output_host.dtype == input_host.dtype
 
     # get dimensions
-    var input_shape = input_host.runtime_layout.shape.value.canonicalize()
-    var output_shape = output_host.runtime_layout.shape.value.canonicalize()
+    var input_shape = coord_to_index_list(input_host.layout.shape)
+    var output_shape = coord_to_index_list(output_host.layout.shape)
     var batch_size = input_shape[0]
     var channels = input_shape[1]
     var in_height = input_shape[2]
@@ -168,33 +170,40 @@ fn cpu_bicubic_kernel(
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
-                input_host.load[width=1](Index(b, c, y_pos, x_pos))
+                input_host.load[width=1](
+                    coord[DType.int64]((b, c, y_pos, x_pos))
+                )
             )
             sum_value += pixel_value * weight
             sum_weights += weight
 
         # store the result in the output tensor
         output_host.store[width=1](
-            Index(b, c, y_out, x_out),
+            coord[DType.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
 
 fn gpu_bicubic_kernel[
     dtype: DType,
-    input_layout: Layout,
-    output_layout: Layout,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    output_origin: MutOrigin,
+    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_origin: ImmutOrigin,
+    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: Variadic.TypesOfTrait[CoordLike],
 ](
-    output: LayoutTensor[
-        mut=True,
+    output: TileTensor[
+        shape_types=output_shape_types,
+        stride_types=output_stride_types,
         dtype,
-        output_layout,
-        MutAnyOrigin,
-        address_space=address_space,
+        output_origin,
     ],
-    input: LayoutTensor[
-        dtype, input_layout, MutAnyOrigin, address_space=address_space
+    input: TileTensor[
+        shape_types=input_shape_types,
+        stride_types=input_stride_types,
+        dtype,
+        input_origin,
     ],
 ) -> None:
     """Perform bicubic interpolation using GPU.
@@ -203,12 +212,16 @@ fn gpu_bicubic_kernel[
         output: Output tensor with desired dimensions on the device.
         input: Input tensor of shape [B, C, H, W] on the device.
     """
+
+    __comptime_assert input.rank == 4
+    __comptime_assert output.rank == 4
+
     var b = block_idx.x
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var input_shape = input.runtime_layout.shape.value.canonicalize()
-    var output_shape = output.runtime_layout.shape.value.canonicalize()
+    var input_shape = coord_to_index_list(input.layout.shape)
+    var output_shape = coord_to_index_list(output.layout.shape)
     var in_height = input_shape[2]
     var in_width = input_shape[3]
     var out_height = output_shape[2]
@@ -256,13 +269,14 @@ fn gpu_bicubic_kernel[
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
-                Index(b, c, y_pos, x_pos)
+                Coord(Idx(b), Idx(c), Idx(y_pos), Idx(x_pos))
             ).cast[DType.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
         output.store[width=1](
-            Index(b, c, y_out, x_out), sum_value.cast[dtype]()
+            Coord(Idx(b), Idx(c), Idx(y_out), Idx(x_out)),
+            sum_value.cast[dtype](),
         )
 
 
@@ -271,8 +285,10 @@ fn resize_bicubic[
     //,
     target: StaticString,
 ](
-    output: LayoutTensor[mut=True, dtype, ...],
-    input: LayoutTensor[dtype, ...],
+    output: TileTensor[
+        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -288,18 +304,24 @@ fn resize_bicubic[
 
     @parameter
     if is_gpu[target]():
-        var input_shape = input.runtime_layout.shape.value.canonicalize()
+        var input_shape = coord_to_index_list(input.layout.shape)
         var N = input_shape[0]
         var C = input_shape[1]
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
         comptime kernel = gpu_bicubic_kernel[
-            output.dtype, input.layout, output.layout, output.address_space
+            output.dtype,
+            output_origin = output.origin,
+            output_shape_types = output.shape_types,
+            output_stride_types = output.stride_types,
+            input_origin = ImmutOrigin(input.origin),
+            input_shape_types = input.shape_types,
+            input_stride_types = input.stride_types,
         ]
         ctx.get_device_context().enqueue_function_experimental[kernel](
             output,
-            input,
+            input.as_immut(),
             grid_dim=(N, C),
             block_dim=(block_size,),
         )

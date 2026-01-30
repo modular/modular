@@ -14,7 +14,9 @@
 from random import random_ui64
 
 from gpu.host import DeviceContext, DeviceBuffer
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
@@ -26,44 +28,30 @@ def execute_index_tensor_test[
     //,
     batch_dims: Int,
 ](
-    data_device: LayoutTensor[
+    data_device: TileTensor[
         data_type, address_space = AddressSpace.GENERIC, ...
     ],
-    indices_device: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    expected_output_device: LayoutTensor[
+    indices_device: TileTensor[address_space = AddressSpace.GENERIC, ...],
+    expected_output_device: TileTensor[
         data_type, address_space = AddressSpace.GENERIC, ...
     ],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,
 ):
     # execute the kernel
-    comptime data_dyn_layout = Layout.row_major[data_device.rank]()
-    comptime indices_dyn_layout = Layout.row_major[indices_device.rank]()
-    comptime output_dyn_layout = Layout.row_major[expected_output_device.rank]()
     var actual_output_device = ctx.enqueue_create_buffer[
         expected_output_device.dtype
-    ](expected_output_device.size())
-    var actual_output_tensor = LayoutTensor[
-        actual_output_device.dtype, output_dyn_layout
-    ](
+    ](expected_output_device.numel())
+    var actual_output_tensor = TileTensor(
         actual_output_device,
-        RuntimeLayout[output_dyn_layout].row_major(
-            expected_output_device.runtime_layout.shape.value.canonicalize()
+        row_major(
+            expected_output_device.layout.shape.make_dynamic[DType.int64]()
         ),
     )
+    # Convert all tensors to dynamic layouts before calling the kernel
     _index_tensor_impl[batch_dims, target="gpu"](
-        LayoutTensor[data_device.dtype, data_dyn_layout](
-            data_device.ptr,
-            RuntimeLayout[data_dyn_layout].row_major(
-                data_device.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        LayoutTensor[indices_device.dtype, indices_dyn_layout](
-            indices_device.ptr,
-            RuntimeLayout[indices_dyn_layout].row_major(
-                indices_device.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
+        data_device.make_dynamic[DType.int64](),
+        indices_device.make_dynamic[DType.int64](),
         actual_output_tensor,
         ctx,
     )
@@ -72,11 +60,11 @@ def execute_index_tensor_test[
 
     # check that our shapes are consistent and that the contents of the output are consistent
     assert_true(
-        rebind[IndexList[expected_output_device.rank]](
-            actual_output_tensor.runtime_layout.shape.value.canonicalize()
+        rebind[IndexList[actual_output_tensor.rank]](
+            coord_to_index_list(actual_output_tensor.layout.shape)
         )
-        == rebind[IndexList[expected_output_device.rank]](
-            expected_output_device.runtime_layout.shape.value.canonicalize()
+        == rebind[IndexList[actual_output_tensor.rank]](
+            coord_to_index_list(expected_output_device.layout.shape)
         )
     )
     with actual_output_device.map_to_host() as actual_output_host:
@@ -96,35 +84,27 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     comptime batch_dims = 1
     comptime index_len = 45
 
-    comptime input_rank = 3
-    comptime indices_rank = 2
-    comptime output_rank = 2
-
     # dim_0 x dim_1 x dim_2 input tensor.
-    comptime input_layout = Layout.row_major(dim_0, dim_1, dim_2)
-    var input = ctx.enqueue_create_buffer[input_type](
-        comptime (input_layout.size())
+    comptime input_layout = row_major(
+        (Idx[dim_0](), Idx[dim_1](), Idx[dim_2]())
     )
-    var input_tensor = LayoutTensor[input_type, input_layout](input)
+    var input = ctx.enqueue_create_buffer[input_type](dim_0 * dim_1 * dim_2)
+    var input_tensor = TileTensor(input, input_layout)
 
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
         for i in range(dim_0 * dim_1 * dim_2):
             input_host[i] = i
 
-    # We have a 2D tensor of shape (2,index_len).
-    comptime indices_layout = Layout.row_major(index_len, 2)
-    var indices = ctx.enqueue_create_buffer[DType.uint64](
-        comptime (indices_layout.size())
-    )
+    # We have a 2D tensor of shape (index_len, 2).
+    comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
+    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
-        var indices_host_tensor = LayoutTensor[DType.uint64, indices_layout](
-            indices_host
-        )
+        var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):
             indices_host_tensor[i, 0] = random_ui64(0, dim_1 - 1)
             indices_host_tensor[i, 1] = random_ui64(0, dim_1 - 1)
-    var indices_tensor = LayoutTensor[DType.uint64, indices_layout](indices)
+    var indices_tensor = TileTensor(indices, indices_layout)
 
     # The 2D tensor is used as coordinates to dimensions 1 and 2 in the
     # dim_0 x dim_1 x dim_1 input tensor. Dimension 0 is preserved.
@@ -132,34 +112,30 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     # where x = [0, input.dim(0)), n = [0, indices.dim(0))
 
     # Reference output of shape dim_0 x index_len.
-    comptime output_layout = Layout.row_major(dim_0, index_len)
-    var ref_output = ctx.enqueue_create_buffer[input_type](
-        comptime (output_layout.size())
-    )
+    comptime output_layout = row_major((Idx[dim_0](), Idx[index_len]()))
+    var ref_output = ctx.enqueue_create_buffer[input_type](dim_0 * index_len)
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
             with indices.map_to_host() as indices_host:
-                var indices_tensor_host = LayoutTensor[
-                    DType.uint64, indices_layout
-                ](indices_host)
-                var input_tensor_host = LayoutTensor[input_type, input_layout](
-                    input_host
+                var indices_tensor_host = TileTensor(
+                    indices_host, indices_layout
                 )
-                var ref_output_host_tensor = LayoutTensor[
-                    input_type, output_layout
-                ](ref_output_host)
-                for i in range(Int(input_layout.shape[0])):
+                var input_tensor_host = TileTensor(input_host, input_layout)
+                var ref_output_host_tensor = TileTensor(
+                    ref_output_host, output_layout
+                )
+                for i in range(dim_0):
                     for j in range(index_len):
                         ref_output_host_tensor[i, j] = input_tensor_host[
                             i,
                             Int(indices_tensor_host[j, 0]),
                             Int(indices_tensor_host[j, 1]),
                         ]
-    var ref_output_tensor = LayoutTensor[input_type, output_layout](ref_output)
+    var ref_output_tensor = TileTensor(ref_output, output_layout)
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.get_immutable(),
+        ref_output_tensor.as_immut(),
         ref_output,
         ctx,
     )
@@ -178,16 +154,14 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     comptime batch_dims = 2
     comptime index_len = 5
 
-    comptime input_rank = 4
-    comptime indices_rank = 2
-    comptime output_rank = 3
-
     # dim_0 x dim_1 x dim_2 x dim_3 input tensor.
-    comptime input_layout = Layout.row_major(dim_0, dim_1, dim_2, dim_3)
-    var input = ctx.enqueue_create_buffer[input_type](
-        comptime (input_layout.size())
+    comptime input_layout = row_major(
+        (Idx[dim_0](), Idx[dim_1](), Idx[dim_2](), Idx[dim_3]())
     )
-    var input_tensor = LayoutTensor[input_type, input_layout](input)
+    var input = ctx.enqueue_create_buffer[input_type](
+        dim_0 * dim_1 * dim_2 * dim_3
+    )
+    var input_tensor = TileTensor(input, input_layout)
 
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
@@ -195,18 +169,14 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
             input_host[i] = i
 
     # We have a 2D tensor of shape (index_len, 2).
-    comptime indices_layout = Layout.row_major(index_len, 2)
-    var indices = ctx.enqueue_create_buffer[DType.uint64](
-        comptime (indices_layout.size())
-    )
+    comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
+    var indices = ctx.enqueue_create_buffer[DType.uint64](index_len * 2)
     with indices.map_to_host() as indices_host:
-        var indices_host_tensor = LayoutTensor[DType.uint64, indices_layout](
-            indices_host
-        )
+        var indices_host_tensor = TileTensor(indices_host, indices_layout)
         for i in range(index_len):
             indices_host_tensor[i, 0] = random_ui64(0, dim_2 - 1)
             indices_host_tensor[i, 1] = random_ui64(0, dim_3 - 1)
-    var indices_tensor = LayoutTensor[DType.uint64, indices_layout](indices)
+    var indices_tensor = TileTensor(indices, indices_layout)
 
     # The 2D tensor is used as coordinates to dimensions 2 and 3 in the
     # dim_0 x dim_1 x dim_2 x dim_3 input tensor. Dimension 0, 1 is preserved.
@@ -214,24 +184,24 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     # where x = [0, input.dim(0)), y = [0, input.dim(1)) and n = [0, indices.dim(0))
 
     # Reference output of shape dim_0 x dim_1 x index_len.
-    comptime output_layout = Layout.row_major(dim_0, dim_1, index_len)
+    comptime output_layout = row_major(
+        (Idx[dim_0](), Idx[dim_1](), Idx[index_len]())
+    )
     var ref_output = ctx.enqueue_create_buffer[input_type](
-        comptime (output_layout.size())
+        dim_0 * dim_1 * index_len
     )
     with ref_output.map_to_host() as ref_output_host:
         with input.map_to_host() as input_host:
             with indices.map_to_host() as indices_host:
-                var indices_tensor_host = LayoutTensor[
-                    DType.uint64, indices_layout
-                ](indices_host)
-                var input_tensor_host = LayoutTensor[input_type, input_layout](
-                    input_host
+                var indices_tensor_host = TileTensor(
+                    indices_host, indices_layout
                 )
-                var ref_output_host_tensor = LayoutTensor[
-                    input_type, output_layout
-                ](ref_output_host)
-                for i in range(Int(input_layout.shape[0])):
-                    for j in range(Int(input_layout.shape[1])):
+                var input_tensor_host = TileTensor(input_host, input_layout)
+                var ref_output_host_tensor = TileTensor(
+                    ref_output_host, output_layout
+                )
+                for i in range(dim_0):
+                    for j in range(dim_1):
                         for k in range(index_len):
                             ref_output_host_tensor[i, j, k] = input_tensor_host[
                                 i,
@@ -239,11 +209,11 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
                                 Int(indices_tensor_host[k, 0]),
                                 Int(indices_tensor_host[k, 1]),
                             ]
-    var ref_output_tensor = LayoutTensor[input_type, output_layout](ref_output)
+    var ref_output_tensor = TileTensor(ref_output, output_layout)
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.get_immutable(),
+        ref_output_tensor.as_immut(),
         ref_output,
         ctx,
     )

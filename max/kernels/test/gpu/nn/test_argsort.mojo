@@ -13,10 +13,10 @@
 
 
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from memory import LegacyUnsafePointer
+from layout._coord import Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.argsort import argsort
 from testing import assert_equal
 
@@ -38,11 +38,10 @@ fn test_argsort[
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
-    comptime layout = Layout.row_major[1]()
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(N)
-    var input_host = LayoutTensor[dtype, layout](
+    var input_host_ptr = alloc[Scalar[dtype]](N)
+    var input_host = TileTensor(
         input_host_ptr,
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
 
     for i in range(N):
@@ -54,13 +53,13 @@ fn test_argsort[
     ctx.enqueue_copy(device_input, input_host_ptr)
 
     # Create device LayoutTensors
-    var device_indices_tensor = LayoutTensor[DType.int64, layout, MutAnyOrigin](
+    var device_indices_tensor = TileTensor(
         device_indices.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
-    var device_input_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
+    var device_input_tensor = TileTensor(
         device_input.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
 
     argsort[ascending=ascending, target="gpu"](
@@ -68,15 +67,15 @@ fn test_argsort[
     )
 
     # Copy results back
-    var indices_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
+    var indices_host_ptr = alloc[Scalar[DType.int64]](N)
     ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
-    var expected_indices = LayoutTensor[DType.int64, layout](
+    var expected_indices_ptr = alloc[Scalar[DType.int64]](N)
+    var expected_indices = TileTensor(
         expected_indices_ptr,
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
     argsort[ascending=ascending](expected_indices, input_host)
 

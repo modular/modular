@@ -15,7 +15,9 @@ from math import sqrt
 from random import rand
 
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -24,21 +26,21 @@ from utils.index import Index, IndexList
 
 fn compute_rms[
     dtype: DType
-](data: LayoutTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
-    dtype
-]:
+](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
     __comptime_assert data.rank == 1, "data.rank must be 1"
+    __comptime_assert data.element_size == 1
+
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
         var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
-    var result = sqrt((sum_of_squares / data.size()) + eps.cast[accum_type]())
+    var result = sqrt((sum_of_squares / data.numel()) + eps.cast[accum_type]())
     return result.cast[dtype]()
 
 
 fn run_rms_norm_gpu[
-    rank: Int, //, dtype: DType, *, static_cols: Int = UNKNOWN_VALUE
+    rank: Int, //, dtype: DType, *, static_cols: Int = -1
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
@@ -59,19 +61,8 @@ fn run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    fn build_data_layout() -> Layout:
-        var layout_shape = IndexList[rank](UNKNOWN_VALUE)
-        layout_shape[rank - 1] = static_cols
-        return Layout.row_major(layout_shape)
-
-    comptime layout = build_data_layout()
-    comptime layout_1d = Layout.row_major(static_cols)
-    var data_buf = LayoutTensor[dtype, layout](
-        data_d, RuntimeLayout[layout].row_major(shape)
-    )
-    var gamma = LayoutTensor[dtype, layout_1d](
-        gamma_d, RuntimeLayout[layout_1d].row_major(param_shape)
-    )
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -84,11 +75,7 @@ fn run_rms_norm_gpu[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
 
     @always_inline
@@ -97,11 +84,7 @@ fn run_rms_norm_gpu[
     fn identity_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = data_buf.layout(Coord(coords))
         data_buf.ptr.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
@@ -111,9 +94,9 @@ fn run_rms_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = LayoutTensor[dtype, layout_1d](
+        var vec = TileTensor(
             data_h + r * cols,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](cols)),
+            row_major(Idx(cols)),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):

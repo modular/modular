@@ -13,7 +13,8 @@
 
 from math import iota
 
-from layout import LayoutTensor, RuntimeTuple
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 
 from utils import IndexList
 
@@ -111,8 +112,10 @@ fn _get_bounding_box[
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: LayoutTensor[dtype, ...],
-) -> BoundingBox[dtype]:
+    boxes: TileTensor[dtype, ...],
+) -> BoundingBox[
+    dtype
+]:
     """Extract a bounding box from a tensor of boxes.
 
     Args:
@@ -125,6 +128,8 @@ fn _get_bounding_box[
         A BoundingBox instance constructed from the extracted coordinates.
     """
     __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
+    __comptime_assert boxes.element_size == 1
+
     var y1 = boxes[batch_size, box_idx, 0][0]
     var x1 = boxes[batch_size, box_idx, 1][0]
     var y2 = boxes[batch_size, box_idx, 2][0]
@@ -135,9 +140,9 @@ fn _get_bounding_box[
 fn non_max_suppression[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, ...],
-    scores: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, DType.int64, ...],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, DType.int64, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -190,8 +195,8 @@ fn non_max_suppression[
 fn non_max_suppression_shape_func[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, ...],
-    scores: LayoutTensor[dtype, ...],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -238,8 +243,8 @@ fn non_max_suppression[
     dtype: DType,
     func: fn(Int64, Int64, Int64) capturing[_] -> None,
 ](
-    boxes: LayoutTensor[dtype, ...],
-    scores: LayoutTensor[dtype, ...],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -249,25 +254,23 @@ fn non_max_suppression[
     __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
     __comptime_assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = Int(boxes.runtime_layout.shape[0])
-    var num_boxes = Int(boxes.runtime_layout.shape[1])
-    var num_classes = Int(scores.runtime_layout.shape[1])
+    var batch_size = boxes.layout.shape[0].value()
+    var num_boxes = boxes.layout.shape[1].value()
+    var num_classes = scores.layout.shape[1].value()
 
     debug_assert(
-        Int(boxes.runtime_layout.shape[2]) == 4,
+        boxes.layout.shape[2].value() == 4,
         (
             "boxes must be specified with the 2D coords representing the"
             " diagonal corners"
         ),
     )
     debug_assert(
-        Int(boxes.runtime_layout.shape[0])
-        == Int(scores.runtime_layout.shape[0]),
+        boxes.layout.shape[0].value() == scores.layout.shape[0].value(),
         "dim 0 of boxes and scores must be equal",
     )
     debug_assert(
-        Int(boxes.runtime_layout.shape[1])
-        == Int(scores.runtime_layout.shape[2]),
+        boxes.layout.shape[1].value() == scores.layout.shape[2].value(),
         "boxes and scores must contain the same number of boxes",
     )
 
@@ -285,9 +288,7 @@ fn non_max_suppression[
             # this happens when:
             #   1. Score does not meet score threshold (filtered out initially)
             #   2. IoU with an already-selected boc is above IOU threshold (suppressed)
-            var offset = scores.runtime_layout(
-                RuntimeTuple[scores.layout.shape](b, c, 0)
-            )
+            var offset = scores.layout(Coord(Idx(b), Idx(c), Idx[0]()))
             var per_class_scores_ptr = scores.ptr + offset
 
             # Filter boxes by score threshold

@@ -32,10 +32,10 @@ trait CoordLike(
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike]
-    comptime STATIC_VALUE: Int
-    comptime IS_STATIC_VALUE = False
-    comptime IS_TUPLE = False
-    comptime IS_VALUE = not Self.IS_TUPLE
+    comptime static_value: Int
+    comptime is_static_value = False
+    comptime is_tuple = False
+    comptime is_value = not Self.is_tuple
     comptime DTYPE = DType.invalid
 
     # Note that unlike the __len__() from Sized, this is a static method.
@@ -91,9 +91,9 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterType):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
-    comptime STATIC_VALUE: Int = Self.val
+    comptime static_value: Int = Self.val
     comptime DTYPE = DType.int
-    comptime IS_STATIC_VALUE = True
+    comptime is_static_value = True
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -135,7 +135,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterType):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
-    comptime STATIC_VALUE: Int = -1
+    comptime static_value: Int = -1
     comptime DTYPE = Self.dtype
 
     var _value: Scalar[Self.dtype]
@@ -207,8 +207,21 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
     return ComptimeInt[value]()
 
 
+fn Idx(
+    value: Scalar,
+) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
+    """Helper to create runtime indices.
+    Args:
+        value: The integer value for the runtime index.
+    Returns:
+        A `RuntimeInt` instance with the specified value.
+    Usage: Idx(5) creates a RuntimeInt with value 5.
+    """
+    return RuntimeInt[value.dtype](value)
+
+
 @fieldwise_init("implicit")
-struct Coord[*element_types: CoordLike](CoordLike, Sized):
+struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
     Parameters:
@@ -216,10 +229,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
     """
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Self.element_types
-    comptime STATIC_VALUE: Int = -1
-    comptime IS_TUPLE = True
-    comptime ALL_DIMS_KNOWN = _AllStatic[*Self.element_types]
-    comptime STATIC_PRODUCT = _StaticProduct[*Self.element_types]
+    comptime static_value: Int = -1
+    comptime is_tuple = True
+    comptime all_dims_known = _AllStatic[*Self.element_types]
+    comptime static_product = _StaticProduct[*Self.element_types]
     comptime rank = Variadic.size(Self.element_types)
 
     var _storage: _RegTuple[*Self.element_types]
@@ -412,7 +425,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
             var t_elem = t[i]
 
             @parameter
-            if T.IS_TUPLE:
+            if T.is_tuple:
                 debug_assert(
                     t_elem.is_tuple(),
                     "Type mismatch: expected tuple in t[",
@@ -460,9 +473,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
             comptime U = other_types[i]
 
             @parameter
-            if T.IS_TUPLE and U.IS_TUPLE:
+            if T.is_tuple and U.is_tuple:
                 result += Coord(self[i]).inner_product(Coord(other[i]))
-            elif T.IS_VALUE and U.IS_VALUE:
+            elif T.is_value and U.is_value:
                 result += self[i].value() * other[i].value()
             else:
                 constrained[
@@ -497,10 +510,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
             comptime U = other_types[i]
 
             @parameter
-            if T.IS_TUPLE and U.IS_TUPLE:
+            if T.is_tuple and U.is_tuple:
                 if Coord(self[i]) != Coord(other[i]):
                     return False
-            elif T.IS_VALUE and U.IS_VALUE:
+            elif T.is_value and U.is_value:
                 if self[i].value() != other[i].value():
                     return False
             else:
@@ -601,6 +614,60 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized):
 
         return Coord(flat_tuple)
 
+    @always_inline("nodebug")
+    fn make_dynamic[
+        dtype: DType
+    ](self) -> Coord[*_CoordToDynamic[dtype, *Self.element_types]]:
+        """Convert all elements to RuntimeInt[dtype].
+
+        Parameters:
+            dtype: The data type for the resulting RuntimeInt values.
+
+        Returns:
+            A new Coord where all elements are converted to RuntimeInt[dtype].
+
+        Examples:
+            ```mojo
+            from layout._coord import Coord, ComptimeInt, RuntimeInt
+            var c = Coord(ComptimeInt[3](), RuntimeInt[DType.int32](5), ComptimeInt[7]())
+            var dynamic = c.make_dynamic[DType.int64]()
+            # dynamic is Coord(RuntimeInt[DType.int64](3), RuntimeInt[DType.int64](5), RuntimeInt[DType.int64](7))
+            ```
+        """
+        comptime ResultTypes = _CoordToDynamic[dtype, *Self.element_types]
+        var result: Coord[*ResultTypes]
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        @parameter
+        for i in range(Self.__len__()):
+            # Convert all elements to RuntimeInt[dtype]
+            UnsafePointer(to=result[i]).init_pointee_copy(
+                rebind[ResultTypes[i]](
+                    RuntimeInt[dtype](Scalar[dtype](self[i].value()))
+                )
+            )
+
+        return result
+
+    fn write_to(self, mut w: Some[Writer]):
+        w.write("(")
+
+        @parameter
+        for i in range(Self.rank):
+
+            @parameter
+            if Self.element_types[i].is_tuple:
+                self[i].tuple().write_to(w)
+            else:
+                w.write(self[i].value())
+
+            @parameter
+            if i < Self.rank - 1:
+                w.write(", ")
+        w.write(")")
+
 
 # Implementation based off runtime_tuple.mojo's crd2idx.
 fn crd2idx[
@@ -615,7 +682,7 @@ fn crd2idx[
     comptime crd_len = Index.__len__()
 
     @parameter
-    if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
+    if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
         var shape_t = shape.tuple()
         var stride_t = stride.tuple()
 
@@ -636,7 +703,7 @@ fn crd2idx[
             var crd_int: Int
 
             @parameter
-            if Index.IS_TUPLE:
+            if Index.is_tuple:
                 crd_int = 0 if crd_len == 0 else crd.tuple()[0].value()
             else:
                 crd_int = 0 if crd_len == 0 else crd.value()
@@ -711,7 +778,7 @@ fn idx2crd[
     var result = Result()
 
     @parameter
-    if Shape.IS_TUPLE and Stride.IS_TUPLE and shape_len == stride_len:
+    if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
         var stride_t = stride.tuple()
         var remaining_idx = idx
 
@@ -768,7 +835,7 @@ fn coord_to_int_tuple[
         comptime T = element_types[i]
 
         @parameter
-        if T.IS_TUPLE:
+        if T.is_tuple:
             # Recursively convert nested tuples
             result.append(coord_to_int_tuple(value[i].tuple()))
         else:
@@ -822,14 +889,14 @@ fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
         comptime T = element_types[i]
 
         @parameter
-        if T.IS_TUPLE:
+        if T.is_tuple:
             # Recursively convert nested tuples
             result.append(coord_to_int_tuple[element_types[i]]())
         else:
 
             @parameter
-            if T.IS_STATIC_VALUE:
-                result.append(IntTuple(T.STATIC_VALUE))
+            if T.is_static_value:
+                result.append(IntTuple(T.static_value))
             else:
                 result.append(layout.UNKNOWN_VALUE)
 
@@ -878,6 +945,34 @@ fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
     return tuple
 
 
+comptime DynamicCoord[dtype: DType, size: Int] = Coord[
+    *_Splatted[RuntimeInt[dtype], size]
+]
+"""
+Create a Coord full of `size` dynamic elements with `dtype`.
+
+Parameters:
+    dtype: The output element DType.
+    size: The number of output elements.
+
+Returns:
+    A Coord full of `size` dynamic elements with `dtype`.
+"""
+
+comptime StaticCoord[value: Int, size: Int] = Coord[
+    *_Splatted[ComptimeInt[value], size]
+]
+"""
+Create a Coord full of `size` static elements with `dtype`.
+
+Parameters:
+    value: The value of each element.
+    size: The number of output elements.
+
+Returns:
+    A Coord full of `size` static elements with `dtype`.
+"""
+
 comptime _FlattenReducer[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
@@ -886,7 +981,7 @@ comptime _FlattenReducer[
     Prev,
     From[idx]
     .VariadicType if From[idx]
-    .IS_TUPLE else Variadic.types[T=CoordLike, From[idx]],
+    .is_tuple else Variadic.types[T=CoordLike, From[idx]],
 ]
 
 
@@ -902,7 +997,7 @@ comptime _NextOffset[
     prev_offset: Int,
     element_type: CoordLike,
 ] = prev_offset + (
-    1 if element_type.IS_VALUE else Variadic.size(
+    1 if element_type.is_value else Variadic.size(
         _Flattened[*element_type.VariadicType]
     )
 )
@@ -919,7 +1014,7 @@ comptime _FlattenOffsetReducer[
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
-                Prev[Variadic.size(Prev) - 1].STATIC_VALUE,
+                Prev[Variadic.size(Prev) - 1].static_value,
                 From[idx - 1],
             ]
         ],
@@ -952,7 +1047,7 @@ fn _get_flattened_helper[
     comptime T = element_types[i]
 
     @parameter
-    if T.IS_TUPLE:
+    if T.is_tuple:
         comptime count = Variadic.size(_Flattened[*T.VariadicType])
 
         @parameter
@@ -1002,7 +1097,7 @@ comptime _AllStaticReducer[
     Prev: Variadic.ValuesOfType[Bool],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = (Variadic.values[From[idx].IS_STATIC_VALUE and Prev[0]])
+] = (Variadic.values[From[idx].is_static_value and Prev[0]])
 
 
 comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
@@ -1037,7 +1132,7 @@ comptime _StaticProductReducer[
     Prev: Variadic.ValuesOfType[Int],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = (Variadic.values[From[idx].STATIC_VALUE * Prev[0]])
+] = (Variadic.values[From[idx].static_value * Prev[0]])
 
 
 comptime _StaticProduct[
@@ -1131,6 +1226,59 @@ Example:
     ```
 """
 
+comptime _IntTupleToCoordLikeMapper[
+    dtype: DType,
+    tuple: IntTuple,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, ComptimeInt[Int(tuple[idx])]] if Int(tuple[idx])
+    != layout.UNKNOWN_VALUE else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+"""Maps a single Dim value to a CoordLike type.
+
+If the Dim has a static value, produces ComptimeInt[value].
+If the Dim is dynamic, produces RuntimeInt.
+
+Uses direct field access rather than methods for compile-time evaluation.
+"""
+
+comptime _IntTupleToCoordLike[
+    dtype: DType, tuple: IntTuple
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
+    VariadicType = Variadic.types[
+        T=CoordLike, *_Splatted[RuntimeInt[dtype], len(tuple)]
+    ],
+    Reducer = _IntTupleToCoordLikeMapper[dtype, tuple],
+]
+"""Converts a variadic of Dim values to a variadic of CoordLike types.
+
+Note:
+    This transformation is a value-to-type mapper that is meant to be
+    used in the parameter domain,.
+
+For each Dim in the input:
+- If the dim has a static value, produces `ComptimeInt[value]`
+- If the dim is dynamic, produces `RuntimeInt`
+
+Example:
+    ```mojo
+    from buffer import Dim, DimList
+    from layout._coord import _DimsToCoordLike, Coord
+
+    # Static dims become ComptimeInt, dynamic dims become RuntimeInt
+    comptime dims = DimList(Dim(3), Dim(), Dim(5))
+    comptime coord_types = _DimsToCoordLike[DType.int32, dims]
+    # dims is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+
+    # Can be used to create a Coord type
+    comptime my_coords = Coord[*coord_types]
+    ```
+"""
+
 
 comptime _CoordToDimMapper[
     Prev: Variadic.ValuesOfType[Dim],
@@ -1139,7 +1287,7 @@ comptime _CoordToDimMapper[
 ] = Variadic.concat_values[
     Prev,
     Variadic.values[
-        Dim(From[idx].STATIC_VALUE) if From[idx].IS_STATIC_VALUE else Dim(),
+        Dim(From[idx].static_value) if From[idx].is_static_value else Dim(),
     ],
 ]
 """Maps a Coord to a DimList.
@@ -1176,6 +1324,45 @@ Example:
     var coords = Coord(Idx(3), Idx[5]())
     comptime dimlist = _CoordToDimList[*coords.element_types]
     # dims is equivalent to DimList(Dim(), 5)
+    ```
+"""
+
+# ===-----------------------------------------------------------------------===#
+# CoordLike to Dynamic conversion
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _CoordToDynamicMapper[
+    dtype: DType,
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    idx: Int,
+] = Variadic.concat_types[
+    Prev,
+    Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]
+"""Maps a single CoordLike element to RuntimeInt[dtype].
+All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[dtype].
+"""
+
+
+comptime _CoordToDynamic[
+    dtype: DType, *element_types: CoordLike
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
+    VariadicType=element_types,
+    Reducer = _CoordToDynamicMapper[dtype],
+]
+"""Converts a variadic of CoordLike types to all RuntimeInt[dtype].
+All elements are converted to RuntimeInt[dtype], regardless of their original type.
+
+Example:
+
+    ```mojo
+    from layout._coord import _CoordToDynamic, ComptimeInt, RuntimeInt, Coord
+    # All elements become RuntimeInt[DType.int64]
+    comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], RuntimeInt[DType.int32], ComptimeInt[5]]
+    # types is equivalent to Variadic.types[RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
     ```
 """
 

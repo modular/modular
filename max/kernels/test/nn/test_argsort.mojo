@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from layout import Layout, LayoutTensor
+from layout._coord import Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.argsort import argsort
 from testing import assert_true
 
@@ -28,13 +28,13 @@ fn test_argsort[
 
     comptime n = 16384
 
-    var input_ptr = UnsafePointer[Float32].alloc(n)
-    var input = LayoutTensor[DType.float32, Layout.row_major(n)](input_ptr)
+    var input_ptr = alloc[Float32](n)
+    var input = TileTensor(input_ptr, row_major(Idx(n)))
 
-    var indices_ptr = UnsafePointer[Int32].alloc(n)
-    var indices = LayoutTensor[DType.int32, Layout.row_major(n)](
-        indices_ptr
-    ).fill(0)
+    var indices_ptr = alloc[Int32](n)
+    var indices = TileTensor(indices_ptr, row_major(Idx(n))).fill[
+        use_runtime_layout=True
+    ](0)
 
     for i in range(n):
         input[i] = filler(i, n)
@@ -43,8 +43,8 @@ fn test_argsort[
 
     for i in range(n):
         if i < n - 1:
-            var lhs = input[Int(indices[i])]
-            var rhs = input[Int(indices[i + 1])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[i + 1]]
 
             @parameter
             if ascending:
@@ -88,8 +88,8 @@ fn test_argsort[
                     ),
                 )
         else:
-            var lhs = input[Int(indices[i])]
-            var rhs = input[Int(indices[0])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[0]]
 
             @parameter
             if ascending:

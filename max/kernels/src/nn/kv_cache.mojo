@@ -25,6 +25,9 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout, IntTuple
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -1083,7 +1086,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
-            gamma,
+            TileTensor(gamma.ptr, row_major(Coord(Idx(gamma.size())))),
             epsilon,
             weight_offset,
             context,
@@ -1251,7 +1254,7 @@ def rms_norm_kv_cache_ragged_paged[
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
-            gamma,
+            TileTensor(gamma.ptr, row_major(Coord(Idx(gamma.size())))),
             epsilon,
             weight_offset,
             context,
