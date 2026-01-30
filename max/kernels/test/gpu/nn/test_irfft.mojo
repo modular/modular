@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from buffer import DimList
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx, coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from math import sqrt
 from nn.irfft import irfft
 from testing import assert_almost_equal
@@ -49,17 +50,11 @@ fn test_irfft_basic[
 
     # Input shape: [batch_size, input_size*2] because complex values are stored
     # as interleaved float32 (real, imag, real, imag, ...)
-    comptime input_shape = DimList(batch_size, input_size * 2)
-    comptime output_shape = DimList(batch_size, output_size)
-    comptime layout_2d = Layout.row_major[2]()
-    comptime alignment = 1
+    comptime input_shape = coord[batch_size, input_size * 2]()
+    comptime output_shape = coord[batch_size, output_size]()
 
-    var input_runtime_layout = RuntimeLayout[layout_2d].row_major(
-        IndexList[2](batch_size, input_size * 2)
-    )
-    var output_runtime_layout = RuntimeLayout[layout_2d].row_major(
-        IndexList[2](batch_size, output_size)
-    )
+    var input_runtime_layout = row_major(input_shape)
+    var output_runtime_layout = row_major(output_shape)
 
     # Create device buffers
     var input_device = ctx.enqueue_create_buffer[dtype](
@@ -73,9 +68,9 @@ fn test_irfft_basic[
     # Set DC component (first complex value) to a known value
     # All other frequencies to zero
     with input_device.map_to_host() as input_host:
-        var input_tensor = LayoutTensor[dtype, layout_2d](
+        var input_tensor = TileTensor(
             input_host, input_runtime_layout
-        )
+        ).make_dynamic[DType.int64]()
         for b in range(batch_size):
             # DC component: real=1.0, imag=0.0
             input_tensor[b, 0] = 1.0  # real part
@@ -92,15 +87,13 @@ fn test_irfft_basic[
             output_host[i] = 0
 
     # Execute IRFFT
-    irfft[dtype, dtype, alignment](
-        LayoutTensor[dtype, layout_2d, alignment=alignment](
-            input_device,
-            input_runtime_layout,
-        ),
-        LayoutTensor[mut=True, dtype, layout_2d, alignment=alignment](
-            output_device,
-            output_runtime_layout,
-        ),
+    irfft[dtype, dtype](
+        TileTensor(input_device, input_runtime_layout).make_dynamic[
+            DType.int64
+        ](),
+        TileTensor(output_device, output_runtime_layout).make_dynamic[
+            DType.int64
+        ](),
         output_size,
         128,  # buffer_size_mb
         ctx,
@@ -113,9 +106,9 @@ fn test_irfft_basic[
     # a constant value in all output samples.
     # The expected value depends on normalization, but all samples should be equal
     with output_device.map_to_host() as output_host:
-        var output_tensor = LayoutTensor[dtype, layout_2d](
+        var output_tensor = TileTensor(
             output_host, output_runtime_layout
-        )
+        ).make_dynamic[DType.int64]()
         var first_value = output_tensor[0, 0]
         print("First output value:", first_value)
 

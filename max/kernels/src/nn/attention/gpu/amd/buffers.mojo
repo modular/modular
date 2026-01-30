@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, recip
 from sys import simd_width_of
 from sys.intrinsics import readfirstlane
@@ -164,7 +163,7 @@ struct KVBufferImpl[
     //,
     config: KVBufferConfig,
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -297,7 +296,7 @@ struct KVBufferImpl[
     fn __init__(
         out self,
         global_tile: Self.GlobalTensorType,
-        num_b_rows: OptionalReg[Int],
+        num_b_rows: Optional[Int],
         shared_ptr: UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
@@ -331,7 +330,7 @@ struct KVBufferImpl[
                 self.load_tile_id
             ].vectorize[1, Self.simd_width](),
             self.global_iterator,
-            self.bounds,
+            UInt32(self.bounds),
         )
         self.global_iterator._incr()
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
@@ -379,7 +378,7 @@ struct KVBufferImpl[
 
 comptime KBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -402,7 +401,7 @@ comptime KBuffer[
 
 comptime VBuffer[
     tensor_core_mma: TiledTensorCore,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -808,7 +807,7 @@ struct QRegisterBuffer[
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
         var bounds = max(
             min(Int32(Self.WM), Int32(tensor.dim[0]() - Self.WM * warp_row))
-            * tensor.stride[0](),
+            * Int32(tensor.stride[0]()),
             0,
         )
         var gmem_warp_iter = tensor.tiled_iterator[Self.WM, Self.BK, axis=1](
@@ -825,7 +824,7 @@ struct QRegisterBuffer[
             ](
                 reg_tile.vectorize[1, Self.simd_width](),
                 gmem_warp_iter,
-                Int(readfirstlane(bounds)),
+                UInt32(Int(readfirstlane(bounds))),
             )
             gmem_warp_iter._incr()
 

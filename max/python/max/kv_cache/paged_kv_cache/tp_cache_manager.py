@@ -283,18 +283,21 @@ class _TPPagedKVCacheManager:
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            lut_table.disable_auto_sync()
         lut_table_np = lut_table.to_numpy()
         lut_table_np.fill(self.total_num_pages)
 
-        # Allocate cache length buffer. It is zero-initialized.
+        # Allocate cache length buffer.
         cache_lengths = Buffer(
             shape=(batch_size,),
             dtype=DType.uint32,
             device=device0,
             pinned=pinned,
         )
+        if pinned:
+            cache_lengths.disable_auto_sync()
         cache_lengths_np = cache_lengths.to_numpy()
-        cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0

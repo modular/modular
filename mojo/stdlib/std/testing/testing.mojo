@@ -134,6 +134,44 @@ fn assert_equal[
         )
 
 
+@always_inline
+fn assert_equal[
+    T: Equatable & Writable,
+    //,
+    __disambiguate: NoneType = None,
+](
+    lhs: T,
+    rhs: T,
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that the input values are equal. If it is not then an Error
+    is raised.
+
+    Parameters:
+        T: The type of the input values.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `assert_equal` function.
+
+    Args:
+        lhs: The lhs of the equality.
+        rhs: The rhs of the equality.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
 # TODO: Remove the PythonObject, String and List overloads once we have
 # more powerful traits.
 
@@ -204,6 +242,41 @@ fn assert_equal(
         raise _assert_cmp_error["`left == right` comparison"](
             lhs.__str__(),
             rhs.__str__(),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are equal. If not, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs != rhs:
+        raise _assert_cmp_error["`left == right` comparison"](
+            repr(lhs),
+            repr(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -282,15 +355,59 @@ fn assert_not_equal[
 
 
 @always_inline
-fn assert_not_equal(
-    lhs: String,
-    rhs: String,
+fn assert_not_equal[
+    lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+    rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
+](
+    lhs: Tuple[*lhs_types],
+    rhs: Tuple[*rhs_types],
+    msg: String = "",
+    *,
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Asserts that two tuples are not equal. If they are, an Error is raised.
+
+    Parameters:
+        lhs_types: The types of the elements in the left tuple.
+        rhs_types: The types of the elements in the right tuple.
+
+    Args:
+        lhs: The left-hand side tuple.
+        rhs: The right-hand side tuple.
+        msg: The message to be printed if the assertion fails.
+        location: The location of the error (defaults to `call_location`).
+
+    Raises:
+        An Error with the provided message if assert fails and `None` otherwise.
+    """
+    if lhs == rhs:
+        raise _assert_cmp_error["`left != right` comparison"](
+            repr(lhs),
+            repr(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
+        )
+
+
+@always_inline
+fn assert_not_equal[
+    T: Equatable & Writable,
+    //,
+    __disambiguate: NoneType = None,
+](
+    lhs: T,
+    rhs: T,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
     """Asserts that the input values are not equal. If it is not then an
-    an Error is raised.
+    Error is raised.
+
+    Parameters:
+        T: The type of the input values.
+        __disambiguate: A temporary dummy parameter to disambiguate the function
+            from the other `assert_not_equal` function.
 
     Args:
         lhs: The lhs of the inequality.
@@ -303,7 +420,10 @@ fn assert_not_equal(
     """
     if lhs == rhs:
         raise _assert_cmp_error["`left != right` comparison"](
-            lhs, rhs, msg=msg, loc=location.or_else(call_location())
+            String(lhs),
+            String(rhs),
+            msg=msg,
+            loc=location.or_else(call_location()),
         )
 
 

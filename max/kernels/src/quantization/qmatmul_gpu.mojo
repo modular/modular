@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from math import ceildiv
 
 from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
 from bit import log2_floor
+from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -132,7 +132,7 @@ fn multistage_mma_q[
     num_iters: Int,
     /,
     *,
-    num_b_rows: OptionalReg[Int] = None,
+    num_b_rows: Optional[Int] = None,
 ):
     comptime simd_size = simd_width_of[a_type]()
     comptime simd_b_size = simd_width_of[b_type]()
@@ -325,7 +325,7 @@ fn multistage_mma_q[
 
     comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
-    ]() if swizzle_a else OptionalReg[Swizzle](None)
+    ]() if swizzle_a else Optional[Swizzle]()
 
     mma_op.load_a[swizzle_a_pattern](
         a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()

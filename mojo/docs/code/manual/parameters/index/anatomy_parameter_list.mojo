@@ -23,7 +23,7 @@ fn my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn (Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,

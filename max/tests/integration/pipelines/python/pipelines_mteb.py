@@ -78,6 +78,7 @@ class EmbeddingModel:
             return meta.model_copy(update={"name": name})
         else:
             config = self.huggingface_config
+            assert config is not None
             return mteb.ModelMeta(
                 name=name,
                 revision=None,

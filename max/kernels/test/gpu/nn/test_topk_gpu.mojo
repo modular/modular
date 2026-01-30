@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, iota
 from random import random_float64, seed
 
@@ -34,7 +33,7 @@ comptime PRINT_OUTPUT = False
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
@@ -55,7 +54,7 @@ fn time_kernel[
 
 fn test_case_batched[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
+    fill_fn: fn[dtype: DType](LayoutTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     out_idx_type: DType = DType.int,
@@ -192,7 +191,7 @@ fn test_case_batched[
                 device_local_topk_idxs_lt,
                 device_out_vals_lt,
                 device_out_idxs_lt,
-                k=OptionalReg(
+                k=Optional(
                     LayoutTensor[
                         DType.int64,
                         Layout.row_major(UNKNOWN_VALUE),
@@ -223,7 +222,7 @@ fn test_case_batched[
         device_local_topk_idxs_lt,
         device_out_vals_lt,
         device_out_idxs_lt,
-        k=OptionalReg(
+        k=Optional(
             LayoutTensor[
                 DType.int64,
                 Layout.row_major(UNKNOWN_VALUE),
@@ -295,7 +294,7 @@ fn test_case_batched[
                     topk_idxs_cpu_lt,
                     1,
                     True,
-                    k=OptionalReg(
+                    k=Optional(
                         LayoutTensor[
                             DType.int64,
                             Layout.row_major(UNKNOWN_VALUE),
@@ -320,7 +319,7 @@ fn test_case_batched[
             topk_idxs_cpu_lt,
             1,
             True,
-            k=OptionalReg(
+            k=Optional(
                 LayoutTensor[
                     DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),
@@ -373,7 +372,7 @@ fn test_case_batched[
 
 fn test_case_multi_rank[
     dtype: DType,
-    fill_fn: fn[dtype: DType] (LayoutTensor[mut=True, dtype, ...]) capturing [
+    fill_fn: fn[dtype: DType](LayoutTensor[mut=True, dtype, ...]) capturing[
         _
     ] -> None,
     rank: Int,
@@ -486,7 +485,7 @@ fn test_case_multi_rank[
         device_in_lt,
         device_out_vals_lt,
         device_out_idxs_lt,
-        k=OptionalReg(
+        k=Optional(
             LayoutTensor[
                 DType.int64,
                 Layout.row_major(UNKNOWN_VALUE),
@@ -540,7 +539,7 @@ fn test_case_multi_rank[
             topk_idxs_cpu_lt,
             1,
             True,
-            k=OptionalReg(
+            k=Optional(
                 LayoutTensor[
                     DType.int64,
                     Layout.row_major(UNKNOWN_VALUE),
@@ -617,7 +616,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
     var K: Int
     var block_size: Int
     var batch_size: Int
-    var num_blocks_per_input: OptionalReg[Int]
+    var num_blocks_per_input: Optional[Int]
 
     fn __init__(
         out self,
@@ -625,7 +624,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
         K: Int,
         block_size: Int,
         batch_size: Int,
-        num_blocks_per_input: OptionalReg[Int] = None,
+        num_blocks_per_input: Optional[Int] = None,
     ):
         self.N = N
         self.K = K
@@ -641,15 +640,15 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
     comptime largest = Self._largest
     var input_shape: IndexList[Self.rank]
     var K: Int
-    var block_size: OptionalReg[Int]
-    var num_blocks_per_input: OptionalReg[Int]
+    var block_size: Optional[Int]
+    var num_blocks_per_input: Optional[Int]
 
     fn __init__(
         out self,
         input_shape: IndexList[Self.rank],
         K: Int,
-        block_size: OptionalReg[Int] = None,
-        num_blocks_per_input: OptionalReg[Int] = None,
+        block_size: Optional[Int] = None,
+        num_blocks_per_input: Optional[Int] = None,
     ):
         self.input_shape = input_shape
         self.K = K

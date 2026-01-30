@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_up, ceildiv
+from collections import OptionalReg
 from sys import (
     CompilationTarget,
     align_of,
@@ -81,7 +81,7 @@ struct FlashAttentionAlgorithm(
 
     @always_inline
     fn __eq__(self, version: Int) -> Bool:
-        return self._value == version
+        return self._value == Int32(version)
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
@@ -247,11 +247,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
         out self,
         num_heads: UInt,
         depth: UInt,
-        num_queries_per_block: OptionalReg[UInt] = None,
-        num_keys_per_block: OptionalReg[UInt] = None,
-        BK: OptionalReg[UInt] = None,
-        WM: OptionalReg[UInt] = None,
-        WN: OptionalReg[UInt] = None,
+        num_queries_per_block: Optional[UInt] = None,
+        num_keys_per_block: Optional[UInt] = None,
+        BK: Optional[UInt] = None,
+        WM: Optional[UInt] = None,
+        WN: Optional[UInt] = None,
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
@@ -383,7 +383,8 @@ fn _kernel_mask[
     for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
-            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[dtype]()
+            and UInt32(coord[1]) + UInt32(i)
+            < UInt32(bound[1]) else min_or_neg_inf[dtype]()
         )
 
     return masked_vec
@@ -459,24 +460,30 @@ fn _copy_frag_to_smem_nvidia[
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 comptime OffsetType = type_of(frag_offset)
-                var offset_BMxBN = frag_offset + offset_in_frag
+                var offset_BMxBN = frag_offset + type_of(frag_offset)(
+                    offset_in_frag
+                )
                 var offset_BMxBK = (
                     offset_BMxBN // OffsetType(BN)
                 ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
                 # Convert offset to vectorized domain, since BM x BK will be loaded
                 # by vectors in 2nd mma, and swizzle
-                var swizzle_offset = swizzle_fn(offset_BMxBK // simd_width)
-                # Convert offset back to where the frag will be stored.
-                offset_BMxBK = (
-                    swizzle_offset * simd_width + offset_BMxBK % simd_width
+                var swizzle_offset = swizzle_fn(
+                    offset_BMxBK // OffsetType(simd_width)
                 )
+                # Convert offset back to where the frag will be stored.
+                offset_BMxBK = swizzle_offset * OffsetType(
+                    simd_width
+                ) + offset_BMxBK % OffsetType(simd_width)
                 # E.g. fp32x2 -> bf16x2 for bf16 mma.
                 var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, i].cast[
                     p_smem_tile.dtype
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    p_smem_iter.linear_uint_type(
+                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    )
                 )[]
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
@@ -559,7 +566,9 @@ fn _copy_frag_to_smem_amd[
                 ].cast[p_smem_tile.dtype]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    p_smem_iter.linear_uint_type(
+                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    )
                 )[]
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
@@ -639,7 +648,7 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
+comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
     mask: mask_t, score_mod: score_mod_t
 ) raises capturing -> None
 
@@ -717,7 +726,7 @@ fn dispatch_materialized_mask_and_score_mod[
 @always_inline
 fn _dispatch_score_mod[
     score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait] (
+    callback_fn: fn[score_mod_t: ScoreModTrait](
         score_mod: score_mod_t
     ) raises capturing -> None,
     num_heads: Int = -1,
@@ -745,7 +754,7 @@ fn _dispatch_score_mod[
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
 trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
-    comptime static_value: OptionalReg[Int]
+    comptime static_value: Optional[Int]
 
     fn as_uint32(self) -> UInt32:
         ...
@@ -756,7 +765,7 @@ trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
 struct StaticInt[value: Int](
     Defaultable, OptionallyStaticInt, TrivialRegisterType
 ):
-    comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
+    comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -773,7 +782,7 @@ struct StaticInt[value: Int](
 
 struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
     var value: UInt32
-    comptime static_value: OptionalReg[Int] = None
+    comptime static_value: Optional[Int] = None
 
     @always_inline("nodebug")
     fn __init__(out self, value: Int):

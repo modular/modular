@@ -463,9 +463,9 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
 
     @parameter
     if has_nvidia_gpu_accelerator():
-        return Int(nvshmem_team_my_pe(c_int(team)))
+        return c_int(Int(nvshmem_team_my_pe(c_int(team))))
     elif has_amd_gpu_accelerator():
-        return Int(rocshmem_team_my_pe(c_int(team)))
+        return c_int(Int(rocshmem_team_my_pe(c_int(team))))
     else:
         return CompilationTarget.unsupported_target_error[
             c_int, operation = __get_current_function_name()

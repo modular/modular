@@ -161,8 +161,8 @@ struct OwnedPointer[T: AnyType](Writable):
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__(
-        ref [AddressSpace.GENERIC]self,
-    ) -> ref [self, AddressSpace.GENERIC] Self.T:
+        ref[AddressSpace.GENERIC] self,
+    ) -> ref[self, AddressSpace.GENERIC] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
         Returns:
@@ -183,7 +183,7 @@ struct OwnedPointer[T: AnyType](Writable):
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
         """Returns the backing pointer for this `OwnedPointer`.
 
         Parameters:

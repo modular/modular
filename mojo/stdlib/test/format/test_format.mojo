@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from testing import *
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
+from format._utils import write_sequence_to
 
 
 @fieldwise_init
@@ -74,6 +75,82 @@ def test_default_write_to_empty():
     var e = EmptyStruct()
     assert_equal(String(e), "EmptyStruct()")
     assert_equal(repr(e), "EmptyStruct()")
+
+
+def test_write_sequence_to_with_element_fn_counter():
+    """Test write_sequence_to with ElementFn using a simple counter.
+
+    This demonstrates the basic usage of ElementFn: a closure that writes
+    elements and raises StopIteration when done.
+    """
+    var output = String()
+
+    var count = 0
+
+    @parameter
+    fn write_numbers[T: Writer](mut w: T) raises StopIteration:
+        if count >= 3:
+            raise StopIteration()
+        w.write(count)
+        count += 1
+
+    write_sequence_to[ElementFn=write_numbers](output)
+    assert_equal(output, "[0, 1, 2]")
+
+    _ = count
+
+
+def test_write_sequence_to_empty_sequence():
+    """Test write_sequence_to with ElementFn that immediately raises StopIteration.
+    """
+    var output = String()
+
+    @parameter
+    fn write_nothing[T: Writer](mut w: T) raises StopIteration:
+        raise StopIteration()
+
+    write_sequence_to[ElementFn=write_nothing](output)
+    assert_equal(output, "[]")
+
+
+def test_write_sequence_to_single_element():
+    """Test write_sequence_to with ElementFn that writes one element."""
+    var output = String()
+
+    var written = False
+
+    @parameter
+    fn write_once[T: Writer](mut w: T) raises StopIteration:
+        if written:
+            raise StopIteration()
+        w.write("only")
+        written = True
+
+    write_sequence_to[ElementFn=write_once](output)
+    assert_equal(output, "[only]")
+
+    _ = written
+
+
+def test_write_sequence_to_custom_delimiters():
+    """Test write_sequence_to with custom opening, closing, and separator."""
+    var output = String()
+
+    var index = 0
+
+    @parameter
+    fn write_items[T: Writer](mut w: T) raises StopIteration:
+        if index >= 3:
+            raise StopIteration()
+        w.write("item", index)
+        index += 1
+
+    write_sequence_to[ElementFn=write_items](
+        output, open="{", close="}", sep="; "
+    )
+    assert_equal(output, "{item0; item1; item2}")
+
+    _ = index
 
 
 def main():

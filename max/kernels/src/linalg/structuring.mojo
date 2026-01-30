@@ -255,7 +255,7 @@ struct SMemTileArray[
     ]
 
     fn __init__(
-        ref [AddressSpace.SHARED]storage: Self.Storage,
+        ref[AddressSpace.SHARED] storage: Self.Storage,
     ) -> Self:
         """Initialize with Storage.
 
@@ -348,7 +348,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref [AddressSpace.SHARED]storage: Self.Storage) -> Self:
+    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
@@ -389,7 +389,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: __TypeOfAllTypes] = UnsafePointer[
+comptime SMemPtr[type: AnyType] = UnsafePointer[
     type, address_space = AddressSpace.SHARED
 ]
 

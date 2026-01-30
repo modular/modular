@@ -18,9 +18,9 @@ These are Mojo built-ins, so you don't need to import them.
 
 @always_inline("builtin")
 fn rebind[
-    src_type: __TypeOfAllTypes,
+    src_type: TrivialRegisterType,
     //,
-    dest_type: __TypeOfAllTypes,
+    dest_type: TrivialRegisterType,
 ](src: src_type) -> dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -48,7 +48,7 @@ fn rebind[
     src_type: AnyType,
     //,
     dest_type: AnyType,
-](ref src: src_type) -> ref [src] dest_type:
+](ref src: src_type) -> ref[src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
     instantiation and "rebind" the input to the result type, returning a
@@ -120,7 +120,7 @@ Parameters:
 
 @always_inline
 fn trait_downcast[
-    T: __TypeOfAllTypes, //, Trait: type_of(AnyType)
+    T: TrivialRegisterType, //, Trait: type_of(AnyType)
 ](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
@@ -166,7 +166,7 @@ fn trait_downcast_var[
 @always_inline
 fn trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)
-](ref src: T) -> ref [src] downcast[T, Trait]:
+](ref src: T) -> ref[src] downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation

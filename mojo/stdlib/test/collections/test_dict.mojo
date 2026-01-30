@@ -214,7 +214,7 @@ def _test_iter_bounds[
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()

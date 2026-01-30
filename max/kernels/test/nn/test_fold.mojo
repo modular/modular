@@ -51,10 +51,9 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.fold import fold
 from runtime.asyncrt import DeviceContextPtr
 
@@ -78,39 +77,30 @@ fn test[
 ) raises:
     print("== test_fold")
 
-    comptime unknown_layout_3d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    # Create input tensor with dynamic layout
+    comptime input_layout = row_major(Coord(input_shape))
+    var input_stack = List[Scalar[dtype]](
+        capacity=input_shape.flattened_length()
     )
-    var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
-    var input_data = UnsafePointer[Scalar[dtype]].alloc(input_layout.size())
-    var input = LayoutTensor[dtype, unknown_layout_3d, MutAnyOrigin](
-        input_data,
-        input_layout,
-    )
-    _copy_values_to_layout_tensor(input, input_values)
+    input_stack.resize(input_shape.flattened_length(), 0)
+    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    _copy_values_to_tile_tensor(input, input_values)
 
-    comptime unknown_layout_4d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    # Create expected tensor with dynamic layout
+    comptime output_layout = row_major(Coord(output_shape))
+    var expected_stack = List[Scalar[dtype]](
+        capacity=output_shape.flattened_length()
     )
-    var runtime_layout_4d = RuntimeLayout[unknown_layout_4d].row_major(
-        output_shape
-    )
-    var expected_data = UnsafePointer[Scalar[dtype]].alloc(
-        runtime_layout_4d.size()
-    )
-    var expected = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
-        expected_data,
-        runtime_layout_4d,
-    )
-    _copy_values_to_layout_tensor(expected, expected_output)
+    expected_stack.resize(output_shape.flattened_length(), 0)
+    var expected = TileTensor(expected_stack.unsafe_ptr(), output_layout)
+    _copy_values_to_tile_tensor(expected, expected_output)
 
-    var output_data = UnsafePointer[Scalar[dtype]].alloc(
-        runtime_layout_4d.size()
+    # Create output tensor with dynamic layout
+    var output_stack = List[Scalar[dtype]](
+        capacity=output_shape.flattened_length()
     )
-    var output = LayoutTensor[dtype, unknown_layout_4d, MutAnyOrigin](
-        output_data,
-        runtime_layout_4d,
-    )
+    output_stack.resize(output_shape.flattened_length(), 0)
+    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
@@ -147,27 +137,19 @@ fn test[
                             "Actual value: ",
                             output_val,
                         )
-                        output_data.free()
-                        expected_data.free()
-                        input_data.free()
                         return
 
     # CHECK: Succeed
     print("Succeed")
 
-    output_data.free()
-    expected_data.free()
-    input_data.free()
 
-
-fn _copy_values_to_layout_tensor[
+fn _copy_values_to_tile_tensor[
     dtype: DType,
-    layout: Layout,
 ](
-    tensor: LayoutTensor[dtype, layout, MutAnyOrigin],
+    tensor: TileTensor[mut=True, dtype, ...],
     values: List[Scalar[dtype]],
 ) raises:
-    var num_elements = tensor.size()
+    var num_elements = tensor.numel()
 
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")

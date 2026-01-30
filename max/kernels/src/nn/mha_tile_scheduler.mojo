@@ -436,10 +436,6 @@ struct TransientScheduler[
             + "]"
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn __init__(out self):
         pass
@@ -516,7 +512,7 @@ struct TileScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
     /,
-    num_ctas: UInt32 = H100.sm_count,
+    num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](Defaultable, MHATileScheduler, TrivialRegisterType):
     comptime may_advance: Bool = True
@@ -540,10 +536,6 @@ struct TileScheduler[
             + String(Self.schedule._value)
             + "]"
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
@@ -636,7 +628,7 @@ struct QueuedTileScheduler[
     num_heads: UInt32,
     /,
     decoding: Bool,
-    num_ctas: UInt32 = H100.sm_count,
+    num_ctas: UInt32 = UInt32(H100.sm_count),
     schedule: MHASchedule = MHASchedule.DEFAULT,
 ](DevicePassable, MHATileScheduler, TrivialRegisterType):
     """
@@ -818,13 +810,3 @@ struct QueuedTileScheduler[
             String(Self.schedule._value),
             "]",
         )
-
-    @no_inline
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()

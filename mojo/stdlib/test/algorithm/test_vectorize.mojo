@@ -21,7 +21,7 @@ from sys.intrinsics import masked_load, masked_store
 
 def test_vectorize():
     # Create a mem of size 5
-    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
+    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline
@@ -57,7 +57,7 @@ def test_vectorize():
 
 def test_vectorize_evl():
     # Create a mem of size 5
-    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
+    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline

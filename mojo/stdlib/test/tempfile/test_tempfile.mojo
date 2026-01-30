@@ -49,13 +49,13 @@ def test_mkdtemp():
 struct TempEnvWithCleanup:
     var vars_to_set: Dict[String, String]
     var _vars_back: Dict[String, String]
-    var clean_up_function: fn () raises -> None
+    var clean_up_function: fn() raises -> None
     """Function called after the context manager exits if an error occurs."""
 
     fn __init__(
         out self,
         vars_to_set: Dict[String, String],
-        clean_up_function: fn () raises -> None,
+        clean_up_function: fn() raises -> None,
     ):
         self.vars_to_set = vars_to_set.copy()
         self._vars_back = Dict[String, String]()
