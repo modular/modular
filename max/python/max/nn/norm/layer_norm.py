@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Layer normalization for module_v3."""
+"""Layer normalization."""
 
 from __future__ import annotations
 
@@ -73,8 +73,8 @@ class LayerNorm(Module[[Tensor], Tensor]):
             dim: Size of the last dimension to normalize.
             eps: Numerical stability constant.
             keep_dtype: Whether to preserve input dtype in computation.
-            elementwise_affine: Whether to apply learned scale and bias.
-            use_bias: Whether to learn an additive bias term.
+            elementwise_affine: Whether to apply learned scale.
+            use_bias: Whether to apply a bias. It's only effective if elementwise_affine is True.
         """
         super().__init__()
         self.dim = dim
@@ -92,7 +92,7 @@ class LayerNorm(Module[[Tensor], Tensor]):
     def __rich_repr__(self):
         """Repr matching the Linear constructor."""
         yield "dim", self.dim
-        yield "eps", self.eps, 1e-6
+        yield "eps", self.eps, 1e-5
 
     def _affine_params(self, x: Tensor) -> tuple[Tensor, Tensor]:
         if self.weight is None:
