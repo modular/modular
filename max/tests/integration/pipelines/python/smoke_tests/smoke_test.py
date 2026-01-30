@@ -259,6 +259,7 @@ class EvalSummary:
     gpu_count: int
     startup_time_seconds: float
     eval_task: str
+    task_type: str
     accuracy: float
     accuracy_stderr: float
     total_evaluation_time_seconds: float
@@ -282,9 +283,11 @@ def build_eval_summary(
         if VISION_TASK in task:
             accuracy = metrics["relaxed_accuracy,none"]
             accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
+            task_type = "vision"
         elif task == TEXT_TASK:
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
+            task_type = "text"
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -295,6 +298,7 @@ def build_eval_summary(
                 gpu_count=gpu_count,
                 startup_time_seconds=round(startup_time_seconds, 2),
                 eval_task=task,
+                task_type=task_type,
                 accuracy=accuracy,
                 accuracy_stderr=accuracy_stderr,
                 total_evaluation_time_seconds=total_secs,
