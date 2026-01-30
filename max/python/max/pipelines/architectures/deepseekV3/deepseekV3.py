@@ -18,6 +18,7 @@ import functools
 from collections.abc import Sequence
 from typing import Any
 
+from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -89,7 +90,13 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
             f"data_parallel_degree must match the number of devices ({num_devices}). "
             "Tensor-parallel attention is not supported for DeepseekV3."
         )
-    if num_devices > 1 and config.ep_config is None:
+    # Skip EP validation in virtual device mode (compilation-only) since EP
+    # will be disabled later due to NVSHMEM linking requirements
+    if (
+        num_devices > 1
+        and config.ep_config is None
+        and not is_virtual_device_mode()
+    ):
         raise ValueError(
             "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
         )
