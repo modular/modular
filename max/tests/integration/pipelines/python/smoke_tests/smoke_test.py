@@ -73,6 +73,11 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
+def is_deepseek(model: str) -> bool:
+    """Temporary workaround for large DeepSeek models."""
+    return "deepseek" in model and "lite" not in model
+
+
 def validate_hf_token() -> None:
     if os.getenv("HF_TOKEN") is None:
         raise ValueError(
@@ -92,7 +97,7 @@ def test_single_request(model: str, task: str) -> None:
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(10, 60),
+        timeout=(30, 180),  # Initial req can be slow for huge models
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -133,7 +138,12 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    if gpu_count > 1:
+    is_huge_model = is_deepseek(model)
+    if is_huge_model and framework != "sglang":
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        # Have not been successful in getting SGLang to work with R1 yet
+    elif gpu_count > 1:
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
         VLLM += f" --tensor-parallel-size={gpu_count}"
         SGLANG += f" --tp-size={gpu_count}"
@@ -330,7 +340,7 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
 
 
 def start_server(
-    cmd: list[str], extra_env: dict[str, str]
+    cmd: list[str], extra_env: dict[str, str], timeout: int
 ) -> tuple[Popen[bytes], float]:
     env = os.environ.copy()
     env.update(extra_env)
@@ -345,7 +355,7 @@ def start_server(
     start = time.monotonic()
     proc = Popen(cmd, start_new_session=True, env=env)
     try:
-        deadline = start + 900
+        deadline = start + timeout
         while time.monotonic() < deadline:
             if server_is_ready():
                 break
@@ -353,7 +363,7 @@ def start_server(
                 raise RuntimeError("Server process terminated unexpectedly")
             time.sleep(0.5)
         else:
-            raise TimeoutError("Server did not start in 900 seconds")
+            raise TimeoutError(f"Server did not start in {timeout} seconds")
         return proc, time.monotonic() - start
     except:
         gracefully_stop_process(proc)
@@ -483,10 +493,13 @@ def smoke_test(
     results = []
     all_samples = []
     extra_env = {}
+    timeout = 900
     if model == "tbmod/gemma-3-4b-it":
         extra_env = {"MODULAR_MAX_DISABLE_GEMMA3_VISION": "1"}
+    elif is_deepseek(model):
+        timeout = 1800
 
-    server_process, startup_time = start_server(cmd, extra_env)
+    server_process, startup_time = start_server(cmd, extra_env, timeout)
     try:
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")

@@ -62,6 +62,7 @@ MODELS = {
         "vllm@B200",
     ],
     "deepseek-ai/deepseek-r1-0528": [
+        "sglang",
         "H100",
         "B200",
         "MI355",

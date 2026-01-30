@@ -166,7 +166,12 @@ modular_py_binary(
     srcs = ["smoke_tests/smoke_test.py"],
     data = glob([
         "smoke_tests/tasks/**",
-    ]),
+    ]) + [
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
     imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
