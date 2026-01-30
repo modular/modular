@@ -264,7 +264,6 @@ fn test_dispatch[
 
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
-        output_layout,
         row_offsets_layout,
         expert_ids_layout,
         src_token_info_layout,

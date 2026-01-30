@@ -139,6 +139,7 @@ def call_ep_dispatch_async(
     """
 
     parameters: dict[str, bool | int | str | DType] = {
+        "dispatch_dtype": config.dispatch_dtype,
         "hidden_size": config.hidden_size,
         "top_k": config.top_k,
         "n_experts": config.n_experts,
@@ -149,12 +150,10 @@ def call_ep_dispatch_async(
     op_name = "ep.dispatch_async"
     if config.dispatch_dtype.is_float8():
         assert config.dispatch_fp8_config is not None
-        op_name += ".fp8"
-        parameters["dispatch_dtype"] = config.dispatch_dtype
-        parameters["dispatch_scale_granularity"] = str(
-            config.dispatch_fp8_config.granularity
-        )
-        parameters["dispatch_scale_dtype"] = config.dispatch_fp8_config.dtype
+        assert config.dispatch_fp8_config.granularity == "block"
+        parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+    else:
+        parameters["dispatch_fmt_str"] = "BF16"
 
     ops.inplace_custom(
         op_name,
@@ -196,9 +195,9 @@ def call_ep_dispatch_wait(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
-        input_tokens: Input tokens for the shared experts. If shared experts
-        fusion is enabled, this will be bundled with the inputs of the routed
-        expert, and passed to the grouped matmul kernel.
+        input_tokens: Input tokens for the shared expert. If shared expert
+            fusion is enabled, this will be bundled with the inputs of the
+            routed experts, and passed to the grouped matmul kernel.
 
     Returns:
         A tuple containing:
@@ -215,11 +214,11 @@ def call_ep_dispatch_wait(
 
     Note:
         This function blocks until all expected tokens have been received from
-        remote devices.
+        remote devices. For Quantized dispatch format, the output will also
+        include the aggregated scales as the second element of the tuple.
     """
 
     parameters: dict[str, bool | int | str | DType] = {
-        "dispatch_dtype": config.dispatch_dtype,
         "hidden_size": config.hidden_size,
         "top_k": config.top_k,
         "n_experts": config.n_experts,
@@ -231,7 +230,6 @@ def call_ep_dispatch_wait(
     max_recv_tokens = config.max_tokens_per_rank * config.n_experts
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
-
     device_ref = atomic_counter.device
 
     op_name = "ep.dispatch_wait"
@@ -240,6 +238,7 @@ def call_ep_dispatch_wait(
         recv_buf_ptrs,
         recv_count_ptrs,
     ]
+
     if input_tokens is not None:
         assert config.fused_shared_expert, (
             "Shared experts fusion must be enabled when input_tokens is provided"
@@ -249,137 +248,38 @@ def call_ep_dispatch_wait(
         max_recv_tokens += config.max_tokens_per_rank
         n_local_experts += 1
 
-    results = ops.inplace_custom(
-        op_name,
-        device=device_ref,
-        values=input_vals,
-        out_types=[
-            TensorType(
-                dtype=config.dispatch_dtype,
-                shape=[max_recv_tokens, config.hidden_size],
-                device=device_ref,
-            ),  # output_tokens
-            TensorType(
-                dtype=DType.uint32,
-                shape=[n_local_experts + 1],
-                device=device_ref,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.int32,
-                shape=[n_local_experts],
-                device=device_ref,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.int32,
-                shape=[max_recv_tokens, 2],
-                device=device_ref,
-            ),  # src_info
-        ],
-        parameters=parameters,
-    )
-
-    return tuple([v.tensor for v in results])
-
-
-def call_ep_dispatch_wait_fp8(
-    atomic_counter: BufferValue,
-    recv_buf_ptrs: TensorValue,
-    recv_count_ptrs: TensorValue,
-    config: EPConfig,
-    input_tokens: TensorValue | None = None,
-) -> tuple[TensorValue, ...]:
-    """Wait for Expert Parallelism token dispatch and prepare for expert
-    computation (FP8 variant).
-
-    This function launches the EP dispatch wait kernel that waits for all
-    inter-device communication to complete, then organizes the received tokens
-    into a format suitable for grouped matmul computation.
-
-    Args:
-        atomic_counter: Buffer for synchronization between thread blocks.
-        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
-        recv_count_ptrs: Device pointers to the receive count buffers for
-            each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks)
-        config: EP configuration.
-        input_tokens: Input tokens for the shared experts. If shared experts
-        fusion is enabled, this will be bundled with the inputs of the routed
-        expert, and passed to the grouped matmul kernel.
-
-    Returns:
-        A tuple containing:
-        - output_tokens: Aggregated tokens ready for grouped matmul computation.
-            Shape: (max_recv_tokens, hidden_size)
-        - output_scales: Aggregated scales ready for grouped matmul computation.
-            Shape: (hidden_size // block_size, max_recv_tokens)
-        - expert_start_indices: Row offsets for grouped matmul operation.
-            Shape: (n_local_experts + 1,)
-        - expert_ids: Local expert IDs for the grouped operation.
-            Shape: (n_local_experts,)
-            Maps position in row_offsets to actual expert ID
-        - src_info: Source routing information for combine phase.
-            Shape: (max_recv_tokens, 2)
-            [original_token_index, topk_index] for each received token
-
-    Note:
-        This function blocks until all expected tokens have been received from
-        remote devices.
-    """
-
-    assert config.dispatch_fp8_config is not None
-    assert (
-        config.dispatch_fp8_config.block_size is not None
-        and config.dispatch_fp8_config.block_size[1] == 128
-    ), "Only support block_size=[1, 128] for input activations."
-
-    parameters: dict[str, bool | int | str | DType] = {
-        "dispatch_dtype": config.dispatch_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-        "dispatch_scale_granularity": str(
-            config.dispatch_fp8_config.granularity
-        ),
-    }
-
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
-    n_ranks = config.n_gpus_per_node * config.n_nodes
-    n_local_experts = config.n_experts // n_ranks
-
-    device_ref = atomic_counter.device
-
-    op_name = "ep.dispatch_wait.fp8"
-    input_vals: list[Value[Any]] = [
-        atomic_counter,
-        recv_buf_ptrs,
-        recv_count_ptrs,
+    basic_out_types: list[TensorType] = [
+        TensorType(
+            dtype=config.dispatch_dtype,
+            shape=[max_recv_tokens, config.hidden_size],
+            device=device_ref,
+        ),  # output_tokens
+        TensorType(
+            dtype=DType.uint32,
+            shape=[n_local_experts + 1],
+            device=device_ref,
+        ),  # expert_start_indices
+        TensorType(
+            dtype=DType.int32,
+            shape=[n_local_experts],
+            device=device_ref,
+        ),  # expert_ids
+        TensorType(
+            dtype=DType.int32,
+            shape=[max_recv_tokens, 2],
+            device=device_ref,
+        ),  # src_info
     ]
 
-    if input_tokens is not None:
-        assert config.fused_shared_expert, (
-            "Shared experts fusion must be enabled when input_tokens is provided"
-        )
-        op_name += ".fused_shared_expert"
-        input_vals.append(input_tokens)
-        max_recv_tokens += config.max_tokens_per_rank
-        n_local_experts += 1
+    if config.dispatch_dtype.is_float8():
+        assert config.dispatch_fp8_config is not None
+        assert (
+            config.dispatch_fp8_config.block_size is not None
+            and config.dispatch_fp8_config.block_size[1] == 128
+        ), "Only support block_size=[1, 128] for input activations."
 
-    results = ops.inplace_custom(
-        op_name,
-        device=device_ref,
-        values=input_vals,
-        out_types=[
-            TensorType(
-                dtype=config.dispatch_dtype,
-                shape=[max_recv_tokens, config.hidden_size],
-                device=device_ref,
-            ),  # output_tokens
+        basic_out_types.insert(
+            1,
             TensorType(
                 dtype=config.dispatch_fp8_config.dtype,
                 shape=[
@@ -388,23 +288,18 @@ def call_ep_dispatch_wait_fp8(
                     max_recv_tokens,
                 ],
                 device=device_ref,
-            ),  # output_scales
-            TensorType(
-                dtype=DType.uint32,
-                shape=[n_local_experts + 1],
-                device=device_ref,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.int32,
-                shape=[n_local_experts],
-                device=device_ref,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.int32,
-                shape=[max_recv_tokens, 2],
-                device=device_ref,
-            ),  # src_info
-        ],
+            ),
+        )  # output_scales
+        op_name += ".fp8"
+        parameters["dispatch_scale_granularity"] = str(
+            config.dispatch_fp8_config.granularity
+        )
+
+    results = ops.inplace_custom(
+        op_name,
+        device=device_ref,
+        values=input_vals,
+        out_types=basic_out_types,
         parameters=parameters,
     )
 
@@ -419,7 +314,8 @@ def call_ep_combine_async(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
-) -> None:
+    num_output_tokens: Dim | None = None,
+) -> TensorValue | None:
     """Initiate Expert Parallelism token combine phase (async).
 
     This function launches the EP async combine kernel that sends expert outputs
@@ -446,6 +342,13 @@ def call_ep_combine_async(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
         config: EP configuration.
+        num_output_tokens: Number of output tokens. If provided, the shared
+            expert outputs will be filtered out and stored in a separate tensor.
+
+    Returns:
+        shared_expert_output: Output tokens from the shared expert. Only
+        returned when fused_shared_expert is enabled. Shape:
+        (num_output_tokens, hidden_size).
 
     Note:
         This is a non-blocking operation. Call call_ep_combine_wait() to wait
@@ -462,8 +365,25 @@ def call_ep_combine_async(
         "n_nodes": config.n_nodes,
     }
 
-    ops.inplace_custom(
-        "ep.combine_async",
+    op_name = "ep.combine_async"
+    out_types: list[TensorType] = []
+
+    if config.fused_shared_expert:
+        op_name += ".fused_shared_expert"
+
+        assert num_output_tokens is not None, (
+            "num_output_tokens must be provided when fused_shared_expert is enabled"
+        )
+        out_types.append(
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_output_tokens, config.hidden_size],
+                device=atomic_counter.device,
+            )
+        )
+
+    result = ops.inplace_custom(
+        op_name,
         device=input_tokens.device,
         values=[
             atomic_counter,
@@ -473,93 +393,14 @@ def call_ep_combine_async(
             recv_buf_ptrs,
             recv_count_ptrs,
         ],
-        out_types=[],
+        out_types=out_types,
         parameters=parameters,
     )
 
-
-def call_ep_combine_async_fused_shared_expert(
-    input_tokens: TensorValue,
-    src_info: TensorValue,
-    atomic_counter: BufferValue,
-    send_buf_ptrs: TensorValue,
-    recv_buf_ptrs: TensorValue,
-    recv_count_ptrs: TensorValue,
-    config: EPConfig,
-    num_tokens: Dim,
-) -> TensorValue:
-    """Initiate Expert Parallelism token combine phase (async, fused shared expert).
-
-    This function launches the EP async combine kernel that sends expert outputs
-    back to their original devices based on source routing information. The
-    kernel uses non-blocking SHMEM communication in multi-node scenarios and
-    returns immediately after initiating transfers.
-
-    Args:
-        input_tokens: Expert output tokens to send back to original devices.
-            Shape: (max_tokens_per_rank, hidden_size)
-            Results from expert computation that need to be routed back
-        src_info: Source routing information from dispatch phase.
-            Shape: (max_tokens_per_rank, 2)
-            [original_token_index, topk_index] for each token
-        atomic_counter: Buffer for synchronization between thread blocks.
-        send_buf_ptrs: Device pointers to the send buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
-        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (max_tokens_per_rank, top_k, msg_bytes).
-        recv_count_ptrs: Device pointers to the receive count buffers for
-            each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_experts,)
-        config: EP configuration.
-        num_tokens: Number of original input tokens before expert processing.
-
-    Returns:
-        output_tokens: Output tokens for the shared experts.
-            Shape: (num_tokens, hidden_size)
-            The output tokens for the shared experts.
-
-    Note:
-        This is a non-blocking operation. Call call_ep_combine_wait() to wait
-        for completion and collect the final outputs.
-    """
-
-    parameters: dict[str, bool | int | str | DType] = {
-        "combine_dtype": config.combine_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
-
-    device_ref = atomic_counter.device
-
-    result = ops.inplace_custom(
-        "ep.combine_async.fused_shared_expert",
-        device=device_ref,
-        values=[
-            atomic_counter,
-            input_tokens,
-            src_info,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-        ],
-        out_types=[
-            TensorType(
-                dtype=config.combine_dtype,
-                shape=[num_tokens, config.hidden_size],
-                device=device_ref,
-            ),  # output_tokens
-        ],
-        parameters=parameters,
-    )
-
-    return result[0].tensor
+    if config.fused_shared_expert:
+        return result[0].tensor
+    else:
+        return None
 
 
 def call_ep_combine_wait(
@@ -671,8 +512,6 @@ def call_ep_dispatch(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
-        fused_shared_expert: Whether to pack shared expert inputs with the
-            routed experts' inputs.
 
     Returns:
         A tuple containing:
@@ -685,10 +524,13 @@ def call_ep_dispatch(
         - src_info: Source routing information for combine phase.
             Shape: (max_recv_tokens, 2)
             [original_token_index, topk_index] for each received token
+
+    Note:
+        For Quantized dispatch format, the output will also include the
+        aggregated scales as the second element of the tuple.
     """
 
     parameters: dict[str, bool | int | str | DType] = {
-        "dispatch_dtype": config.dispatch_dtype,
         "hidden_size": config.hidden_size,
         "top_k": config.top_k,
         "n_experts": config.n_experts,
@@ -698,6 +540,8 @@ def call_ep_dispatch(
         "fused_shared_expert": config.fused_shared_expert,
     }
 
+    device_ref = atomic_counter.device
+    op_name = "ep.dispatch"
     max_recv_tokens = config.max_tokens_per_rank * config.n_experts
     n_ranks = config.n_gpus_per_node * config.n_nodes
     n_local_experts = config.n_experts // n_ranks
@@ -706,147 +550,38 @@ def call_ep_dispatch(
         max_recv_tokens += config.max_tokens_per_rank
         n_local_experts += 1
 
-    device_ref = atomic_counter.device
+    basic_out_types: list[TensorType] = [
+        TensorType(
+            dtype=config.dispatch_dtype,
+            shape=[max_recv_tokens, config.hidden_size],
+            device=device_ref,
+        ),  # output_tokens
+        TensorType(
+            dtype=DType.uint32,
+            shape=[n_local_experts + 1],
+            device=device_ref,
+        ),  # expert_start_indices
+        TensorType(
+            dtype=DType.int32,
+            shape=[n_local_experts],
+            device=device_ref,
+        ),  # expert_ids
+        TensorType(
+            dtype=DType.int32,
+            shape=[max_recv_tokens, 2],
+            device=device_ref,
+        ),  # src_info
+    ]
 
-    results = ops.inplace_custom(
-        "ep.dispatch",
-        device=device_ref,
-        values=[
-            atomic_counter,
-            input_tokens,
-            topk_ids,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-        ],
-        out_types=[
-            TensorType(
-                dtype=config.dispatch_dtype,
-                shape=[max_recv_tokens, config.hidden_size],
-                device=device_ref,
-            ),  # output_tokens
-            TensorType(
-                dtype=DType.uint32,
-                shape=[n_local_experts + 1],
-                device=device_ref,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.int32,
-                shape=[n_local_experts],
-                device=device_ref,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.int32,
-                shape=[max_recv_tokens, 2],
-                device=device_ref,
-            ),  # src_info
-        ],
-        parameters=parameters,
-    )
+    if config.dispatch_dtype.is_float8():
+        assert config.dispatch_fp8_config is not None
+        assert (
+            config.dispatch_fp8_config.block_size is not None
+            and config.dispatch_fp8_config.block_size[1] == 128
+        ), "Only support block_size=[1, 128] for input activations."
 
-    return tuple([v.tensor for v in results])
-
-
-def call_ep_dispatch_fp8(
-    input_tokens: TensorValue,
-    topk_ids: TensorValue,
-    atomic_counter: BufferValue,
-    send_buf_ptrs: TensorValue,
-    recv_buf_ptrs: TensorValue,
-    recv_count_ptrs: TensorValue,
-    config: EPConfig,
-) -> tuple[TensorValue, ...]:
-    """Execute fused Expert Parallelism FP8 token dispatch (async + wait).
-
-    This function launches the fused EP FP8 dispatch kernel that combines both
-    dispatch_async and dispatch_wait functionality in a single kernel launch.
-    It distributes input tokens (quantizing to FP8) to expert devices based on
-    top-k routing decisions, waits for all tokens to arrive, and organizes
-    received tokens into a format suitable for grouped matmul computation.
-
-    Args:
-        input_tokens: Input tokens to be dispatched to experts.
-            Shape: (num_tokens, hidden_size)
-        topk_ids: Expert IDs selected for each token by the router.
-            Shape: (num_tokens, top_k)
-            Values: Expert indices in range [0, n_experts)
-        atomic_counter: Buffer for synchronization between thread blocks.
-        send_buf_ptrs: Device pointers to the send buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (max_tokens_per_rank, msg_bytes)
-        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
-        recv_count_ptrs: Device pointers to the receive count buffers for
-            each GPU.
-            Shape: (n_gpus_per_node,) each points to a buffer of shape
-            (n_local_experts, n_ranks)
-        config: EP configuration.
-
-    Returns:
-        A tuple containing:
-        - output_tokens: Aggregated FP8 tokens ready for grouped matmul.
-            Shape: (max_recv_tokens, hidden_size)
-        - output_scales: Scales for the aggregated FP8 tokens.
-            Shape: (hidden_size // block_size, max_recv_tokens)
-        - expert_start_indices: Row offsets for grouped matmul operation.
-            Shape: (n_local_experts + 1,)
-        - expert_ids: Local expert IDs for the grouped operation.
-            Shape: (n_local_experts,)
-        - src_info: Source routing information for combine phase.
-            Shape: (max_recv_tokens, 2)
-            [original_token_index, topk_index] for each received token
-    """
-
-    assert config.dispatch_fp8_config is not None
-    assert (
-        config.dispatch_fp8_config.block_size is not None
-        and config.dispatch_fp8_config.block_size[1] == 128
-    ), "Only support block_size=[1, 128] for input activations."
-
-    parameters: dict[str, bool | int | str | DType] = {
-        "input_dtype": input_tokens.dtype,
-        "dispatch_dtype": config.dispatch_dtype,
-        "dispatch_scale_dtype": config.dispatch_fp8_config.dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-        "dispatch_scale_granularity": str(
-            config.dispatch_fp8_config.granularity
-        ),
-        "fused_shared_expert": config.fused_shared_expert,
-    }
-
-    max_recv_tokens = config.max_tokens_per_rank * config.n_experts
-    n_ranks = config.n_gpus_per_node * config.n_nodes
-    n_local_experts = config.n_experts // n_ranks
-
-    if config.fused_shared_expert:
-        max_recv_tokens += config.max_tokens_per_rank
-        n_local_experts += 1
-
-    device_ref = atomic_counter.device
-
-    results = ops.inplace_custom(
-        "ep.dispatch.fp8",
-        device=device_ref,
-        values=[
-            atomic_counter,
-            input_tokens,
-            topk_ids,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-        ],
-        out_types=[
-            TensorType(
-                dtype=config.dispatch_dtype,
-                shape=[max_recv_tokens, config.hidden_size],
-                device=device_ref,
-            ),  # output_tokens
+        basic_out_types.insert(
+            1,
             TensorType(
                 dtype=config.dispatch_fp8_config.dtype,
                 shape=[
@@ -855,23 +590,25 @@ def call_ep_dispatch_fp8(
                     max_recv_tokens,
                 ],
                 device=device_ref,
-            ),  # output_scales
-            TensorType(
-                dtype=DType.uint32,
-                shape=[n_local_experts + 1],
-                device=device_ref,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.int32,
-                shape=[n_local_experts],
-                device=device_ref,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.int32,
-                shape=[max_recv_tokens, 2],
-                device=device_ref,
-            ),  # src_info
+            ),
+        )  # output_scales
+        op_name += ".fp8"
+        parameters["dispatch_scale_granularity"] = str(
+            config.dispatch_fp8_config.granularity
+        )
+
+    results = ops.inplace_custom(
+        op_name,
+        device=device_ref,
+        values=[
+            atomic_counter,
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
         ],
+        out_types=basic_out_types,
         parameters=parameters,
     )
 
@@ -933,7 +670,6 @@ def call_ep_combine(
     """
 
     parameters: dict[str, bool | int | str | DType] = {
-        "combine_dtype": config.combine_dtype,
         "hidden_size": config.hidden_size,
         "top_k": config.top_k,
         "n_experts": config.n_experts,

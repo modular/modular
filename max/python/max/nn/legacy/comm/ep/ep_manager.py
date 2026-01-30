@@ -47,13 +47,10 @@ from .ep_config import NUM_GROUPS, EPConfig
 from .ep_kernels import (
     call_ep_combine,
     call_ep_combine_async,
-    call_ep_combine_async_fused_shared_expert,
     call_ep_combine_wait,
     call_ep_dispatch,
     call_ep_dispatch_async,
-    call_ep_dispatch_fp8,
     call_ep_dispatch_wait,
-    call_ep_dispatch_wait_fp8,
     call_ep_init,
 )
 
@@ -337,13 +334,7 @@ class EPBatchManager:
         """
         DISPATCH_GROUP = 0
 
-        dispatch_fn = (
-            call_ep_dispatch_wait_fp8
-            if self.config.dispatch_fp8_config is not None
-            else call_ep_dispatch_wait
-        )
-
-        results = dispatch_fn(
+        results = call_ep_dispatch_wait(
             self.atomic_counters[DISPATCH_GROUP][device_id],
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
@@ -381,33 +372,16 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_wait() first."
         )
 
-        if self.config.fused_shared_expert:
-            dispatch_dim = self._dispatch_dim[device_id]
-            assert dispatch_dim is not None, (
-                "Dispatch dimension is not set, you should call ep_dispatch_async() first."
-            )
-            self._shared_expert_outputs[device_id] = (
-                call_ep_combine_async_fused_shared_expert(
-                    input_tokens,
-                    src_info,
-                    self.atomic_counters[0][device_id],
-                    self.send_buf_ptrs[COMBINE_GROUP],
-                    self.recv_buf_ptrs[COMBINE_GROUP],
-                    self.recv_count_ptrs[COMBINE_GROUP],
-                    self.config,
-                    dispatch_dim,
-                )
-            )
-        else:
-            call_ep_combine_async(
-                input_tokens,
-                src_info,
-                self.atomic_counters[0][device_id],
-                self.send_buf_ptrs[COMBINE_GROUP],
-                self.recv_buf_ptrs[COMBINE_GROUP],
-                self.recv_count_ptrs[COMBINE_GROUP],
-                self.config,
-            )
+        self._shared_expert_outputs[device_id] = call_ep_combine_async(
+            input_tokens,
+            src_info,
+            self.atomic_counters[0][device_id],
+            self.send_buf_ptrs[COMBINE_GROUP],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+            self._dispatch_dim[device_id],
+        )
 
         # reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
@@ -497,13 +471,7 @@ class EPBatchManager:
         # Store the symbolic token numbers for the combine phase
         self._dispatch_dim[device_id] = input_tokens.shape[0]
 
-        dispatch_fn = (
-            call_ep_dispatch_fp8
-            if self.config.dispatch_dtype.is_float8()
-            else call_ep_dispatch
-        )
-
-        results = dispatch_fn(
+        results = call_ep_dispatch(
             input_tokens,
             topk_ids,
             self.atomic_counters[DISPATCH_GROUP][device_id],
