@@ -239,14 +239,14 @@ fn fn_with_overload(arg: Int):
 # CHECK: "kind": "function",
 # CHECK: "name": "fn_with_parameter_references",
 # CHECK: "overloads":
-# CHECK:     "signature": "fn_with_parameter_references[arg1_type: __TypeOfAllTypes, arg2_type: __TypeOfAllTypes](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
+# CHECK:     "signature": "fn_with_parameter_references[arg1_type: TrivialRegisterType, arg2_type: TrivialRegisterType](func: fn (arg1_type, arg2_type) -> (), arg1: arg1_type, arg2: arg2_type)"
 
 
 fn fn_with_parameter_references[
-    arg1_type: __TypeOfAllTypes,
-    arg2_type: __TypeOfAllTypes,
+    arg1_type: TrivialRegisterType,
+    arg2_type: TrivialRegisterType,
 ](
-    func: __mlir_type[`(`, arg1_type, `,`, arg2_type, `) -> ()`],
+    func: __mlir_type[`(`, +arg1_type, `,`, +arg2_type, `) -> ()`],
     arg1: arg1_type,
     arg2: arg2_type,
 ):
@@ -626,20 +626,20 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: __TypeOfAllTypes) -> ref[ref_arg1] __TypeOfAllTypes",
+# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: TrivialRegisterType) -> ref[ref_arg1] TrivialRegisterType"
 fn fn_with_anon_refs(
-    ref ref_arg1: __TypeOfAllTypes,
-) -> ref[ref_arg1] __TypeOfAllTypes:
+    ref ref_arg1: TrivialRegisterType,
+) -> ref[ref_arg1] TrivialRegisterType:
     pass
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: __TypeOfAllTypes) -> ref[life] __TypeOfAllTypes",
+# CHECK:     "signature": "fn_with_named_refs[life: MutOrigin](ref[life] ref_arg1: TrivialRegisterType) -> ref[life] TrivialRegisterType",
 fn fn_with_named_refs[
     life: MutOrigin
-](ref[life] ref_arg1: __TypeOfAllTypes) -> ref[
+](ref[life] ref_arg1: TrivialRegisterType) -> ref[
     origin_of(ref_arg1)
-] __TypeOfAllTypes:
+] TrivialRegisterType:
     pass
 
 

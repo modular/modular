@@ -82,7 +82,7 @@ struct ContainsAlignedSecond:
 
 # Generic struct with alignment
 @align(128)
-struct AlignedGeneric[T: __TypeOfAllTypes]:
+struct AlignedGeneric[T: TrivialRegisterType]:
     var value: Self.T
 
     fn __init__(out self, value: Self.T):
