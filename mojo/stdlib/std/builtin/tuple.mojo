@@ -368,16 +368,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         Args:
             writer: The writer to write to.
         """
-        writer.write_string("Tuple[")
-
-        @parameter
-        for i in range(Self.__len__()):
-
-            @parameter
-            if i != 0:
-                writer.write_string(", ")
-            writer.write_string(_unqualified_type_name[Self.element_types[i]]())
-        writer.write_string("]")
+        writer.write_string(Self._type_name)
         self._write_tuple_to[is_repr=True](writer)
 
     @always_inline

@@ -34,7 +34,7 @@ struct Point(Writable):
     var y: Float64
 
 var p = Point(1.5, 2.7)
-print(p)  # Point(x=1.5, y=2.7)
+print(p)  # Point(1.5, 2.7)
 print(repr(p)) # Point(x=Float64(1.5), y=Float64(2.7))
 ```
 
@@ -80,6 +80,7 @@ from reflection import (
     struct_field_types,
     struct_field_count,
     get_type_name,
+    is_struct_type,
 )
 from reflection.type_info import _unqualified_type_name
 
@@ -167,7 +168,7 @@ trait Writable:
         var y: Int
 
     var p = Point(1, 3)
-    print(p)       # Point(x=1, y=3)
+    print(p)       # Point(1, 3)
     print(repr(p)) # Point(x=Int(1), y=Int(3))
     ```
 
@@ -191,6 +192,11 @@ trait Writable:
     ```
     """
 
+    comptime _type_name = _unqualified_type_name[Self]()
+    comptime _write_self_not_fields: Bool = False
+    """Whether to call `self.write_to(writer)` when writing the representation
+    instead of printing all fields' values."""
+
     fn write_to(self, mut writer: Some[Writer]):
         """Write this value's text representation to a writer.
 
@@ -212,14 +218,7 @@ trait Writable:
             writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
-
-        @always_inline
-        fn call_write_to[
-            FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
-            field.write_to(writer)
-
-        _reflection_write_to[f=call_write_to](self, writer)
+        _reflection_write_to(self, writer)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         """Write this value's debug representation to a writer.
@@ -247,46 +246,52 @@ trait Writable:
             of the repr. Any single quote inside a string should be escaped
             (`\\'`).
         """
-
-        @always_inline
-        fn call_write_repr_to[
-            FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
-            field.write_repr_to(writer)
-
-        _reflection_write_to[f=call_write_repr_to](self, writer)
+        _reflection_write_to[write_repr=True](self, writer)
 
 
 @always_inline
 fn _reflection_write_to[
-    T: Writable,
-    W: Writer,
-    //,
-    f: fn[FieldType: Writable](field: FieldType, mut writer: W),
-](this: T, mut writer: W,):
+    T: Writable, //, *, write_repr: Bool = False
+](this: T, mut writer: Some[Writer]):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()
-    comptime type_name = _unqualified_type_name[T]()
-    writer.write_string(type_name)
+    writer.write_string(T._type_name)
     writer.write_string("(")
 
     @parameter
-    for i in range(names.size):
-        comptime FieldType = types[i]
-        _constrained_field_conforms_to[
-            conforms_to(FieldType, Writable),
-            Parent=T,
-            FieldIndex=i,
-            ParentConformsTo="Writable",
-        ]()
+    if T._write_self_not_fields and write_repr:
+        this.write_to(writer)
+    else:
 
         @parameter
-        if i > 0:
-            writer.write_string(", ")
-        writer.write_string(materialize[names[i]]())
-        writer.write_string("=")
+        for i in range(names.size):
+            comptime FieldType = types[i]
 
-        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
-        f(field, writer)
+            @parameter
+            if not is_struct_type[FieldType]():  # skip mlir types
+                continue
+            _constrained_field_conforms_to[
+                conforms_to(FieldType, Writable),
+                Parent=T,
+                FieldIndex=i,
+                ParentConformsTo="Writable",
+            ]()
+
+            @parameter
+            if i > 0:
+                writer.write_string(", ")
+
+            @parameter
+            if write_repr and names.size > 1:
+                writer.write_string(materialize[names[i]]())
+                writer.write_string("=")
+
+            ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+
+            @parameter
+            if write_repr:
+                field.write_repr_to(writer)
+            else:
+                field.write_to(writer)
 
     writer.write_string(")")

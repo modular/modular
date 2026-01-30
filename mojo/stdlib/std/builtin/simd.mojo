@@ -525,6 +525,9 @@ struct SIMD[dtype: DType, size: Int](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
+    comptime _type_name = String("SIMD[", Self.dtype, ", ", Self.size, "]")
+    comptime _write_self_not_fields = True
+
     comptime MAX = Self(_max_or_inf[Self.dtype]())
     """Gets the maximum value for the SIMD value, potentially +inf."""
 
@@ -2251,25 +2254,6 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if Self.size > 1:
             writer.write("]")
-
-    @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the SIMD value".
-
-        Args:
-            writer: The value to write to.
-        """
-        writer.write_string("SIMD[")
-        Self.dtype.write_repr_to(writer)
-        writer.write(", ", Self.size, "](")
-        # Write each element.
-        for i in range(Self.size):
-            var element = self[i]
-            # Write separators between each element.
-            if i != 0:
-                writer.write_string(", ")
-            _write_scalar(writer, element)
-        writer.write_string(")")
 
     @always_inline
     fn to_bits[

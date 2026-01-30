@@ -603,45 +603,31 @@ def test_write_to():
 def test_write_repr_to():
     check_write_to(
         UnsafePointer[Int, MutAnyOrigin](),
-        expected=(
-            "UnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x0)"
-        ),
+        expected="UnsafePointer[True, Int, AddressSpace.GENERIC](0x0)",
         is_repr=True,
     )
 
     var x = 42
     check_write_to(
         UnsafePointer(to=x),
-        contains=(
-            "UnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="UnsafePointer[True, Int, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
     check_write_to(
         UnsafePointer(to=x).as_immutable(),
-        contains=(
-            "UnsafePointer[mut=False, Int,"
-            " address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="UnsafePointer[False, Int, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
     check_write_to(
         UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
-        contains=(
-            "UnsafePointer[mut=True, Int, address_space=AddressSpace.SHARED](0x"
-        ),
+        contains="UnsafePointer[True, Int, AddressSpace.SHARED](0x",
         is_repr=True,
     )
 
     var s = String("hello")
     check_write_to(
         UnsafePointer(to=s),
-        contains=(
-            "UnsafePointer[mut=True, String,"
-            " address_space=AddressSpace.GENERIC](0x"
-        ),
+        contains="UnsafePointer[True, String, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
 

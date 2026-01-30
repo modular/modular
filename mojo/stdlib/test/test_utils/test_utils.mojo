@@ -47,7 +47,10 @@ def check_write_to(value: Some[Writable], *, contains: String, is_repr: Bool):
         value.write_repr_to(string)
     else:
         value.write_to(string)
-    assert_true(contains in string)
+    assert_true(
+        contains in string,
+        String("contains: ", contains, " is not in string: ", string),
+    )
 
 
 @always_inline

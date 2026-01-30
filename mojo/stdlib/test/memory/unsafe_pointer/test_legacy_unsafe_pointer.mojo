@@ -507,31 +507,32 @@ def test_write_to():
 
 def test_write_repr_to():
     check_write_to(
-        LegacyUnsafePointer[Int, origin=MutAnyOrigin](),
-        expected=(
-            "LegacyUnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x0)"
-        ),
+        UnsafePointer[Int, MutAnyOrigin](),
+        expected="UnsafePointer[True, Int, AddressSpace.GENERIC](0x0)",
         is_repr=True,
     )
 
     var x = 42
     check_write_to(
-        LegacyUnsafePointer(to=x),
-        contains=(
-            "LegacyUnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x"
-        ),
+        UnsafePointer(to=x),
+        contains="UnsafePointer[True, Int, AddressSpace.GENERIC](0x",
+        is_repr=True,
+    )
+    check_write_to(
+        UnsafePointer(to=x).as_immutable(),
+        contains="UnsafePointer[False, Int, AddressSpace.GENERIC](0x",
+        is_repr=True,
+    )
+    check_write_to(
+        UnsafePointer(to=x).address_space_cast[AddressSpace.SHARED](),
+        contains="UnsafePointer[True, Int, AddressSpace.SHARED](0x",
         is_repr=True,
     )
 
     var s = String("hello")
     check_write_to(
-        LegacyUnsafePointer(to=s),
-        contains=(
-            "LegacyUnsafePointer[mut=True, String,"
-            " address_space=AddressSpace.GENERIC](0x"
-        ),
+        UnsafePointer(to=s),
+        contains="UnsafePointer[True, String, AddressSpace.GENERIC](0x",
         is_repr=True,
     )
 

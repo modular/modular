@@ -13,6 +13,7 @@
 from testing import *
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 from format._utils import write_sequence_to
+from reflection import get_type_name
 
 
 @fieldwise_init
@@ -24,6 +25,12 @@ struct TestWritable(Writable):
 
     fn write_repr_to(self, mut writer: Some[Writer]):
         writer.write("write_repr_to: ", self.x)
+
+
+@fieldwise_init
+struct TestDefaultWritable[T: AnyType, //, param: T](Writable):
+    var x: Int
+    var y: Int
 
 
 def test_repr():
@@ -52,7 +59,7 @@ def test_default_write_to_simple():
     """Test the reflection-based default write_to with a simple struct."""
     var p = SimplePoint(1, 2)
     # Note: get_type_name returns module-qualified names
-    assert_equal(String(p), "SimplePoint(x=1, y=2)")
+    assert_equal(String(p), "SimplePoint(1, 2)")
     assert_equal(repr(p), "SimplePoint(x=Int(1), y=Int(2))")
 
 
@@ -60,10 +67,7 @@ def test_default_write_to_nested():
     """Test the reflection-based default write_to with nested structs."""
     var s = NestedStruct(SimplePoint(3, 4), "test")
     # Note: String's write_repr_to doesn't add quotes (write_to is same as write_repr_to for String)
-    assert_equal(
-        String(s),
-        "NestedStruct(point=SimplePoint(x=3, y=4), name=test)",
-    )
+    assert_equal(String(s), "NestedStruct(SimplePoint(3, 4), test)")
     assert_equal(
         repr(s),
         "NestedStruct(point=SimplePoint(x=Int(3), y=Int(4)), name='test')",
@@ -151,6 +155,29 @@ def test_write_sequence_to_custom_delimiters():
     assert_equal(output, "{item0; item1; item2}")
 
     _ = index
+
+
+def test_default_write_to_parameters():
+    def _test[type: Writable, //, value: type]():
+        comptime T = TestDefaultWritable[value]
+        comptime TStr = "TestDefaultWritable["
+        var v = materialize[value]()
+        assert_equal(
+            String(T(1, 2)),
+            String(TStr, get_type_name[type](), ", ", v, "](1, 2)"),
+        )
+        assert_equal(
+            repr(T(1, 2)),
+            String(
+                TStr, get_type_name[type](), ", ", v, "](x=Int(1), y=Int(2))"
+            ),
+        )
+
+    # _test[String("\0'")]() # FIXME(#5871): once the issue is solved
+    _test[Int(1)]()
+    # _test[UInt8(1)]() # FIXME(#5873): once the issue is solved
+    # _test[SIMD[DType.uint8, 2](1)]() # FIXME(#5873): once the issue is solved
+    # _test[InlineArray[Int, 3](1, 2, 3)]() # FIXME(#5872): once the issue is solved
 
 
 def main():

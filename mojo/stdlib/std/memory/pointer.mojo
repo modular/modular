@@ -227,6 +227,18 @@ struct Pointer[
     ]
     comptime _with_origin = Pointer[Self.type, _, Self.address_space]
 
+    # FIXME(#5873): should just use the default, but AddressSpace is wrong
+    comptime _type_name = String(
+        "Pointer[",
+        Self.mut,
+        ", ",
+        _unqualified_type_name[Self.type](),
+        ", ",
+        Self.address_space,
+        "]",
+    )
+    comptime _write_self_not_fields = True
+
     comptime Mutable = Self._with_origin[unsafe_origin_mutcast[Self.origin]]
     """The mutable version of the `Pointer`."""
     comptime Immutable = Self._with_origin[ImmutOrigin(Self.origin)]
@@ -352,18 +364,6 @@ struct Pointer[
             writer: The object to write to.
         """
         UnsafePointer(to=self[]).write_to(writer)
-
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the Pointer.
-
-        Args:
-            writer: The object to write to.
-        """
-        FormatStruct(writer, "Pointer").params(
-            Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
-            Named("address_space", Self.address_space),
-        ).fields(self)
 
     @always_inline("nodebug")
     fn __merge_with__[
