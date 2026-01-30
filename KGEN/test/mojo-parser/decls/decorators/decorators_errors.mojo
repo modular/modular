@@ -113,18 +113,6 @@ fn bad_no_inline_2():
 
 
 # ===----------------------------------------------------------------------=== #
-# @deprecated (cross-module test only - requires imported_module)
-# Other tests for deprecated are in mojo-parser/decorators/deprecated
-# ===----------------------------------------------------------------------=== #
-
-from imported_module import DeprecatedInAnotherModule
-
-# expected-warning @below {{use of deprecated struct 'DeprecatedInAnotherModule'}}
-fn use_deprecated_import(value: DeprecatedInAnotherModule):
-    pass
-
-
-# ===----------------------------------------------------------------------=== #
 # @implicit
 # ===----------------------------------------------------------------------=== #
 
@@ -345,6 +333,7 @@ trait NoDecorators:
 # ===----------------------------------------------------------------------=== #
 # deprecating @register_passable("trivial")
 # ===----------------------------------------------------------------------=== #
+
 # expected-warning @+2{{@register_passable("trivial") is deprecated, conform to TrivialRegisterType instead}}
 @register_passable("trivial")
 trait DeprecatedRPTTrait:

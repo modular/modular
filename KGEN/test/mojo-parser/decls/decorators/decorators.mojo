@@ -81,11 +81,35 @@ struct AlwaysInlineByRef:
 fn test_inline_by_ref(mut a: AlwaysInlineByRef):
     a.do_by_ref()
 
+
+struct AIBuiltinPair(TrivialRegisterType):
+    var a: Int
+    var b: Int
+
+    comptime MyAlias = AIBuiltinPair
+
+    @always_inline("builtin")
+    fn __init__(out self: Self.MyAlias, x: Int, y: Int):
+        self.a = x
+        self.b = y
+
+# CHECK-LABEL: lit.fn @"test_ai_builtin_pair
+fn test_ai_builtin_pair():
+    # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
+    comptime example = AIBuiltinPair(1, 2)
+
 # ===----------------------------------------------------------------------=== #
 # @staticmethod
 # ===----------------------------------------------------------------------=== #
 
-# TODO
+
+struct StaticMethodTest:
+    # CHECK-LABEL: lit.fn @"some_static_method()"()
+    # CHECK-SAME: isStatic
+    @staticmethod
+    fn some_static_method():
+        pass
+
 
 # ===----------------------------------------------------------------------=== #
 # @no_inline
@@ -190,6 +214,54 @@ fn llvm_arg_meta[x: Int](a: Int, b: Int, c: Int, d: Int, e: Int):
 # ===----------------------------------------------------------------------=== #
 # Struct decorators
 # ===----------------------------------------------------------------------=== #
+
+fn register_internal(x: StaticString):
+    pass
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder1
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder1"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder1
+@register_internal("custom.op")
+@deprecated("DecoratorOrder1")
+@fieldwise_init
+struct DecoratorOrder1(TrivialRegisterType):
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder2
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder2"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
+@deprecated("DecoratorOrder2")
+@register_internal("custom.op")
+@fieldwise_init
+struct DecoratorOrder2(TrivialRegisterType):
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder3
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder3"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
+@fieldwise_init
+@deprecated("DecoratorOrder3")
+@register_internal("custom.op")
+struct DecoratorOrder3(TrivialRegisterType):
+    var a: Int
+
+# CHECK-LABEL: lit.struct.decl @DecoratorOrder4
+# CHECK-SAME: register_passable_trivial
+# CHECK-SAME: deprecationWarning = "DecoratorOrder4"
+# CHECK: decorators <{{.*}}:string "custom.op"
+# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
+@fieldwise_init
+@register_internal("custom.op")
+@deprecated("DecoratorOrder4")
+struct DecoratorOrder4(TrivialRegisterType):
+    var a: Int
+
 
 ##===----------------------------------------------------------------------===##
 # Struct @fieldwise_init decorator
@@ -408,65 +480,3 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
     fn __init__(out self, x: Int) raises:
         pass
 
-fn register_internal(x: StaticString):
-    pass
-
-# CHECK-LABEL: lit.struct.decl @DecoratorOrder1
-# CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder1"
-# CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder1
-@register_internal("custom.op")
-@deprecated("DecoratorOrder1")
-@fieldwise_init
-struct DecoratorOrder1(TrivialRegisterType):
-    var a: Int
-
-# CHECK-LABEL: lit.struct.decl @DecoratorOrder2
-# CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder2"
-# CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder2
-@deprecated("DecoratorOrder2")
-@register_internal("custom.op")
-@fieldwise_init
-struct DecoratorOrder2(TrivialRegisterType):
-    var a: Int
-
-# CHECK-LABEL: lit.struct.decl @DecoratorOrder3
-# CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder3"
-# CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder3
-@fieldwise_init
-@deprecated("DecoratorOrder3")
-@register_internal("custom.op")
-struct DecoratorOrder3(TrivialRegisterType):
-    var a: Int
-
-# CHECK-LABEL: lit.struct.decl @DecoratorOrder4
-# CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationWarning = "DecoratorOrder4"
-# CHECK: decorators <{{.*}}:string "custom.op"
-# CHECK: lit.fn @"__init__(::Int)"(%a: !Int) -> !DecoratorOrder4
-@fieldwise_init
-@register_internal("custom.op")
-@deprecated("DecoratorOrder4")
-struct DecoratorOrder4(TrivialRegisterType):
-    var a: Int
-
-struct AIBuiltinPair(TrivialRegisterType):
-    var a: Int
-    var b: Int
-
-    comptime MyAlias = AIBuiltinPair
-
-    @always_inline("builtin")
-    fn __init__(out self: Self.MyAlias, x: Int, y: Int):
-        self.a = x
-        self.b = y
-
-# CHECK-LABEL: lit.fn @"test_ai_builtin_pair
-fn test_ai_builtin_pair():
-    # CHECK-NEXT: lit.alias.decl *"example{{.*}}!AIBuiltinPair {a: !Int = {1}, b: !Int = {2}}
-    comptime example = AIBuiltinPair(1, 2)
