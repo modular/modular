@@ -83,6 +83,9 @@ what we publish.
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 
+- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
+  that indexes by unicode codepoint offsets.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

@@ -903,11 +903,28 @@ struct String(
             byte: The byte index (0-based). Negative indices count from the end.
 
         Returns:
-            A StringSlice containing a single byte at the specified position.
+            A `StringSlice` view containing the ASCII character at the specified
+            position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
         var normalized_idx = normalize_index["String"](byte, len(self))
         return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
+
+    fn __getitem__[
+        I: Indexer, //
+    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+        return self.as_string_slice()[codepoint=codepoint]
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
         """Gets a substring at the specified byte positions.
