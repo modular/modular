@@ -17,21 +17,59 @@ GPU kernels, enabling efficient producer-consumer patterns between warps.
 
 Key abstraction:
 - ProducerConsumerPipeline: Low-level barrier management for N-stage pipelines
+- ProducerStage / ConsumerStage: Unified stage handles (linear types)
 
-Context manager API (recommended):
-    # Producer side (e.g., MMA warp producing to epilogue):
+## Unified Stage Types
+
+ProducerStage and ConsumerStage are linear types (`@explicit_destroy`) that work
+in both contexts:
+
+1. **Linear Type API** (flat, explicit):
+    var stage = pipeline.acquire_producer()
+    # ... use stage.index(), stage.mbar() ...
+    stage^.release()  # Compiler enforces this call
+
+2. **Context Manager API** (scoped, automatic):
     with pipeline.produce() as stage:
-        # stage.index() - current stage index
-        # stage.mbar() - barrier for signaling (use with mma_arrive)
-        # ... do work ...
-        # Must signal via stage.mbar() before exit
-    # __exit__ calls producer_step()
+        # ... use stage.index(), stage.mbar() ...
+    # release() called automatically
 
-    # Consumer side (e.g., epilogue consuming from MMA):
+The context managers store the stage internally and return a `ref` to it,
+allowing access to the full stage API while managing lifetime automatically.
+
+## API Examples
+
+Producer side (e.g., MMA warp producing to epilogue):
+
+    # Context manager:
+    with pipeline.produce() as stage:
+        mma_op.mma(a, b, tmem_offset)
+        mma_op.commit(stage.mbar())
+    # __exit__ calls stage^.release() -> producer_step()
+
+    # Linear type:
+    var stage = pipeline.acquire_producer()
+    mma_op.mma(a, b, tmem_offset)
+    mma_op.commit(stage.mbar())
+    stage^.release()
+
+Consumer side (e.g., epilogue consuming from MMA):
+
+    # Context manager:
     with pipeline.consume() as stage:
-        # stage.index() - current stage index
-        # ... do work ...
-    # __exit__ signals consumption complete and calls consumer_step()
+        process(stage.index())
+    # __exit__ calls stage^.release() -> arrive + consumer_step()
+
+    # Linear type:
+    var stage = pipeline.acquire_consumer()
+    process(stage.index())
+    stage^.release()  # Signal + advance
+
+    # Explicit signaling:
+    var stage = pipeline.acquire_consumer()
+    if lane_id() < CLUSTER_SIZE:
+        stage.arrive()
+    stage^.release_without_signal()  # Advance only
 
 Direct API (for special cases):
     pipeline.wait_producer() / wait_consumer()
@@ -345,22 +383,129 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterType):
         """
         return ExplicitConsumeContext(Pointer(to=self))
 
+    # =========================================================================
+    # Linear Type API - Compiler-enforced resource management
+    # =========================================================================
+
+    @always_inline
+    fn acquire_producer[
+        origin: MutOrigin, //
+    ](ref[origin] self) -> ProducerStage[origin, Self.num_stages]:
+        """Acquire a producer stage handle using linear types.
+
+        Waits for the consumer to free the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var stage = pipeline.acquire_producer()
+            # ... produce data, signal via stage.mbar() ...
+            stage^.release()  # Advances to next stage
+
+        Returns:
+            A ProducerStage handle that must be released.
+        """
+        self.wait_consumer()
+        return ProducerStage(
+            Pointer(to=self),
+            self._producer_stage,
+            self.producer_mbar(self._producer_stage),
+        )
+
+    @always_inline
+    fn acquire_consumer[
+        origin: MutOrigin, //
+    ](ref[origin] self) -> ConsumerStage[origin, Self.num_stages]:
+        """Acquire a consumer stage handle using linear types.
+
+        Waits for the producer to fill the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var stage = pipeline.acquire_consumer()
+            # ... consume data ...
+            stage^.release()  # Signals complete and advances
+
+        For explicit signaling:
+            var stage = pipeline.acquire_consumer()
+            # ... consume data ...
+            if lane_id() < CLUSTER_SIZE:
+                stage.arrive()
+            stage^.release_without_signal()
+
+        Returns:
+            A ConsumerStage handle that must be released.
+        """
+        self.wait_producer()
+        return ConsumerStage(
+            Pointer(to=self),
+            self._consumer_stage,
+            self.consumer_mbar(self._consumer_stage),
+        )
+
 
 # =============================================================================
-# Context Managers for ProducerConsumerPipeline
+# Unified Stage Types - Work as both linear types and with context managers
+# =============================================================================
+#
+# These types can be used in two ways:
+#
+# 1. Linear Type API (flat, explicit):
+#    var stage = pipeline.acquire_producer()
+#    # ... use stage.index(), stage.mbar() ...
+#    stage^.release()  # Compiler enforces this call
+#
+# 2. Context Manager API (scoped, automatic):
+#    with pipeline.produce() as stage:
+#        # ... use stage.index(), stage.mbar() ...
+#    # release() called automatically by context manager
+#
 # =============================================================================
 
 
-struct ProducerStage(TrivialRegisterType):
-    """Stage info returned by ProduceContext.__enter__."""
+@explicit_destroy("Must call release() to advance stage")
+struct ProducerStage[
+    pipeline_origin: MutOrigin,
+    num_stages: Int,
+](Movable):
+    """Unified handle for producing to a pipeline stage.
 
+    Works as both a linear type (direct use) and within context managers.
+
+    Lifecycle:
+    1. Created via `pipeline.acquire_producer()` or context manager
+    2. Use `index()` and `mbar()` for production
+    3. Must call `release()` to advance stage (compiler-enforced)
+
+    Parameters:
+        pipeline_origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+    """
+
+    var pipeline: Pointer[
+        ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+    ]
     var _index: UInt32
     var _mbar: MbarPtr
 
     @always_inline
-    fn __init__(out self, index: UInt32, mbar: MbarPtr):
+    fn __init__(
+        out self,
+        pipeline: Pointer[
+            ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+        ],
+        index: UInt32,
+        mbar: MbarPtr,
+    ):
+        self.pipeline = pipeline
         self._index = index
         self._mbar = mbar
+
+    @always_inline
+    fn __moveinit__(out self, deinit other: Self):
+        """Move constructor for Optional support."""
+        self.pipeline = other.pipeline
+        self._index = other._index
+        self._mbar = other._mbar
 
     @always_inline
     fn index(self) -> UInt32:
@@ -375,15 +520,24 @@ struct ProducerStage(TrivialRegisterType):
         """
         return self._mbar
 
+    @always_inline
+    fn release(deinit self):
+        """Advance producer to next stage.
+
+        This is the only way to destroy this linear type.
+        The compiler will error if you don't call this.
+        """
+        self.pipeline[].producer_step()
+
 
 struct ProduceContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-](TrivialRegisterType):
-    """Context for producing one pipeline stage.
+]:
+    """Context manager for producing one pipeline stage.
 
-    - __enter__: Waits for consumer to be ready, returns stage info
-    - __exit__: Advances producer to next stage
+    - __enter__: Waits for consumer to be ready, returns ref to stage
+    - __exit__: Releases the stage (advances producer)
 
     Note: The actual production signal (mma_arrive) is kernel-specific
     and must be called by the user before exiting the context.
@@ -392,6 +546,7 @@ struct ProduceContext[
     var pipeline: Pointer[
         ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
     ]
+    var _stage: Optional[ProducerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
     fn __init__(
@@ -401,40 +556,78 @@ struct ProduceContext[
         ],
     ):
         self.pipeline = pipeline
+        self._stage = None
 
     @always_inline
-    fn __enter__(self) -> ProducerStage:
-        """Wait for consumer and return stage info."""
+    fn __enter__(
+        mut self,
+    ) -> ref[self._stage.value()] ProducerStage[
+        Self.pipeline_origin, Self.num_stages
+    ]:
+        """Wait for consumer and return reference to stage."""
         self.pipeline[].wait_consumer()
-        return ProducerStage(
+        self._stage = ProducerStage(
+            self.pipeline,
             self.pipeline[].producer_stage(),
             self.pipeline[].producer_mbar(self.pipeline[].producer_stage()),
         )
+        return self._stage.value()
 
     @always_inline
-    fn __exit__(self):
-        """Advance producer to next stage."""
-        self.pipeline[].producer_step()
+    fn __exit__(mut self):
+        """Release the stage (advances producer)."""
+        self._stage.take().release()
+        # take() already sets _stage to None
 
 
-struct ConsumerStage(TrivialRegisterType):
-    """Stage info returned by ConsumeContext.__enter__."""
+@explicit_destroy("Must call release() or release_without_signal()")
+struct ConsumerStage[
+    pipeline_origin: MutOrigin,
+    num_stages: Int,
+](Movable):
+    """Unified handle for consuming from a pipeline stage.
 
+    Works as both a linear type (direct use) and within context managers.
+
+    Lifecycle:
+    1. Created via `pipeline.acquire_consumer()` or context manager
+    2. Use `index()` for consumption
+    3. Must call `release()` to signal and advance (compiler-enforced)
+
+    Two exit paths:
+    - `release()`: Signal consumption complete + advance (normal path)
+    - `release_without_signal()`: Advance only (for explicit signaling)
+
+    Parameters:
+        pipeline_origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+    """
+
+    var pipeline: Pointer[
+        ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+    ]
     var _index: UInt32
     var _mbar: MbarPtr
-    var _pipeline_ptr: UnsafePointer[NoneType]  # For accessing empty barriers
 
     @always_inline
-    fn __init__(out self, index: UInt32):
-        self._index = index
-        self._mbar = MbarPtr()
-        self._pipeline_ptr = UnsafePointer[NoneType]()
-
-    @always_inline
-    fn __init__(out self, index: UInt32, mbar: MbarPtr):
+    fn __init__(
+        out self,
+        pipeline: Pointer[
+            ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
+        ],
+        index: UInt32,
+        mbar: MbarPtr,
+    ):
+        self.pipeline = pipeline
         self._index = index
         self._mbar = mbar
-        self._pipeline_ptr = UnsafePointer[NoneType]()
+
+    @always_inline
+    fn __moveinit__(out self, deinit other: Self):
+        """Move constructor for Optional support."""
+        self.pipeline = other.pipeline
+        self._index = other._index
+        self._mbar = other._mbar
 
     @always_inline
     fn index(self) -> UInt32:
@@ -443,40 +636,58 @@ struct ConsumerStage(TrivialRegisterType):
 
     @always_inline
     fn mbar(self) -> MbarPtr:
-        """Get the empty barrier for manual signaling.
+        """Get the barrier for manual signaling.
 
-        Prefer using `signal()` for cleaner code. Use this for
-        specialized signaling like `umma_arrive_leader_cta`.
+        Use this for specialized signaling patterns like umma_arrive_leader_cta.
+        For standard usage, just call release().
         """
         return self._mbar
 
     @always_inline
     fn arrive(self):
-        """Arrive on this stage's consumer barrier.
+        """Manually arrive on the consumer barrier.
 
-        Use with lane-guarded patterns:
+        Use for lane-guarded patterns:
             if lane_id() < CLUSTER_SIZE:
                 stage.arrive()
-
-        For specialized signaling (e.g., umma_arrive_leader_cta),
-        use stage.mbar() directly.
+            stage^.release_without_signal()
         """
         _ = self._mbar[0].arrive()
+
+    @always_inline
+    fn release(deinit self):
+        """Signal consumption complete and advance to next stage.
+
+        This is the standard exit path. Equivalent to:
+            arrive()
+            consumer_step()
+        """
+        _ = self.pipeline[].empty[self._index].arrive()
+        self.pipeline[].consumer_step()
+
+    @always_inline
+    fn release_without_signal(deinit self):
+        """Advance to next stage WITHOUT signaling.
+
+        Use when you've already signaled via arrive() or specialized APIs.
+        """
+        self.pipeline[].consumer_step()
 
 
 struct ConsumeContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-](TrivialRegisterType):
-    """Context for consuming one pipeline stage.
+]:
+    """Context manager for consuming one pipeline stage.
 
-    - __enter__: Waits for producer to be ready, returns stage info
-    - __exit__: Signals consumption complete and advances to next stage
+    - __enter__: Waits for producer to be ready, returns ref to stage
+    - __exit__: Releases the stage (signals consumption + advances)
     """
 
     var pipeline: Pointer[
         ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
     ]
+    var _stage: Optional[ConsumerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
     fn __init__(
@@ -486,29 +697,40 @@ struct ConsumeContext[
         ],
     ):
         self.pipeline = pipeline
+        self._stage = None
 
     @always_inline
-    fn __enter__(self) -> ConsumerStage:
-        """Wait for producer and return stage info."""
+    fn __enter__(
+        mut self,
+    ) -> ref[self._stage.value()] ConsumerStage[
+        Self.pipeline_origin, Self.num_stages
+    ]:
+        """Wait for producer and return reference to stage."""
         self.pipeline[].wait_producer()
-        return ConsumerStage(self.pipeline[].consumer_stage())
+        var stage_idx = self.pipeline[].consumer_stage()
+        self._stage = ConsumerStage(
+            self.pipeline,
+            stage_idx,
+            self.pipeline[].consumer_mbar(stage_idx),
+        )
+        return self._stage.value()
 
     @always_inline
-    fn __exit__(self):
-        """Signal consumption complete and advance."""
-        _ = self.pipeline[].empty[self.pipeline[].consumer_stage()].arrive()
-        self.pipeline[].consumer_step()
+    fn __exit__(mut self):
+        """Release the stage (signals consumption + advances)."""
+        self._stage.take().release()
+        # take() already sets _stage to None
 
 
 struct ExplicitConsumeContext[
     pipeline_origin: MutOrigin,
     num_stages: Int,
-](TrivialRegisterType):
-    """Context for consuming one pipeline stage with EXPLICIT arrive.
+]:
+    """Context manager for consuming with EXPLICIT barrier arrive.
 
     Use this when you need lane-guarded or specialized barrier signaling.
 
-    - __enter__: Waits for producer to be ready, returns stage info with mbar
+    - __enter__: Waits for producer to be ready, returns ref to stage with mbar
     - __exit__: Only advances stage counter, does NOT arrive on barrier
 
     The caller is responsible for calling arrive via stage.arrive() or stage.mbar():
@@ -522,6 +744,7 @@ struct ExplicitConsumeContext[
     var pipeline: Pointer[
         ProducerConsumerPipeline[Self.num_stages], Self.pipeline_origin
     ]
+    var _stage: Optional[ConsumerStage[Self.pipeline_origin, Self.num_stages]]
 
     @always_inline
     fn __init__(
@@ -531,19 +754,28 @@ struct ExplicitConsumeContext[
         ],
     ):
         self.pipeline = pipeline
+        self._stage = None
 
     @always_inline
-    fn __enter__(self) -> ConsumerStage:
-        """Wait for producer and return stage info with barrier access."""
+    fn __enter__(
+        mut self,
+    ) -> ref[self._stage.value()] ConsumerStage[
+        Self.pipeline_origin, Self.num_stages
+    ]:
+        """Wait for producer and return reference to stage with barrier access.
+        """
         self.pipeline[].wait_producer()
         var stage_idx = self.pipeline[].consumer_stage()
-        return ConsumerStage(
+        self._stage = ConsumerStage(
+            self.pipeline,
             stage_idx,
             self.pipeline[].consumer_mbar(stage_idx),
         )
+        return self._stage.value()
 
     @always_inline
-    fn __exit__(self):
+    fn __exit__(mut self):
         """Advance to next stage WITHOUT signaling barrier."""
-        # Caller is responsible for signaling via stage.mbar()
-        self.pipeline[].consumer_step()
+        # Caller is responsible for signaling via stage.arrive() or stage.mbar()
+        self._stage.take().release_without_signal()
+        # take() already sets _stage to None

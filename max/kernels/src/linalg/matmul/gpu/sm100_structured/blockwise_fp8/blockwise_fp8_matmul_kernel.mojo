@@ -93,6 +93,8 @@ from ..structured_kernels.barriers import TmemDeallocBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
+    MmaWarp,
+    EpilogueWarp,
 )
 from ..structured_kernels.tile_pipeline import OutputTilePipeline
 
@@ -335,6 +337,23 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+    ]
+
+    # Linear type handles (flat code structure, compiler-enforced cleanup)
+    comptime MmaHandle = MmaWarp[
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+    ]
+
+    comptime EpilogueHandle = EpilogueWarp[
         Self.num_accum_pipeline_stages,
         Self.stage_stride_cols,
         Self.cta_group,
@@ -657,7 +676,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
         var work_iter = scheduler.work_iterator()
 
-        # ===== TMA LOAD WARP =====
+        # ===== TMA LOAD WARP (Linear-style API) =====
+        # Flat code structure with explicit acquire/release.
         if WarpRole.is_main_load():
             var a_loader = Self.ATileLoaderType(
                 Pointer(to=a_tma_op), ctx.a_multicast_mask
@@ -669,25 +689,27 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 Pointer(to=a_scales_tma_op)
             )
 
-            with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+            var producer = input_pipeline.producer()
+            while work_iter.has_work():
+                with work_iter.next() as current:
+                    work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                        for i in range(num_iters):
-                            with producer.acquire() as tiles:  # waits for consumer
-                                Self.load_input_tiles(
-                                    a_loader,
-                                    b_loader,
-                                    a_scales_loader,
-                                    tiles,
-                                    ctx.peer_cta_coord,
-                                    current.coord(),
-                                    i,
-                                    ctx.elect_one_cta,
-                                )
+                    for i in range(num_iters):
+                        # Acquire tiles (waits for consumer to free slot)
+                        var tiles = producer.acquire()
+                        Self.load_input_tiles(
+                            a_loader,
+                            b_loader,
+                            a_scales_loader,
+                            tiles,
+                            ctx.peer_cta_coord,
+                            current.coord(),
+                            i,
+                            ctx.elect_one_cta,
+                        )
+                        tiles.release()  # Advance producer stage
 
-                producer.drain()  # wait for consumer before CTA exits
+            producer.drain()  # Wait for consumer before CTA exits
 
         # ===== SCHEDULER WARP =====
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
@@ -704,67 +726,81 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             sched_iter.drain()
 
-        # ===== MMA WARP =====
+        # ===== MMA WARP (Linear Types API) =====
+        # Flat code structure with compiler-enforced cleanup.
+        # Compare to context manager version in the docstring.
         if WarpRole.is_mma():
-            var mma_ctx = Self.MmaCtx.create(
+            # Create linear handle - allocates TMEM, signals sync barrier
+            var mma_handle = Self.MmaHandle.create(
                 smem.tmem_addr(),
                 accum_barriers,
                 smem.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
 
-            with mma_ctx:  # TMEM lifecycle
-                while work_iter.has_work():
-                    with work_iter.wait_and_advance():  # blocks on CLC
-                        if ctx.elect_one_cta:
-                            with input_pipeline.consumer() as consumer:
-                                for _ in range(num_iters):
-                                    with mma_ctx.per_k_stage() as mma_stage:
-                                        var accum = Self.AccumTensor(
-                                            mma_stage.tmem.offset()
-                                        )
-                                        with consumer.acquire() as input_tiles:
-                                            Self.mma(
-                                                input_tiles,
-                                                mma_op,
-                                                accum,
-                                            )
+            while work_iter.has_work():
+                with work_iter.wait_and_advance():  # blocks on CLC
+                    if ctx.elect_one_cta:
+                        for _ in range(num_iters):
+                            # Acquire MMA stage (waits for epilogue)
+                            var mma_stage = mma_handle.acquire_k_stage_linear()
+                            var accum = Self.AccumTensor(
+                                mma_stage.tmem_offset()
+                            )
 
-        # ===== EPILOGUE WARP =====
+                            # Acquire input tiles (waits for TMA)
+                            var input_tiles = (
+                                input_pipeline.acquire_consumer_linear()
+                            )
+                            Self.mma(input_tiles, mma_op, accum)
+
+                            # Release resources (compiler enforces these calls)
+                            input_tiles.release()
+                            mma_stage^.release()
+
+            # Wait for epilogue and deallocate TMEM
+            mma_handle^.release()
+
+        # ===== EPILOGUE WARP (Linear Types API) =====
+        # Flat code structure with compiler-enforced cleanup.
         if WarpRole.is_epilogue():
-            Self.EpilogueCtx.Sync.wait()
-            var epi_ctx = Self.EpilogueCtx.create(
+            Self.EpilogueHandle.Sync.wait()
+
+            # Create linear handle - reads TMEM address from shared memory
+            var epi_handle = Self.EpilogueHandle.create(
                 smem.tmem_addr(),
                 accum_barriers,
                 smem.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
 
-            with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        var accum = Self.Accumulator()
+            while work_iter.has_work():
+                with work_iter.next() as current:
+                    var accum = Self.Accumulator()
 
-                        for k_iter in range(num_iters):
-                            with epi_ctx.per_k_stage(
-                                input_pipeline
-                            ) as epi_stage:
-                                accum.promote(
-                                    b_scales,
-                                    a_scales_tiles,
-                                    epi_stage,
-                                    work_tile_coord=current.coord(),
-                                    k_iter=k_iter,
-                                    problem_shape=problem_shape,
-                                )
+                    # Per-K stages still use context manager for bundled sync
+                    # (combines MMA→Epilogue and A-scales pipelines)
+                    for k_iter in range(num_iters):
+                        with epi_handle.per_k_stage(
+                            input_pipeline
+                        ) as epi_stage:
+                            accum.promote(
+                                b_scales,
+                                a_scales_tiles,
+                                epi_stage,
+                                work_tile_coord=current.coord(),
+                                k_iter=k_iter,
+                                problem_shape=problem_shape,
+                            )
 
-                        named_barrier[
-                            Int32(Self.num_output_warps * WARP_SIZE)
-                        ]()
+                    named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
 
-                        Self.TileWriterType.write(
-                            accum,
-                            c_tiles,
-                            c_tma_op,
-                            c_coord=current.coord(),
-                        )
+                    Self.TileWriterType.write(
+                        accum,
+                        c_tiles,
+                        c_tma_op,
+                        c_coord=current.coord(),
+                    )
+
+            # Signal epilogue completion
+            epi_handle^.release()
