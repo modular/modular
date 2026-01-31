@@ -27,6 +27,12 @@ what we publish.
 
 ### Language changes
 
+- Slice literals in subscripts has changed to be more similar to collection
+  literals. They now pass an empty tuple as a required `__slice_literal__`
+  keyword argument to disambiguate slices. If you have defined your own range
+  types, please add a `__slice_literal__: () = ()` argument to their
+  constructors.
+
 ### Library changes
 
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
