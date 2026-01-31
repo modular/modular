@@ -19,7 +19,7 @@ responses, including status tracking and pixel data encapsulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, Protocol, runtime_checkable
+from typing import Any, Generic, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
@@ -31,6 +31,8 @@ from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from typing_extensions import TypeVar
 
+from .text_generation import TextGenerationRequestMessage
+
 
 @dataclass(frozen=True)
 class PixelGenerationRequest(Request):
@@ -40,7 +42,7 @@ class PixelGenerationRequest(Request):
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    prompt: str
+    prompt: str | None = None
     """
     The text prompt to generate pixels for.
     """
@@ -55,6 +57,14 @@ class PixelGenerationRequest(Request):
     secondary_negative_prompt: str | None = None
     """
     The second negative prompt to guide what NOT to generate.
+    """
+    messages: list[TextGenerationRequestMessage] = field(default_factory=list)
+    """
+    Role and content-based messages to guide the generation process.
+    """
+    chat_template_options: dict[str, Any] | None = None
+    """
+    Optional dictionary of options to pass when applying the chat template.
     """
     guidance_scale: float = 3.5
     """
@@ -86,8 +96,31 @@ class PixelGenerationRequest(Request):
     """
 
     def __post_init__(self) -> None:
-        if self.prompt == "":
-            raise ValueError("Prompt must be provided.")
+        """Validates mutual exclusivity after object initialization."""
+        # Convert dict messages to TextGenerationRequestMessage objects
+        if self.messages is not None:
+            converted_messages: list[TextGenerationRequestMessage] = []
+            for msg in self.messages:
+                if isinstance(msg, dict):
+                    converted_messages.append(
+                        TextGenerationRequestMessage(**msg)
+                    )
+                elif isinstance(msg, TextGenerationRequestMessage):
+                    converted_messages.append(msg)
+                else:
+                    raise TypeError(f"Invalid message type: {type(msg)}")
+            # Use object.__setattr__ for frozen dataclass
+            object.__setattr__(self, "messages", converted_messages)
+
+        if self.prompt and self.messages:
+            raise ValueError(
+                "Both prompt and messages cannot be provided to PixelGenerationRequest"
+            )
+
+        if not self.prompt and not self.messages:
+            raise ValueError(
+                "Either prompt or messages must be provided to PixelGenerationRequest"
+            )
 
         if (self.height is not None and self.height <= 0) or (
             self.width is not None and self.width <= 0

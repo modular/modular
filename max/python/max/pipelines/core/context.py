@@ -664,13 +664,13 @@ class PixelContext:
     mask: npt.NDArray[np.bool_] | None = field(default=None)
     """Mask for text encoder's attention."""
 
-    tokens_2: TokenBuffer | None = field(default=None)
+    secondary_tokens: TokenBuffer | None = field(default=None)
     """Secondary encoder tokens. None for single-encoder models."""
 
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
 
-    negative_tokens_2: TokenBuffer | None = field(default=None)
+    secondary_negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
     extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
