@@ -47,7 +47,6 @@ from layout._coord import (
 )
 from layout._tile_tensor import TileTensor
 from layout._layout import Layout as TileLayout, row_major
-from layout.int_tuple import fill_like
 from memory import stack_allocation
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, parallelism_level

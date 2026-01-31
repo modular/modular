@@ -26,7 +26,6 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import to_index_list

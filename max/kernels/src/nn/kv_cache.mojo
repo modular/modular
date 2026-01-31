@@ -13,7 +13,6 @@
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
-from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from collections import OptionalReg
@@ -24,7 +23,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout, IntTuple
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._coord import Coord, Idx
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
