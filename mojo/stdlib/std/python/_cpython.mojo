@@ -520,7 +520,7 @@ struct PyType_Slot(TrivialRegisterType):
 
     @staticmethod
     fn mp_subscript(
-        func: fn (py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr
+        func: fn(py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr
     ) -> Self:
         return PyType_Slot(
             TypeSlots.Py_mp_getitem,
@@ -528,7 +528,7 @@ struct PyType_Slot(TrivialRegisterType):
         )
 
     @staticmethod
-    fn mp_length(func: fn (py_self: PyObjectPtr) -> Int) -> Self:
+    fn mp_length(func: fn(py_self: PyObjectPtr) -> Int) -> Self:
         return PyType_Slot(
             TypeSlots.Py_mp_length,
             rebind[OpaquePointer[MutAnyOrigin]](func),
@@ -536,7 +536,7 @@ struct PyType_Slot(TrivialRegisterType):
 
     @staticmethod
     fn mp_ass_subscript(
-        func: fn (
+        func: fn(
             py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
         ) -> c_int
     ) -> Self:
@@ -547,7 +547,7 @@ struct PyType_Slot(TrivialRegisterType):
 
     @staticmethod
     fn tp_richcompare(
-        func: fn (
+        func: fn(
             py_self: PyObjectPtr, other: PyObjectPtr, tp_op: c_int
         ) -> PyObjectPtr
     ) -> Self:

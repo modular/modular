@@ -226,9 +226,9 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
 
-@register_passable("trivial")
 struct PyTypeObjectSlot(
     ImplicitlyCopyable,
+    TrivialRegisterType,
 ):
     """Tag struct for defining methods for the various type object slots.
 
@@ -324,8 +324,7 @@ struct PyTypeObjectSlot(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NotImplementedError(Writable):
+struct NotImplementedError(TrivialRegisterType, Writable):
     """A custom error type to be returned from Mojo binding functions to signal NotImplemented.
     """
 
@@ -342,7 +341,7 @@ struct NotImplementedError(Writable):
 
 
 fn _mp_length_wrapper[
-    method: fn (PythonObject) raises -> Int
+    method: fn(PythonObject) raises -> Int
 ](py_self: PyObjectPtr) -> Py_ssize_t:
     """Python-compatible wrapper for mapping length protocol (__len__).
 
@@ -374,7 +373,7 @@ fn _mp_length_wrapper[
 
 
 fn _mp_subscript_wrapper[
-    method: fn (PythonObject, PythonObject) raises -> PythonObject
+    method: fn(PythonObject, PythonObject) raises -> PythonObject
 ](py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr:
     """Python-compatible wrapper for mapping subscript protocol (__getitem__).
 
@@ -410,7 +409,7 @@ fn _mp_subscript_wrapper[
 
 
 fn _mp_ass_subscript_wrapper[
-    method: fn (
+    method: fn(
         PythonObject, PythonObject, Variant[PythonObject, Int]
     ) raises -> None
 ](py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr) -> c_int:
@@ -457,7 +456,7 @@ fn _mp_ass_subscript_wrapper[
 
 
 fn _richcompare_wrapper[
-    method: fn (PythonObject, PythonObject, Int) raises -> Bool
+    method: fn(PythonObject, PythonObject, Int) raises -> Bool
 ](py_self: PyObjectPtr, py_other: PyObjectPtr, op: c_int) -> PyObjectPtr:
     """Python-compatible wrapper for rich comparison protocol.
 
@@ -1180,9 +1179,9 @@ struct PythonTypeBuilder(Copyable):
         ](method_name, docstring)
 
     fn def_method[
-        method: fn (PythonObject, PythonObject, Int) raises -> Bool,
+        method: fn(PythonObject, PythonObject, Int) raises -> Bool,
         slot: PyTypeObjectSlot,
-    ](mut self: Self,) -> ref [self] Self where slot.is_tp_richcompare():
+    ](mut self: Self,) -> ref[self] Self where slot.is_tp_richcompare():
         """Sets the rich compare method, see https://peps.python.org/pep-0207.
 
         Parameters:
@@ -1205,9 +1204,9 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_method[
-        method: fn (PythonObject) raises -> Int,
+        method: fn(PythonObject) raises -> Int,
         slot: PyTypeObjectSlot,
-    ](mut self: Self,) -> ref [self] Self where slot.is_mp_length():
+    ](mut self: Self,) -> ref[self] Self where slot.is_mp_length():
         """Sets the mapping length method (__len__).
 
         This method is part of the mapping protocol and is called when `len()` is
@@ -1231,11 +1230,11 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_method[
-        method: fn (
+        method: fn(
             PythonObject, PythonObject, Variant[PythonObject, Int]
         ) raises -> None,
         slot: PyTypeObjectSlot,
-    ](mut self: Self) -> ref [self] Self where slot.is_mp_setitem():
+    ](mut self: Self) -> ref[self] Self where slot.is_mp_setitem():
         """Sets the mapping assignment subscript method (__setitem__/__delitem__).
 
         This method is part of the mapping protocol and is called for item assignment
@@ -1264,9 +1263,9 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     fn def_method[
-        method: fn (PythonObject, PythonObject) raises -> PythonObject,
+        method: fn(PythonObject, PythonObject) raises -> PythonObject,
         slot: PyTypeObjectSlot,
-    ](mut self: Self) -> ref [self] Self where slot.is_mp_getitem():
+    ](mut self: Self) -> ref[self] Self where slot.is_mp_getitem():
         """Sets the mapping subscript method (__getitem__).
 
         This method is part of the mapping protocol and is called when accessing
