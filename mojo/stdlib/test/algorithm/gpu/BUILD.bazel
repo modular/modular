@@ -2,11 +2,17 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+
 _EXTRA_CONSTRAINTS = {
-    "test_reduce_atomic.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2423
+    "test_reduce_atomic.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2423
+    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+    "test_binary_apply.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_reduce.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 [

@@ -61,12 +61,23 @@ _EXTRA_CONSTRAINTS = {
     for src in _FP8_FP4_TESTS
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+
+_APPLE_GPU_INCOMPATIBLE_TESTS = [
+    "test_int4tobf16.mojo",
+]
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + (
+            _APPLE_GPU_INCOMPATIBLE if src in _APPLE_GPU_INCOMPATIBLE_TESTS else []
+        ),
         deps = _DEPS,
     )
     for src in glob(

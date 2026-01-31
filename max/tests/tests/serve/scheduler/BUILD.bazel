@@ -10,6 +10,7 @@ package(default_visibility = [
 # TODO(SERVOPT-949): Tests that timeout on macOS
 _MACOS_INCOMPATIBLE_TESTS = [
     "test_paged_scheduler.py",
+    "test_tts_scheduler.py",
 ]
 
 # Normal CPU tests

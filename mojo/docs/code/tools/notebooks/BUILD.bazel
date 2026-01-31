@@ -16,11 +16,15 @@ GPU_SRCS = [
     "vector_addition.mojo",
 ]
 
+# TODO(GEX-3156): Investigate and enable on Apple GPU
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _PLATFORM_CONSTRAINTS = {
-    "gpu_hello.mojo": ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    "gpu_hello.mojo": ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    "vector_addition.mojo": ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
 }
 
 # Non-GPU binaries

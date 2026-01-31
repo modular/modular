@@ -6,43 +6,25 @@ _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
 }
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+
 _EXTRA_CONSTRAINTS = {
-    "test_batch_kv_cache_flash_attention.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_kv_cache_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_kv_cache_ragged_matmul.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_batch_kv_cache_flash_attention_causal_mask.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: PRDT-506
-    "test_kv_cache_ragged_matmul_scale.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: KERN-2318
-    "test_kv_cache_radd.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3187
-    "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3187
-    "test_kv_cache_store_ragged.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3187
-    "test_kv_cache_2m_iadd.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3187
+    "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_ragged_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
+    "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_mha_mixed_ce_tg.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_sliced_add.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 [
