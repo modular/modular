@@ -716,7 +716,7 @@ struct Slice(TrivialRegisterType):
         T0: TrivialRegisterType,
         T1: TrivialRegisterType,
         T2: TrivialRegisterType,
-    ](out self, start: T0, end: T1, step: T2):
+    ](out self, start: T0, end: T1, step: T2, __slice_literal__: () = ()):
         pass
 
 

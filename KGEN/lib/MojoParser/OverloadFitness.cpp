@@ -215,8 +215,8 @@ namespace M::KGEN::LIT {
 void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
   if (auto initList = value.getIfInitializer()) {
     switch (initList->syntax) {
-    case InitializerUValue::kSlice:
-      diag << "slice initializer";
+    case InitializerUValue::kSliceLiteral:
+      diag << "slice literal";
       break;
     case InitializerUValue::kListLiteral:
       diag << "list literal";

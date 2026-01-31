@@ -1050,8 +1050,8 @@ ParseResult ExprParser::parseExprOrSlice(ExprNode *&result) {
         return failure();
   }
 
-  result =
-      alloc<SliceNode>(result, colon1Loc, secondExpr, colon2Loc, thirdExpr);
+  result = alloc<SliceLiteralNode>(result, colon1Loc, secondExpr, colon2Loc,
+                                   thirdExpr);
   return success();
 }
 
