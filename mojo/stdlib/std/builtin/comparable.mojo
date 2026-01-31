@@ -67,7 +67,7 @@ trait Equatable:
         comptime types = struct_field_types[Self]()
 
         @parameter
-        for i in _ZeroStartingRange(names.size):
+        for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),
