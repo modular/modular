@@ -1027,6 +1027,10 @@ class PipelineConfig(ConfigFileModel):
             default_encoding=arch.default_encoding
         )
 
+        # The quantization encoding has been resolved at this point.
+        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
+        model_config.set_default_cache_dtype_if_needed()
+
         model_config.validate_and_resolve_rope_type(
             arch_rope_type=arch.rope_type
         )

@@ -1124,9 +1124,11 @@ class MAXModelConfig(MAXModelConfigBase):
                 - cache_dtype: Override for the cache data type
         """
         self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
-        self.kv_cache._cache_dtype = self._get_cache_dtype()
+        # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
+        if cache_dtype := self._get_cache_override():
+            self.kv_cache._cache_dtype = cache_dtype
 
-    def _get_cache_dtype(self) -> DType:
+    def set_default_cache_dtype_if_needed(self) -> None:
         """Determine the KV cache dtype based on configuration.
 
         The dtype is determined in the following priority order:
@@ -1140,13 +1142,14 @@ class MAXModelConfig(MAXModelConfigBase):
             - DType.bfloat16 for bfloat16, float8_e4m3fn, gptq encodings
             - DType.float8_e4m3fn for float4_e2m1fnx2 encoding
         """
-        # First check if there's a KV cache dtype override.
-        if cache_type := self._get_cache_override():
-            return cache_type
+        # First check for an explicit override.
+        if self.kv_cache.kv_cache_format is not None:
+            return  # No default needed, override is set.
 
         # If there's no quantization encoding return a default value.
         if not self.quantization_encoding:
-            return DType.float32
+            self.kv_cache._cache_dtype = DType.float32
+            return
 
         # Otherwise select the default KV cache dtype based on the quantization encoding.
         supported_encoding_to_cache_dtype = {
@@ -1160,7 +1163,10 @@ class MAXModelConfig(MAXModelConfigBase):
             SupportedEncoding.gptq: DType.bfloat16,
         }
         if self.quantization_encoding in supported_encoding_to_cache_dtype:
-            return supported_encoding_to_cache_dtype[self.quantization_encoding]
+            self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[
+                self.quantization_encoding
+            ]
+            return
         else:
             raise ValueError(
                 f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
