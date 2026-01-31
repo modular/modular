@@ -34,6 +34,7 @@ link_hack(
 register_toolchains(
     "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
+    "//bazel/internal:mojo_copts_toolchain",
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
