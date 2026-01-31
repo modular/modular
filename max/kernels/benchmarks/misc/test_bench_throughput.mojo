@@ -39,7 +39,7 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
 
 
 fn bench_func[
-    func: fn[size: Int] () -> UInt32, size: Int
+    func: fn[size: Int]() -> UInt32, size: Int
 ](mut m: Bench, op_name: String) raises:
     comptime num_elements = size * 1024 * 1024
 

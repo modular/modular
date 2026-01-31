@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
 from sys import align_of, simd_width_of, size_of, has_nvidia_gpu_accelerator
 from sys.info import _is_sm_100x_or_newer
 
@@ -34,9 +33,7 @@ fn matmul[
     //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],

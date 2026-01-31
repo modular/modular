@@ -16,6 +16,7 @@ import enum
 from collections.abc import Mapping
 
 from max.config import ConfigFileModel
+from max.dtype import DType
 from max.nn.legacy.kv_cache import KVCacheStrategy
 from pydantic import Field, PrivateAttr
 
@@ -67,6 +68,17 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
 
+    _cache_dtype: DType = PrivateAttr(default=DType.float32)
+    "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
+
+    kv_cache_format: str | None = Field(
+        default=None,
+        description=(
+            "Override the default data type for the KV cache."
+            "Supported values: float32, bfloat16, float8_e4m3fn."
+        ),
+    )
+
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
     """The amount of available cache memory in bytes. This should only be set by internal code."""
@@ -75,6 +87,10 @@ class KVCacheConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    @property
+    def cache_dtype(self) -> DType:
+        return self._cache_dtype
 
     @classmethod
     def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:

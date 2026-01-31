@@ -39,7 +39,6 @@ mojo_test(
 HIGH_GPU_MEMORY_TESTS = [
     "test_p2p_ep_combine.mojo",
     "test_p2p_ep_dispatch.mojo",
-    "test_p2p_ep_dispatch_fp8.mojo",
 ]
 
 # Regular tests for all other files

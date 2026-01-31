@@ -152,7 +152,15 @@ fn sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
-    var a_reg = InlineArray[_, 2](
+    var a_reg: InlineArray[
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ],
+        2,
+    ] = [
         LayoutTensor[
             a_type,
             layout_a,
@@ -165,9 +173,17 @@ fn sgemm_double_buffer[
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
-    )
+    ]
     comptime layout_b = Layout.row_major(TN)
-    var b_reg = InlineArray[_, 2](
+    var b_reg: InlineArray[
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ],
+        2,
+    ] = [
         LayoutTensor[
             b_type,
             layout_b,
@@ -180,7 +196,7 @@ fn sgemm_double_buffer[
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
-    )
+    ]
     comptime layout_c = Layout.row_major(TM, TN)
     var c_reg = (
         LayoutTensor[

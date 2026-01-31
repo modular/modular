@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import align_down, ceildiv, exp, exp2, log
 from memory import LegacyUnsafePointer
+from collections import OptionalReg
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
@@ -101,12 +101,18 @@ fn _exp_concrete(x: SIMD) -> type_of(x):
     of the exp function. This is necessary because exp uses the _Expable trait
     and mojo cannot disambiguate between the different exp functions otherwise.
     """
+    __comptime_assert (
+        x.dtype.is_floating_point()
+    ), "dtype must be floating point"
     return exp(x)
 
 
 @always_inline
 fn _exp2_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp2 function."""
+    __comptime_assert (
+        x.dtype.is_floating_point()
+    ), "dtype must be floating point"
     return exp2(x)
 
 
@@ -119,6 +125,7 @@ fn _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
 ](input: LayoutTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
@@ -175,6 +182,7 @@ fn _softmax_2_pass_step2[
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == 1
     __comptime_assert output.rank == 1
     __comptime_assert input.layout.size() == output.layout.size()
@@ -231,6 +239,7 @@ fn softmax_2_pass[
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == output.rank
     __comptime_assert input.rank == 1
 
@@ -254,13 +263,13 @@ fn _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    pre_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    post_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    post_update_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
 ](
@@ -299,10 +308,10 @@ fn _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    accum_proc_func: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
         dtype, width
     ],
-    accum_apply_func: fn[dtype: DType, width: Int] (
+    accum_apply_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: LayoutTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
@@ -327,19 +336,19 @@ fn _softmax_3_pass_step_3[
 fn _softmax_3_pass_base[
     simd_width: Int,
     dtype: DType,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    step2_pre_update_func: fn[dtype: DType, width: Int] (
+    step2_pre_update_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step2_post_update_func: fn[dtype: DType, width: Int] (
+    step2_post_update_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_proc_func: fn[dtype: DType, width: Int] (
+    step3_accum_proc_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width]
     ) -> SIMD[dtype, width],
-    step3_accum_apply_func: fn[dtype: DType, width: Int] (
+    step3_accum_apply_func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> SIMD[dtype, width],
 ](output: LayoutTensor[mut=True, dtype, ...]) raises:
@@ -433,7 +442,7 @@ fn softmax_3_pass[
     simd_width: Int,
     dtype: DType,
     origins: OriginSet,
-    input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
+    input_fn_1d: fn[_simd_width: Int](Int) capturing[origins] -> SIMD[
         dtype, _simd_width
     ],
     logsoftmax: Bool = False,
@@ -470,6 +479,7 @@ fn softmax_3_pass[
     Args:
         output: The output buffer in which to store the softmax values.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert output.rank == 1
 
     @parameter
@@ -504,7 +514,7 @@ fn logsoftmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",
@@ -557,7 +567,7 @@ fn _softmax_cpu[
     simd_width: Int,
     rank: Int,
     origins: OriginSet,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         origins
     ] -> SIMD[dtype, _simd_width],
     logsoftmax: Bool = False,
@@ -648,9 +658,9 @@ fn softmax[
 
 fn softmax_kernel[
     BLOCK_SIZE: Int,
-    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int] (
+    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int](
         IndexList[_rank]
-    ) capturing [_] -> SIMD[_dtype, _simd_width],
+    ) capturing[_] -> SIMD[_dtype, _simd_width],
     dtype: DType,
     layout: Layout,
     sink_type: DType,
@@ -666,6 +676,10 @@ fn softmax_kernel[
         sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    __comptime_assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime axis = rank - 1
 
     var row_size = UInt(shape[axis])
@@ -785,7 +799,7 @@ fn _softmax_gpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     *,
@@ -839,7 +853,7 @@ fn softmax[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
+    input_fn: fn[_simd_width: Int, _rank: Int](IndexList[_rank]) capturing[
         _
     ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",

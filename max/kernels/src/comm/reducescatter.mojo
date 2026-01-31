@@ -54,7 +54,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @always_inline
@@ -147,7 +147,7 @@ struct ReduceScatterConfig[
             num_elements if my_rank
             == Self.ngpus - 1 else self.rank_start + part
         )
-        self.largest_part = part + (num_elements % Self.ngpus)
+        self.largest_part = num_elements - (Self.ngpus - 1) * part
         self.thr_local_start = thread_idx * Self.simd_width
 
 
@@ -199,7 +199,7 @@ fn _reduce_scatter_impl[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _reducescatter_kernel[
     dtype: DType,

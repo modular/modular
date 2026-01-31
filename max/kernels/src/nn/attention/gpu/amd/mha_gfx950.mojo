@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from itertools import product
 from math import ceildiv
 from sys import simd_width_of, llvm_intrinsic
@@ -72,35 +71,39 @@ fn set_priority[priority: Int]():
 fn scheduling_hints_qk[group: Int]():
     @parameter
     for i in range(4):
-        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, group)
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
         @parameter
         for j in range(4):
-            schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, group)
-            schedule_group_barrier(AMDScheduleBarrierMask.TRANS, 1, group)
+            schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.TRANS, 1, Int32(group)
+            )
 
     @parameter
     for i in range(12):
-        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, group)
-        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 6, group)
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
+        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 6, Int32(group))
 
 
 @always_inline
 fn scheduling_hints_pv[group: Int]():
     @parameter
     for i in range(12):
-        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 4, group)
-        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, group)
-        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 10, group)
+        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 4, Int32(group))
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
+        schedule_group_barrier(AMDScheduleBarrierMask.VALU, 10, Int32(group))
 
     @parameter
     for i in range(4):
-        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, group)
+        schedule_group_barrier(AMDScheduleBarrierMask.MFMA, 1, Int32(group))
 
         @parameter
         for i in range(4):
-            schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, group)
-            schedule_group_barrier(AMDScheduleBarrierMask.TRANS, 1, group)
+            schedule_group_barrier(AMDScheduleBarrierMask.VALU, 1, Int32(group))
+            schedule_group_barrier(
+                AMDScheduleBarrierMask.TRANS, 1, Int32(group)
+            )
 
 
 @always_inline
@@ -191,7 +194,10 @@ struct KVCacheIterator[
         )
         var out = type_of(result)(
             self.cache.block_paged_ptr[Self.tile_size](
-                self.batch_idx, self.tile_start_row, self.kv_head_idx, 0
+                UInt32(self.batch_idx),
+                UInt32(self.tile_start_row),
+                UInt32(self.kv_head_idx),
+                0,
             ),
             kv_runtime_layout,
         )
@@ -208,7 +214,7 @@ struct KVBuffer[
     //,
     mma_shape: IndexList[3],
     k_group_size: Int,
-    swizzle: OptionalReg[Swizzle],
+    swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
     BK: Int,
@@ -299,7 +305,9 @@ struct KVBuffer[
 
         @parameter
         for i in range(2):
-            var smem_tile = self.smem_iter.next_unsafe(i)[]
+            var smem_tile = self.smem_iter.next_unsafe(
+                self.smem_iter.linear_uint_type(i)
+            )[]
             var smem_warp_tile = smem_tile.tile[32, Self.BK](
                 Int(warp_row), Int(warp_col)
             )
@@ -311,7 +319,9 @@ struct KVBuffer[
     fn load_from_dram[buffer_idx: Int](mut self):
         var global_tile = self.kv_cache_iter.next_unsafe()
 
-        var smem_tile = self.smem_iter.next_unsafe(buffer_idx)[]
+        var smem_tile = self.smem_iter.next_unsafe(
+            self.smem_iter.linear_uint_type(buffer_idx)
+        )[]
 
         @parameter
         if Self.depth == 64:
@@ -444,7 +454,9 @@ struct KVBuffer[
 __extension Attention:
     @always_inline
     fn get_num_rows(self) -> UInt32:
-        var end = min(self.kv_start_row + UInt32(Self.BN), self.num_keys)
+        var end = min(
+            self.kv_start_row + UInt32(Self.BN), UInt32(self.num_keys)
+        )
         var num_rows = max(
             min(Int32(end - self.kv_start_row), Int32(UInt32(Self.BN))), 0
         )
@@ -519,7 +531,7 @@ __extension Attention:
             mma_shape = Self.mma_shape,
             k_group_size = Self.k_group_size,
             swizzle = Swizzle(3, 0, 4) if Self.mma_shape[0]
-            == 32 else OptionalReg[Swizzle](None),
+            == 32 else Optional[Swizzle](None),
             BN = Int(Self.BN),
             WN = Int(Self.WN),
             BK = Int(Self.BK),
@@ -736,7 +748,7 @@ __extension Attention:
             UInt32(Self.BN * 2),
         ):
             var end = min(
-                self.kv_start_row + UInt32(2 * Self.BN), self.num_keys
+                self.kv_start_row + UInt32(2 * Self.BN), UInt32(self.num_keys)
             )
             loop_over_kvcache[Int(Self.BN)](end)
 

@@ -18,6 +18,12 @@ These APIs are imported automatically, just like builtins.
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
+from format._utils import (
+    FormatStruct,
+    TypeNames,
+    write_sequence_to,
+    constrained_conforms_to_writable,
+)
 from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
@@ -68,7 +74,7 @@ struct _ListIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         @parameter
         if Self.forward:
             if self.index >= len(self.src[]):
@@ -395,7 +401,7 @@ struct List[T: Copyable](
         """
         var lower, _ = iter(iterable).bounds()
         self = Self(capacity=lower)
-        for value in iterable:
+        for var value in iterable:
             self.append(rebind_var[Self.T](value^))
 
     @always_inline
@@ -658,39 +664,64 @@ struct List[T: Copyable](
         return output^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_list.__str__()` to a `Writer`.
-
-        Constraints:
-            `T` must conform to `Representable`.
-
-        Args:
-            writer: The object to write to.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("[")
-        for i in range(len(self)):
-            ref elem = trait_downcast[Representable](self[i])
-            writer.write(repr(elem))
-            if i < len(self) - 1:
-                writer.write(", ")
-        writer.write("]")
-
-    @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `List`.
 
         Returns:
             A string representation of the list.
         """
-        return self.__str__()
+        var string = String()
+        self.write_repr_to(string)
+        return string^
+
+    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        constrained_conforms_to_writable[Self.T, Parent=Self]()
+
+        var iterator = self.__iter__()
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            ref element = iterator.__next__()
+
+            @parameter
+            if is_repr:
+                trait_downcast[Writable](element).write_repr_to(w)
+            else:
+                trait_downcast[Writable](element).write_to(w)
+
+        write_sequence_to[ElementFn=iterate](writer)
+        _ = iterator^
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this list to a `Writer`.
+
+        Constraints:
+            `T` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_self_to[is_repr=False](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this list to a `Writer`.
+
+        Constraints:
+            `T` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[is_repr=True](w)
+
+        FormatStruct(writer, "List").params(
+            TypeNames[Self.T](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1255,7 +1286,7 @@ struct List[T: Copyable](
 
     fn __getitem__[
         origin: Origin, //
-    ](ref [origin]self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
         """Gets the sequence of elements at the specified positions.
 
         Parameters:
@@ -1272,7 +1303,7 @@ struct List[T: Copyable](
             ptr=self.unsafe_ptr() + start, length=end - start
         )
 
-    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref [self] Self.T:
+    fn __getitem__[I: Indexer, //](ref self, idx: I) -> ref[self] Self.T:
         """Gets the list element at the given index.
 
         Args:
@@ -1291,7 +1322,7 @@ struct List[T: Copyable](
         return (self._data + normalized_idx)[]
 
     @always_inline
-    fn unsafe_get(ref self, idx: Int) -> ref [self] Self.T:
+    fn unsafe_get(ref self, idx: Int) -> ref[self] Self.T:
         """Get a reference to an element of self without checking index bounds.
 
         Args:
@@ -1411,7 +1442,7 @@ struct List[T: Copyable](
 
     fn unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> UnsafePointer[
         Self.T, origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.

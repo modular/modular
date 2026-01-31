@@ -11,22 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import ceildiv, isclose
 from random import rand
 from sys.info import simd_width_of
 
 from algorithm.functional import vectorize
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
@@ -166,16 +158,16 @@ fn test_conv_transposed[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_ptr = alloc[Scalar[dtype]](input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var filter_ptr = alloc[Scalar[dtype]](filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -186,57 +178,39 @@ fn test_conv_transposed[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    comptime input_layout = Layout.row_major[rank + 2]()
     var input_shape = extend_shape(input_dims, N, C)
-    var input = LayoutTensor[dtype, input_layout](
+    var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
+    var input_ref = TileTensor(
         input_ptr,
-        RuntimeLayout[input_layout].row_major(input_shape),
-    )
-    var input_ref = LayoutTensor[dtype, Layout.row_major[5]()](
-        input_ptr,
-        RuntimeLayout[Layout.row_major[5]()].row_major(
-            extend_shape_5d(input_dims, N, C)
-        ),
+        row_major(Coord(extend_shape_5d(input_dims, N, C))),
     )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, F, C_per_group)
-    var filter = LayoutTensor[dtype, Layout.row_major[rank + 2]()](
+    var filter = TileTensor(filter_ptr, row_major(Coord(filter_shape)))
+    var filter_ref = TileTensor(
         filter_ptr,
-        RuntimeLayout[Layout.row_major[rank + 2]()].row_major(filter_shape),
-    )
-    var filter_ref = LayoutTensor[dtype, Layout.row_major[5]()](
-        filter_ptr,
-        RuntimeLayout[Layout.row_major[5]()].row_major(
-            append_shape_5d(filter_dims, F, C_per_group)
-        ),
+        row_major(Coord(append_shape_5d(filter_dims, F, C_per_group))),
     )
 
     var packed_filter_shape = pack_filter_shape(filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = LayoutTensor[dtype, Layout.row_major[rank + 3]()](
+    var packed_filter = TileTensor(
         packed_filter_ptr,
-        RuntimeLayout[Layout.row_major[rank + 3]()].row_major(
-            rebind[IndexList[rank + 3]](packed_filter_shape)
-        ),
+        row_major(Coord(rebind[IndexList[rank + 3]](packed_filter_shape))),
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = LayoutTensor[dtype, Layout.row_major[rank + 2]()](
-        output_ptr,
-        RuntimeLayout[Layout.row_major[rank + 2]()].row_major(output_shape),
-    )
-    var output_ref = LayoutTensor[dtype, Layout.row_major[5]()](
+    var output = TileTensor(output_ptr, row_major(Coord(output_shape)))
+    var output_ref = TileTensor(
         output_ref_ptr,
-        RuntimeLayout[Layout.row_major[5]()].row_major(
-            extend_shape_5d(output_dims, N, F)
-        ),
+        row_major(Coord(extend_shape_5d(output_dims, N, F))),
     )
 
     # Bias for epilogue
-    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
+    var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     pack_filter(filter, packed_filter, num_groups)
@@ -277,7 +251,7 @@ fn test_conv_transposed[
             vectorize[simd_size](F, body0)
 
     # Test.
-    comptime conv_attr = ConvInfoStatic[input_layout.rank() - 2]()
+    comptime conv_attr = ConvInfoStatic[rank]()
 
     # Test epilogue
     @always_inline
@@ -289,11 +263,7 @@ fn test_conv_transposed[
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
-            var output_idx = output.runtime_layout(
-                RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](
-                    curr_coords
-                )
-            )
+            var output_idx = output.layout(Coord(curr_coords))
 
             var vec = output.ptr.load[width=width](output_idx)
 
@@ -306,22 +276,19 @@ fn test_conv_transposed[
         vectorize[simd_size](f_size, body1)
 
     ConvTransposedPacked[
-        _,  # input origin
-        _,  # filter origin,
-        _,  # output origin,
-        input_layout,  # input layout
-        Layout.row_major[rank + 3](),  # filter layout
-        Layout.row_major[rank + 2](),  # output layout
-        dtype,  # input
-        dtype,  # filter
-        dtype,  # output
+        input.origin,
+        packed_filter.origin,
+        output.origin,
+        dtype,
+        dtype,
+        dtype,
         conv_attr,
         epilogue,
     ].run(
         output,
         input,
         packed_filter,
-        rebind[ConvShape[input_layout.rank() - 2]](conv_shape),
+        rebind[ConvShape[rank]](conv_shape),
     )
 
     input_ptr.free()
@@ -361,12 +328,12 @@ fn test_conv_transpose_shape_basic() raises:
     # Test 4D: Basic 2D conv transpose (N=1, H=3, W=3, C=1) x (R=3, S=3, F=2, C=1)
     # With stride=1, dilation=1, no padding
     # Expected output: (1, 5, 5, 2)
-    var input_ptr = UnsafePointer[Scalar[DType.float32]].alloc(9)
-    var kernel_ptr = UnsafePointer[Scalar[DType.float32]].alloc(18)
-    var strides_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
-    var dilations_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
-    var pads_ptr = UnsafePointer[Scalar[DType.int32]].alloc(4)
-    var output_pads_ptr = UnsafePointer[Scalar[DType.int32]].alloc(2)
+    var input_ptr = alloc[Scalar[DType.float32]](9)
+    var kernel_ptr = alloc[Scalar[DType.float32]](18)
+    var strides_ptr = alloc[Scalar[DType.int32]](2)
+    var dilations_ptr = alloc[Scalar[DType.int32]](2)
+    var pads_ptr = alloc[Scalar[DType.int32]](4)
+    var output_pads_ptr = alloc[Scalar[DType.int32]](2)
 
     strides_ptr[0] = 1
     strides_ptr[1] = 1
@@ -377,27 +344,12 @@ fn test_conv_transpose_shape_basic() raises:
     output_pads_ptr[0] = 0
     output_pads_ptr[1] = 0
 
-    var input = LayoutTensor[DType.float32, Layout.row_major[4]()](
-        input_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(Index(1, 3, 3, 1)),
-    )
-    var kernel = LayoutTensor[DType.float32, Layout.row_major[4]()](
-        kernel_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(Index(3, 3, 2, 1)),
-    )
-    var strides = LayoutTensor[DType.int32, Layout.row_major[1]()](
-        strides_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(2))
-    )
-    var dilations = LayoutTensor[DType.int32, Layout.row_major[1]()](
-        dilations_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(2))
-    )
-    var pads = LayoutTensor[DType.int32, Layout.row_major[1]()](
-        pads_ptr, RuntimeLayout[Layout.row_major[1]()].row_major(Index(4))
-    )
-    var output_pads = LayoutTensor[DType.int32, Layout.row_major[1]()](
-        output_pads_ptr,
-        RuntimeLayout[Layout.row_major[1]()].row_major(Index(2)),
-    )
+    var input = TileTensor(input_ptr, row_major(Coord(Index(1, 3, 3, 1))))
+    var kernel = TileTensor(kernel_ptr, row_major(Coord(Index(3, 3, 2, 1))))
+    var strides = TileTensor(strides_ptr, row_major(Coord(Index(2))))
+    var dilations = TileTensor(dilations_ptr, row_major(Coord(Index(2))))
+    var pads = TileTensor(pads_ptr, row_major(Coord(Index(4))))
+    var output_pads = TileTensor(output_pads_ptr, row_major(Coord(Index(2))))
 
     var shape = conv_transpose_shape[
         DType.float32, DType.int32, DType.int32, DType.int32, DType.int32, False

@@ -38,6 +38,7 @@ from pydantic import (
 from typing_extensions import Self
 
 from .config_enums import PipelineRole
+from .hf_utils import is_diffusion_pipeline
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
@@ -240,6 +241,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
+    device_graph_capture: bool = Field(
+        default=False,
+        description="Enable device graph capture/replay for graph execution.",
+    )
+
     force: bool = Field(
         default=False,
         description=(
@@ -416,10 +422,20 @@ class PipelineConfig(ConfigFileModel):
                 assert self.draft_model is not None
                 # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
                 if self.speculative.is_eagle():
-                    assert (
+                    if self.draft_model.huggingface_config is None:
+                        raise ValueError(
+                            f"EAGLE speculative decoding requires a HuggingFace config for the draft model, "
+                            f"but could not load config for '{self.draft_model.model_path}'. "
+                            "Please ensure the draft model is a standard Transformers model with a valid config.json."
+                        )
+                    if (
                         len(self.draft_model.huggingface_config.architectures)
-                        == 1
-                    )
+                        != 1
+                    ):
+                        raise ValueError(
+                            f"Expected exactly 1 architecture in draft model config, "
+                            f"got {len(self.draft_model.huggingface_config.architectures)}"
+                        )
                     hf_arch = self.draft_model.huggingface_config.architectures[
                         0
                     ]
@@ -501,12 +517,12 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.create_kv_cache_config(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
 
         elif config_name == "sampling":
             if hasattr(self, "model") and self.model:
@@ -1011,6 +1027,10 @@ class PipelineConfig(ConfigFileModel):
             default_encoding=arch.default_encoding
         )
 
+        # The quantization encoding has been resolved at this point.
+        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
+        model_config.set_default_cache_dtype_if_needed()
+
         model_config.validate_and_resolve_rope_type(
             arch_rope_type=arch.rope_type
         )
@@ -1029,15 +1049,40 @@ class PipelineConfig(ConfigFileModel):
         # memory estimations.
         arch.pipeline_model.finalize_pipeline_config(self)
 
+        if is_diffusion_pipeline(model_config.huggingface_model_repo):
+            # Skip memory estimation for diffusion pipelines,
+            # since they don't use KV cache.
+            return
+
+        # For non-diffusion pipelines, huggingface_config is required
+        if model_config.huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{model_config.model_path}' but could not be loaded. "
+                "This model may not be a standard Transformers model. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+
+        arch_config = arch.config.initialize(self)
+
         MemoryEstimator.estimate_memory_footprint(
             self,
-            arch.pipeline_model,
             model_config,
+            arch_config,
             devices,
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            arch.pipeline_model, self, model_config, devices
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
+            model_config,
+            devices,
+            arch_config,
         ):
             if self.max_length is None:
                 self.max_length = clamped_max_seq_len
@@ -1286,6 +1331,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    max_batch_size     : {self.max_batch_size}")
         logger.info(f"    max_seq_len        : {self.max_length}")
         logger.info(f"    cache_memory       : {memory_str}")
+        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
         logger.info("")
 
 

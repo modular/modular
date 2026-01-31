@@ -27,7 +27,11 @@ from typing import Any
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    AudioGenerationConfig,
+    PipelineConfig,
+)
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -107,10 +111,21 @@ async def lifespan(
         METRICS.configure(client=metric_client)
 
         # start model worker
+
+        override_architecture: str | None = None
+        if serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
+            if isinstance(
+                serving_settings.pipeline_config, AudioGenerationConfig
+            ):
+                override_architecture = (
+                    serving_settings.pipeline_config.audio_decoder
+                )
+
         model_worker_interface = ZmqModelWorkerInterface(
             serving_settings.pipeline_task,
             context_type=PIPELINE_REGISTRY.retrieve_context_type(
-                serving_settings.pipeline_config
+                serving_settings.pipeline_config,
+                override_architecture=override_architecture,
             ),
         )
         worker_monitor = await exit_stack.enter_async_context(

@@ -24,7 +24,11 @@ modular_py_test(
     },
     mojo_deps = ["//max:MOGGKernelAPI"],
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
+    # TODO(GEX-3156): Investigate and enable on Apple GPU
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -13,7 +13,6 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import OptionalReg
 from random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -41,9 +40,7 @@ fn test[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     M: Optional[Int] = None,
     N: Optional[Int] = None,
     K: Optional[Int] = None,

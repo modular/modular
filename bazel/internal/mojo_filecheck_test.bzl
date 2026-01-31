@@ -1,8 +1,8 @@
 """A test rule that executes a mojo_binary, passing its output to FileCheck."""
 
-load("@rules_mojo//mojo:mojo_binary.bzl", "mojo_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load(":mojo_binary.bzl", "mojo_binary")
 
 def mojo_filecheck_test(
         name,

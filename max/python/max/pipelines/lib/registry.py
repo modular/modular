@@ -47,10 +47,10 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RopeType, SupportedEncoding
+from .config_enums import PipelineRole, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceRepo
-from .interfaces import ArchConfig, PipelineModel
+from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
+from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -122,11 +122,17 @@ def get_pipeline_for_task(
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
-    elif (
-        task == PipelineTask.TEXT_GENERATION
-        and pipeline_config.enable_overlap_scheduler
-    ):
-        return OverlapTextGenerationPipeline[TextContext]
+    elif pipeline_config.enable_overlap_scheduler:
+        role = pipeline_config.pipeline_role
+        if (
+            task == PipelineTask.TEXT_GENERATION
+            and role == PipelineRole.PrefillAndDecode
+        ):
+            return OverlapTextGenerationPipeline[TextContext]
+        raise ValueError(
+            "Overlap scheduler is only supported for TEXT_GENERATION task "
+            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+        )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -168,6 +174,8 @@ class SupportedArchitecture:
                 },
                 pipeline_model=MyModel,
                 tokenizer=TextTokenizer,
+                context_type=TextContext,
+                config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
                 rope_type=RopeType.none,
                 weight_adapters={
@@ -211,8 +219,14 @@ class SupportedArchitecture:
     or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
     """
 
-    config: ArchConfig | None = None
-    """The architecture-specific configuration for the model."""
+    config: type[ArchConfig]
+    """The architecture-specific configuration class for the model.
+
+    This class must implement the :obj:`ArchConfig` protocol, providing an
+    :obj:`initialize` method that creates a configuration instance from a
+    :obj:`PipelineConfig`. For models with KV cache, this should be a class
+    implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
+    """
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
@@ -357,10 +371,27 @@ class PipelineRegistry:
             The matching SupportedArchitecture or None if no match found.
         """
         # Retrieve model architecture names
-        hf_config = self.get_active_huggingface_config(
-            huggingface_repo=huggingface_repo
-        )
-        architecture_names = getattr(hf_config, "architectures", [])
+        if not is_diffusion_pipeline(huggingface_repo):
+            hf_config = self.get_active_huggingface_config(
+                huggingface_repo=huggingface_repo
+            )
+            architecture_names = getattr(hf_config, "architectures", [])
+        else:
+            diffusers_config = self.get_active_diffusers_config(
+                huggingface_repo=huggingface_repo
+            )
+            if diffusers_config is None:
+                logger.debug(
+                    f"No diffusers_config found for {huggingface_repo.repo_id}"
+                )
+                return None
+            if diffusers_arch := diffusers_config.get("_class_name"):
+                architecture_names = [diffusers_arch]
+            else:
+                logger.debug(
+                    f"No `_class_name` found in diffusers_config for {huggingface_repo.repo_id}"
+                )
+                return None
 
         if not architecture_names:
             logger.debug(
@@ -559,9 +590,20 @@ class PipelineRegistry:
 
         # Calculate Max Length
         huggingface_config = pipeline_config.model.huggingface_config
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required to initialize tokenizer for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        # Use ArchConfigWithKVCache if available for max_seq_len
+        if issubclass(arch.config, ArchConfigWithKVCache):
+            arch_config = arch.config.initialize(pipeline_config)
+            max_length = arch_config.get_max_seq_len()
+        else:
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
         if (
@@ -616,11 +658,20 @@ class PipelineRegistry:
         huggingface_config = pipeline_config.model.huggingface_config
 
         # Architecture should not be None here, as the engine is MAX.
-        assert arch is not None
+        if arch is None:
+            raise ValueError(
+                f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
+            )
 
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required to initialize pipeline for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+
+        arch_config = arch.config.initialize(pipeline_config)
+        max_length = arch_config.get_max_seq_len()
 
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix
@@ -702,7 +753,9 @@ class PipelineRegistry:
         return tokenizer, pipeline_factory
 
     def retrieve_context_type(
-        self, pipeline_config: PipelineConfig
+        self,
+        pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
     ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
@@ -712,18 +765,33 @@ class PipelineRegistry:
 
         Args:
             pipeline_config: The configuration for the pipeline.
+            override_architecture: Optional architecture name to use instead of looking up
+                based on the model repository. This is useful for cases like audio generation
+                where the pipeline uses a different architecture (e.g., audio decoder) than
+                the underlying model repository.
 
         Returns:
             The context class type associated with the architecture, which implements
             either the TextGenerationContext or EmbeddingsContext protocol.
 
         Raises:
-            ValueError: If no supported architecture is found for the given model repository.
+            ValueError: If no supported architecture is found for the given model repository
+                or override architecture name.
         """
-        if arch := self.retrieve_architecture(
-            huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            use_legacy_module=pipeline_config.use_legacy_module,
-        ):
+        arch: SupportedArchitecture | None = None
+        if override_architecture:
+            arch = self.architectures.get(override_architecture)
+            if arch is None:
+                raise ValueError(
+                    f"Architecture '{override_architecture}' not found in registry"
+                )
+        else:
+            arch = self.retrieve_architecture(
+                huggingface_repo=pipeline_config.model.huggingface_model_repo,
+                use_legacy_module=pipeline_config.use_legacy_module,
+            )
+
+        if arch:
             return arch.context_type
 
         raise ValueError(

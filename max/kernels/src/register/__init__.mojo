@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides APIs for registering MAX Graph operations.
 
-For registering [custom operations](/max/custom-ops/), use the
+For registering [custom operations](/max/develop/custom-ops/), use the
 [@compiler.register](/mojo/manual/decorators/compiler-register) decorator,
 instead.
 """

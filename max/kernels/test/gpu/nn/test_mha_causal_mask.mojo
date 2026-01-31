@@ -14,10 +14,9 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import isclose
 from random import rand
-from sys import argv, size_of, has_amd_gpu_accelerator
+from sys import argv, size_of
 
 from bit import count_trailing_zeros
 from gpu import *
@@ -56,7 +55,7 @@ fn test[
     ctx: DeviceContext,
     *,
     is_benchmark: Bool = False,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     print("test_mha_causal_mask")
     print(
@@ -177,7 +176,7 @@ fn test[
     comptime config = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
-        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
+        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=UInt(4) if (
             ctx.default_device_info == H100 or ctx.default_device_info == B200
         ) else 2,
@@ -229,7 +228,7 @@ fn test[
     comptime config_baseline = MHAConfig[qkv_type](
         UInt(num_heads),
         UInt(depth),
-        BK=OptionalReg[UInt](UInt(128 // size_of[qkv_type]())),
+        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
         num_pipeline_stages=2,
         algorithm=FlashAttentionAlgorithm(2),
     )
@@ -252,8 +251,7 @@ fn test[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
 
-    # amd uses more aggressive split-k partitioning
-    var rtol = 2e-2 if has_amd_gpu_accelerator() else 1e-2
+    var rtol = 1e-2
     for s in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):
@@ -491,7 +489,7 @@ def main():
                 DType.bfloat16,
                 depth,
                 1,
-            ](1, 11, CausalMask(), ctx, num_partitions=OptionalReg[Int](2))
+            ](1, 11, CausalMask(), ctx, num_partitions=Optional[Int](2))
 
             test[
                 DType.bfloat16,

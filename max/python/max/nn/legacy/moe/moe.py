@@ -392,6 +392,8 @@ class MoE(Module, Shardable):
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
+        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
+        k_dim = gate_list[0].shape[1]
         if not self.shard_devices:
             shard = ops.stack(gate_up_list, axis=0)
         else:
@@ -402,7 +404,7 @@ class MoE(Module, Shardable):
                 devices=self.shard_devices,
             )[self.shard_index]
 
-        return shard.reshape([len(gate_list), -1, self.hidden_dim])
+        return shard.reshape([len(gate_list), -1, k_dim])
 
     @property
     def down_proj(self) -> TensorValue:

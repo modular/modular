@@ -66,10 +66,6 @@ struct AlibiScoreMod[
     fn get_type_name() -> String:
         return "AlibiScoreMod"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn _generate_alibi_bias[
         coords_dtype: DType,
@@ -81,27 +77,46 @@ struct AlibiScoreMod[
         k_idx: SIMD[coords_dtype, width],
         max_prompt_len: Int,
     ) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         var scale: SIMD[dtype, width]
 
         @parameter
         if Self.num_heads.is_power_of_two():
-            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / Self.num_heads))
+            scale = exp2(
+                -(
+                    (head_idx + 1).cast[dtype]()
+                    * 8.0
+                    / Scalar[dtype](Self.num_heads)
+                )
+            )
         else:
             comptime floor_power_of_2 = prev_power_of_two(Self.num_heads)
-            if head_idx[0] < floor_power_of_2:
+            if head_idx[0] < Scalar[coords_dtype](floor_power_of_2):
                 scale = exp2(
-                    -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
+                    -(
+                        (head_idx + 1).cast[dtype]()
+                        * 8.0
+                        / Scalar[dtype](floor_power_of_2)
+                    )
                 )
             else:
                 scale = exp2(
                     -(
-                        ((head_idx - floor_power_of_2) * 2 + 1).cast[dtype]()
+                        (
+                            (head_idx - Scalar[coords_dtype](floor_power_of_2))
+                            * 2
+                            + 1
+                        ).cast[dtype]()
                         * 8.0
-                        / (floor_power_of_2 * 2)
+                        / Scalar[dtype](floor_power_of_2 * 2)
                     )
                 )
         var bias = -(
-            max_prompt_len - 1 - k_idx - iota[coords_dtype, width]()
+            Scalar[coords_dtype](max_prompt_len - 1)
+            - k_idx
+            - iota[coords_dtype, width]()
         ).cast[dtype]()
         var alibi_bias = bias * scale
         return alibi_bias
@@ -152,10 +167,6 @@ struct IdentityScoreMod(ScoreModTrait, TrivialRegisterType):
     @staticmethod
     fn get_type_name() -> String:
         return "IdentityScoreMod"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn score_mod[

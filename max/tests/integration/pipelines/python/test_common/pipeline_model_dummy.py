@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -42,6 +43,7 @@ from max.pipelines import (
     upper_bounded_default,
 )
 from max.pipelines.lib import KVCacheMixin, RopeType
+from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
 
@@ -290,6 +292,39 @@ class DummyTextTokenizer(TextTokenizer):
             return "".join([chr(i) for i in encoded])
 
 
+@dataclass(kw_only=True)
+class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
+    @property
+    def num_key_value_heads(self) -> int:
+        """Number of key-value heads to use for the KV cache."""
+        return DummyLlamaPipelineModel._get_num_kv_heads(
+            self.huggingface_config
+        )
+
+    @property
+    def head_dim(self) -> int:
+        """Dimensionality of each attention head."""
+        hidden_size = DummyLlamaPipelineModel._get_hidden_size(
+            self.huggingface_config
+        )
+        num_kv_heads = DummyLlamaPipelineModel._get_num_kv_heads(
+            self.huggingface_config
+        )
+        return hidden_size // num_kv_heads
+
+    @property
+    def num_layers(self) -> int:
+        """Number of hidden layers in the model."""
+        assert self.huggingface_config is not None
+        return DummyLlamaPipelineModel._get_num_layers(self.huggingface_config)
+
+    @property
+    def model_max_seq_len(self) -> int:
+        """The maximum sequence length that can be processed by the model."""
+        assert self.huggingface_config is not None
+        return self.huggingface_config.max_position_embeddings
+
+
 DUMMY_LLAMA_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
@@ -320,6 +355,7 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
+    config=DummyLlamaArchConfig,
 )
 
 DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
@@ -342,6 +378,7 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     context_type=TextContext,
     multi_gpu_supported=True,
     default_weights_format=WeightsFormat.gguf,
+    config=DummyLlamaArchConfig,
 )
 
 DUMMY_GEMMA_ARCH = SupportedArchitecture(
@@ -372,6 +409,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     rope_type=RopeType.normal,
     multi_gpu_supported=False,
+    config=DummyLlamaArchConfig,
 )
 
 ARCHITECTURES = [DUMMY_LLAMA_ARCH, DUMMY_GEMMA_ARCH]

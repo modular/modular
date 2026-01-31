@@ -594,6 +594,10 @@ class TokenBuffer:
         if self._processing_offset != 0:
             self.apply_processing_offset(0)
 
+    def overwrite_last_token(self, token: int) -> None:
+        """Overwrite the last token in the buffer."""
+        self.array[self._current_length - 1] = token
+
     # ============================================================================
     # Completion Tracking
     # ============================================================================

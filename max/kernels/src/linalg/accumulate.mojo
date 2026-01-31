@@ -143,7 +143,7 @@ struct _Accumulator[
 
     @always_inline
     fn _transfer[
-        func: fn (
+        func: fn(
             m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]
         ) capturing -> None
     ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype]], stride: Int):

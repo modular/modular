@@ -347,9 +347,9 @@ def test_ascii_ljust():
 
 
 def test_center():
-    assert_equal("hello".center(4), "hello")
-    assert_equal("hello".center(8), " hello  ")
-    assert_equal("hello".center(8, "*"), "*hello**")
+    assert_equal("hello".ascii_center(4), "hello")
+    assert_equal("hello".ascii_center(8), " hello  ")
+    assert_equal("hello".ascii_center(8, "*"), "*hello**")
 
 
 def test_float_conversion():

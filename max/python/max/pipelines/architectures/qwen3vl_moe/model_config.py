@@ -236,9 +236,14 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
         """
-        return cls.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
-        )
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
 
     @classmethod
     def initialize_from_config(
@@ -297,6 +302,16 @@ class Qwen3VLConfig(ArchConfigWithKVCache):
             huggingface_config.text_config.quantization_config = (
                 huggingface_config.quantization_config
             )
+
+        # For VLM models, tie_word_embeddings on the top-level config determines
+        # whether lm_head.weight exists in the checkpoint. The text_config may
+        # have a different value (e.g., Qwen3-VL-4B-FP8 has top-level=false but
+        # text_config=true). Use top-level value to match actual checkpoint.
+        if hasattr(huggingface_config, "tie_word_embeddings"):
+            huggingface_config.text_config.tie_word_embeddings = (
+                huggingface_config.tie_word_embeddings
+            )
+
         llm_config = Llama3Config.initialize_from_config(
             pipeline_config, text_config
         )

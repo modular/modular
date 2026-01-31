@@ -81,7 +81,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         except e:
             abort[prefix="ERROR:"](String(e))
 
-    fn __init__(out self, ref [StaticConstantOrigin]cpython: CPython):
+    fn __init__(out self, ref[StaticConstantOrigin] cpython: CPython):
         """Construct a `Python` instance from an existing reference
         to the lower-level singleton `CPython` instance.
 
@@ -93,7 +93,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ).unsafe_origin_cast[StaticConstantOrigin]()
 
     @always_inline
-    fn cpython(self) -> ref [StaticConstantOrigin] CPython:
+    fn cpython(self) -> ref[StaticConstantOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
 
@@ -478,7 +478,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var list_ptr = cpy.PyList_New(len(values))
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
         return PythonObject(from_owned=list_ptr)
@@ -525,7 +525,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var tup_ptr = cpy.PyTuple_New(len(values))
 
         @parameter
-        for i in range(len(VariadicList(Ts))):
+        for i in range(Variadic.size(Ts)):
             var obj = values[i].copy().to_python_object()
             _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
         return PythonObject(from_owned=tup_ptr)

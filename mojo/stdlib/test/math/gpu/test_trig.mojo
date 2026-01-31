@@ -18,13 +18,13 @@ from testing import assert_almost_equal, TestSuite
 
 
 fn run_func[
-    dtype: DType, kernel_fn: fn (Scalar[dtype]) capturing -> Scalar[dtype]
+    dtype: DType, kernel_fn: fn(Scalar[dtype]) capturing -> Scalar[dtype]
 ](
     out_prefix: String,
     val: Scalar[dtype],
     ref_: Scalar[dtype],
     ctx: DeviceContext,
-) raises:
+) raises where dtype.is_floating_point():
     print("test trigonometric functions on gpu")
 
     var out = ctx.enqueue_create_buffer[dtype](1)

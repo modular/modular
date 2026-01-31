@@ -47,6 +47,7 @@ trait Equatable:
     (due to NaN semantics) or types requiring custom equality logic.
     """
 
+    @always_inline
     fn __eq__(self, other: Self) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
@@ -66,7 +67,7 @@ trait Equatable:
         comptime types = struct_field_types[Self]()
 
         @parameter
-        for i in _ZeroStartingRange(names.size):
+        for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),

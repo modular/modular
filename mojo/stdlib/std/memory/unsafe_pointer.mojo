@@ -28,13 +28,12 @@ from builtin.format_int import _write_int
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
 from compile import get_type_name
-from format._utils import FormatStruct, Named
+from format._utils import FormatStruct, Named, TypeNames
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
-from reflection.type_info import _unqualified_type_name
 
 from builtin.device_passable import DevicePassable
 
@@ -371,7 +370,7 @@ struct UnsafePointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -452,7 +451,7 @@ struct UnsafePointer[
     ](
         out self: UnsafePointer[T, Self.origin],
         *,
-        ref [Self.origin]unchecked_downcast_value: PythonObject,
+        ref[Self.origin] unchecked_downcast_value: PythonObject,
     ):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
@@ -564,7 +563,7 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data.
 
         Returns:
@@ -578,7 +577,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
-    ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
+    ](self, offset: I) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
@@ -934,7 +933,7 @@ struct UnsafePointer[
         """
         FormatStruct(writer, "UnsafePointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 
@@ -983,16 +982,6 @@ struct UnsafePointer[
             Self.address_space,
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
 
     @always_inline("nodebug")
     fn swap_pointees[
@@ -1648,7 +1637,7 @@ struct UnsafePointer[
             Self.type,
             address_space = AddressSpace.GENERIC,
         ],
-        destroy_func: fn (var Self.type),
+        destroy_func: fn(var Self.type),
     ) where type_of(self).mut:
         """Destroy the pointed-to value using a user-provided destructor function.
 

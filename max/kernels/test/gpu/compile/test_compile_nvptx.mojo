@@ -26,7 +26,7 @@ fn kernel(x: Int) -> Int:
     return Int(thread_idx.x)
 
 
-fn parametric[f: fn (Int) -> Int]() -> Int:
+fn parametric[f: fn(Int) -> Int]() -> Int:
     return f(42)
 
 

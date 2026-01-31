@@ -223,7 +223,7 @@ fn load_AB[
 
     if elect_one_sync():
         if elect_one_cta:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
@@ -517,8 +517,10 @@ fn promote_accumulators[
         ]()
 
         var global_bn_start = bn * UInt(MMA_N)
-        var begin_n = min(BK - Int32(global_bn_start % UInt(BK)), MMA_N)
-        var end_n = min(N - Int32(global_bn_start), MMA_N)
+        var begin_n = min(
+            Int32(BK) - Int32(global_bn_start % UInt(BK)), Int32(MMA_N)
+        )
+        var end_n = min(N - Int32(global_bn_start), Int32(MMA_N))
 
         # find the first b_scale index just by dividing by block size (128)
         # we use `b_scale_next_n` to find the second b_scale index later
@@ -650,7 +652,7 @@ fn promote_accumulators[
 
     @parameter
     for stage in range(num_stages):
-        var stage_tmem_addr = tmem_offset + (stage * stageN)
+        var stage_tmem_addr = tmem_offset + UInt32(stage * stageN)
         upper_frag = tcgen05_ld[
             datapaths=data_paths,
             bits=bits,
@@ -964,27 +966,29 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         load_mma_pipeline.init_mbars(
             Int32(1),
-            config.cluster_shape[0] // config.cta_group
-            + config.cluster_shape[1]
-            - 1
-            + CLUSTER_SIZE * (EPILOGUE_THREADS // 32),
+            Int32(
+                config.cluster_shape[0] // config.cta_group
+                + config.cluster_shape[1]
+                - 1
+                + CLUSTER_SIZE * (EPILOGUE_THREADS // 32)
+            ),
         )
 
         mma_output_pipeline.init_mbars(
             accum_pipeline_producer_arv_count,
-            accum_pipeline_consumer_arv_count,
+            Int32(accum_pipeline_consumer_arv_count),
         )
         load_clc_pipeline.init_mbars(
-            clc_throttle_producer_arv_count,
-            clc_throttle_consumer_arv_count,
+            Int32(clc_throttle_producer_arv_count),
+            Int32(clc_throttle_consumer_arv_count),
         )
 
-        tmem_dealloc_mbar[].init(EPILOGUE_THREADS * config.cta_group)
+        tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * config.cta_group))
 
     @parameter
     for i in range(config.num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
-        clc_empty_mbar[i].init(clc_consumer_arv_count)
+        clc_empty_mbar[i].init(Int32(clc_consumer_arv_count))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -1039,12 +1043,12 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
     @parameter
     for i in range(CLUSTER_M // config.cta_group):
-        b_multicast_mask |= 1 << (i * config.cta_group)
+        b_multicast_mask |= UInt16(1 << (i * config.cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -1137,10 +1141,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             clc_pipe_producer_state.step()
 
     if WarpRole.is_mma():
-        tcgen05_alloc[config.cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(config.cta_group)](ptr_tmem_addr, max_tmem_cols)
         syncwarp()
         # non blocking, arrives and proceeds
-        named_barrier_arrive[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
         tmem_addr = ptr_tmem_addr[0]
 
@@ -1158,7 +1162,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     )
                     mma_output_pipeline.wait_consumer()
                     var tmem_offset = tmem_addr + (
-                        mma_output_mma_stage * stage_stride_cols
+                        mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
                     consumer_main_loop[
@@ -1193,21 +1197,21 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                                 mma_output_pipeline.producer_mbar(
                                     mma_output_mma_stage
                                 ),
-                                mma_complete_mask,
+                                UInt16(mma_complete_mask),
                             )
                     mma_output_pipeline.producer_step()
 
             work_info = next_work_info
 
-        tcgen05_release_allocation_lock[config.cta_group]()
+        tcgen05_release_allocation_lock[Int32(config.cta_group)]()
 
         # wait for epilogue to finish
         tmem_dealloc_mbar[].wait()
 
-        tcgen05_dealloc[config.cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_dealloc[Int32(config.cta_group)](tmem_addr, max_tmem_cols)
 
     if WarpRole.is_epilogue():
-        named_barrier[MMA_THREADS + EPILOGUE_THREADS](1)
+        named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
         tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
@@ -1269,7 +1273,7 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 mma_output_pipeline.consumer_step()
 
             # TODO (KERN-2081): investigate why this barrier is needed and if we can move/remove it
-            named_barrier[num_output_warps * WARP_SIZE]()
+            named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
             # wait for CUDA core promotion to finish and store result
             # scheduler fetch next work
@@ -1478,9 +1482,9 @@ fn sm100_warp_specialized_blockwise_fp8[
         config=config,
         num_pipeline_stages = Int(max_pipeline_stages),
         cluster_shape = StaticTuple[Int32, 3](
-            config.cluster_shape[0],
-            config.cluster_shape[1],
-            config.cluster_shape[2],
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
         ),
     ]
 
@@ -1491,12 +1495,12 @@ fn sm100_warp_specialized_blockwise_fp8[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        ceildiv(grid_dim[0], config.cluster_shape[0]),
-        ceildiv(grid_dim[1], config.cluster_shape[1]),
+        Int32(ceildiv(grid_dim[0], config.cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], config.cluster_shape[1])),
         1,
     )
 
-    var problem_shape = StaticTuple[Int32, 3](M, N, K)
+    var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
     ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
@@ -1511,5 +1515,7 @@ fn sm100_warp_specialized_blockwise_fp8[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )

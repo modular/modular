@@ -351,6 +351,7 @@ class Idefics3PipelineOracle(PipelineOracle):
             cache_strategy=KVCacheStrategy.PAGED,
             model_path=self.model_path,
             huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
             max_length=max_length,
             max_num_steps=1,
             trust_remote_code=True,
@@ -509,15 +510,18 @@ class Qwen3VLPipelineOracle(PipelineOracle):
     model_path: str
     """ID of the Hugging Face repository."""
 
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        device_encoding_map: dict[str, list[str]] | None = None,
+    ) -> None:
         super().__init__()
         self.model_path = model_path
+        self._device_encoding_map = device_encoding_map or {"gpu": ["bfloat16"]}
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
+        return self._device_encoding_map
 
     @property
     def inputs(self) -> list[MockTextGenerationRequest]:
@@ -568,12 +572,20 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         processor = transformers.AutoProcessor.from_pretrained(
             self.model_path, revision=revision, trust_remote_code=True
         )
+        # For FP8 models, use bfloat16 as compute dtype since the FP8 weights
+        # are pre-quantized and have their own scale tensors.
+        if encoding == "float8_e4m3fn":
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = (
+                ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
+            )
         model = transformers.AutoModelForVision2Seq.from_pretrained(
             self.model_path,
             revision=revision,
             config=config,
             device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
+            torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
@@ -621,10 +633,12 @@ class PixtralPipelineOracle(PipelineOracle):
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         config = pipelines.PipelineConfig(
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             model_path=self.model_path,
+            huggingface_model_revision=revision,
             max_length=8192,
             max_num_steps=1,
         )
@@ -689,19 +703,42 @@ class GenericOracle(PipelineOracle):
             return self._weight_path_map[encoding]
         return None
 
+    def _parse_weight_path(
+        self, weight_path: str
+    ) -> tuple[str, str, str | None]:
+        """Parse weight path into (repo_id, filename, revision)."""
+        path_pieces = weight_path.split("/")
+        weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+        weight_filename = "/".join(path_pieces[2:])
+        weight_revision = hf_repo_lock.revision_for_hf_repo(weight_repo_id)
+        return weight_repo_id, weight_filename, weight_revision
+
     def create_max_pipeline(
         self,
         *,
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
+
+        # Determine weight revision: use weight repo's revision if different
+        weight_revision = model_revision
+        if weight_path:
+            weight_repo_id, _, weight_revision = self._parse_weight_path(
+                weight_path
+            )
+            if weight_repo_id == self.model_path:
+                weight_revision = model_revision
+
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
             quantization_encoding=pipelines.SupportedEncoding[encoding]
             if encoding
             else None,
             model_path=self.model_path,
+            huggingface_model_revision=model_revision,
+            huggingface_weight_revision=weight_revision,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
             **self.config_params,
@@ -733,14 +770,14 @@ class GenericOracle(PipelineOracle):
                     revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 )
             )
-            path_pieces = weight_path.split("/")
-            weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
-            weight_filename = "/".join(path_pieces[2:])
+            weight_repo_id, weight_filename, weight_revision = (
+                self._parse_weight_path(weight_path)
+            )
             downloaded_weight_path = Path(
                 huggingface_hub.hf_hub_download(
                     repo_id=weight_repo_id,
                     filename=weight_filename,
-                    revision=hf_repo_lock.revision_for_hf_repo(weight_repo_id),
+                    revision=weight_revision,
                 )
             )
             config = transformers.AutoConfig.from_pretrained(config_path)
@@ -1203,6 +1240,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "Qwen/Qwen3-VL-4B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-4B-Instruct"
+    ),
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": Qwen3VLPipelineOracle(
+        "Qwen/Qwen3-VL-4B-Instruct-FP8",
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
     "Qwen/Qwen3-8B": GenericOracle(
         model_path="Qwen/Qwen3-8B",

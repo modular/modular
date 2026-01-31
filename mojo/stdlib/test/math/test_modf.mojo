@@ -19,8 +19,7 @@ from testing import assert_almost_equal, assert_equal
 
 def test_modf():
     var i32 = modf(Int32(123))
-    assert_equal(i32[0], 123)
-    assert_equal(i32[1], 0)
+    assert_equal(i32, (Int32(123), Int32(0)))
 
     var f32 = modf(Float32(123.5))
     assert_almost_equal(f32[0], 123)

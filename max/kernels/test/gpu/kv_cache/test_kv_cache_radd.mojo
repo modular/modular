@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
 from math import ceildiv
 from random import random_ui64
 
@@ -25,6 +24,8 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
 from utils import IndexList
+
+from kv_cache_test_utils import PagedLookupTable
 
 
 fn test_kv_cache_radd[
@@ -120,47 +121,21 @@ fn test_kv_cache_radd[
         kv_block_paged_host_ptr, kv_block_paged_shape
     )
     kv_block_paged_host.fill(1)
-    var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
-    )
-    var paged_lut_size = batch_size * ceildiv(
-        max_full_context_length, page_size
-    )
-    var paged_lut_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        paged_lut_size
-    )
-    var paged_lut_host = NDBuffer[DType.uint32, 2](
-        paged_lut_host_ptr, paged_lut_shape
-    )
-    paged_lut_set = Set[Int]()
-    for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
 
-        for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
-            while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-            paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
+    var paged_lut = PagedLookupTable[page_size].build(
+        prompt_lens, cache_lens, max_full_context_length, num_paged_blocks, ctx
+    )
 
     var kv_block_paged_device = ctx.enqueue_create_buffer[dtype](
         kv_block_paged_size
     )
     ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_size
-    )
-    ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var kv_block_paged_device_nd = NDBuffer[dtype, 6](
         kv_block_paged_device.unsafe_ptr(), kv_block_paged_shape
     )
     var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_device.unsafe_ptr(), batch_size
-    )
-    var paged_lut_device_nd = NDBuffer[DType.uint32, 2](
-        paged_lut_device.unsafe_ptr(), paged_lut_shape
     )
     var input_row_offsets_slice_device_nd = NDBuffer[DType.uint32, 1](
         input_row_offsets_slice_device.unsafe_ptr(), num_active_loras + 1
@@ -187,13 +162,7 @@ fn test_kv_cache_radd[
                 cache_lengths_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_device_nd.dynamic_shape.canonicalize(),
-                paged_lut_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
+        paged_lut.device_tensor(),
         max_prompt_length,
         max_full_context_length,
     )
@@ -266,13 +235,7 @@ fn test_kv_cache_radd[
                 cache_lengths_host.dynamic_stride.canonicalize(),
             ),
         ),
-        LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-            paged_lut_host.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut_host.dynamic_shape.canonicalize(),
-                paged_lut_host.dynamic_stride.canonicalize(),
-            ),
-        ),
+        paged_lut.host_tensor(),
         max_prompt_length,
         max_full_context_length,
     )
@@ -365,36 +328,35 @@ fn test_kv_cache_radd[
     cache_lengths_host_ptr.free()
     input_row_offsets_slice_host_ptr.free()
     kv_block_paged_host_ptr.free()
-    paged_lut_host_ptr.free()
     a_host_ptr.free()
     _ = cache_lengths_device^
     _ = input_row_offsets_slice_device^
     _ = kv_block_paged_device^
-    _ = paged_lut_device^
+    _ = paged_lut^
     _ = a_device^
 
 
 def main():
     with DeviceContext() as ctx:
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 4,](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             ctx,
         )
-        test_kv_cache_radd[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[1](10),
             IndexList[1](40),
             1,

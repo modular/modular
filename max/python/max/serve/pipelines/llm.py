@@ -382,7 +382,7 @@ class AudioGeneratorPipeline(
         audio_chunks: list[AudioGenerationOutput] = []
         np_chunks: list[npt.NDArray[np.floating[Any]]] = []
         async for chunk in self.next_chunk(request):
-            if chunk.audio_data.size == 0 or chunk.audio_data.size == 0:
+            if chunk.audio_data.size == 0:
                 continue
             np_chunks.append(chunk.audio_data)
             audio_chunks.append(chunk)

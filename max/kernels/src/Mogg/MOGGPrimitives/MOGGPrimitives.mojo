@@ -21,6 +21,9 @@ from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import memcpy
 
 from nn.concat import concat
@@ -264,8 +267,8 @@ fn create_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -297,8 +300,8 @@ fn create_python_mojo_value_async(
     async_ptr: OpaquePointer[MutAnyOrigin],
     size: Int,
     align: Int,
-    destructor_fn: fn (UnsafePointer[UInt8, MutExternalOrigin]) -> None,
-    move_fn: fn (
+    destructor_fn: fn(UnsafePointer[UInt8, MutExternalOrigin]) -> None,
+    move_fn: fn(
         UnsafePointer[UInt8, MutAnyOrigin], UnsafePointer[UInt8, MutAnyOrigin]
     ) -> None,
 ):
@@ -551,7 +554,7 @@ fn mgp_buffer_constant_external(
         )
 
     var weight_ptr = weights[][pack_string_res(name_ptr, Int(name_len))]
-    if (Int(weight_ptr) % align) != 0:
+    if (UInt64(Int(weight_ptr)) % align) != 0:
         raise Error(
             "invalid alignment for address ",
             weight_ptr,
@@ -569,7 +572,7 @@ fn fill_buffer[
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
-        ptr.store(offset, val)
+        ptr.store(offset, Scalar[dtype](val))
         offset += 1
 
 
@@ -644,22 +647,25 @@ fn mgp_buffer_concat[
     inputs: StaticTuple[NDBuffer[DType.int8, 1, MutAnyOrigin], ...],
     call_ctx: DeviceContextPtr,
 ) raises:
-    comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var output_lt = LayoutTensor[DType.int8, layout_1d](
+    var output_lt = TileTensor(
         output.data,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](len(output))),
+        row_major(Coord(Idx(len(output)))),
     )
-    var input_tensors = StaticTuple[
-        LayoutTensor[DType.int8, layout_1d, MutAnyOrigin],
-        inputs.size,
-    ]()
-    for i in range(len(inputs)):
-        input_tensors[i] = input_tensors.element_type(
-            inputs[i].data,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](len(inputs[i]))),
+    var input_tensors = StaticTuple[_, inputs.size](
+        TileTensor(inputs[0])
+        .make_dynamic[DType.int64]()
+        .as_any_origin()
+        .as_immut()
+    )
+    for i in range(1, len(inputs)):
+        input_tensors[i] = (
+            TileTensor(inputs[i])
+            .make_dynamic[DType.int64]()
+            .as_any_origin()
+            .as_immut()
         )
     if len(output) < 4096:
-        concat[inputs_layout=layout_1d, DType.int8, True, bDevice, None](
+        concat[DType.int8, True, bDevice, None](
             output_lt, 0, input_tensors, context=call_ctx
         )
     else:
@@ -831,8 +837,8 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    __comptime_assert (
-        axis < spec_rank
+    __comptime_assert axis < UInt64(
+        spec_rank
     ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
 

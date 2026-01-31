@@ -60,7 +60,9 @@ fn kernel_laneid(x: UnsafePointer[Int]):
     x[0] = Int(lane_id())
 
 
-fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):
+fn kernel_exp[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype]]) where dtype.is_floating_point():
     x[0] = exp(x[0])
 
 
@@ -110,7 +112,7 @@ fn kernel_atomic[
     output[] = load_acquire[memory=memory](ptr)
 
 
-fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
+fn parametric[f: fn(UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
     f(ptr)
 
 

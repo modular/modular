@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like
+from layout._coord import Coord, CoordLike, Idx, coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
 
@@ -55,7 +56,9 @@ struct Image2DLayout(TrivialRegisterType):
 
 
 struct ImageData[
-    layout: Layout,
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    //,
     dtype: DType,
     static_image_layout: Image2DLayout,
     origin: MutOrigin,
@@ -63,12 +66,22 @@ struct ImageData[
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
+    var data: TileTensor[
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        Self.dtype,
+        Self.origin,
+    ]
     var dynamic_image_layout: Image2DLayout
 
     fn __init__(
         out self,
-        data: LayoutTensor[Self.dtype, Self.layout, Self.origin],
+        data: TileTensor[
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            Self.dtype,
+            Self.origin,
+        ],
         _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
@@ -82,7 +95,13 @@ struct ImageData[
         self.dynamic_image_layout = _layout
 
     fn __init__(
-        out self, data: LayoutTensor[Self.dtype, Self.layout, Self.origin]
+        out self,
+        data: TileTensor[
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            Self.dtype,
+            Self.origin,
+        ],
     ):
         __comptime_assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
@@ -91,7 +110,11 @@ struct ImageData[
     fn to_static_layout[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
-        Self.layout, Self.dtype, new_static_image_layout, Self.origin
+        shape_types = Self.shape_types,
+        stride_types = Self.stride_types,
+        Self.dtype,
+        new_static_image_layout,
+        Self.origin,
     ]:
         """Conversion utility from a fully dynamic data structure, e.g. from c
         shim to one with compile-time known data layout.
@@ -100,9 +123,12 @@ struct ImageData[
             The image data with static data layout.
         """
         __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
-        return ImageData[Self.layout, Self.dtype, new_static_image_layout](
-            self.data
-        )
+        return ImageData[
+            shape_types = Self.shape_types,
+            stride_types = Self.stride_types,
+            Self.dtype,
+            new_static_image_layout,
+        ](self.data)
 
     fn get_image_layout(self) -> Image2DLayout:
         """The getter function of the underlying data layout, resolving from
@@ -130,28 +156,11 @@ struct ImageData[
             data layout.
         """
         if self.get_image_layout() == Image2DLayout.NCHW:
-            return Int(
-                self.data.runtime_layout(
-                    RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
-                        IndexList[4](n, c, h, w)
-                    )
-                )
-            )
+            return Int(self.data.layout(coord[DType.int64]((n, c, h, w))))
+
         if self.get_image_layout() == Image2DLayout.RSCF:
-            return Int(
-                self.data.runtime_layout(
-                    RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
-                        IndexList[4](h, w, c, n)
-                    )
-                )
-            )
-        return Int(
-            self.data.runtime_layout(
-                RuntimeTuple[fill_like(self.layout.shape, UNKNOWN_VALUE)](
-                    IndexList[4](n, h, w, c)
-                )
-            )
-        )
+            return Int(self.data.layout(coord[DType.int64]((h, w, c, n))))
+        return Int(self.data.layout(coord[DType.int64]((n, h, w, c))))
 
     fn get_flat_index(self, n: Int, c: Int, h: Int, w: Int) -> Int:
         """Converts the dimension index to the flat index of the underlying
@@ -284,7 +293,7 @@ struct ImageData[
         self.data.ptr[self._get_index(n, c, h, w)] = value
 
     fn num_elements(self) -> Int:
-        return self.data.size()
+        return self.data.numel()
 
 
 struct ImageShape(TrivialRegisterType):
@@ -296,10 +305,9 @@ struct ImageShape(TrivialRegisterType):
     var W: Int
 
     fn __init__[
-        layout: Layout,
         dtype: DType,
         image_layout: Image2DLayout,
-    ](out self, image_data: ImageData[layout, dtype, image_layout]):
+    ](out self, image_data: ImageData[dtype, image_layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:
@@ -308,23 +316,23 @@ struct ImageShape(TrivialRegisterType):
         """
 
         if image_data.get_image_layout() == Image2DLayout.NCHW:
-            self.N = image_data.data.dim[0]()
-            self.C = image_data.data.dim[1]()
-            self.H = image_data.data.dim[2]()
-            self.W = image_data.data.dim[3]()
+            self.N = Int(image_data.data.dim[0]())
+            self.C = Int(image_data.data.dim[1]())
+            self.H = Int(image_data.data.dim[2]())
+            self.W = Int(image_data.data.dim[3]())
 
         elif image_data.get_image_layout() == Image2DLayout.NHWC:
-            self.N = image_data.data.dim[0]()
-            self.C = image_data.data.dim[3]()
-            self.H = image_data.data.dim[1]()
-            self.W = image_data.data.dim[2]()
+            self.N = Int(image_data.data.dim[0]())
+            self.C = Int(image_data.data.dim[3]())
+            self.H = Int(image_data.data.dim[1]())
+            self.W = Int(image_data.data.dim[2]())
 
         else:
             debug_assert(
                 image_data.get_image_layout() == Image2DLayout.RSCF,
                 "Invalid layout",
             )
-            self.N = image_data.data.dim[3]()
-            self.C = image_data.data.dim[2]()
-            self.H = image_data.data.dim[0]()
-            self.W = image_data.data.dim[1]()
+            self.N = Int(image_data.data.dim[3]())
+            self.C = Int(image_data.data.dim[2]())
+            self.H = Int(image_data.data.dim[0]())
+            self.W = Int(image_data.data.dim[1]())

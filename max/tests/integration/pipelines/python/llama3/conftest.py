@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import logging
 import os
 from pathlib import Path
 
@@ -20,7 +19,6 @@ import pytest
 from hypothesis import settings
 from max.driver import CPU
 from max.engine import InferenceSession
-from max.pipelines.lib import generate_local_model_path
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
 LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
@@ -43,8 +41,6 @@ pytest_plugins = "test_common.registry"
 settings.register_profile("graph_tests", deadline=None)
 settings.load_profile("graph_tests")
 
-logger = logging.getLogger("max.pipelines")
-
 
 @pytest.fixture
 def modular_path() -> Path:
@@ -61,57 +57,3 @@ def testdata_directory() -> Path:
 @pytest.fixture(scope="session")
 def session() -> InferenceSession:
     return InferenceSession(devices=[CPU()])
-
-
-@pytest.fixture(scope="session")
-def llama_3_1_8b_instruct_local_path():  # noqa: ANN201
-    assert isinstance(LLAMA_3_1_HF_REVISION, str), (
-        "LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(
-            LLAMA_3_1_HF_REPO_ID, LLAMA_3_1_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {LLAMA_3_1_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = LLAMA_3_1_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
-def llama_3_1_8b_lora_local_path():  # noqa: ANN201
-    assert isinstance(LLAMA_3_1_LORA_HF_REVISION, str), (
-        "LLAMA_3_1_LORA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(
-            LLAMA_3_1_LORA_HF_REPO_ID, LLAMA_3_1_LORA_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {LLAMA_3_1_LORA_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = LLAMA_3_1_LORA_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
-def smollm2_135m_local_path():  # noqa: ANN201
-    assert isinstance(SMOLLM2_HF_REVISION, str), (
-        "SMOLLM2_HF_REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    try:
-        model_path = generate_local_model_path(
-            SMOLLM2_HF_REPO_ID, SMOLLM2_HF_REVISION
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
-        logger.warning(
-            f"Falling back to repo_id: {SMOLLM2_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = SMOLLM2_HF_REPO_ID
-    return model_path

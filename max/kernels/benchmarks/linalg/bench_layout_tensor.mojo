@@ -95,6 +95,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     @parameter
     fn calc_row(m0: Int):
         for m in range(tile_m * m0, tile_m * m0 + tile_m):
+            _ = m  # FIXME: param closures not noticing access.
 
             @parameter
             fn calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
@@ -106,7 +107,7 @@ fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                     fn dot[
                         simd_size: Int
                     ](n: Int) unified {
-                        mut C, mut A_val, read B, mut m, mut x, mut k
+                        mut C, mut A_val, read B, read m, mut x, mut k
                     }:
                         var idx = n + x
                         C.store(
@@ -289,8 +290,8 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
                 var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1).transpose()
                 rhs_cache.copy_from(rhs_view)
 
-                for m in range(tile_m):
-                    for n in range(tile_n):
+                for var m in range(tile_m):
+                    for var n in range(tile_n):
                         var sum = SIMD[dtype, vec_size](0)
 
                         fn dot[simd_size: Int](k: Int) unified {mut}:
@@ -314,7 +315,7 @@ fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StaticString
+    func: fn(mut Matrix, Matrix, Matrix) -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -339,7 +340,7 @@ fn bench[
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (mut Matrix, Matrix, Matrix) -> None
+    func: fn(mut Matrix, Matrix, Matrix) -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.

@@ -21,8 +21,12 @@ from sys.intrinsics import gather, scatter, strided_load, strided_store
 from builtin.rebind import downcast
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
-from format._utils import FormatStruct, Named
-from reflection.type_info import _unqualified_type_name
+from format._utils import (
+    FormatStruct,
+    Named,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -126,7 +130,7 @@ struct LegacyUnsafePointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -193,7 +197,7 @@ struct LegacyUnsafePointer[
     ](
         out self: LegacyUnsafePointer[T, origin = Self.origin],
         *,
-        ref [Self.origin]unchecked_downcast_value: PythonObject,
+        ref[Self.origin] unchecked_downcast_value: PythonObject,
     ):
         """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
 
@@ -259,7 +263,7 @@ struct LegacyUnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data.
 
         Returns:
@@ -277,7 +281,7 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn __getitem__[
         I: Indexer, //
-    ](self, offset: I) -> ref [Self.origin, Self.address_space] Self.type:
+    ](self, offset: I) -> ref[Self.origin, Self.address_space] Self.type:
         """Return a reference to the underlying data, offset by the given index.
 
         Parameters:
@@ -505,7 +509,7 @@ struct LegacyUnsafePointer[
         """
         FormatStruct(writer, "LegacyUnsafePointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 
@@ -582,16 +586,6 @@ struct LegacyUnsafePointer[
             Self.mut,
             "]",
         )
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
 
     @always_inline("builtin")
     fn as_unsafe_pointer(

@@ -182,6 +182,23 @@ def test_scalar() -> None:
     assert host_scalar.item() == 5
 
 
+def test_pinned_zeros() -> None:
+    tensor = Buffer.zeros(
+        (2, 1), DType.int32, device=Accelerator(), pinned=True
+    )
+    assert tensor.pinned
+    assert tensor[0, 0].item() == 0
+    assert tensor[1, 0].item() == 0
+
+    if accelerator_api() == "hip":
+        pytest.skip(
+            "FIXME SERVOPT-947: __setitem__ / __getitem__ is buggy on HIP."
+        )
+
+    tensor[1, 0] = 42
+    assert tensor[1, 0].item() == 42
+
+
 def test_accelerator_to_numpy() -> None:
     acc = Accelerator()
     tensor = Buffer.zeros((3, 3), DType.int32, device=acc)

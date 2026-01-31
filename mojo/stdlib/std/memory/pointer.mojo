@@ -19,8 +19,7 @@ from memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named
-from reflection.type_info import _unqualified_type_name
+from format._utils import FormatStruct, Named, TypeNames
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -271,7 +270,7 @@ struct Pointer[
     fn __init__(
         out self,
         *,
-        ref [Self.origin, Self.address_space._value._mlir_value]to: Self.type,
+        ref[Self.origin, Self.address_space._value._mlir_value] to: Self.type,
     ):
         """Constructs a Pointer from a reference to a value.
 
@@ -298,7 +297,7 @@ struct Pointer[
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __getitem__(self) -> ref [Self.origin, Self.address_space] Self.type:
+    fn __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         """Enable subscript syntax `ptr[]` to access the element.
 
         Returns:
@@ -361,7 +360,7 @@ struct Pointer[
         """
         FormatStruct(writer, "Pointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 

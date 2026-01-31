@@ -385,7 +385,7 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 @always_inline
 fn exp2[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes elementwise 2 raised to the power of n, where n is an element
     of the input SIMD vector.
 
@@ -400,9 +400,6 @@ fn exp2[
         Vector containing $2^n$ computed elementwise, where n is an element in
         the input SIMD vector.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -622,7 +619,7 @@ fn _exp_taylor[
 @always_inline
 fn exp[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Calculates elementwise exponential of the input vector.
 
     Given an input vector $X$ and an output vector $Y$, sets $Y_i = e^{X_i}$ for
@@ -643,9 +640,6 @@ fn exp[
         A SIMD vector containing $e$ raised to the power $X_i$ where $X_i$ is an
         element in the input SIMD vector.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
 
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
 
@@ -1006,7 +1000,9 @@ fn log[
 
 
 @always_inline
-fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn log2[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Performs elementwise log (base 2) of a SIMD vector.
 
     Args:
@@ -1019,9 +1015,6 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         Vector containing result of performing log base 2 on x.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     if is_compile_time():
 
@@ -1095,7 +1088,7 @@ fn copysign[
 @always_inline
 fn erf[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs the elementwise Erf on a SIMD vector.
 
     Constraints:
@@ -1111,9 +1104,6 @@ fn erf[
     Returns:
         The result of the elementwise Erf operation.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
 
     var x_abs = abs(x)
 
@@ -1154,7 +1144,7 @@ fn erf[
 @always_inline
 fn tanh[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Performs elementwise evaluation of the tanh function.
 
     Parameters:
@@ -1167,10 +1157,6 @@ fn tanh[
     Returns:
         The result of the elementwise tanh operation.
     """
-
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "the input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -1550,7 +1536,9 @@ fn align_up(value: UInt, alignment: UInt) -> UInt:
 # ===----------------------------------------------------------------------=== #
 
 
-fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn acos[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acos` of the inputs.
 
     Constraints:
@@ -1566,10 +1554,6 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `acos` of the input.
     """
-
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1630,7 +1614,9 @@ fn acos[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn asin[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asin` of the inputs.
 
     Constraints:
@@ -1646,10 +1632,6 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `asin` of the input.
     """
-
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1704,7 +1686,9 @@ fn asin[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn atan[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atan` of the inputs.
 
     Constraints:
@@ -1720,9 +1704,6 @@ fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `atan` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["atan"](x)
 
@@ -1734,7 +1715,9 @@ fn atan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 fn atan2[
     dtype: DType, width: Int, //
-](y: SIMD[dtype, width], x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](y: SIMD[dtype, width], x: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     """Computes the `atan2` of the inputs.
 
     Constraints:
@@ -1751,9 +1734,6 @@ fn atan2[
     Returns:
         The `atan2` of the inputs.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @always_inline("nodebug")
     @parameter
@@ -1769,10 +1749,6 @@ fn atan2[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2", Scalar[result_type]](arg0, arg1)
 
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     @parameter
     if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](y, x)
@@ -1787,7 +1763,7 @@ fn atan2[
 
 fn cos[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `cos` of the inputs.
 
     Constraints:
@@ -1803,9 +1779,6 @@ fn cos[
     Returns:
         The `cos` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1835,7 +1808,7 @@ fn cos[
 
 fn sin[
     dtype: DType, width: Int, //
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Computes the `sin` of the inputs.
 
     Constraints:
@@ -1851,9 +1824,6 @@ fn sin[
     Returns:
         The `sin` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -1881,7 +1851,9 @@ fn sin[
 # ===----------------------------------------------------------------------=== #
 
 
-fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn tan[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `tan` of the inputs.
 
     Constraints:
@@ -1897,9 +1869,6 @@ fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `tan` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["tan"](x)
 
@@ -1909,7 +1878,9 @@ fn tan[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn acosh[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `acosh` of the inputs.
 
     Constraints:
@@ -1925,9 +1896,6 @@ fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `acosh` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["acosh"](x)
 
@@ -1937,7 +1905,9 @@ fn acosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn asinh[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `asinh` of the inputs.
 
     Constraints:
@@ -1953,9 +1923,6 @@ fn asinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `asinh` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["asinh"](x)
 
@@ -2009,7 +1976,9 @@ fn _atanh_float32(x: SIMD) -> type_of(x) where x.dtype.is_floating_point():
 
 
 @always_inline
-fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn atanh[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `atanh` of the inputs.
 
     Constraints:
@@ -2025,9 +1994,6 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `atanh` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if bit_width_of[dtype]() <= 16:
@@ -2047,7 +2013,9 @@ fn atanh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn cosh[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cosh` of the inputs.
 
     Constraints:
@@ -2064,10 +2032,6 @@ fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `cosh` of the input.
     """
 
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     # Compute exponential of absolute value: e^|x|
     # Using |x| exploits the even symmetry of cosh
     var e = exp(abs(x))
@@ -2083,7 +2047,9 @@ fn cosh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn sinh[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `sinh` of the inputs.
 
     Constraints:
@@ -2099,10 +2065,6 @@ fn sinh[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `sinh` of the input.
     """
-
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     # Compute e = expm1(|x|) = e^|x| - 1
     # Using |x| since we'll apply sign later (sinh is odd)
@@ -2181,7 +2143,9 @@ fn _expm1_float32[width: Int, //](d: SIMD[DType.float32, width]) -> type_of(d):
 
 
 @always_inline
-fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn expm1[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `expm1` of the inputs.
 
     Constraints:
@@ -2198,10 +2162,6 @@ fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `expm1` of the input.
     """
 
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     @parameter
     if bit_width_of[dtype]() <= 32:
         # We promote the input to float32 and then cast back to the original
@@ -2217,7 +2177,9 @@ fn expm1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn log10[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log10` of the inputs.
 
     Constraints:
@@ -2233,9 +2195,6 @@ fn log10[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `log10` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if is_nvidia_gpu():
@@ -2308,7 +2267,9 @@ fn _log1p_f64[width: Int, //](x: SIMD[DType.float64, width]) -> type_of(x):
     return in_domain_mask.select(log1x, x + z)
 
 
-fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn log1p[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `log1p` of the inputs.
 
     The `log1p(x)` is equivalent to `log(1+x)`.
@@ -2327,10 +2288,6 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
         The `log1p` of the input.
     """
 
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
-
     return _log1p_f64(x.cast[DType.float64]()).cast[dtype]()
 
 
@@ -2339,7 +2296,9 @@ fn log1p[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn logb[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `logb` of the inputs.
 
     Constraints:
@@ -2355,9 +2314,6 @@ fn logb[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `logb` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["logb"](x)
 
@@ -2529,7 +2485,9 @@ fn _cbrtf(x: Float32) -> Float32:
     return y
 
 
-fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn cbrt[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `cbrt` of the inputs.
 
     Constraints:
@@ -2545,10 +2503,6 @@ fn cbrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `cbrt` of the input.
     """
-
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -2746,7 +2700,9 @@ fn _erfcf(x: Float32) -> Float32:
     return result
 
 
-fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn erfc[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the `erfc` of the inputs.
 
     Constraints:
@@ -2762,9 +2718,6 @@ fn erfc[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `erfc` of the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     @parameter
     if size_of[dtype]() < size_of[DType.float32]():
@@ -2900,7 +2853,9 @@ fn remainder[
 # ===----------------------------------------------------------------------=== #
 
 
-fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn j0[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 0 for each input
     value.
 
@@ -2917,9 +2872,6 @@ fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["j0"](x)
 
@@ -2929,7 +2881,9 @@ fn j0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn j1[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the first kind of order 1 for each input
     value.
 
@@ -2946,9 +2900,6 @@ fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["j1"](x)
 
@@ -2958,7 +2909,9 @@ fn j1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn y0[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 0 for each input
     value.
 
@@ -2975,9 +2928,6 @@ fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["y0"](x)
 
@@ -2987,7 +2937,9 @@ fn y0[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 # ===----------------------------------------------------------------------=== #
 
 
-fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
+fn y1[
+    dtype: DType, width: Int, //
+](x: SIMD[dtype, width]) -> type_of(x) where dtype.is_floating_point():
     """Computes the Bessel function of the second kind of order 1 for each input
     value.
 
@@ -3004,9 +2956,6 @@ fn y1[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         A vector containing the computed value for each value in the input.
     """
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "input type must be floating point"
 
     return _call_libm["y1"](x)
 

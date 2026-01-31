@@ -38,7 +38,7 @@ from ...utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 
-comptime cblas_gemm_type = fn (
+comptime cblas_gemm_type = fn(
     _CBLASOrder,
     _CBLASTranspose,
     _CBLASTranspose,
@@ -292,7 +292,7 @@ fn apple_gemv[
     @__copy_capture(c, a, b, K)
     @parameter
     fn process_rows(start_row: Int, end_row: Int):
-        for n in range(start_row, end_row):
+        for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.type, simd_width]()
             var acc_scalar = Scalar[c.type]()
 

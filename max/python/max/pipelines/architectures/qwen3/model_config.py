@@ -107,9 +107,14 @@ class Qwen3Config(Llama3Config):
         Returns:
             An initialized Qwen3Config instance.
         """
-        return cls.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
-        )
+        huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
 
     @override
     @classmethod
@@ -137,7 +142,7 @@ class Qwen3Config(Llama3Config):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
