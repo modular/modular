@@ -1139,8 +1139,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Returns:
             The DType to use for the KV cache. Typical values are:
             - DType.float32 for float32, q4_k, q4_0, q6_k encodings
-            - DType.bfloat16 for bfloat16, float8_e4m3fn, gptq encodings
-            - DType.float8_e4m3fn for float4_e2m1fnx2 encoding
+            - DType.bfloat16 for bfloat16, float8_e4m3fn, float4_e2m1fnx2, gptq encodings
         """
         # First check for an explicit override.
         if self.kv_cache.kv_cache_format is not None:
@@ -1156,7 +1155,7 @@ class MAXModelConfig(MAXModelConfigBase):
             SupportedEncoding.float32: DType.float32,
             SupportedEncoding.bfloat16: DType.bfloat16,
             SupportedEncoding.float8_e4m3fn: DType.bfloat16,
-            SupportedEncoding.float4_e2m1fnx2: DType.float8_e4m3fn,
+            SupportedEncoding.float4_e2m1fnx2: DType.bfloat16,
             SupportedEncoding.q4_k: DType.float32,
             SupportedEncoding.q4_0: DType.float32,
             SupportedEncoding.q6_k: DType.float32,
