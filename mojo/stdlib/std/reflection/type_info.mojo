@@ -39,7 +39,7 @@ fn main():
 
 from sys.info import _current_target, _TargetType
 from collections.string.string_slice import get_static_string
-from reflection.struct_fields import is_struct_type
+from reflection import is_struct_type
 
 
 fn get_linkage_name[
