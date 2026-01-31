@@ -1551,6 +1551,34 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
 // Generalized Implicit Conversions
 //===----------------------------------------------------------------------===//
 
+static ASTDecl *getClosureTraitDecl(SharedState &shared,
+                                    const TraitType &traitTy) {
+  for (const auto &symbol : traitTy.getSymbols()) {
+    auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    if (symbolDecl.isErroneous())
+      continue;
+
+    if (auto traitDeclOp =
+            dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
+        traitDeclOp && traitDeclOp.getDefinesClosure())
+      return &symbolDecl;
+  }
+
+  return nullptr;
+}
+
+static bool isClosureWrapperStruct(SharedState &shared, PValue value,
+                                   LIT::StructType structTy) {
+  ASTDecl &decl =
+      shared.declResolver->getDeclForTypeSymbol(structTy.getSymbolRef());
+  if (StructDeclOp structOp = dyn_cast<StructDeclOp>(decl.getIfOperation())) {
+    return structOp.getDefinesClosure() && !structTy.getParamValues().empty() &&
+           structTy.getParamValues().front() == value.get();
+  }
+
+  return false;
+}
+
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
@@ -1620,6 +1648,17 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       result = canConvertGeneratorTypes(value, rvGeneratorType,
                                         requiredGenerator, declScope);
     return cacheAndReturnVal(rvType, requiredType, result);
+  }
+
+  // Functions can implicitly convert to their corresponding closure wrapper.
+  // This is distinct from converting to a closure trait.
+  if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
+    if (auto structMeta =
+            sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
+      StructType structTy = structMeta.getType();
+      if (isClosureWrapperStruct(shared, value.ir.getIfPValue(), structTy))
+        return cacheAndReturnVal(rvType, requiredType, true);
+    }
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -1751,6 +1790,64 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // This handles nullptr case too.
   if (succeeded(typeValueCast))
     return emitCResult(*typeValueCast, expr, dest);
+
+  // Conversions from function pointers to closures.
+  if (auto fnSig = sugarDynCast<FnTypeGeneratorType>(rvType)) {
+    auto module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
+
+    // Conversion to a struct wrapper that implements the target closure trait.
+    if (auto anyTrait =
+            sugarDynCastIfPresent<AnyTraitType>(requiredType.getMetaType())) {
+      TraitType trait = anyTrait.getTraitType();
+      if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
+        auto &closureEmitter = shared.getClosureEmitter();
+        auto rvClosureTrait = shared.getOrCreateClosureTrait(
+            expr->getLoc(), *module, fnSig, InlineLevel::Always);
+        auto wrapper = closureEmitter.createFnStructWrapper(
+            *module, *rvClosureTrait, fnSig, valueExpr.expr->getLoc());
+        // concretize the wrapper on the actual implementation value
+        if (auto structDeclOp =
+                dyn_cast<StructDeclOp>(wrapper->getIfOperation())) {
+
+          TypedAttr fnVal = valueExpr.ir.getIfPValue().get();
+
+          auto closureWrapperType = structDeclOp.bindReference({fnVal});
+          // Require that the closure wrapper type conform to the target trait.
+          if (failed(closureEmitter.augmentWitnessTablesToConformTo(
+                  closureWrapperType, traitDecl))) {
+            shared.emitError(valueExpr.expr->getLoc(), "cannot convert ")
+                << rvType << " to trait " << requiredType
+                << valueExpr.expr->getRange();
+            dest.resetForError(*this);
+            return {};
+          }
+
+          if (!builder)
+            return emitCResult(PValue(closureWrapperType), expr, dest);
+
+          auto convertedResult = shared.getClosureEmitter().emitFnPtrConversion(
+              *builder, valueExpr.expr->getLocation(*this), *module,
+              valueExpr.ir.getIfPValue(), closureWrapperType);
+          return emitCResult(convertedResult, expr, dest);
+        }
+      }
+    }
+
+    // Functions can also implicitly convert to their corresponding closure
+    // wrapper. This is distinct from converting to a closure trait.
+    if (auto structMeta =
+            sugarDynCastIfPresent<StructMetaType>(requiredType.getMetaType())) {
+      StructType structTy = structMeta.getType();
+      if (isClosureWrapperStruct(shared, valueExpr.ir.getIfPValue(),
+                                 structTy)) {
+        assert(builder);
+        auto convertedResult = shared.getClosureEmitter().emitFnPtrConversion(
+            *builder, valueExpr.expr->getLocation(*this), *module,
+            valueExpr.ir.getIfPValue(), structTy);
+        return emitCResult(convertedResult, expr, dest);
+      }
+    }
+  }
 
   if (sugarIsa<VariadicType>(rvType) && sugarIsa<VariadicType>(requiredType)) {
     auto emitVariadicError = [&]() -> CValue {

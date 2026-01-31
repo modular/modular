@@ -410,7 +410,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<SourceNameAttr>:$sourceName,
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<I64Attr>:$minAlignment,
-    EnumProp<LIT_TypeConvention>:$convention
+    EnumProp<LIT_TypeConvention>:$convention,
+    // If definesClosure attribute is present,
+    // then this is a compiler generated structure
+    // used to wrap a function as a closure.
+    UnitAttr:$definesClosure
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{

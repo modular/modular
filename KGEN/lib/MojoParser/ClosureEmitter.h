@@ -125,6 +125,12 @@ public:
                                TypeConvention typeConvention, bool isCopyable,
                                bool isStateless);
 
+  /// Given a trait decl and a function signature, generate a struct that can
+  /// wrap a function pointer to be used as a unified closure.
+  ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
+                                 FnTypeGeneratorType signatureType,
+                                 SMLoc location);
+
 private:
   MLIRContext *ctx;
 
@@ -159,6 +165,9 @@ public:
   /// Checks if the wrapper struct type conforms to a trait that is compatible
   /// with the desired trait.
   LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);
+
+  CValue emitFnPtrConversion(OpBuilder &builder, Location location,
+                             ASTDecl &module, PValue fn, StructType &structTy);
 
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)

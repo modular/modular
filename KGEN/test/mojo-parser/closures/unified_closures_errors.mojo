@@ -91,6 +91,20 @@ def nestedCaptureAll(mut aString: String):
             changeIt(aString)
 
 
+
+fn topLevel(x: String) -> String:
+    return x
+
+
+fn takesClosure[T: fn(Int) unified -> Int](cb: T, x: Int) -> Int:
+    return cb(x)
+
+
+fn useTopLevelClosure():
+    # expected-error @below {{cannot convert 'fn(x: String) -> String' to trait 'fn(Int) -> Int'}}
+    takesClosure[topLevel](topLevel, 1)
+
+
 # ===----------------------------------------------------------------------=== #
 # Closure type mismatch errors
 # ===----------------------------------------------------------------------=== #
