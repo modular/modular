@@ -173,14 +173,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         nvfp4_enabled = float8_config is not None and float8_config.is_nvfp4
 
-        # Disable EP in virtual device mode (compilation-only) since NVSHMEM
-        # functions cannot be linked without real GPU devices
-        if is_virtual_device_mode():
-            ep_config = None
-            logger.info(
-                "Disabling expert parallelism in virtual device mode (compilation-only)"
-            )
-        elif self.pipeline_config.ep_size == 1:
+        # Check if EP should be configured
+        if self.pipeline_config.ep_size == 1:
             ep_config = None
         else:
             if self.pipeline_config.ep_size % len(self.devices) != 0:
@@ -466,7 +460,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None
-        if config.ep_config is not None:
+        # Skip EP initialization in virtual device mode (compilation-only)
+        # since NVSHMEM functions cannot be linked without real GPU devices.
+        # We still keep ep_config to generate the correct graph structure.
+        if config.ep_config is not None and not is_virtual_device_mode():
             self.ep_comm_initializer = EPCommInitializer(config.ep_config)
             self.ep_comm_initializer.ep_init(session)
             if config.ep_config.node_id == -1:

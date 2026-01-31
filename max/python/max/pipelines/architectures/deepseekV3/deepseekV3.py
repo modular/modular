@@ -243,7 +243,7 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             num_devices = len(config.devices)
-            if self.ep_manager is not None:
+            if num_devices > 1:
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
                     num_devices
                 )
