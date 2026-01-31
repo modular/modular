@@ -219,6 +219,74 @@ fn bench_string_replace[
     b.iter(call_fn)
 
 
+@parameter
+fn bench_string_replace_no_match[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        var res = black_box(items).replace(
+            black_box("ZZZZZZ"), black_box("YYYYYY")
+        )
+        keep(res)
+
+    b.iter(call_fn)
+
+
+@parameter
+fn bench_string_replace_multi_char[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+    old: StaticString = "the",
+    new: StaticString = "THE",
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        var res = black_box(items).replace(black_box(old), black_box(new))
+        keep(res)
+
+    b.iter(call_fn)
+
+
+@parameter
+fn bench_string_replace_grow[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+    old: StaticString = "a",
+    new: StaticString = "xyz",
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        var res = black_box(items).replace(black_box(old), black_box(new))
+        keep(res)
+
+    b.iter(call_fn)
+
+
+@parameter
+fn bench_string_replace_shrink[
+    length: Int = 0,
+    filename: StaticString = "UN_charter_EN",
+    old: StaticString = "the",
+    new: StaticString = "x",
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        var res = black_box(items).replace(black_box(old), black_box(new))
+        keep(res)
+
+    b.iter(call_fn)
+
+
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count_codepoints
 # ===-----------------------------------------------------------------------===#
@@ -417,6 +485,20 @@ def main():
         StaticString("И"),
         StaticString("一"),
     )
+    comptime old_words = (
+        StaticString("the"),
+        StaticString("los"),
+        StaticString("في"),
+        StaticString("что"),
+        StaticString("的"),
+    )
+    comptime new_words = (
+        StaticString("THE"),
+        StaticString("LOS"),
+        StaticString("من"),
+        StaticString("ЧТО"),
+        StaticString("了"),
+    )
 
     comptime lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
     """At an average 5 letters per word and 300 words per page
@@ -471,6 +553,20 @@ def main():
             m.bench_function[bench_string_replace[length, fname, old, new]](
                 BenchId(String("bench_string_replace", suffix))
             )
+            comptime old_w = StaticString(old_words[j])
+            comptime new_w = new_words[j]
+            m.bench_function[
+                bench_string_replace_multi_char[length, fname, old_w, new_w]
+            ](BenchId(String("bench_string_replace_multi_char", suffix)))
+            m.bench_function[bench_string_replace_no_match[length, fname]](
+                BenchId(String("bench_string_replace_no_match", suffix))
+            )
+            m.bench_function[
+                bench_string_replace_grow[length, fname, old]
+            ](BenchId(String("bench_string_replace_grow", suffix)))
+            m.bench_function[
+                bench_string_replace_shrink[length, fname, old_w]
+            ](BenchId(String("bench_string_replace_shrink", suffix)))
             m.bench_function[bench_string_count_codepoints[length, fname]](
                 BenchId(String("bench_string_count_codepoints", suffix))
             )

@@ -1333,23 +1333,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if not old:
             return self._interleave(new)
 
-        var occurrences = self.count(old)
-        if occurrences == -1:
-            return String(self)
-
         var self_len = self.byte_length()
         var old_len = old.byte_length()
         var new_len = new.byte_length()
 
-        var res = String(capacity=self_len + (new_len - old_len) * occurrences)
+        # Find first occurrence before allocating to avoid unnecessary work.
+        var idx = self.find(old)
+        if idx == -1:
+            return String(self)
 
+        # When the replacement is longer, estimate extra capacity to reduce
+        # reallocations. We assume ~4 matches as a reasonable heuristic.
+        var extra = max(0, new_len - old_len) * 4
+        var res = String(capacity=self_len + extra)
         var current_pos = 0
 
-        for _ in range(occurrences):
-            var idx = self.find(old, current_pos)
-
-            debug_assert(idx >= 0, "expected to find occurrence during find")
-
+        while idx != -1:
             # Copy preceding unchanged chars
             res += StringSlice(
                 unsafe_from_utf8=self.as_bytes()[current_pos:idx]
@@ -1359,6 +1358,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             res += new
 
             current_pos = idx + old_len
+            idx = self.find(old, current_pos)
 
         # Copy remaining chars
         if current_pos < self_len:
