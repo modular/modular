@@ -13,7 +13,9 @@
 
 
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.topk import topk_gpu
 
 
@@ -21,8 +23,8 @@ fn argmaxmin_gpu[
     dtype: DType, output_type: DType, largest: Bool
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, output_type, ...],
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, output_type, ...],
 ) raises:
     """
     Wraps the Top-K GPU kernel with K=1 to perform argmax on the inner-most
@@ -34,8 +36,8 @@ fn argmaxmin_gpu[
         largest: Bool - Whether to perform argmax or argmin.
     Args:
         ctx: DeviceContext - The device context.
-        input: LayoutTensor[dtype] - The input tensor allocated on the device.
-        output: LayoutTensor[dtype] - The output tensor allocated on the device.
+        input: TileTensor[dtype] - The input tensor allocated on the device.
+        output: TileTensor[dtype] - The output tensor allocated on the device.
     """
     __comptime_assert input.rank > 0, "Input rank must be positive"
     __comptime_assert (
@@ -43,22 +45,22 @@ fn argmaxmin_gpu[
     ), "Input and output rank must be the same"
     comptime K = 1
 
-    var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
+    var out_vals_shape = coord_to_index_list(input.layout.shape)
     out_vals_shape[input.rank - 1] = K
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
-    var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
+    var out_vals = TileTensor(
         out_vals_buf.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
+        row_major(Coord(out_vals_shape)),
     )
 
     topk_gpu[sampling=False, largest=largest](
         ctx,
         K,
-        input,
-        out_vals,
-        output,
+        input.to_layout_tensor(),
+        out_vals.to_layout_tensor(),
+        output.to_layout_tensor(),
     )
 
     _ = out_vals_buf^
@@ -68,8 +70,8 @@ fn argmax_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, output_type, ...],
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, output_type, ...],
 ) raises:
     argmaxmin_gpu[largest=True](ctx, input, output)
 
@@ -78,7 +80,7 @@ fn argmin_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
-    input: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, output_type, ...],
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, output_type, ...],
 ) raises:
     argmaxmin_gpu[largest=False](ctx, input, output)

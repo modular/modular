@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord
 from layout._fillers import random
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
@@ -57,9 +56,6 @@ fn test_conv_transposed_cudnn[
         ")",
     )
 
-    comptime layout_unknown_5d = Layout.row_major[5]()
-    comptime layout_unknown_4d = Layout.row_major[4]()
-
     # Shapes and sizes
     comptime output_len = (
         stride_val * (input_len - 1)
@@ -72,37 +68,33 @@ fn test_conv_transposed_cudnn[
     comptime output_size = 1 * 1 * output_len * out_channels
 
     # Layouts for NHWC tensors
-    comptime input_layout = Layout.row_major(1, 1, input_len, in_channels)
-    comptime filter_layout = Layout.row_major(
+    comptime input_layout = row_major[1, 1, input_len, in_channels]()
+    comptime filter_layout = row_major[
         1, kernel_len, out_channels, in_channels
-    )
-    comptime output_layout = Layout.row_major(1, 1, output_len, out_channels)
+    ]()
+    comptime output_layout = row_major[1, 1, output_len, out_channels]()
 
     # Layouts for NCHW tensors (for cuDNN)
     comptime input_nchw_size = 1 * in_channels * 1 * input_len
     comptime output_nchw_size = 1 * out_channels * 1 * output_len
     comptime filter_nchw_size = in_channels * out_channels * 1 * kernel_len
-    comptime input_nchw_layout = Layout.row_major(1, in_channels, 1, input_len)
-    comptime output_nchw_layout = Layout.row_major(
-        1, out_channels, 1, output_len
-    )
-    comptime filter_nchw_layout = Layout.row_major(
+    comptime input_nchw_layout = row_major[1, in_channels, 1, input_len]()
+    comptime output_nchw_layout = row_major[1, out_channels, 1, output_len]()
+    comptime filter_nchw_layout = row_major[
         in_channels, out_channels, 1, kernel_len
-    )
+    ]()
 
     # Allocate host memory for NHWC tensors
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_host_ptr = alloc[Scalar[dtype]](input_size)
+    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var output_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_host_ptr = alloc[Scalar[dtype]](output_size)
 
-    # Create host LayoutTensors for NHWC
-    var input_host = LayoutTensor[dtype, input_layout](input_host_ptr)
-    var filter_host = LayoutTensor[dtype, filter_layout](filter_host_ptr)
-    var output_host = LayoutTensor[dtype, output_layout](output_host_ptr)
-    var output_ref_host = LayoutTensor[dtype, output_layout](
-        output_ref_host_ptr
-    )
+    # Create host TileTensors for NHWC
+    var input_host = TileTensor(input_host_ptr, input_layout)
+    var filter_host = TileTensor(filter_host_ptr, filter_layout)
+    var output_host = TileTensor(output_host_ptr, output_layout)
+    var output_ref_host = TileTensor(output_ref_host_ptr, output_layout)
 
     random(input_host)
     random(filter_host)
@@ -116,22 +108,18 @@ fn test_conv_transposed_cudnn[
 
     # Execute naive reference implementation.
     conv_transpose_naive[dtype](
-        LayoutTensor[dtype, layout_unknown_5d](
+        TileTensor(
             output_ref_host_ptr,
-            RuntimeLayout[layout_unknown_5d].row_major(
-                IndexList[5](1, 1, 1, output_len, out_channels)
-            ),
+            row_major(Coord(IndexList[5](1, 1, 1, output_len, out_channels))),
         ),
-        LayoutTensor[dtype, layout_unknown_5d](
+        TileTensor(
             input_host_ptr,
-            RuntimeLayout[layout_unknown_5d].row_major(
-                IndexList[5](1, 1, 1, input_len, in_channels)
-            ),
+            row_major(Coord(IndexList[5](1, 1, 1, input_len, in_channels))),
         ),
-        LayoutTensor[dtype, layout_unknown_5d](
+        TileTensor(
             filter_host_ptr,
-            RuntimeLayout[layout_unknown_5d].row_major(
-                IndexList[5](1, 1, kernel_len, out_channels, in_channels)
+            row_major(
+                Coord(IndexList[5](1, 1, kernel_len, out_channels, in_channels))
             ),
         ),
         stride,
@@ -146,26 +134,14 @@ fn test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        input_nchw_size
-    )
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        filter_nchw_size
-    )
-    var output_nchw_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        output_nchw_size
-    )
+    var input_nchw_host_ptr = alloc[Scalar[dtype]](input_nchw_size)
+    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_nchw_size)
+    var output_nchw_host_ptr = alloc[Scalar[dtype]](output_nchw_size)
 
-    # Create host LayoutTensors for NCHW
-    var input_nchw_host = LayoutTensor[dtype, input_nchw_layout](
-        input_nchw_host_ptr
-    )
-    var filter_nchw_host = LayoutTensor[dtype, filter_nchw_layout](
-        filter_nchw_host_ptr
-    )
-    var output_nchw_host = LayoutTensor[dtype, output_nchw_layout](
-        output_nchw_host_ptr
-    )
+    # Create host TileTensors for NCHW
+    var input_nchw_host = TileTensor(input_nchw_host_ptr, input_nchw_layout)
+    var filter_nchw_host = TileTensor(filter_nchw_host_ptr, filter_nchw_layout)
+    var output_nchw_host = TileTensor(output_nchw_host_ptr, output_nchw_layout)
 
     # Convert input/output data from NHWC to NCHW layout for cuDNN
     for w in range(input_len):
@@ -193,23 +169,19 @@ fn test_conv_transposed_cudnn[
 
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
-        LayoutTensor[dtype, layout_unknown_4d](
+        TileTensor(
             d_input.unsafe_ptr(),
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](1, in_channels, 1, input_len)
-            ),
+            row_major(Coord(IndexList[4](1, in_channels, 1, input_len))),
         ),  # dy (input grad)
-        LayoutTensor[dtype, layout_unknown_4d](
+        TileTensor(
             d_filter.unsafe_ptr(),
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](in_channels, out_channels, 1, kernel_len)
+            row_major(
+                Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
             ),
         ),  # w (filter)
-        LayoutTensor[dtype, layout_unknown_4d](
+        TileTensor(
             d_output.unsafe_ptr(),
-            RuntimeLayout[layout_unknown_4d].row_major(
-                IndexList[4](1, out_channels, 1, output_len)
-            ),
+            row_major(Coord(IndexList[4](1, out_channels, 1, output_len))),
         ),  # dx (output)
         stride_hw,
         dilation_hw,

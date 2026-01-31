@@ -16,6 +16,7 @@ from sys._build import is_debug_build
 from sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import Layout, LayoutTensor, IntTuple, UNKNOWN_VALUE
+from layout._tile_tensor import TileTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList
@@ -299,6 +300,52 @@ fn get_conv_shape[
         filter_dims=filter_dims,
         c=input.dim[rank + 1](),
         f=output.dim[rank + 1](),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
+
+
+@always_inline
+fn get_conv_shape[
+    rank: Int,
+    filter_packed: Bool,
+](
+    output: TileTensor,
+    input: TileTensor,
+    filter: TileTensor,
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+) -> ConvShape[rank]:
+    var output_dims = IndexList[rank](0)
+    var input_dims = IndexList[rank](0)
+    var filter_dims = IndexList[rank](0)
+
+    @parameter
+    for i in range(rank):
+        output_dims[i] = Int(output.dim[i + 1]())
+        input_dims[i] = Int(input.dim[i + 1]())
+
+        @parameter
+        if filter_packed:
+            filter_dims[i] = Int(filter.dim[i + 1]())
+        else:
+            filter_dims[i] = Int(filter.dim[i]())
+
+    return ConvShape[rank](
+        n=Int(input.dim[0]()),
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=Int(input.dim[rank + 1]()),
+        f=Int(output.dim[rank + 1]()),
         stride=stride,
         dilation=dilation,
         pad_d=pad_d,

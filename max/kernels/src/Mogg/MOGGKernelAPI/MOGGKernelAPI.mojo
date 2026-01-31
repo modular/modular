@@ -2129,19 +2129,19 @@ struct Slice:
         ],
     ):
         var view_buffer = slice_as_view(
-            input.to_layout_tensor(),
-            starts.to_layout_tensor(),
-            stops.to_layout_tensor(),
-            steps.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
         )
 
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.shape.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.shape)
             ),
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.stride.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.stride)
             ),
         }
 
@@ -2178,10 +2178,10 @@ struct Slice:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             slice_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                starts.to_layout_tensor(),
-                stops.to_layout_tensor(),
-                steps.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                starts.to_tile_tensor[DType.int64](),
+                stops.to_tile_tensor[DType.int64](),
+                steps.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2224,11 +2224,11 @@ struct MutableStoreSlice:
         ctx: DeviceContextPtr,
     ) raises:
         copy_to_slice[target=target](
-            to_buffer.to_layout_tensor(),
-            in_slice.to_layout_tensor(),
-            starts.to_layout_tensor(),
-            stops.to_layout_tensor(),
-            steps.to_layout_tensor(),
+            to_buffer.to_tile_tensor[DType.int64](),
+            in_slice.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -2319,7 +2319,7 @@ struct SliceDim:
         ],
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
-            input.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
             Int(starts),
             Int(stops),
             Int(steps),
@@ -2328,10 +2328,10 @@ struct SliceDim:
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.shape.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.shape)
             ),
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.stride.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.stride)
             ),
         }
 
@@ -2403,8 +2403,8 @@ struct ArgMax:
                 var cuda_ctx = ctx.get_device_context()
                 argmax_gpu(
                     cuda_ctx,
-                    input.to_layout_tensor(),
-                    output.to_layout_tensor(),
+                    input.to_tile_tensor[DType.int64](),
+                    output.to_tile_tensor[DType.int64](),
                 )
 
 
@@ -2442,8 +2442,8 @@ struct ArgMin:
                 var cuda_ctx = ctx.get_device_context()
                 argmin_gpu(
                     cuda_ctx,
-                    input.to_layout_tensor(),
-                    output.to_layout_tensor(),
+                    input.to_tile_tensor[DType.int64](),
+                    output.to_tile_tensor[DType.int64](),
                 )
 
 
@@ -4960,10 +4960,10 @@ struct ConvTranspose:
             )
 
         var stride_tuple = IndexList[
-            type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
         ](0)
         var dilation_tuple = IndexList[
-            type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
         ](0)
 
         @parameter
@@ -5002,17 +5002,14 @@ struct ConvTranspose:
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                input.dtype,
-                filter.dtype,  # Filter dtype.
-                output.dtype,  # Output dtype.
                 filter_packed,
                 filter_is_cfrs,
                 lambdas_have_fusion,
                 output_fn,
             ](
-                output.to_layout_tensor(),
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
@@ -5029,7 +5026,7 @@ struct ConvTranspose:
 
             var cuda_ctx = ctx.get_device_context()
             var pad_tuple = IndexList[
-                type_of(input.to_layout_tensor()).layout.rank() - 2
+                type_of(input.to_tile_tensor[DType.int64]()).rank - 2
             ](0)
 
             @parameter
@@ -5047,9 +5044,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](),
             ](
-                output.to_layout_tensor(),
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -5069,12 +5066,12 @@ struct ConvTranspose:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             conv_transpose_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
-                output_paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+                output_paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -8056,8 +8053,8 @@ fn layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        filter.to_layout_tensor(),
-        packed_filter.to_layout_tensor(),
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
         1,
     )
 
@@ -8165,7 +8162,9 @@ struct PackConvTransposeFilterShape:
         rank + 1
     ]:
         return rebind[IndexList[rank + 1]](
-            pack_filter_shape_conv_transpose(filter_buf.to_layout_tensor(), 1)
+            pack_filter_shape_conv_transpose(
+                filter_buf.to_tile_tensor[DType.int64](), 1
+            )
         )
 
 
@@ -8757,9 +8756,6 @@ struct Struct_min_p_sampling:
     ) raises:
         __comptime_assert is_valid_target[target](), "not a valid target"
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
-        var min_ps_buf = managed_tensor_slice_to_ndbuffer(min_ps)
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
@@ -8776,9 +8772,9 @@ struct Struct_min_p_sampling:
                 var cuda_ctx = ctx.get_device_context()
                 min_p_sampling_gpu(
                     cuda_ctx,
-                    min_ps.to_layout_tensor(),
-                    input.to_layout_tensor(),
-                    out_token_ids.to_layout_tensor(),
+                    min_ps.to_tile_tensor[DType.int64](),
+                    input.to_tile_tensor[DType.int64](),
+                    out_token_ids.to_tile_tensor[DType.int64](),
                     temperature,
                 )
 
@@ -10039,9 +10035,9 @@ struct SpatialMerge:
         var cuda_ctx = ctx.get_device_context()
 
         spatial_merge[dtype](
-            output.to_layout_tensor(),
-            input.to_layout_tensor(),
-            grid_thw.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            grid_thw.to_tile_tensor[DType.int64](),
             Int(hidden_size),
             Int(merge_size),
             cuda_ctx,
@@ -10120,9 +10116,9 @@ struct Struct_sliced_add_ragged:
         lora_end_idx: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var c_layout_tensor = c.to_layout_tensor()
-        var a_layout_tensor = a.to_layout_tensor()
-        var b_layout_tensor = b.to_layout_tensor()
+        var c_tile_tensor = c.to_tile_tensor[DType.int64]()
+        var a_tile_tensor = a.to_tile_tensor[DType.int64]()
+        var b_tile_tensor = b.to_tile_tensor[DType.int64]()
 
         with Trace[TraceLevel.OP, target=target](
             "sliced-add",
@@ -10133,18 +10129,18 @@ struct Struct_sliced_add_ragged:
             if is_gpu[target]():
                 ctx: Optional[DeviceContext] = context.get_device_context()
                 sliced_add[target=target](
-                    c_layout_tensor,
-                    a_layout_tensor,
-                    b_layout_tensor,
-                    lora_end_idx.to_layout_tensor(),
+                    c_tile_tensor,
+                    a_tile_tensor,
+                    b_tile_tensor,
+                    lora_end_idx.to_tile_tensor[DType.int64](),
                     ctx,
                 )
             else:
                 sliced_add[target=target](
-                    c_layout_tensor,
-                    a_layout_tensor,
-                    b_layout_tensor,
-                    lora_end_idx.to_layout_tensor(),
+                    c_tile_tensor,
+                    a_tile_tensor,
+                    b_tile_tensor,
+                    lora_end_idx.to_tile_tensor[DType.int64](),
                     None,
                 )
 

@@ -13,22 +13,19 @@
 
 
 from algorithm import elementwise
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.slice import slice_dim_as_view
 
 from utils.index import IndexList
 
 
-def print_elements[dtype: DType](tensor: LayoutTensor[dtype, ...]):
-    print("New shape:", tensor.runtime_layout.shape.value.canonicalize())
-    print("New strides:", tensor.runtime_layout.stride.value.canonicalize())
+def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
+    var shape = coord_to_index_list(tensor.layout.shape)
+    var stride = coord_to_index_list(tensor.layout.stride)
+    print("New shape:", shape)
+    print("New strides:", stride)
 
     @always_inline
     @parameter
@@ -36,14 +33,10 @@ def print_elements[dtype: DType](tensor: LayoutTensor[dtype, ...]):
         simd_width: Int, rank: Int, alignment: Int = 1
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.runtime_layout(
-            RuntimeTuple[fill_like(tensor.layout.shape, UNKNOWN_VALUE)](index)
-        )
+        var idx = tensor.layout(Coord(index))
         print(tensor.ptr[idx])
 
-    elementwise[print_elements_lambda, 1](
-        tensor.runtime_layout.shape.value.canonicalize()
-    )
+    elementwise[print_elements_lambda, 1](shape)
 
 
 # slice_dim
@@ -51,13 +44,15 @@ def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
 ](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int):
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
-    var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-        memory1,
-        RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
+    var in_tensor = TileTensor(
+        memory1.unsafe_ptr(),
+        row_major(Coord(dims)),
     )
 
-    print("In shape:", in_tensor.runtime_layout.shape.value.canonicalize())
-    print("In strides:", in_tensor.runtime_layout.stride.value.canonicalize())
+    var shape = coord_to_index_list(in_tensor.layout.shape)
+    var stride = coord_to_index_list(in_tensor.layout.stride)
+    print("In shape:", shape)
+    print("In strides:", stride)
 
     for i in range(numelems):
         in_tensor.ptr[i] = i
