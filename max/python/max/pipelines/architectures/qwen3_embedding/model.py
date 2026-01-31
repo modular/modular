@@ -31,7 +31,7 @@ from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -288,7 +288,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             output=output,
             embedding=embedding_layer,
             rope=rope,
-            return_hidden_states=ReturnHiddenStates.ALL,  # Return un-normalized states, pooling+norm happens after
             embedding_multiplier=1.0,
             device=device_refs[0],
         )
@@ -311,15 +310,12 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         with Graph("qwen3_embedding", input_types=graph_inputs) as graph:
             tokens, input_row_offsets, return_n_logits = graph.inputs
 
-            # Forward pass - returns (hidden_states,)
-            outputs = nn_model(
+            # Forward pass - returns hidden_states
+            hidden_states = nn_model(
                 tokens.tensor,
                 input_row_offsets.tensor,
                 return_n_logits.tensor,
             )
-
-            # Extract hidden states
-            hidden_states = outputs[0]
 
             if self.pipeline_config.pool_embeddings:
                 # Apply last token pooling
