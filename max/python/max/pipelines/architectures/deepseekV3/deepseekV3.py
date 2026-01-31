@@ -114,6 +114,10 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
+        if self.ep_manager is None and num_devices > 1:
+            raise ValueError(
+                "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
+            )
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -156,7 +160,12 @@ class DeepseekV3DecoderLayer(Module):
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
-        self.mlp_shards = self.mlp.shard(config.devices)
+
+        self.mlp_shards: list[MLP | MoE]
+        if self.mlp.sharding_strategy is not None:
+            self.mlp_shards = list(self.mlp.shard(config.devices))
+        else:
+            self.mlp_shards = [self.mlp]
 
         # Create normalization layers
         create_norm = functools.partial(
@@ -238,11 +247,10 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             num_devices = len(config.devices)
-            moe.sharding_strategy = (
-                ShardingStrategy.expert_parallel(num_devices)
-                if self.ep_manager is not None
-                else ShardingStrategy.replicate(num_devices)
-            )
+            if self.ep_manager is not None:
+                moe.sharding_strategy = ShardingStrategy.expert_parallel(
+                    num_devices
+                )
             return moe
         else:
             mlp = MLP(
