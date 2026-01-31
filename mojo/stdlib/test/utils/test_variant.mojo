@@ -21,6 +21,7 @@ from test_utils import (
     MoveOnly,
     ExplicitDelOnly,
     NonMovable,
+    check_write_to,
 )
 from testing import TestSuite, assert_equal, assert_false, assert_true
 from benchmark import keep
@@ -261,6 +262,20 @@ def test_variant_trivial_moveinit():
 
     # check variant of non-movable type
     assert_false(Variant[NonMovable].__moveinit__is_trivial)
+
+
+def test_variant_write_to():
+    var v = Variant[Int, String](42)
+    check_write_to(v, expected="42", is_repr=False)
+    v = "hello"
+    check_write_to(v, expected="hello", is_repr=False)
+
+
+def test_variant_write_repr_to():
+    var v = Variant[Int, String](42)
+    check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
+    v = "hello"
+    check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
 
 
 def main():

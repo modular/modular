@@ -16,9 +16,14 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from builtin.constrained import _constrained_conforms_to
+from format._utils import (
+    write_sequence_to,
+    TypeNames,
+    FormatStruct,
+    constrained_conforms_to_writable,
+)
 from sys.intrinsics import _type_is_eq
 
-from builtin.variadics import Variadic
 from reflection.type_info import _unqualified_type_name
 
 from utils._visualizers import lldb_formatter_wrapping_type
@@ -315,35 +320,24 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             writer: The writer to write to.
         """
 
-        @parameter
-        for i in range(Self.__len__()):
-            comptime T = Self.element_types[i]
-            _constrained_conforms_to[
-                conforms_to(T, Writable),
-                Parent=Self,
-                Element=T,
-                ParentConformsTo="Writable",
-            ]()
-
-        writer.write_string("(")
+        constrained_conforms_to_writable[*Self.element_types, Parent=Self]()
 
         @parameter
-        for i in range(Self.__len__()):
-
-            @parameter
-            if i != 0:
-                writer.write_string(", ")
-
+        fn elements[i: Int](mut writer: Some[Writer]):
             @parameter
             if is_repr:
                 trait_downcast[Writable](self[i]).write_repr_to(writer)
             else:
                 trait_downcast[Writable](self[i]).write_to(writer)
 
+        write_sequence_to[
+            size = Self.__len__(),
+            ElementFn=elements,
+        ](writer, open="", close="")
+
         @parameter
         if Self.__len__() == 1:
             writer.write_string(",")
-        writer.write_string(")")
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -355,7 +349,9 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         Args:
             writer: The writer to write to.
         """
+        writer.write_string("(")
         self._write_tuple_to[is_repr=False](writer)
+        writer.write_string(")")
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -368,17 +364,16 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
         Args:
             writer: The writer to write to.
         """
-        writer.write_string("Tuple[")
 
         @parameter
-        for i in range(Self.__len__()):
+        fn fields(mut w: Some[Writer]):
+            self._write_tuple_to[is_repr=True](w)
 
-            @parameter
-            if i != 0:
-                writer.write_string(", ")
-            writer.write_string(_unqualified_type_name[Self.element_types[i]]())
-        writer.write_string("]")
-        self._write_tuple_to[is_repr=True](writer)
+        FormatStruct(writer, "Tuple").params(
+            TypeNames[*Self.element_types]()
+        ).fields[
+            FieldsFn=fields,
+        ]()
 
     @always_inline
     fn _compare[

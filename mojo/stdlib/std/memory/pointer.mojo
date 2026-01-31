@@ -19,8 +19,7 @@ from memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named
-from reflection.type_info import _unqualified_type_name
+from format._utils import FormatStruct, Named, TypeNames
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -361,7 +360,7 @@ struct Pointer[
         """
         FormatStruct(writer, "Pointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 

@@ -39,12 +39,10 @@ what we publish.
   # instead of InlineArray[UInt8, 4](1, 2, 3, 4)
   ```
 
-- `Tuple` now conforms to `Writable`, implementing `write_to()` and
-  `write_repr_to()` methods. `write_to()` formats elements with their string
-  representation (e.g., `(1, hello, 3)`), while `write_repr_to()` includes the
-  type name and uses each element's repr
-  (e.g., `Tuple[Int, String](Int(1), 'hello')`). The `repr()` function also
-  now supports tuples.
+- The following types now conform to `Writable` and have custom implementations
+  of `write_to` and `write_repr_to`.
+  - `Tuple`
+  - `Variant`
 
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests

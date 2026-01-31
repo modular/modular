@@ -15,6 +15,11 @@
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
 from builtin.variadics import Variadic
+from format._utils import (
+    FormatStruct,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -23,7 +28,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: AnyType](ImplicitlyCopyable):
+struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -258,6 +263,54 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
+
+        @parameter
+        for i in range(Variadic.size(Self.Ts)):
+            comptime T = Self.Ts[i]
+            if self.isa[T]():
+                ref value = trait_downcast[Writable](self.unsafe_get[T]())
+
+                @parameter
+                if is_repr:
+                    value.write_repr_to(writer)
+                else:
+                    value.write_to(writer)
+
+                return
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the currently held variant value to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            All types in `Ts` must conform to Writable.
+        """
+        self._write_value_to[is_repr=False](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the Variant.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            All types in `Ts` must conform to Writable.
+        """
+
+        @parameter
+        fn write_field(mut w: Some[Writer]):
+            self._write_value_to[is_repr=True](w)
+
+        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields[
+            FieldsFn=write_field
+        ]()
 
     @always_inline("nodebug")
     fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:

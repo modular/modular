@@ -12,9 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from format._utils import write_sequence_to, FormatStruct, Named
+from format._utils import (
+    write_sequence_to,
+    FormatStruct,
+    Named,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from hashlib import Hasher, default_hasher
-from reflection.type_info import _unqualified_type_name
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 from builtin.constrained import _constrained_conforms_to
@@ -324,12 +329,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return output
 
     fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
+        constrained_conforms_to_writable[Self.T, Parent=Self]()
 
         var iterator = self.__iter__()
 
@@ -374,8 +374,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             self._write_self_to[is_repr=True](w)
 
         FormatStruct(writer, "Set").params(
-            _unqualified_type_name[Self.T](),
-            Named("Hasher", _unqualified_type_name[Self.H]()),
+            TypeNames[Self.T](),
+            Named("Hasher", TypeNames[Self.H]()),
         ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
