@@ -22,96 +22,26 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from utils import Index, IndexList
 
 
-struct PagedLookupTable[page_size: Int](Copyable):
-    comptime layout = Layout.row_major[2]()
-    comptime tensor_type = LayoutTensor[
-        DType.uint32,
-        Self.layout,
-        ImmutAnyOrigin,
-    ]
+struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
+    comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
 
-    var shape: IndexList[2]
-    var host_ptr: UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
-    var device_buf: Optional[DeviceBuffer[DType.uint32]]
+    var shape: IndexList[Self.rank]
+    var host_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    var device_buf: Optional[DeviceBuffer[Self.dtype]]
 
-    fn __init__(out self, batch_size: Int, max_full_context_length: Int) raises:
-        self.shape = Index(
-            batch_size, ceildiv(max_full_context_length, Self.page_size)
-        )
-        self.host_ptr = alloc[Scalar[DType.uint32]](
-            self.shape.flattened_length()
-        )
+    fn __init__(out self, shape: IndexList[Self.rank]):
+        self.shape = shape
+        self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
-
-    fn _build[
-        seq_len_fn: fn(batch: Int) capturing -> Int
-    ](
-        mut self,
-        batch_size: Int,
-        num_paged_blocks: Int,
-        ctx: Optional[DeviceContext] = None,
-    ) raises:
-        var host_tensor = LayoutTensor[DType.uint32, Self.layout](
-            self.host_ptr,
-            self._runtime_layout(),
-        )
-        var used_set = Set[Int]()
-
-        for batch in range(batch_size):
-            var seq_len = seq_len_fn(batch)
-
-            for block_idx in range(0, ceildiv(seq_len, Self.page_size)):
-                var randval = Int(random_ui64(0, num_paged_blocks - 1))
-                while randval in used_set:
-                    randval = Int(random_ui64(0, num_paged_blocks - 1))
-
-                used_set.add(randval)
-                host_tensor[batch, block_idx] = randval
-
-        if ctx:
-            var ctx_value = ctx.value()
-            self.device_buf = ctx_value.enqueue_create_buffer[DType.uint32](
-                self.shape.flattened_length()
-            )
-            ctx_value.enqueue_copy(self.device_buf.value(), self.host_ptr)
-
-    @staticmethod
-    fn build(
-        prompt_lens: List[Int],
-        cache_sizes: List[Int],
-        max_full_context_length: Int,
-        num_paged_blocks: Int,
-        ctx: Optional[DeviceContext],
-    ) raises -> Self:
-        @parameter
-        fn seq_len_fn(batch: Int) -> Int:
-            return cache_sizes[batch] + prompt_lens[batch]
-
-        var batch_size = len(prompt_lens)
-        var paged_lut = Self(batch_size, max_full_context_length)
-        paged_lut._build[seq_len_fn](batch_size, num_paged_blocks, ctx)
-        return paged_lut^
-
-    @staticmethod
-    fn build[
-        batch_size: Int
-    ](
-        prompt_lens: IndexList[batch_size],
-        cache_sizes: IndexList[batch_size],
-        max_full_context_length: Int,
-        num_paged_blocks: Int,
-        ctx: DeviceContext,
-    ) raises -> Self:
-        @parameter
-        fn seq_len_fn(batch: Int) -> Int:
-            return cache_sizes[batch] + prompt_lens[batch]
-
-        var paged_lut = Self(batch_size, max_full_context_length)
-        paged_lut._build[seq_len_fn](batch_size, num_paged_blocks, ctx)
-        return paged_lut^
 
     fn __del__(deinit self):
         self.host_ptr.free()
+
+    fn copy_to_device(mut self, ctx: DeviceContext) raises:
+        self.device_buf = ctx.enqueue_create_buffer[Self.dtype](
+            self.shape.flattened_length()
+        )
+        ctx.enqueue_copy(self.device_buf.value(), self.host_ptr)
 
     fn host_tensor(self) -> Self.tensor_type:
         return self._tensor(self.host_ptr)
@@ -123,6 +53,150 @@ struct PagedLookupTable[page_size: Int](Copyable):
         return RuntimeLayout[Self.layout].row_major(self.shape)
 
     fn _tensor(
-        self, ptr: UnsafePointer[Scalar[DType.uint32]]
+        self, ptr: UnsafePointer[Scalar[Self.dtype]]
     ) -> Self.tensor_type:
         return Self.tensor_type(ptr, self._runtime_layout())
+
+
+struct CacheLengthsTable(Copyable):
+    var cache_lengths: _KVCacheTestTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), 1
+    ]
+
+    var batch_size: Int
+    var max_full_context_length: Int
+    var max_seq_length_batch: Int
+
+    fn __init__(out self, batch_size: Int):
+        self.batch_size = batch_size
+        self.cache_lengths = type_of(self.cache_lengths)(Index(batch_size))
+        self.max_full_context_length = 0
+        self.max_seq_length_batch = 0
+
+    fn _build(
+        mut self,
+        prompt_lens: List[Int],
+        cache_lens: List[Int],
+        ctx: Optional[DeviceContext] = None,
+    ) raises:
+        var cache_lengths_host_ptr = self.cache_lengths.host_ptr
+        var total_length = 0
+        var max_full_context_length = 0
+        var max_seq_length_batch = 0
+
+        for batch, (prompt_len, cache_len) in enumerate(
+            zip(prompt_lens, cache_lens)
+        ):
+            cache_lengths_host_ptr[batch] = cache_len
+            max_full_context_length = max(
+                max_full_context_length, cache_len + prompt_len
+            )
+            max_seq_length_batch = max(max_seq_length_batch, prompt_len)
+            total_length += prompt_len
+
+        self.max_full_context_length = max_full_context_length
+        self.max_seq_length_batch = max_seq_length_batch
+
+        if ctx:
+            self.cache_lengths.copy_to_device(ctx.value())
+
+    @staticmethod
+    fn build(
+        prompt_lens: List[Int],
+        cache_lens: List[Int],
+        ctx: Optional[DeviceContext],
+    ) raises -> Self:
+        var batch_size = len(prompt_lens)
+        var cache_lengths_table = Self(batch_size)
+        cache_lengths_table._build(prompt_lens, cache_lens, ctx)
+        return cache_lengths_table^
+
+    fn host_tensor(self) -> type_of(self.cache_lengths).tensor_type:
+        return self.cache_lengths.host_tensor()
+
+    fn device_tensor(self) -> type_of(self.cache_lengths).tensor_type:
+        return self.cache_lengths.device_tensor()
+
+
+struct PagedLookupTable[page_size: Int](Copyable):
+    var paged_lut: _KVCacheTestTensor[DType.uint32, Layout.row_major[2](), 2]
+
+    fn __init__(out self, batch_size: Int, max_full_context_length: Int) raises:
+        self.paged_lut = type_of(self.paged_lut)(
+            Index(batch_size, ceildiv(max_full_context_length, Self.page_size))
+        )
+
+    fn _build(
+        mut self,
+        prompt_lens: List[Int],
+        cache_lens: List[Int],
+        num_paged_blocks: Int,
+        ctx: Optional[DeviceContext] = None,
+    ) raises:
+        var batch_size = len(prompt_lens)
+
+        var host_tensor = LayoutTensor[
+            DType.uint32, type_of(self.paged_lut).layout
+        ](
+            self.paged_lut.host_ptr,
+            self.paged_lut._runtime_layout(),
+        )
+        var used_set = Set[Int]()
+
+        for batch in range(batch_size):
+            var seq_len = prompt_lens[batch] + cache_lens[batch]
+
+            for block_idx in range(0, ceildiv(seq_len, Self.page_size)):
+                var randval = Int(random_ui64(0, num_paged_blocks - 1))
+                while randval in used_set:
+                    randval = Int(random_ui64(0, num_paged_blocks - 1))
+
+                used_set.add(randval)
+                host_tensor[batch, block_idx] = randval
+
+        if ctx:
+            self.paged_lut.copy_to_device(ctx.value())
+
+    @staticmethod
+    fn build(
+        prompt_lens: List[Int],
+        cache_lens: List[Int],
+        max_full_context_length: Int,
+        num_paged_blocks: Int,
+        ctx: Optional[DeviceContext],
+    ) raises -> Self:
+        var batch_size = len(prompt_lens)
+        var paged_lut = Self(batch_size, max_full_context_length)
+        paged_lut._build(prompt_lens, cache_lens, num_paged_blocks, ctx)
+        return paged_lut^
+
+    @staticmethod
+    fn build[
+        batch_size: Int
+    ](
+        prompt_lens: IndexList[batch_size],
+        cache_lens: IndexList[batch_size],
+        max_full_context_length: Int,
+        num_paged_blocks: Int,
+        ctx: DeviceContext,
+    ) raises -> Self:
+        @parameter
+        fn _to_list(idx_list: IndexList) -> List[Int]:
+            var list = List[Int](capacity=idx_list.size)
+            for i in range(idx_list.size):
+                list.append(idx_list[i])
+            return list^
+
+        return Self.build(
+            _to_list(prompt_lens),
+            _to_list(cache_lens),
+            max_full_context_length,
+            num_paged_blocks,
+            ctx,
+        )
+
+    fn host_tensor(self) -> type_of(self.paged_lut).tensor_type:
+        return self.paged_lut.host_tensor()
+
+    fn device_tensor(self) -> type_of(self.paged_lut).tensor_type:
+        return self.paged_lut.device_tensor()
