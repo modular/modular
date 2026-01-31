@@ -618,6 +618,9 @@ struct _FlashAttention[
         scale: Float32,
         sink_weight: Optional[Scalar[Self.dtype]] = None,
     ):
+        __comptime_assert (
+            Self.dtype.is_floating_point()
+        ), "dtype must be floating point"
         var qk_row_ptr = qk_block_ptr
         var o_row_ptr = o_block_ptr
 

@@ -29,7 +29,7 @@ fn generate_alibi_bias[
     q_idx: SIMD[DType.int, width],
     k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
-) -> SIMD[dtype, width]:
+) -> SIMD[dtype, width] where dtype.is_floating_point():
     var scale: SIMD[dtype, width]
 
     @parameter

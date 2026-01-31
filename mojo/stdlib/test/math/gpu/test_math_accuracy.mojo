@@ -86,7 +86,9 @@ def _test_exp2[
     run_elementwise[dtype, exp2](ctx, input)
 
 
-def _test_cosh[dtype: DType](ctx: DeviceContext):
+def _test_cosh[
+    dtype: DType
+](ctx: DeviceContext) where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     with input.map_to_host() as in_host:
         for i in range(length):
@@ -94,7 +96,9 @@ def _test_cosh[dtype: DType](ctx: DeviceContext):
     run_elementwise[dtype, cosh](ctx, input)
 
 
-def _test_sinh[dtype: DType](ctx: DeviceContext):
+def _test_sinh[
+    dtype: DType
+](ctx: DeviceContext) where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     with input.map_to_host() as in_host:
         for i in range(length):

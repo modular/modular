@@ -29,6 +29,16 @@ what we publish.
 
 ### Library changes
 
+- Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
+  `cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `acosh`, `asinh`, `atanh`,
+  `cosh`, `sinh`, `expm1`, `log10`, `log1p`, `logb`, `cbrt`, `erfc`, `j0`,
+  `j1`, `y0`, `y1`) now use `where dtype.is_floating_point()` clauses on their
+  signatures instead of `__comptime_assert` checks in their bodies.
+  This provides better compile-time error messages at the call site. Callers
+  using these functions with generic `dtype` parameters may need to add
+  evidence proving (either a `where` clause or `__comptime_assert`) that their
+  type is floating point.
+
 - Many kernels in `nn` have been migrated to use `TileTensor`. We will have
   more documentation on `TileTensor` and its uses over the coming weeks.
 

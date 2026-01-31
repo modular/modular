@@ -1896,6 +1896,9 @@ struct LayoutTensor[
         Returns:
             A new tensor containing the element-wise exponential.
         """
+        __comptime_assert (
+            Self.dtype.is_floating_point()
+        ), "dtype must be floating point"
 
         @parameter
         fn exp_func(val: Self.element_type) -> Self.element_type:

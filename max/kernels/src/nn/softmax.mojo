@@ -101,12 +101,18 @@ fn _exp_concrete(x: SIMD) -> type_of(x):
     of the exp function. This is necessary because exp uses the _Expable trait
     and mojo cannot disambiguate between the different exp functions otherwise.
     """
+    __comptime_assert (
+        x.dtype.is_floating_point()
+    ), "dtype must be floating point"
     return exp(x)
 
 
 @always_inline
 fn _exp2_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp2 function."""
+    __comptime_assert (
+        x.dtype.is_floating_point()
+    ), "dtype must be floating point"
     return exp2(x)
 
 
@@ -119,6 +125,7 @@ fn _softmax_2_pass_step1[
     simd_width: Int,
     dtype: DType,
 ](input: LayoutTensor[dtype, ...]) -> StaticTuple[Scalar[dtype], 2]:
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == 1
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
@@ -175,6 +182,7 @@ fn _softmax_2_pass_step2[
     running_max: Scalar[dtype],
     running_sum: Scalar[dtype],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == 1
     __comptime_assert output.rank == 1
     __comptime_assert input.layout.size() == output.layout.size()
@@ -231,6 +239,7 @@ fn softmax_2_pass[
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert input.rank == output.rank
     __comptime_assert input.rank == 1
 
@@ -470,6 +479,7 @@ fn softmax_3_pass[
     Args:
         output: The output buffer in which to store the softmax values.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert output.rank == 1
 
     @parameter
@@ -666,6 +676,10 @@ fn softmax_kernel[
         sink_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    __comptime_assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime axis = rank - 1
 
     var row_size = UInt(shape[axis])

@@ -797,7 +797,9 @@ fn multistage_dual_gemm_kernel[
 
 fn swilu[
     dtype: DType, width: Int
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     return (x * y) / (1 + exp(-x))
 
 

@@ -60,7 +60,9 @@ fn kernel_laneid(x: UnsafePointer[Int]):
     x[0] = Int(lane_id())
 
 
-fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):
+fn kernel_exp[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype]]) where dtype.is_floating_point():
     x[0] = exp(x[0])
 
 

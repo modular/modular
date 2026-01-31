@@ -47,6 +47,7 @@ def reference_attention_bshd[
     ],
     scale: Float32,
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
@@ -179,6 +180,7 @@ def reference_attention_bshd_with_sinks[
     scale: Float32,
 ):
     """Reference implementation of attention with sink weights."""
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
 
     comptime layout_4d = Layout.row_major[4]()
 

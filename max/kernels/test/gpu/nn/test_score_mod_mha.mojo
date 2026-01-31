@@ -53,6 +53,7 @@ fn generate_alibi_bias[
     k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     var scale: SIMD[dtype, width]
 
     @parameter
