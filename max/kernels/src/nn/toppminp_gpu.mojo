@@ -13,9 +13,6 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, bit_width_of
 
 from builtin.dtype import _uint_type_of_width
@@ -51,15 +48,15 @@ fn topk_wrapper[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T]],
+    in_buffer: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[T]
+        Scalar[T], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        Scalar[out_idx_type], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * K
-    p_threshold: UnsafePointer[Scalar[T]],
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    p_threshold: UnsafePointer[Scalar[T], MutAnyOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
 ):
     """
     Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
@@ -251,12 +248,14 @@ fn radix_sort_pairs_kernel[
     BLOCK_SIZE: Int = 256,  # found empirically
     NUM_BITS_PER_PASS: Int = 4,
 ](
-    input_keys_: UnsafePointer[Scalar[dtype]],  # modifies input
-    output_keys_: UnsafePointer[Scalar[dtype]],
-    input_key_ids_: UnsafePointer[Scalar[out_idx_type]],  # modifies input
-    output_key_ids_: UnsafePointer[Scalar[out_idx_type]],
+    input_keys_: UnsafePointer[Scalar[dtype], MutAnyOrigin],  # modifies input
+    output_keys_: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input_key_ids_: UnsafePointer[
+        Scalar[out_idx_type], MutAnyOrigin
+    ],  # modifies input
+    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
     num_keys: Int,
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
 ):
     """
     Radix pair sort kernel for (default) descending order.
@@ -470,7 +469,9 @@ fn radix_sort_pairs_kernel[
 
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
-    var _d_buffers: InlineArray[UnsafePointer[Scalar[Self.dtype]], 2]
+    var _d_buffers: InlineArray[
+        UnsafePointer[Scalar[Self.dtype], MutAnyOrigin], 2
+    ]
     var _selection: Int32
     var _size: Int
 
@@ -481,8 +482,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     fn __init__(
         out self,
-        current: UnsafePointer[Scalar[Self.dtype]],
-        alternate: UnsafePointer[Scalar[Self.dtype]],
+        current: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        alternate: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         size: Int,
     ):
         self._d_buffers = [current, alternate]
@@ -567,11 +568,11 @@ fn topp_minp_sampling_kernel[
     out_idx_type: DType,
     is_top_p: Bool,
 ](
-    p_thresholds_: UnsafePointer[Scalar[dtype]],
-    sorted_probs_: UnsafePointer[Scalar[dtype]],
-    sorted_ids_: UnsafePointer[Scalar[out_idx_type]],
-    out_token_ids: UnsafePointer[Scalar[out_idx_type]],
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    p_thresholds_: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    sorted_probs_: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
     vocab_size: Int,
 ):
     """
