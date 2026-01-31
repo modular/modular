@@ -28,7 +28,6 @@ from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
-from collections import OptionalReg
 from .config import (
     build_configs,
     build_configs_generic,
@@ -3398,7 +3397,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                         return DISPATCH_HIT
 
         @parameter
-        fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
+        fn get_k_groups[N: Int]() -> Optional[UInt]:
             @parameter
             if N == 1536:
                 return None
@@ -3406,7 +3405,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return UInt(1)
 
         @parameter
-        fn get_consumer_groups[N: Int]() -> OptionalReg[Int]:
+        fn get_consumer_groups[N: Int]() -> Optional[Int]:
             @parameter
             if N == 1536:
                 return 1

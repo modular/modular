@@ -21,8 +21,8 @@ from internal_utils import assert_almost_equal, assert_with_measure
 from random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
-from memory import LegacyUnsafePointer
 from collections import OptionalReg
+from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

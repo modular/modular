@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import ceildiv, isclose
 from random import randn
 from sys import argv, has_nvidia_gpu_accelerator
@@ -53,7 +52,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
     use_causal_mask: Bool = True,
 ](
@@ -813,7 +812,7 @@ fn test_prefill[
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int],
+    num_partitions: Optional[Int],
     split_k: Bool,
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,

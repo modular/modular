@@ -18,7 +18,6 @@ from sys import align_of, is_defined, simd_width_of
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -962,9 +961,7 @@ fn dual_gemm[
     *,
     transpose_b: Bool,
     binary_lambda_fn: binary_fn_type = swilu,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
