@@ -22,6 +22,7 @@ modular_run_binary_test(
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],  # Times out under ASAN
         "//conditions:default": [],
     }),  # FIXME long running on MacOS. MOCO-2412
 )
