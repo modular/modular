@@ -82,12 +82,12 @@ fn test_getitem_slice(a: WeirdArray, i: Int, j: Int, k: Int):
     _ = a[i:j]
 
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType #type_value,
-    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%none{{.*}}, %i, %j) :
+    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%none{{.*}}, %i, %j, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[:i:j]
 
     # CHECK: [[SLICE:%.*]] = lit.call {{.*}}@Slice::@"__init__{{.*}}<:!TrivialRegisterType !Int,
-    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%i, %j, %k) :
+    # CHECK-SAME: :!TrivialRegisterType !Int, :!TrivialRegisterType !Int>(%i, %j, %k, {{.*}}) :
     # CHECK-NEXT: lit.call {{.*}}@WeirdArray::@"__getitem__{{.*}}(%a, [[SLICE]])
     _ = a[i:j:k]
 

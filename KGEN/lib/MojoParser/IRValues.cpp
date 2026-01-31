@@ -65,8 +65,8 @@ static raw_ostream &printStorage(raw_ostream &os,
     if (isDump)
       os << "InitializerUValue";
     switch (cast<InitializerUValue>(storage).syntax) {
-    case InitializerUValue::kSlice:
-      os << "[Slice]:";
+    case InitializerUValue::kSliceLiteral:
+      os << "[SliceLiteral]:";
       break;
     case InitializerUValue::kListLiteral:
       os << "[ListLiteral]:";
@@ -436,9 +436,8 @@ ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
     return shared.getStandardCollectionType(loc, "Dict");
   case Syntax::kSetInitLiteral:
     return shared.getStandardCollectionType(loc, "Set");
-  /// slice is not a standalone type
-  case Syntax::kSlice:
-    return {};
+  case Syntax::kSliceLiteral:
+    return {}; // TODO: This could default to Slice.
   }
 }
 
@@ -449,7 +448,8 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
                                               IREmitter &emitter) const {
   CallOperands operands(get());
   switch (syntax) {
-  case Syntax::kSlice:
+  case Syntax::kSliceLiteral:
+    addEmptyTuple(operands, "__slice_literal__", emitter);
     break;
   case Syntax::kListLiteral:
     addEmptyTuple(operands, "__list_literal__", emitter);
@@ -562,7 +562,9 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 
   // Otherwise, handle defaulting.
   switch (syntax) {
-  case Syntax::kSlice:
+  case Syntax::kSliceLiteral:
+    // TODO: This could get more aggressive, looking through implicit
+    // conversions etc.
     emitter.emitError(get().callExpr->getLoc(),
                       "cannot emit slice expression without a contextual type");
     return {};

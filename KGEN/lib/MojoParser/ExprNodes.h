@@ -349,11 +349,11 @@ struct SubscriptNode final : public LValueCapableExprNode {
 ///
 /// All the elements of the syntax are optional (and thus may be null!) except
 /// for the first colon.
-struct SliceNode final : public ExprNode {
-  SliceNode(ExprNode *lower, SMLoc colon1Loc, ExprNode *upper, SMLoc colon2Loc,
-            ExprNode *stride)
-      : ExprNode(kSlice), lower(lower), colon1Loc(colon1Loc), upper(upper),
-        colon2Loc(colon2Loc), stride(stride) {}
+struct SliceLiteralNode final : public ExprNode {
+  SliceLiteralNode(ExprNode *lower, SMLoc colon1Loc, ExprNode *upper,
+                   SMLoc colon2Loc, ExprNode *stride)
+      : ExprNode(kSliceLiteral), lower(lower), colon1Loc(colon1Loc),
+        upper(upper), colon2Loc(colon2Loc), stride(stride) {}
 
   ExprNode *const lower;
   SMLoc colon1Loc;
@@ -361,7 +361,9 @@ struct SliceNode final : public ExprNode {
   SMLoc colon2Loc;
   ExprNode *const stride;
 
-  static bool classof(const ExprNode *node) { return node->kind == kSlice; }
+  static bool classof(const ExprNode *node) {
+    return node->kind == kSliceLiteral;
+  }
   SMLoc getLoc() const override { return colon1Loc; }
 
   SourceRange getRange() const override {

@@ -382,7 +382,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
           emitter.emitError(loc, "attribute spec requires a keyword parameter");
 
       // Jump through some hoops to emit a hint about using the old syntax.
-      if (auto *slice = dyn_cast<SliceNode>(valueExpr);
+      if (auto *slice = dyn_cast<SliceLiteralNode>(valueExpr);
           slice && slice->upper && !slice->colon2Loc.isValid()) {
         if (auto *kwRef = dyn_cast_or_null<DeclRefNode>(slice->lower))
           diag << "; did you mean '" << kwRef->spelling << "=...'?"
@@ -2676,7 +2676,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return {};
 }
 
-AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+AnyValue SliceLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   auto getOperand = [&](const ExprNode *expr) -> ASTExprAnd<AnyValue> {
     if (expr)
       return {emitter.emitExpr(expr, ExprContext::EC_SliceIndex), expr};
@@ -2695,8 +2695,8 @@ AnyValue SliceNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       !operands.values[2].ir)
     return {};
 
-  auto result =
-      InitializerUValue::create(InitializerUValue::kSlice, std::move(operands));
+  auto result = InitializerUValue::create(InitializerUValue::kSliceLiteral,
+                                          std::move(operands));
   return emitter.emitResult(result, this, dest);
 }
 

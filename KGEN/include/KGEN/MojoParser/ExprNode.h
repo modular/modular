@@ -64,6 +64,7 @@ public:
     kAttributeRef,      // x.y
     kParen,             // (x+y)
     kTuple,             // (), (x,), (x, y), etc
+    kSliceLiteral,      // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kListLiteral,       // [x, y]
     kDictLiteral,       // {a: 1, b: 2, **dictUnpack}
     kSetInitLiteral,    // {x, y} and {z=4, "foo"}
@@ -73,7 +74,6 @@ public:
     kCall,              // thing(a, b)
     kSubscript,         // thing[a, b:c]
     kSubscriptArrow,    // thing[x, y -> a, b]
-    kSlice,             // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kChainedCmp,        // a < b <= c
     kFunctionType,      // async fn[](owned Int, &F32) capturing raises -> F64
 

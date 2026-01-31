@@ -51,6 +51,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Paren";
   case ExprNode::kTuple:
     return "Tuple";
+  case ExprNode::kSliceLiteral:
+    return "SliceLiteral";
   case ExprNode::kListLiteral:
     return "ListLiteral";
   case ExprNode::kDictLiteral:
@@ -69,8 +71,6 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Subscript";
   case ExprNode::kSubscriptArrow:
     return "SubscriptArrow";
-  case ExprNode::kSlice:
-    return "Slice";
   case ExprNode::kChainedCmp:
     return "ChainedCmp";
   case ExprNode::kFunctionType:
@@ -328,8 +328,8 @@ static void printNullableExpr(raw_indented_ostream &os, const ExprNode *expr) {
     expr->print(os);
 }
 
-void SliceNode::print(raw_indented_ostream &os) const {
-  os << "Slice {\n";
+void SliceLiteralNode::print(raw_indented_ostream &os) const {
+  os << "SliceLiteral {\n";
   os.indent() << "lower: ";
   printNullableExpr(os, lower);
   os << "upper: ";
