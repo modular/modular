@@ -62,16 +62,24 @@ struct CacheLengthsTable(Copyable):
     var cache_lengths: _KVCacheTestTensor[
         DType.uint32, Layout(UNKNOWN_VALUE), 1
     ]
+    var input_row_offsets: _KVCacheTestTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), 1
+    ]
 
     var batch_size: Int
     var max_full_context_length: Int
     var max_seq_length_batch: Int
+    var total_length: Int
 
     fn __init__(out self, batch_size: Int):
         self.batch_size = batch_size
         self.cache_lengths = type_of(self.cache_lengths)(Index(batch_size))
+        self.input_row_offsets = type_of(self.input_row_offsets)(
+            Index(batch_size + 1)
+        )
         self.max_full_context_length = 0
         self.max_seq_length_batch = 0
+        self.total_length = 0
 
     fn _build(
         mut self,
@@ -79,26 +87,34 @@ struct CacheLengthsTable(Copyable):
         cache_lens: List[Int],
         ctx: Optional[DeviceContext] = None,
     ) raises:
-        var cache_lengths_host_ptr = self.cache_lengths.host_ptr
-        var total_length = 0
+        var cache_lengths_ptr = self.cache_lengths.host_ptr
+        var input_row_offsets_ptr = self.input_row_offsets.host_ptr
+
         var max_full_context_length = 0
         var max_seq_length_batch = 0
+        var total_length = 0
 
         for batch, (prompt_len, cache_len) in enumerate(
             zip(prompt_lens, cache_lens)
         ):
-            cache_lengths_host_ptr[batch] = cache_len
+            cache_lengths_ptr[batch] = cache_len
+            input_row_offsets_ptr[batch] = total_length
+
             max_full_context_length = max(
                 max_full_context_length, cache_len + prompt_len
             )
             max_seq_length_batch = max(max_seq_length_batch, prompt_len)
             total_length += prompt_len
 
+        input_row_offsets_ptr[self.batch_size] = total_length
+
         self.max_full_context_length = max_full_context_length
         self.max_seq_length_batch = max_seq_length_batch
+        self.total_length = total_length
 
         if ctx:
             self.cache_lengths.copy_to_device(ctx.value())
+            self.input_row_offsets.copy_to_device(ctx.value())
 
     @staticmethod
     fn build(
@@ -110,12 +126,6 @@ struct CacheLengthsTable(Copyable):
         var cache_lengths_table = Self(batch_size)
         cache_lengths_table._build(prompt_lens, cache_lens, ctx)
         return cache_lengths_table^
-
-    fn host_tensor(self) -> type_of(self.cache_lengths).tensor_type:
-        return self.cache_lengths.host_tensor()
-
-    fn device_tensor(self) -> type_of(self.cache_lengths).tensor_type:
-        return self.cache_lengths.device_tensor()
 
 
 struct PagedLookupTable[page_size: Int](Copyable):

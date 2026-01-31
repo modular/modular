@@ -27,7 +27,7 @@ from testing import assert_almost_equal
 
 from utils import IndexList
 
-from kv_cache_test_utils import PagedLookupTable
+from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 
 def execute_ragged_flash_attention(
@@ -52,75 +52,28 @@ def execute_ragged_flash_attention(
 
     var batch_size = len(true_ce_prompt_lens)
 
-    # Allocate host memory for row offsets and cache lengths
-    var true_ce_row_offsets_host_ptr = UnsafePointer[
-        Scalar[DType.uint32]
-    ].alloc(batch_size + 1)
-    var true_ce_cache_lengths_host_ptr = UnsafePointer[
-        Scalar[DType.uint32]
-    ].alloc(batch_size)
-    var mixed_ce_row_offsets_host_ptr = UnsafePointer[
-        Scalar[DType.uint32]
-    ].alloc(batch_size + 1)
-    var mixed_ce_cache_lengths_host_ptr = UnsafePointer[
-        Scalar[DType.uint32]
-    ].alloc(batch_size)
-
-    var true_ce_total_length = 0
-    var mixed_ce_total_length = 0
-    var true_ce_max_full_context_length = 0
-    var mixed_ce_max_full_context_length = 0
-    var true_ce_max_prompt_length = 0
-    var mixed_ce_max_prompt_length = 0
-    for i in range(batch_size):
-        true_ce_row_offsets_host_ptr[i] = true_ce_total_length
-        mixed_ce_row_offsets_host_ptr[i] = mixed_ce_total_length
-        true_ce_cache_lengths_host_ptr[i] = true_ce_cache_lens[i]
-        mixed_ce_cache_lengths_host_ptr[i] = mixed_ce_cache_lens[i]
-
-        true_ce_max_full_context_length = max(
-            true_ce_max_full_context_length,
-            true_ce_cache_lens[i] + true_ce_prompt_lens[i],
-        )
-        mixed_ce_max_full_context_length = max(
-            mixed_ce_max_full_context_length,
-            mixed_ce_cache_lens[i] + mixed_ce_prompt_lens[i],
-        )
-
-        true_ce_max_prompt_length = max(
-            true_ce_max_prompt_length, true_ce_prompt_lens[i]
-        )
-        mixed_ce_max_prompt_length = max(
-            mixed_ce_max_prompt_length, mixed_ce_prompt_lens[i]
-        )
-
-        true_ce_total_length += true_ce_prompt_lens[i]
-        mixed_ce_total_length += mixed_ce_prompt_lens[i]
-
-    true_ce_row_offsets_host_ptr[batch_size] = true_ce_total_length
-    mixed_ce_row_offsets_host_ptr[batch_size] = mixed_ce_total_length
-
-    # Create device buffers for row offsets and cache lengths
-    var true_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
+    var true_ce_cache_lengths_table = CacheLengthsTable.build(
+        true_ce_prompt_lens, true_ce_cache_lens, ctx
     )
-    var mixed_ce_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
+    var mixed_ce_cache_lengths_table = CacheLengthsTable.build(
+        mixed_ce_prompt_lens, mixed_ce_cache_lens, ctx
     )
-    var true_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+
+    var true_ce_total_length = true_ce_cache_lengths_table.total_length
+    var mixed_ce_total_length = mixed_ce_cache_lengths_table.total_length
+    var true_ce_max_full_context_length = (
+        true_ce_cache_lengths_table.max_full_context_length
     )
-    var mixed_ce_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var mixed_ce_max_full_context_length = (
+        mixed_ce_cache_lengths_table.max_full_context_length
     )
-    ctx.enqueue_copy(true_ce_row_offsets_device, true_ce_row_offsets_host_ptr)
-    ctx.enqueue_copy(mixed_ce_row_offsets_device, mixed_ce_row_offsets_host_ptr)
-    ctx.enqueue_copy(
-        true_ce_cache_lengths_device, true_ce_cache_lengths_host_ptr
+    var true_ce_max_prompt_length = (
+        true_ce_cache_lengths_table.max_seq_length_batch
     )
-    ctx.enqueue_copy(
-        mixed_ce_cache_lengths_device, mixed_ce_cache_lengths_host_ptr
+    var mixed_ce_max_prompt_length = (
+        mixed_ce_cache_lengths_table.max_seq_length_batch
     )
+
     # Q ragged tensors
     comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
@@ -160,6 +113,13 @@ def execute_ragged_flash_attention(
                 mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
             )
         ),
+    )
+
+    true_ce_row_offsets_host_ptr = (
+        true_ce_cache_lengths_table.input_row_offsets.host_ptr
+    )
+    mixed_ce_row_offsets_host_ptr = (
+        mixed_ce_cache_lengths_table.input_row_offsets.host_ptr
     )
 
     var head_stride = num_q_heads * Int(kv_params.head_size)
@@ -258,24 +218,14 @@ def execute_ragged_flash_attention(
     ctx.enqueue_copy(kv_block_paged_device, kv_block_paged_host_ptr)
 
     # Create device LayoutTensors for KV cache
-    comptime cache_len_layout = Layout(UNKNOWN_VALUE)
     var kv_block_runtime = RuntimeLayout[kv_layout].row_major(kv_shape)
-    var true_ce_cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
-        IndexList[1](batch_size)
-    )
-    var mixed_ce_cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
-        IndexList[1](batch_size)
-    )
 
     true_ce_kv_collection_device = PagedCollectionType(
         LayoutTensor[type, kv_layout, MutAnyOrigin](
             kv_block_paged_device.unsafe_ptr(),
             kv_block_runtime,
         ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            true_ce_cache_lengths_device.unsafe_ptr(),
-            true_ce_cache_len_runtime,
-        ),
+        true_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
         true_ce_max_prompt_length,
         true_ce_max_full_context_length,
@@ -286,23 +236,13 @@ def execute_ragged_flash_attention(
             kv_block_paged_device.unsafe_ptr(),
             kv_block_runtime,
         ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            mixed_ce_cache_lengths_device.unsafe_ptr(),
-            mixed_ce_cache_len_runtime,
-        ),
+        mixed_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
         mixed_ce_max_prompt_length,
         mixed_ce_max_full_context_length,
     )
 
     # Create device LayoutTensors for flash_attention
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    var true_ce_row_offsets_runtime = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(IndexList[1](batch_size + 1))
-    var mixed_ce_row_offsets_runtime = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(IndexList[1](batch_size + 1))
     var true_ce_q_runtime = RuntimeLayout[q_layout].row_major(
         IndexList[3](
             true_ce_total_length, num_q_heads, Int(kv_params.head_size)
@@ -329,10 +269,7 @@ def execute_ragged_flash_attention(
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        LayoutTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin](
-            true_ce_row_offsets_device.unsafe_ptr(),
-            true_ce_row_offsets_runtime,
-        ),
+        true_ce_cache_lengths_table.input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -353,14 +290,10 @@ def execute_ragged_flash_attention(
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
         IdentityScoreMod(),
-        LayoutTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin](
-            mixed_ce_row_offsets_device.unsafe_ptr(),
-            mixed_ce_row_offsets_runtime,
-        ),
+        mixed_ce_cache_lengths_table.input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
-    ctx.synchronize()
     ctx.enqueue_copy(mixed_ce_output_host_ptr, mixed_ce_output_device)
     ctx.enqueue_copy(true_ce_output_host_ptr, true_ce_output_device)
     ctx.synchronize()
@@ -398,10 +331,6 @@ def execute_ragged_flash_attention(
                         raise e^
 
     # Cleanup host memory
-    true_ce_row_offsets_host_ptr.free()
-    true_ce_cache_lengths_host_ptr.free()
-    mixed_ce_row_offsets_host_ptr.free()
-    mixed_ce_cache_lengths_host_ptr.free()
     true_ce_q_ragged_host_ptr.free()
     mixed_ce_q_ragged_host_ptr.free()
     mixed_ce_output_host_ptr.free()
@@ -409,10 +338,6 @@ def execute_ragged_flash_attention(
     kv_block_paged_host_ptr.free()
 
     # Cleanup device buffers
-    _ = true_ce_row_offsets_device^
-    _ = mixed_ce_row_offsets_device^
-    _ = true_ce_cache_lengths_device^
-    _ = mixed_ce_cache_lengths_device^
     _ = true_ce_q_ragged_device^
     _ = mixed_ce_q_ragged_device^
     _ = mixed_ce_output_device^
@@ -420,6 +345,8 @@ def execute_ragged_flash_attention(
     _ = kv_block_paged_device^
 
     # Cleanup managed objects.
+    _ = true_ce_cache_lengths_table^
+    _ = mixed_ce_cache_lengths_table^
     _ = paged_lut^
 
 

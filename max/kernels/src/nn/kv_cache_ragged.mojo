@@ -3596,7 +3596,6 @@ fn generic_kv_cache_radd_dispatch[
 
 fn kv_cache_store_ragged[
     cache_t: KVCacheT,
-    input_row_offsets_layout: Layout,
     //,
     target: StaticString,
     input_fn: fn[width: Int, alignment: Int](
@@ -3606,7 +3605,7 @@ fn kv_cache_store_ragged[
     cache: cache_t,
     input_shape: IndexList[3],
     input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, MutAnyOrigin
+        DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     context: Optional[DeviceContext],
 ) raises:
