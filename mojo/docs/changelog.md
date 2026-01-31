@@ -124,3 +124,7 @@ what we publish.
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
+
+- [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
+  `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back
+  element-wise now returns correct values.
