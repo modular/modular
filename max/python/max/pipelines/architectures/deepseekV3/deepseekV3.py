@@ -114,10 +114,6 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
-        if self.ep_manager is None and num_devices > 1:
-            raise ValueError(
-                "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
-            )
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
