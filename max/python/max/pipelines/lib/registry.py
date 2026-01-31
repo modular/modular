@@ -50,7 +50,7 @@ from .audio_generator_pipeline import AudioGeneratorPipeline
 from .config_enums import PipelineRole, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
-from .interfaces import ArchConfig, PipelineModel
+from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -174,6 +174,8 @@ class SupportedArchitecture:
                 },
                 pipeline_model=MyModel,
                 tokenizer=TextTokenizer,
+                context_type=TextContext,
+                config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
                 rope_type=RopeType.none,
                 weight_adapters={
@@ -217,8 +219,14 @@ class SupportedArchitecture:
     or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
     """
 
-    config: ArchConfig | None = None
-    """The architecture-specific configuration for the model."""
+    config: type[ArchConfig]
+    """The architecture-specific configuration class for the model.
+
+    This class must implement the :obj:`ArchConfig` protocol, providing an
+    :obj:`initialize` method that creates a configuration instance from a
+    :obj:`PipelineConfig`. For models with KV cache, this should be a class
+    implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
+    """
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
@@ -588,9 +596,14 @@ class PipelineRegistry:
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        # Use ArchConfigWithKVCache if available for max_seq_len
+        if issubclass(arch.config, ArchConfigWithKVCache):
+            arch_config = arch.config.initialize(pipeline_config)
+            max_length = arch_config.get_max_seq_len()
+        else:
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
         if (
@@ -657,9 +670,8 @@ class PipelineRegistry:
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        arch_config = arch.config.initialize(pipeline_config)
+        max_length = arch_config.get_max_seq_len()
 
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix

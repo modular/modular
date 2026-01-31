@@ -24,6 +24,22 @@ class Qwen3EmbeddingConfig(ArchConfig):
 
     pipeline_config: PipelineConfig
 
+    def get_max_seq_len(self) -> int:
+        # Use configured max_length, bounded by model's max_position_embeddings
+        huggingface_config = self.pipeline_config.model.huggingface_config
+        model_max = getattr(
+            huggingface_config, "max_position_embeddings", 32768
+        )
+        configured_max = self.pipeline_config.max_length or 8192
+
+        if configured_max > model_max:
+            raise ValueError(
+                f"Configured max_length ({configured_max}) exceeds model's "
+                f"max_position_embeddings ({model_max})"
+            )
+
+        return configured_max
+
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
         return cls(pipeline_config=pipeline_config)

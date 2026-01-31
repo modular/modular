@@ -1058,15 +1058,27 @@ class PipelineConfig(ConfigFileModel):
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        arch_config = arch.config.initialize(self)
+
         MemoryEstimator.estimate_memory_footprint(
             self,
-            arch.pipeline_model,
             model_config,
+            arch_config,
             devices,
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            arch.pipeline_model, self, model_config, devices
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
+            model_config,
+            devices,
+            arch_config,
         ):
             if self.max_length is None:
                 self.max_length = clamped_max_seq_len

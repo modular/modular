@@ -110,6 +110,9 @@ def test_arch_config_protocol_check() -> None:
         def initialize(cls, pipeline_config: PipelineConfig) -> TestConfig:
             return cls()
 
+        def get_max_seq_len(self) -> int:
+            return 2048
+
     assert isinstance(TestConfig(), ArchConfig)
 
 
