@@ -105,7 +105,7 @@ fn get_type_name[
     Returns:
         Type name.
     """
-    __comptime_assert is_struct_type[type](), "The type should be a Mojo struct"
+    __comptime_assert is_struct_type[type](), "`get_type_name` requires a Mojo struct type, got a non-struct type"
     var res = __mlir_attr[
         `#kgen.get_type_name<`,
         type,
