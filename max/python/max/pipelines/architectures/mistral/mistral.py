@@ -107,4 +107,5 @@ class Mistral(Transformer):
             kv_params=config.kv_params,
             rope=rope,
             return_logits=config.return_logits,
+            return_hidden_states=config.return_hidden_states,
         )

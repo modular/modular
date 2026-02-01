@@ -35,7 +35,7 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -106,6 +106,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         super().__init__(
@@ -118,6 +119,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
         # Override the huggingface_config to use the text huggingface_config if provided
         if text_huggingface_config is not None:
@@ -138,21 +140,39 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
-        if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Buffer)
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[1],
-                logit_offsets=model_outputs[2],
+
+        next_token_logits = model_outputs[0]
+        logits = next_token_logits
+        logit_offsets = None
+        hidden_states = None
+
+        # Debug: Log the actual outputs length when hidden states are expected
+        if self.return_hidden_states != ReturnHiddenStates.NONE and len(model_outputs) <= 1:
+            import logging
+            logger = logging.getLogger("max.pipelines")
+            logger.warning(
+                f"MistralModel.execute: Expected hidden states (return_hidden_states={self.return_hidden_states}), "
+                f"but model_outputs length is {len(model_outputs)}. "
+                f"return_logits={self.return_logits}"
             )
+
+        if self.return_logits == ReturnLogits.LAST_TOKEN:
+            if len(model_outputs) > 1:
+                hidden_states = tuple(model_outputs[1:])
         else:
-            assert isinstance(model_outputs[0], Buffer)
-            return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
-            )
+            # Expecting logits and offsets
+            if len(model_outputs) >= 3:
+                logits = model_outputs[1]
+                logit_offsets = model_outputs[2]
+                if len(model_outputs) > 3:
+                    hidden_states = tuple(model_outputs[3:])
+
+        return ModelOutputs(
+            next_token_logits=next_token_logits,
+            logits=logits,
+            logit_offsets=logit_offsets,
+            hidden_states=hidden_states,
+        )
 
     def prepare_initial_token_inputs(
         self,
@@ -337,6 +357,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
             self.pipeline_config, self.huggingface_config
         )
         model_config.return_logits = self.return_logits
+        model_config.return_hidden_states = self.return_hidden_states
 
         # Get Graph Inputs
         graph_inputs = self.graph_inputs()
