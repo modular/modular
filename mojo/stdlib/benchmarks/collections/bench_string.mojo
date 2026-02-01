@@ -561,12 +561,12 @@ def main():
             m.bench_function[bench_string_replace_no_match[length, fname]](
                 BenchId(String("bench_string_replace_no_match", suffix))
             )
-            m.bench_function[
-                bench_string_replace_grow[length, fname, old]
-            ](BenchId(String("bench_string_replace_grow", suffix)))
-            m.bench_function[
-                bench_string_replace_shrink[length, fname, old_w]
-            ](BenchId(String("bench_string_replace_shrink", suffix)))
+            m.bench_function[bench_string_replace_grow[length, fname, old]](
+                BenchId(String("bench_string_replace_grow", suffix))
+            )
+            m.bench_function[bench_string_replace_shrink[length, fname, old_w]](
+                BenchId(String("bench_string_replace_shrink", suffix))
+            )
             m.bench_function[bench_string_count_codepoints[length, fname]](
                 BenchId(String("bench_string_count_codepoints", suffix))
             )

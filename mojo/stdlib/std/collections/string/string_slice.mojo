@@ -1347,9 +1347,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # match per `idx + old_len` bytes.
         var estimated_matches = self_len // max(idx + old_len, 1)
         var size_delta = new_len - old_len
-        var res = String(
-            capacity=self_len + size_delta * estimated_matches
-        )
+        var res = String(capacity=self_len + size_delta * estimated_matches)
         var current_pos = 0
 
         while idx != -1:
