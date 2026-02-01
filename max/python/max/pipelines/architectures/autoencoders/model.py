@@ -12,16 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, Optional, TypeVar
 
 from max import functional as F
 from max.driver import Device
+from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.tensor import Tensor
 
 from .model_config import AutoencoderKLConfigBase
+from .vae import DiagonalGaussianDistribution
 
 TConfig = TypeVar("TConfig", bound=AutoencoderKLConfigBase)
 
@@ -56,30 +59,134 @@ class BaseAutoencoderModel(ComponentModel):
         super().__init__(config, encoding, devices, weights)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
+        self.encoder_model: Optional[object] = None  # Compiled encoder model
+        self.quant_conv_model: Optional[object] = None  # Compiled quant_conv model
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
-        """Load and compile the decoder model.
+        """Load and compile the decoder and encoder models.
 
-        Extracts decoder weights from the full model weights and compiles
-        the decoder for inference.
+        Extracts decoder weights (decoder.*, post_quant_conv.*) and encoder weights
+        (encoder.*, quant_conv.*) from the full model weights and compiles them
+        for inference. Encoder is optional (only loaded if weights exist).
 
         Returns:
-            Compiled model callable.
+            Compiled decoder model callable.
         """
-        state_dict = {
-            key.removeprefix("decoder."): value.data()
-            for key, value in self.weights.items()
-            if not key.startswith("encoder.")
-        }
+        # Prepare decoder weights
+        decoder_state_dict = {}
+
+        # Prepare encoder weights
+        encoder_state_dict = {}
+        quant_conv_state_dict = {}
+
+        for key, value in self.weights.items():
+            if key.startswith("decoder."):
+                # Remove "decoder." prefix for decoder weights
+                decoder_state_dict[key.removeprefix("decoder.")] = value.data()
+            elif key.startswith("post_quant_conv."):
+                # Keep post_quant_conv prefix as-is (used by decoder)
+                decoder_state_dict[key] = value.data()
+            elif key.startswith("encoder."):
+                # Remove "encoder." prefix for encoder weights
+                encoder_state_dict[key.removeprefix("encoder.")] = value.data()
+            elif key.startswith("quant_conv."):
+                # Keep quant_conv prefix as-is (used by encoder)
+                quant_conv_state_dict[key] = value.data()
+
         with F.lazy():
             autoencoder = self.autoencoder_class(self.config)
-            autoencoder.decoder.to(self.devices[0])
 
-        self.model = autoencoder.decoder.compile(
-            *autoencoder.decoder.input_types(), weights=state_dict
-        )
+            # Compile decoder (always needed)
+            autoencoder.decoder.to(self.devices[0])
+            self.model = autoencoder.decoder.compile(
+                *autoencoder.decoder.input_types(), weights=decoder_state_dict
+            )
+
+            # Compile encoder (optional, only if weights exist)
+            if encoder_state_dict and hasattr(autoencoder, "encoder"):
+                autoencoder.encoder.to(self.devices[0])
+                self.encoder_model = autoencoder.encoder.compile(
+                    *autoencoder.encoder.input_types(), weights=encoder_state_dict
+                )
+
+            # Compile quant_conv (optional, only if weights exist and encoder exists)
+            # Note: quant_conv is typically integrated into the encoder output,
+            # but we compile it separately for flexibility
+            if (
+                quant_conv_state_dict
+                and hasattr(autoencoder, "quant_conv")
+                and autoencoder.quant_conv is not None
+                and self.encoder_model is not None
+            ):
+                # quant_conv is a Conv2d layer, compile it separately
+                # Create a simple wrapper module for quant_conv
+                class QuantConvModule(Module[[Tensor], Tensor]):
+                    def __init__(self, quant_conv):
+                        super().__init__()
+                        self.quant_conv = quant_conv
+
+                    def forward(self, x: Tensor) -> Tensor:
+                        return self.quant_conv(x)
+
+                quant_conv_module = QuantConvModule(autoencoder.quant_conv)
+                quant_conv_module.to(self.devices[0])
+                # quant_conv input: [B, 2*latent_channels, H_latent, W_latent]
+                # (same as encoder output)
+                quant_conv_input_type = TensorType(
+                    self.config.dtype,
+                    shape=[
+                        "batch_size",
+                        2 * self.config.latent_channels,
+                        "latent_height",
+                        "latent_width",
+                    ],
+                    device=DeviceRef.from_device(self.devices[0]),
+                )
+                self.quant_conv_model = quant_conv_module.compile(
+                    quant_conv_input_type, weights=quant_conv_state_dict
+                )
+
         return self.model
+
+    def encode(
+        self, sample: Tensor, return_dict: bool = True
+    ) -> dict[str, DiagonalGaussianDistribution] | DiagonalGaussianDistribution:
+        """Encode images to latent distribution using compiled encoder.
+
+        Args:
+            sample: Input image tensor of shape [N, C_in, H, W].
+            return_dict: If True, returns a dictionary with "latent_dist" key.
+                If False, returns DiagonalGaussianDistribution directly.
+
+        Returns:
+            If return_dict=True: Dictionary with "latent_dist" key containing
+                DiagonalGaussianDistribution.
+            If return_dict=False: DiagonalGaussianDistribution directly.
+
+        Raises:
+            ValueError: If encoder is not loaded.
+        """
+        if self.encoder_model is None:
+            raise ValueError(
+                "Encoder not loaded. Check if encoder weights exist in the model."
+            )
+
+        # 1. Encode image through encoder
+        h = self.encoder_model(sample)  # [B, 2*latent_channels, H_latent, W_latent]
+
+        # 2. Apply quant_conv if available
+        if self.quant_conv_model is not None:
+            moments = self.quant_conv_model(h)
+        else:
+            moments = h
+
+        # 3. Create DiagonalGaussianDistribution
+        posterior = DiagonalGaussianDistribution(moments)
+
+        if return_dict:
+            return {"latent_dist": posterior}
+        return posterior
 
     def decode(self, *args, **kwargs) -> Tensor:
         """Decode latents to images using compiled decoder.
@@ -96,7 +203,7 @@ class BaseAutoencoderModel(ComponentModel):
     def __call__(self, *args, **kwargs) -> Tensor:
         """Call the decoder model to decode latents to images.
 
-        This method provides a consistent interface with other MaxModel
+        This method provides a consistent interface with other ComponentModel
         implementations. It is an alias for decode().
 
         Args:
