@@ -1342,10 +1342,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         if idx == -1:
             return String(self)
 
-        # When the replacement is longer, estimate extra capacity to reduce
-        # reallocations. We assume ~4 matches as a reasonable heuristic.
-        var extra = max(0, new_len - old_len) * 4
-        var res = String(capacity=self_len + extra)
+        # Estimate capacity using the position of the first match to infer
+        # match density: if the first match is at `idx`, assume roughly one
+        # match per `idx + old_len` bytes.
+        var estimated_matches = self_len // max(idx + old_len, 1)
+        var size_delta = new_len - old_len
+        var res = String(
+            capacity=self_len + size_delta * estimated_matches
+        )
         var current_pos = 0
 
         while idx != -1:
