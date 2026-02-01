@@ -452,7 +452,19 @@ struct SharedMemBarrier(TrivialRegisterType):
         origin=origin,
         address_space = AddressSpace.SHARED,
     ]:
-        """Get an unsafe pointer to the barrier's memory location (immutable origin)."""
+        """Get an unsafe pointer to the barrier's memory location (immutable origin).
+
+        Provides low-level access to the shared memory location storing the barrier state.
+        This method is primarily used internally by other barrier operations that need
+        direct access to the underlying memory.
+
+        Parameters:
+            origin: Origin of self (must be immutable).
+
+        Returns:
+            An unsafe pointer to the barrier's memory location in shared memory,
+            properly typed and aligned for barrier operations.
+        """
         return UnsafePointer[Int64, ImmutAnyOrigin, address_space=AddressSpace.SHARED](
             to=self.mbar
         ).unsafe_origin_cast[origin]()
@@ -467,7 +479,19 @@ struct SharedMemBarrier(TrivialRegisterType):
         origin=origin,
         address_space = AddressSpace.SHARED,
     ]:
-        """Get an unsafe pointer to the barrier's memory location (mutable origin)."""
+        """Get an unsafe pointer to the barrier's memory location (mutable origin).
+
+        Provides low-level access to the shared memory location storing the barrier state.
+        This method is primarily used internally by other barrier operations that need
+        direct access to the underlying memory.
+
+        Parameters:
+            origin: Origin of self (must be mutable).
+
+        Returns:
+            An unsafe pointer to the barrier's memory location in shared memory,
+            properly typed and aligned for barrier operations.
+        """
         return UnsafePointer[Int64, MutAnyOrigin, address_space=AddressSpace.SHARED](
             to=self.mbar
         ).unsafe_origin_cast[origin]()
