@@ -26,10 +26,12 @@ from linalg.arch.cpu.vnni_intrinsics import (
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
 from memory import (
+    UnsafePointer as NewUnsafePointer,
     LegacyUnsafePointer,
     bitcast,
     stack_allocation,
 )
+from builtin.rebind import rebind
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from runtime.asyncrt import parallelism_level
@@ -1066,7 +1068,12 @@ fn _matmul_qint4_m_1[
                 ak_scale_ptr += 1
                 bk_ptr += tile_n * simd_width * bytes_per_group_int4
 
-            c_float.store(c.ptr + c._offset(Index(0, n)), N)
+            c_float.store(
+                rebind[NewUnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+                    NewUnsafePointer(c.ptr + c._offset(Index(0, n)))
+                ),
+                N,
+            )
 
             @parameter
             if elementwise_lambda_fn:
@@ -1193,7 +1200,14 @@ fn _matmul_qint4_m_any[
                     if ko == 0:
                         c_float.init()
                     else:
-                        c_float.load(c_ptr, N)
+                        c_float.load(
+                            rebind[
+                                NewUnsafePointer[
+                                    Scalar[DType.float32], MutAnyOrigin
+                                ]
+                            ](NewUnsafePointer(c_ptr)),
+                            N,
+                        )
 
                     var bk_s8_ptr = b_s8_buf
                     var bk_scale_ptr = b_scale_buf
@@ -1215,7 +1229,14 @@ fn _matmul_qint4_m_any[
                         bk_scale_ptr += tile_n * simd_width
                         bk_correction_ptr += tile_n * simd_width
 
-                    c_float.store(c_ptr, N)
+                    c_float.store(
+                        rebind[
+                            NewUnsafePointer[
+                                Scalar[DType.float32], MutAnyOrigin
+                            ]
+                        ](NewUnsafePointer(c_ptr)),
+                        N,
+                    )
 
                     # we only need to call the epilogue for the last iteration,
                     # otherwise we give intermediate results.
