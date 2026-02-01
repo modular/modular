@@ -7567,12 +7567,12 @@ struct Struct_moe_create_indices:
         context: DeviceContextPtr,
     ) raises:
         moe_create_indices[target=target](
-            token_expert_order.to_layout_tensor(),
-            expert_start_indices.to_layout_tensor(),
-            restore_token_order.to_layout_tensor(),
-            expert_ids.to_layout_tensor(),
-            expert_usage_stats.to_layout_tensor(),
-            topk_ids.to_layout_tensor(),
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -7620,10 +7620,10 @@ struct Struct_moe_router_group_limited:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_layout_tensor(),
-            expert_weights.to_layout_tensor(),
-            expert_scores.to_layout_tensor().get_immutable(),
-            expert_bias.to_layout_tensor().get_immutable(),
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )

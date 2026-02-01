@@ -14,9 +14,8 @@
 from collections import OptionalReg
 
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer, stack_allocation
+from memory import stack_allocation
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os.atomic import Atomic
 from sys.info import simd_width_of
 
@@ -33,7 +32,9 @@ from gpu import (
 )
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor, stack_allocation as tensor_alloc
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 
@@ -49,41 +50,91 @@ from nn.topk import TopK_2
 fn moe_create_indices_kernel[
     input_type: DType,
     num_threads: Int,
-    token_expert_order_layout: Layout,
-    expert_start_indices_layout: Layout,
-    restore_token_order_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_usage_stats_layout: Layout,
-    indices_padded_layout: Layout,
-    padded_input_layout: Layout,
-    topk_ids_layout: Layout,
+    token_expert_order_shape_types: Variadic.TypesOfTrait[CoordLike],
+    token_expert_order_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_start_indices_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_start_indices_stride_types: Variadic.TypesOfTrait[CoordLike],
+    restore_token_order_shape_types: Variadic.TypesOfTrait[CoordLike],
+    restore_token_order_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_ids_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_ids_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_usage_stats_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_usage_stats_stride_types: Variadic.TypesOfTrait[CoordLike],
+    indices_padded_shape_types: Variadic.TypesOfTrait[CoordLike],
+    indices_padded_stride_types: Variadic.TypesOfTrait[CoordLike],
+    padded_input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    padded_input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    topk_ids_shape_types: Variadic.TypesOfTrait[CoordLike],
+    topk_ids_stride_types: Variadic.TypesOfTrait[CoordLike],
 ](
-    token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
+    token_expert_order: TileTensor[
+        mut=True,
+        shape_types=token_expert_order_shape_types,
+        stride_types=token_expert_order_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
+    expert_start_indices: TileTensor[
+        mut=True,
+        shape_types=expert_start_indices_shape_types,
+        stride_types=expert_start_indices_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
+    restore_token_order: TileTensor[
+        mut=True,
+        shape_types=restore_token_order_shape_types,
+        stride_types=restore_token_order_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
+    expert_ids: TileTensor[
+        mut=True,
+        shape_types=expert_ids_shape_types,
+        stride_types=expert_ids_stride_types,
+        DType.int32,
+        MutAnyOrigin,
     ],
-    expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
+    expert_usage_stats: TileTensor[
+        mut=True,
+        shape_types=expert_usage_stats_shape_types,
+        stride_types=expert_usage_stats_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    indices_padded: LayoutTensor[
-        mut=True, DType.uint32, indices_padded_layout, MutAnyOrigin
+    indices_padded: TileTensor[
+        mut=True,
+        shape_types=indices_padded_shape_types,
+        stride_types=indices_padded_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    topk_ids_padded: LayoutTensor[
-        mut=True, input_type, padded_input_layout, MutAnyOrigin
+    topk_ids_padded: TileTensor[
+        mut=True,
+        shape_types=padded_input_shape_types,
+        stride_types=padded_input_stride_types,
+        input_type,
+        MutAnyOrigin,
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
+    topk_ids: TileTensor[
+        shape_types=topk_ids_shape_types,
+        stride_types=topk_ids_stride_types,
+        input_type,
+        MutAnyOrigin,
+    ],
 ):
+    __comptime_assert topk_ids.rank == 1
+    __comptime_assert expert_ids.rank == 1
+    __comptime_assert indices_padded.rank == 1
+    __comptime_assert topk_ids_padded.rank == 1
+    __comptime_assert expert_start_indices.rank == 1
+    __comptime_assert token_expert_order.rank == 1
+    __comptime_assert restore_token_order.rank == 1
+    __comptime_assert expert_usage_stats.rank == 1
+
     comptime indices_type = DType.uint32
-    var num_tokens: Int = Int(topk_ids.runtime_layout.shape[0])
-    var num_tokens_padded: Int = Int(indices_padded.runtime_layout.shape[0])
+    var num_tokens: Int = Int(topk_ids.layout.shape[0].value())
+    var num_tokens_padded: Int = Int(indices_padded.layout.shape[0].value())
     var num_tokens_per_thread = ceildiv(num_tokens_padded, num_threads)
     var thd_tok_idx = thread_idx.x * UInt(num_tokens_per_thread)
 
@@ -102,12 +153,25 @@ fn moe_create_indices_kernel[
     # Use Bitonic sort algorithm to sort expert IDs and their corresponding token indices.
     @always_inline
     fn bitonic_sort_step[
-        indices_layout: Layout, input_layout: Layout
+        indices_shape_types: Variadic.TypesOfTrait[CoordLike],
+        indices_stride_types: Variadic.TypesOfTrait[CoordLike],
+        input_shape_types: Variadic.TypesOfTrait[CoordLike],
+        input_stride_types: Variadic.TypesOfTrait[CoordLike],
     ](
-        indices: LayoutTensor[
-            mut=True, DType.uint32, indices_layout, MutAnyOrigin
+        indices: TileTensor[
+            mut=True,
+            shape_types=indices_shape_types,
+            stride_types=indices_stride_types,
+            DType.uint32,
+            MutAnyOrigin,
         ],
-        input: LayoutTensor[mut=True, input_type, input_layout, MutAnyOrigin],
+        input: TileTensor[
+            mut=True,
+            shape_types=input_shape_types,
+            stride_types=input_stride_types,
+            input_type,
+            MutAnyOrigin,
+        ],
         n: Int,
         step: Int,
         stage: Int,
@@ -119,8 +183,10 @@ fn moe_create_indices_kernel[
         swapping them based on the direction of the current stage.
 
         Parameters:
-            indices_layout: Layout of the indices tensor.
-            input_layout: Layout of the input tensor.
+            indices_shape_types: Shape types of the indices tensor layout.
+            indices_stride_types: Stride types of the indices tensor layout.
+            input_shape_types: Shape types of the input tensor layout.
+            input_stride_types: Stride types of the input tensor layout.
 
         Args:
             indices: Token indices to be sorted alongside input values.
@@ -130,6 +196,9 @@ fn moe_create_indices_kernel[
             stage: Current stage size (power of 2), determines sort direction.
             i: Index of the current element.
         """
+        __comptime_assert input.rank == 1
+        __comptime_assert indices.rank == 1
+
         if i >= n:
             return
 
@@ -176,7 +245,7 @@ fn moe_create_indices_kernel[
         stage *= 2
 
     # fill the expert_offsets array with sentinel value
-    var num_experts = Int(expert_start_indices.runtime_layout.shape[0])
+    var num_experts = Int(expert_start_indices.layout.shape[0].value())
     var num_experts_per_thread = ceildiv(num_experts, num_threads)
     for i in range(num_experts_per_thread):
         var expert_id = thread_idx.x * UInt(num_experts_per_thread) + UInt(i)
@@ -286,10 +355,13 @@ fn _count_expert_tokens[
     //,
     expected_count: Int,
 ](
-    topk_ids: LayoutTensor[input_type, ...],
-    smem: LayoutTensor[mut=True, DType.uint32, ...],
+    topk_ids: TileTensor[input_type, ...],
+    smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
+    __comptime_assert topk_ids.rank == 2
+    __comptime_assert smem.rank == 2
+
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
 
@@ -305,7 +377,7 @@ fn _count_expert_tokens[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.aligned_load[width=width](0, idx)
+            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -358,7 +430,7 @@ fn _count_expert_tokens[
 
 @always_inline
 fn _get_index_and_offset(
-    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin],
+    lock: TileTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
 ) -> Tuple[UInt32, UInt32]:
     var expert_idx_and_offsets: UInt32 = 0
@@ -389,13 +461,17 @@ fn _copy_tokens_smem_to_gmem[
     //,
     expected_count: Int,
 ](
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
-    smem: LayoutTensor[DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
+    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
+    smem: TileTensor[DType.uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
+    __comptime_assert smem.rank == 2
+    __comptime_assert token_expert_order.rank == 1
+    __comptime_assert restore_token_order.rank == 1
+
     var g_offset_copy = g_offset
     comptime width = bg_params.width
 
@@ -413,14 +489,16 @@ fn _copy_tokens_smem_to_gmem[
         bg_params.start_idx, rounded_smem_reads, bg_params.reads_per_iteration
     ):
         if smem_idx + width <= Int(smem_writes):
-            var source_vector = smem.aligned_load[width=width](0, smem_idx)
+            var source_vector = smem.load[width=width](
+                Coord(Idx(0), Idx(smem_idx))
+            )
 
             @parameter
             for i in range(width):
                 token_expert_order[
                     g_offset_copy + smem_idx + i
                 ] = source_vector[i]
-                restore_token_order[source_vector[i]] = (
+                restore_token_order[Int(source_vector[i])] = (
                     g_offset_copy + smem_idx + i
                 )
 
@@ -429,13 +507,15 @@ fn _copy_tokens_smem_to_gmem[
     g_offset_copy += UInt32(start_idx)
 
     if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        token_expert_order[Int(g_offset_copy + UInt32(thread_idx.x))] = rebind[
-            SIMD[DType.uint32, token_expert_order.element_size]
-        ](smem[0, start_idx + thread_idx.x])
+        var smem_val = smem[0, start_idx + thread_idx.x]
+        token_expert_order.store(
+            Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
+            smem_val,
+        )
 
-        restore_token_order[
-            smem[0, start_idx + thread_idx.x]
-        ] = g_offset_copy + UInt32(thread_idx.x)
+        restore_token_order[Int(smem_val)] = g_offset_copy + UInt32(
+            thread_idx.x
+        )
 
 
 @always_inline
@@ -445,14 +525,18 @@ fn _copy_tokens_to_gmem[
     //,
     expected_count: Int,
 ](
-    topk_ids: LayoutTensor[input_type, ...],
-    smem: LayoutTensor[DType.uint32, ...],
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
+    topk_ids: TileTensor[input_type, ...],
+    smem: TileTensor[DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
+    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
     total_writes: UInt64,
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
+    __comptime_assert topk_ids.rank == 2
+    __comptime_assert token_expert_order.rank == 1
+    __comptime_assert restore_token_order.rank == 1
+
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
 
@@ -470,7 +554,7 @@ fn _copy_tokens_to_gmem[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.aligned_load[width=width](0, idx)
+            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -529,32 +613,70 @@ fn _copy_tokens_to_gmem[
 )
 fn moe_create_indices_bucket_group_kernel[
     input_type: DType,
-    token_expert_order_layout: Layout,
-    expert_start_indices_layout: Layout,
-    restore_token_order_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_usage_stats_layout: Layout,
-    topk_ids_layout: Layout,
+    token_expert_order_shape_types: Variadic.TypesOfTrait[CoordLike],
+    token_expert_order_stride_types: Variadic.TypesOfTrait[CoordLike],
+    lock_shape_types: Variadic.TypesOfTrait[CoordLike],
+    lock_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_start_indices_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_start_indices_stride_types: Variadic.TypesOfTrait[CoordLike],
+    restore_token_order_shape_types: Variadic.TypesOfTrait[CoordLike],
+    restore_token_order_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_ids_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_ids_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_usage_stats_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_usage_stats_stride_types: Variadic.TypesOfTrait[CoordLike],
+    topk_ids_shape_types: Variadic.TypesOfTrait[CoordLike],
+    topk_ids_stride_types: Variadic.TypesOfTrait[CoordLike],
     num_threads: Int = WARP_SIZE,
     expected_count: Int = 8192,
 ](
-    token_expert_order: LayoutTensor[
-        mut=True, DType.uint32, token_expert_order_layout, MutAnyOrigin
+    token_expert_order: TileTensor[
+        mut=True,
+        shape_types=token_expert_order_shape_types,
+        stride_types=token_expert_order_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    lock: LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin],
-    expert_start_indices: LayoutTensor[
-        mut=True, DType.uint32, expert_start_indices_layout, MutAnyOrigin
+    lock: TileTensor[
+        shape_types=lock_shape_types,
+        stride_types=lock_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    restore_token_order: LayoutTensor[
-        mut=True, DType.uint32, restore_token_order_layout, MutAnyOrigin
+    expert_start_indices: TileTensor[
+        mut=True,
+        shape_types=expert_start_indices_shape_types,
+        stride_types=expert_start_indices_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    expert_ids: LayoutTensor[
-        mut=True, DType.int32, expert_ids_layout, MutAnyOrigin
+    restore_token_order: TileTensor[
+        mut=True,
+        shape_types=restore_token_order_shape_types,
+        stride_types=restore_token_order_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
     ],
-    expert_usage_stats: LayoutTensor[
-        mut=True, DType.uint32, expert_usage_stats_layout, MutAnyOrigin
+    expert_ids: TileTensor[
+        mut=True,
+        shape_types=expert_ids_shape_types,
+        stride_types=expert_ids_stride_types,
+        DType.int32,
+        MutAnyOrigin,
     ],
-    topk_ids: LayoutTensor[input_type, topk_ids_layout, MutAnyOrigin],
+    expert_usage_stats: TileTensor[
+        mut=True,
+        shape_types=expert_usage_stats_shape_types,
+        stride_types=expert_usage_stats_stride_types,
+        DType.uint32,
+        MutAnyOrigin,
+    ],
+    topk_ids: TileTensor[
+        shape_types=topk_ids_shape_types,
+        stride_types=topk_ids_stride_types,
+        input_type,
+        MutAnyOrigin,
+    ],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -591,28 +713,32 @@ fn moe_create_indices_bucket_group_kernel[
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 
+    __comptime_assert token_expert_order.rank == 1
+    __comptime_assert lock.rank == 1
+    __comptime_assert expert_start_indices.rank == 1
+    __comptime_assert restore_token_order.rank == 1
+    __comptime_assert expert_ids.rank == 1
+    __comptime_assert expert_usage_stats.rank == 1
+    __comptime_assert topk_ids.rank == 2
+
     __comptime_assert num_threads in (
         32,
         64,
     ), "Only support 32 or 64 threads per warp"
 
     comptime BucketParamsType = _BucketGroupParams[num_threads, input_type]
-    comptime SmemVectorType = LayoutTensor[
-        DType.uint32,
-        Layout.row_major(1, expected_count),
-        MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
 
     # Allocate shared memory for temporary storage of matching token indices
-    var smem = SmemVectorType.stack_allocation()
+    # alignment=128,
+    var smem = tensor_alloc[DType.uint32, address_space = AddressSpace.SHARED](
+        row_major[1, expected_count]()
+    )
 
     __comptime_assert (
         expected_count % BucketParamsType.width == 0
     ), "Expected count must be a multiple of the simd width"
 
-    var bucket_group_params = BucketParamsType(topk_ids.dim(1))
+    var bucket_group_params = BucketParamsType(Int(topk_ids.dim(1)))
 
     # count tokens per expert and store as many we can in shared memory
     var total_writes = _count_expert_tokens[expected_count](
@@ -672,12 +798,12 @@ fn moe_create_indices[
     target: StaticString,
     expected_count: Int = 8192,
 ](
-    token_expert_order: LayoutTensor[mut=True, DType.uint32, ...],
-    expert_start_indices: LayoutTensor[mut=True, DType.uint32, ...],
-    restore_token_order: LayoutTensor[mut=True, DType.uint32, ...],
-    expert_ids: LayoutTensor[mut=True, DType.int32, ...],
-    expert_usage_stats: LayoutTensor[mut=True, DType.uint32, ...],
-    topk_ids: LayoutTensor[input_type, ...],
+    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
+    expert_start_indices: TileTensor[mut=True, DType.uint32, ...],
+    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
+    expert_ids: TileTensor[mut=True, DType.int32, ...],
+    expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
+    topk_ids: TileTensor[input_type, ...],
     context: DeviceContextPtr,
 ) raises:
     __comptime_assert is_gpu[
@@ -691,17 +817,11 @@ fn moe_create_indices[
     ):
         var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
         lock_buffer.enqueue_fill(0)
-        var lock = LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutAnyOrigin
-        ](lock_buffer.unsafe_ptr())
+        var lock = TileTensor(lock_buffer.unsafe_ptr(), row_major[1]())
 
-        comptime topk_layout = Layout.row_major(1, UNKNOWN_VALUE)
-
-        var topk_2D = LayoutTensor[input_type, topk_layout, MutAnyOrigin](
-            rebind[UnsafePointer[Scalar[input_type]]](topk_ids.ptr),
-            RuntimeLayout[topk_layout].row_major(
-                IndexList[2](1, topk_ids.dim(0))
-            ),
+        var topk_2D = TileTensor(
+            topk_ids.ptr,
+            row_major(Coord(Idx(1), Idx(Int(topk_ids.dim(0))))),
         )
 
         var num_experts = expert_ids.dim(0)
@@ -711,18 +831,26 @@ fn moe_create_indices[
         ](2)
         expert_usage_stats_host.enqueue_fill(0)
         cuda_ctx.enqueue_copy[DType.uint32](
-            rebind[UnsafePointer[UInt32]](expert_usage_stats.ptr),
+            expert_usage_stats.ptr,
             expert_usage_stats_host,
         )
 
         comptime kernel = moe_create_indices_bucket_group_kernel[
             input_type,
-            token_expert_order.layout,
-            expert_start_indices.layout,
-            restore_token_order.layout,
-            expert_ids.layout,
-            expert_usage_stats.layout,
-            topk_layout,
+            token_expert_order.shape_types,
+            token_expert_order.stride_types,
+            lock.shape_types,
+            lock.stride_types,
+            expert_start_indices.shape_types,
+            expert_start_indices.stride_types,
+            restore_token_order.shape_types,
+            restore_token_order.stride_types,
+            expert_ids.shape_types,
+            expert_ids.stride_types,
+            expert_usage_stats.shape_types,
+            expert_usage_stats.stride_types,
+            topk_2D.shape_types,
+            topk_2D.stride_types,
             expected_count=expected_count,
         ]
 
@@ -813,10 +941,14 @@ fn _warp_bitonic_sort[
 fn group_limited_router_kernel[
     scores_type: DType,
     bias_type: DType,
-    expert_indices_layout: Layout,
-    expert_weights_layout: Layout,
-    expert_scores_layout: Layout,
-    expert_bias_layout: Layout,
+    expert_indices_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_indices_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_weights_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_weights_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_scores_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_scores_stride_types: Variadic.TypesOfTrait[CoordLike],
+    expert_bias_shape_types: Variadic.TypesOfTrait[CoordLike],
+    expert_bias_stride_types: Variadic.TypesOfTrait[CoordLike],
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     n_groups: Int,
@@ -827,16 +959,32 @@ fn group_limited_router_kernel[
         fn[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: LayoutTensor[
-        DType.int32, expert_indices_layout, MutAnyOrigin
+    expert_indices: TileTensor[
+        mut=True,
+        shape_types=expert_indices_shape_types,
+        stride_types=expert_indices_stride_types,
+        DType.int32,
+        MutAnyOrigin,
     ],
-    expert_weights: LayoutTensor[
-        scores_type, expert_weights_layout, MutAnyOrigin
+    expert_weights: TileTensor[
+        mut=True,
+        shape_types=expert_weights_shape_types,
+        stride_types=expert_weights_stride_types,
+        scores_type,
+        MutAnyOrigin,
     ],
-    expert_scores: LayoutTensor[
-        scores_type, expert_scores_layout, ImmutAnyOrigin
+    expert_scores: TileTensor[
+        shape_types=expert_scores_shape_types,
+        stride_types=expert_scores_stride_types,
+        scores_type,
+        ImmutAnyOrigin,
     ],
-    expert_bias: LayoutTensor[bias_type, expert_bias_layout, ImmutAnyOrigin],
+    expert_bias: TileTensor[
+        shape_types=expert_bias_shape_types,
+        stride_types=expert_bias_stride_types,
+        bias_type,
+        ImmutAnyOrigin,
+    ],
     routed_scaling_factor: Float32,
 ):
     """
@@ -847,17 +995,21 @@ fn group_limited_router_kernel[
     to the scores during the selection process, but the final weights will not
     include the bias.
     """
+    __comptime_assert expert_indices.rank == 2
+    __comptime_assert expert_weights.rank == 2
+    __comptime_assert expert_scores.rank == 2
+    __comptime_assert expert_bias.rank == 1
 
     __comptime_assert (
-        expert_scores.shape[1]() == n_routed_experts
-    ), "expert_scores.shape[1] must be equal to n_routed_experts"
+        expert_scores.static_shape[1] == n_routed_experts
+    ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
 
     __comptime_assert (
-        expert_indices.shape[1]() == n_experts_per_tok
-    ), "expert_indices.shape[1] must be equal to n_experts_per_tok"
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
     __comptime_assert (
-        expert_weights.shape[1]() == n_experts_per_tok
-    ), "expert_weights.shape[1] must be equal to n_experts_per_tok"
+        expert_weights.static_shape[1] == n_experts_per_tok
+    ), "expert_weights.static_shape[1] must be equal to n_experts_per_tok"
 
     comptime group_size = n_routed_experts // n_groups
     __comptime_assert (
@@ -888,7 +1040,7 @@ fn group_limited_router_kernel[
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
-    var thread_expert_bias = expert_bias.load[width=1](IndexList[1](tid)).cast[
+    var thread_expert_bias = expert_bias.load[width=1](Coord(Idx(tid))).cast[
         scores_type
     ]()
 
@@ -900,7 +1052,9 @@ fn group_limited_router_kernel[
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](token_idx, tid)
+            thread_expert_score = expert_scores.load[width=1](
+                (Idx(token_idx), Idx(tid))
+            )
 
         thread_expert_score += thread_expert_bias
         var thd_topk2 = TopK_2(u=thread_expert_score, p=tid)
@@ -970,7 +1124,7 @@ fn group_limited_router_kernel[
                 original_weight = (
                     global_topk_result.u
                     - expert_bias.load[width=1](
-                        IndexList[1](global_topk_result.p)
+                        Coord(Idx(global_topk_result.p))
                     ).cast[scores_type]()
                 )
 
@@ -986,9 +1140,9 @@ fn group_limited_router_kernel[
 
             if tid < n_experts_per_tok:
                 expert_indices.store(
-                    token_idx, tid, Int32(global_topk_result.p)
+                    (Idx(token_idx), Idx(tid)), Int32(global_topk_result.p)
                 )
-                expert_weights.store(token_idx, tid, original_weight)
+                expert_weights[token_idx, tid] = original_weight
 
 
 @always_inline
@@ -1006,10 +1160,10 @@ fn router_group_limited[
         fn[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: LayoutTensor[mut=True, DType.int32, ...],
-    expert_weights: LayoutTensor[mut=True, scores_type, ...],
-    expert_scores: LayoutTensor[scores_type, ...],
-    expert_bias: LayoutTensor[bias_type, ...],
+    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    expert_scores: TileTensor[scores_type, ...],
+    expert_bias: TileTensor[bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContextPtr,
 ) raises:
@@ -1061,10 +1215,14 @@ fn router_group_limited[
         comptime kernel = group_limited_router_kernel[
             scores_type,
             bias_type,
-            expert_indices.layout,
-            expert_weights.layout,
-            expert_scores.layout,
-            expert_bias.layout,
+            expert_indices.shape_types,
+            expert_indices.stride_types,
+            expert_weights.shape_types,
+            expert_weights.stride_types,
+            expert_scores.shape_types,
+            expert_scores.stride_types,
+            expert_bias.shape_types,
+            expert_bias.stride_types,
             n_routed_experts,
             n_experts_per_tok,
             n_groups,

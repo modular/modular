@@ -13,9 +13,12 @@
 
 
 from gpu.host import DeviceContext, HostBuffer
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx
 from layout._fillers import random
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.moe import moe_create_indices
+from random import rand
 from testing import assert_equal
 
 from utils import IndexList
@@ -173,53 +176,44 @@ fn test_moe_create_indices[
         token_expert_order_length
     )
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE)
-
-    var token_expert_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
+    var token_expert_order = TileTensor(
         token_expert_order_buffer_device,
-        RuntimeLayout[layout].row_major(
-            IndexList[1](token_expert_order_length)
-        ),
+        row_major(Idx(token_expert_order_length)),
     )
 
-    var expert_start_indices = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
-        expert_start_indices_buffer.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](num_experts + 1)),
+    var expert_start_indices = TileTensor(
+        expert_start_indices_buffer,
+        row_major(Idx(num_experts + 1)),
     )
 
-    var restore_token_order = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
-        restore_token_order_buffer.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(
-            IndexList[1](token_expert_order_length)
-        ),
+    var restore_token_order = TileTensor(
+        restore_token_order_buffer,
+        row_major(Idx(token_expert_order_length)),
     )
 
-    var expert_ids = LayoutTensor[DType.int32, layout, MutAnyOrigin](
-        expert_ids_buffer.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](num_experts)),
+    var expert_ids = TileTensor(
+        expert_ids_buffer,
+        row_major(Idx(num_experts)),
     )
 
-    var expert_usage_stats = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
-        expert_usage_stats_buffer.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](2)),
+    var expert_usage_stats = TileTensor(
+        expert_usage_stats_buffer,
+        row_major(Idx(2)),
     )
 
-    var top_k = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
-        top_k_buffer_device.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(
-            IndexList[1](token_expert_order_length)
-        ),
+    var top_k = TileTensor(
+        top_k_buffer_device,
+        row_major(Idx(token_expert_order_length)),
     )
 
-    var top_k_host = LayoutTensor[DType.uint32, layout, MutAnyOrigin](
+    var top_k_host = TileTensor(
         top_k_buffer_host.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(
-            IndexList[1](token_expert_order_length)
-        ),
+        row_major(Idx(token_expert_order_length)),
     )
 
     ctx.synchronize()
 
+    # Fill top_k_host with random expert IDs
     random(top_k_host, min=0, max=num_experts)
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
