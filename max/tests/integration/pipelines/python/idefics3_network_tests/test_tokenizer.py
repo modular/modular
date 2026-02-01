@@ -15,6 +15,7 @@
 
 import io
 
+import hf_repo_lock
 import pytest
 from max.interfaces import (
     RequestID,
@@ -26,13 +27,15 @@ from max.pipelines.lib import SupportedEncoding
 from PIL import Image
 from test_common.mocks import DummyPipelineConfig
 
+IDEFICS3_REPO_ID = "HuggingFaceM4/Idefics3-8B-Llama3"
+IDEFICS3_REVISION = hf_repo_lock.revision_for_hf_repo(IDEFICS3_REPO_ID)
+
 
 @pytest.mark.asyncio
 async def test_idefics3_tokenizer_image_token_indices() -> None:
     """Test that the tokenizer correctly computes image token indices."""
-
     pipeline_config = DummyPipelineConfig(
-        model_path="HuggingFaceM4/Idefics3-8B-Llama3",
+        model_path=IDEFICS3_REPO_ID,
         max_batch_size=None,
         max_length=None,
         quantization_encoding=SupportedEncoding.float32,
@@ -42,7 +45,9 @@ async def test_idefics3_tokenizer_image_token_indices() -> None:
     assert pipeline_config.model.huggingface_config is not None
     pipeline_config.model.huggingface_config.image_token_id = 128257
     tokenizer = Idefics3Tokenizer(
-        "HuggingFaceM4/Idefics3-8B-Llama3", pipeline_config=pipeline_config
+        IDEFICS3_REPO_ID,
+        pipeline_config=pipeline_config,
+        revision=IDEFICS3_REVISION,
     )
     assert tokenizer.vision_token_ids == [128257]
     assert tokenizer.enable_prefix_caching is True
@@ -68,7 +73,7 @@ async def test_idefics3_tokenizer_image_token_indices() -> None:
         ],
         images=[test_image],
         request_id=RequestID("test-id"),
-        model_name="HuggingFaceM4/Idefics3-8B-Llama3",
+        model_name=IDEFICS3_REPO_ID,
     )
 
     context = await tokenizer.new_context(request)
