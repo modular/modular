@@ -14,24 +14,12 @@
 from random import random_float64
 
 from gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout._coord import Coord, Idx
+from layout._coord import Coord
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
-from layout.int_tuple import fill_like
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
-
 from utils.index import IndexList
 
 
@@ -71,12 +59,12 @@ fn test_argmaxmin_gpu[
         out_size *= out_shape[i]
 
     # Allocate host memory
-    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var in_host_ptr = alloc[Scalar[dtype]](in_size)
     var in_host = TileTensor(
         in_host_ptr,
         row_major(Coord(in_shape)),
     )
-    var out_idxs_host_ptr = UnsafePointer[Scalar[output_type]].alloc(out_size)
+    var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
     var out_idxs_host = TileTensor(
         out_idxs_host_ptr,
         row_major(Coord(out_shape)),
@@ -91,15 +79,14 @@ fn test_argmaxmin_gpu[
 
     ctx.enqueue_copy(device_in, in_host_ptr)
 
-    # Create device LayoutTensors
-    comptime layout = Layout.row_major[rank]()
-    var device_in_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
+    # Create device TileTensors
+    var device_in_tensor = TileTensor(
         device_in.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(in_shape),
+        row_major(Coord(in_shape)),
     )
-    var device_out_tensor = LayoutTensor[output_type, layout, MutAnyOrigin](
+    var device_out_tensor = TileTensor(
         device_out_idxs.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(out_shape),
+        row_major(Coord(out_shape)),
     )
 
     @parameter
@@ -120,8 +107,8 @@ fn test_argmaxmin_gpu[
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(out_size)
-    var out_idxs_cpu = TileTensor[DType.int64, layout](
+    var out_idxs_cpu_ptr = alloc[Scalar[DType.int64]](out_size)
+    var out_idxs_cpu = TileTensor(
         out_idxs_cpu_ptr,
         row_major(Coord(out_shape)),
     )

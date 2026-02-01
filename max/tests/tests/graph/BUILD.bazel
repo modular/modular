@@ -11,11 +11,18 @@ _MULTI_VERSION_TEST_SRCS = [
     "test_graph.py",
 ]
 
+# TODO(GEX-3155): Tests that timeout on macOS
+_MACOS_INCOMPATIBLE_TESTS = [
+    "ops/test_argsort.py",
+    "ops/test_layer_norm.py",
+    "ops/elementwise/test_is_nan.py",
+]
+
 modular_py_test(
     name = "tests",
     srcs = glob(
         ["**/*.py"],
-        exclude = _MULTI_VERSION_TEST_SRCS,
+        exclude = _MULTI_VERSION_TEST_SRCS + _MACOS_INCOMPATIBLE_TESTS,
     ),
     data = [
         "//max/tests/integration:test_user_op",
@@ -48,6 +55,41 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Tests that timeout on macOS - run only on non-macOS platforms
+modular_py_test(
+    name = "macos_incompatible_tests",
+    srcs = _MACOS_INCOMPATIBLE_TESTS + ["conftest.py"],
+    data = ["//max/tests/tests/graph/testdata"],
+    env = {
+        "MODULAR_PATH": ".",
+        "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
+    },
+    ignore_extra_deps = [
+        # Needed for KernelLibrary initialization (GEX-1846)
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:MOGGKernelAPI",
+        "@mojo//:std",
+    ],
+    # TODO(GEX-3155): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 

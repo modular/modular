@@ -36,9 +36,12 @@ from internal_utils._utils import (
     static,
 )
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.matmul.gpu.sm100.config import MatmulConfig, BlockScaledMatmulConfig
-from linalg.grouped_matmul_sm100_1d1d import (
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized,
+from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_1d1d_nvfp4,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from memory import LegacyUnsafePointer
@@ -419,7 +422,7 @@ fn bench_grouped_matmul[
                         k_group_size=1,
                         num_accum_pipeline_stages=2,
                     )
-                    blackwell_block_scaled_matmul_tma_umma_warp_specialized[
+                    grouped_matmul_1d1d_nvfp4[
                         transpose_b=transpose_b,
                         config=config,
                     ](

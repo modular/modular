@@ -152,7 +152,7 @@ fn flare_mla_decoding[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -256,7 +256,7 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     __comptime_assert q.rank == 4, "only support rank 4 inputs."
 
@@ -347,7 +347,7 @@ fn flare_mla_decoding_dispatch[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth

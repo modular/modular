@@ -526,6 +526,7 @@ fn _top_k_sampling[
         top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     __comptime_assert (
         input.rank == out_vals.rank
     ), "input.rank must match out_vals.rank"
@@ -1272,6 +1273,9 @@ fn _topk_stage2[
 
                 @parameter
                 if sampling:
+                    __comptime_assert (
+                        T.is_floating_point()
+                    ), "T must be floating point for sampling"
                     batch_i_topk_vals[k] = total.u
                     s_id[k] = total.p
                     var temp_val = Float32(1.0)

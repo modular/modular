@@ -15,14 +15,9 @@ from math import clamp
 
 from algorithm import elementwise
 from gpu.host import DeviceContext, get_gpu_target
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout._layout import Layout, row_major
+from layout._tile_tensor import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import simd_width_of, _current_target
 
@@ -52,18 +47,19 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 fn slice_dim_as_view[
     dtype: DType, dim: Int
 ](
-    tensor: LayoutTensor[dtype, ...], start: Int, end: Int, step: Int
-) -> LayoutTensor[
+    tensor: TileTensor[dtype, ...], start: Int, end: Int, step: Int
+) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
-    Layout.row_major[tensor.rank](),
     tensor.origin,
     address_space = tensor.address_space,
 ]:
-    var new_shape = tensor.runtime_layout.shape.value.canonicalize()
-    var new_stride = tensor.runtime_layout.stride.value.canonicalize()
+    var new_shape = coord_to_index_list(tensor.layout.shape)
+    var new_stride = coord_to_index_list(tensor.layout.stride)
 
-    var dim_i = tensor.dim(dim)
-    var old_stride = tensor.stride(dim)
+    var dim_i = Int(tensor.dim(dim))
+    var old_stride = Int(tensor.dynamic_stride(dim))
 
     # Normalize the start/stop indices
     var clamped_start = _normalize_and_clamp_dim(start, step, dim_i)
@@ -84,15 +80,13 @@ fn slice_dim_as_view[
     new_shape[dim] = len(range(clamped_start, clamped_stop, step))
 
     # Create the new view
-    return LayoutTensor[
-        dtype,
-        Layout.row_major[tensor.rank](),
-        tensor.origin,
-        address_space = tensor.address_space,
-    ](
+    return {
         new_data,
-        RuntimeLayout[Layout.row_major[tensor.rank]()](new_shape, new_stride),
-    )
+        Layout(
+            Coord(new_shape),
+            Coord(rebind[type_of(new_shape)](new_stride)),
+        ),
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -107,16 +101,21 @@ fn slice_as_view[
     end_type: DType,
     step_type: DType,
 ](
-    tensor: LayoutTensor[dtype, ...],
-    starts: LayoutTensor[start_type, ...],
-    ends: LayoutTensor[end_type, ...],
-    steps: LayoutTensor[step_type, ...],
-) -> LayoutTensor[
+    tensor: TileTensor[dtype, ...],
+    starts: TileTensor[start_type, ...],
+    ends: TileTensor[end_type, ...],
+    steps: TileTensor[step_type, ...],
+) -> TileTensor[
+    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
-    Layout.row_major[tensor.rank](),
     tensor.origin,
     address_space = tensor.address_space,
 ]:
+    __comptime_assert starts.rank == 1
+    __comptime_assert ends.rank == 1
+    __comptime_assert steps.rank == 1
+
     var new_shape = IndexList[tensor.rank]()
     var new_stride = IndexList[tensor.rank]()
 
@@ -129,8 +128,8 @@ fn slice_as_view[
         var start = Int(starts[i])
         var stop = Int(ends[i])
         var step = Int(steps[i])
-        var dim_i = tensor.dim(i)
-        var stride_i = tensor.stride(i)
+        var dim_i = Int(tensor.dim(i))
+        var stride_i = Int(tensor.dynamic_stride(i))
 
         # Normalize the start/stop indices
         start = _normalize_and_clamp_dim(start, step, dim_i)
@@ -148,18 +147,13 @@ fn slice_as_view[
         new_shape[i] = len(range(start, stop, step))
 
     # Create the new view
-    return LayoutTensor[
-        dtype,
-        Layout.row_major[tensor.rank](),
-        tensor.origin,
-        address_space = tensor.address_space,
-    ](
+    return {
         new_data,
-        RuntimeLayout[Layout.row_major[tensor.rank]()](
-            new_shape,
-            new_stride,
+        Layout(
+            Coord(new_shape),
+            Coord(rebind[type_of(new_shape)](new_stride)),
         ),
-    )
+    }
 
 
 # ===-----------------------------------------------------------------------===#
@@ -175,11 +169,11 @@ fn copy_to_slice[
     step_type: DType,
     target: StaticString = "cpu",
 ](
-    buffer: LayoutTensor[mut=True, dtype, ...],
-    in_slice: LayoutTensor[dtype, ...],
-    start: LayoutTensor[start_type, ...],
-    end: LayoutTensor[end_type, ...],
-    step: LayoutTensor[step_type, ...],
+    buffer: TileTensor[mut=True, dtype, ...],
+    in_slice: TileTensor[dtype, ...],
+    start: TileTensor[start_type, ...],
+    end: TileTensor[end_type, ...],
+    step: TileTensor[step_type, ...],
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var expected_shape = slice_shape[single_thread_blocking_override=True](
@@ -187,14 +181,14 @@ fn copy_to_slice[
     )
 
     if expected_shape != rebind[IndexList[buffer.rank]](
-        in_slice.runtime_layout.shape.value.canonicalize()
+        coord_to_index_list(in_slice.layout.shape)
     ):
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
             " operand to have shape: ",
             expected_shape,
             " but got: ",
-            in_slice.runtime_layout.shape.value.canonicalize(),
+            coord_to_index_list(in_slice.layout.shape),
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
@@ -206,22 +200,14 @@ fn copy_to_slice[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var coords = rebind[IndexList[in_slice.rank]](idx)
-        var buf_index = buffer_slice_view.runtime_layout(
-            RuntimeTuple[
-                fill_like(buffer_slice_view.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-        var slice_index = in_slice.runtime_layout(
-            RuntimeTuple[fill_like(in_slice.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var buf_index = buffer_slice_view.layout(Coord(coords))
+        var slice_index = in_slice.layout(Coord(coords))
         buffer_slice_view.ptr.store[width=simd_width](
             buf_index, in_slice.ptr.load[width=simd_width](slice_index)
         )
 
     elementwise[copy, 1, target=target](
-        buffer_slice_view.runtime_layout.shape.value.canonicalize(),
+        coord_to_index_list(buffer_slice_view.layout.shape),
         context,
     )
 
@@ -236,11 +222,11 @@ fn slice_as_copy[
     dtype: DType,
     index_type: DType,
 ](
-    output: LayoutTensor[mut=True, dtype, ...],
-    tensor: LayoutTensor[dtype, ...],
-    start: LayoutTensor[index_type, ...],
-    end: LayoutTensor[index_type, ...],
-    step: LayoutTensor[index_type, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    tensor: TileTensor[dtype, ...],
+    start: TileTensor[index_type, ...],
+    end: TileTensor[index_type, ...],
+    step: TileTensor[index_type, ...],
 ) raises:
     __comptime_assert output.rank == tensor.rank
     # Apply slice to the tensor
@@ -254,18 +240,14 @@ fn slice_as_copy[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](idx)
-        var output_index = output.runtime_layout(
-            RuntimeTuple[fill_like(output.layout.shape, UNKNOWN_VALUE)](index)
-        )
-        var slice_index = sliced.runtime_layout(
-            RuntimeTuple[fill_like(sliced.layout.shape, UNKNOWN_VALUE)](index)
-        )
+        var output_index = output.layout(Coord(index))
+        var slice_index = sliced.layout(Coord(index))
         output.ptr.store[width=simd_width](
             output_index, sliced.ptr.load[width=simd_width](slice_index)
         )
 
     # Invoke copy.
-    elementwise[copy, 1](output.runtime_layout.shape.value.canonicalize())
+    elementwise[copy, 1](coord_to_index_list(output.layout.shape))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -281,20 +263,20 @@ fn slice_shape[
     step_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: LayoutTensor[input_type, ...],
-    start_buf: LayoutTensor[start_type, ...],
-    stop_buf: LayoutTensor[stop_type, ...],
-    step_buf: LayoutTensor[step_type, ...],
+    input_buf: TileTensor[input_type, ...],
+    start_buf: TileTensor[start_type, ...],
+    stop_buf: TileTensor[stop_type, ...],
+    step_buf: TileTensor[step_type, ...],
 ) raises -> IndexList[input_buf.rank]:
     __comptime_assert start_buf.rank == 1, "start_buf.rank must be 1"
     __comptime_assert stop_buf.rank == 1, "stop_buf.rank must be 1"
     __comptime_assert step_buf.rank == 1, "step_buf.rank must be 1"
 
-    if input_buf.rank != start_buf.dim[0]():
+    if input_buf.rank != Int(start_buf.dim[0]()):
         raise Error("[slice] start indices size must equal input rank")
-    if input_buf.rank != stop_buf.dim[0]():
+    if input_buf.rank != Int(stop_buf.dim[0]()):
         raise Error("[slice] stop indices size must equal input rank")
-    if input_buf.rank != step_buf.dim[0]():
+    if input_buf.rank != Int(step_buf.dim[0]()):
         raise Error("[slice] step indices size must equal input rank")
 
     for axis in range(input_buf.rank):
@@ -307,7 +289,7 @@ fn slice_shape[
         var start = Int(start_buf[i])
         var stop = Int(stop_buf[i])
         var step = Int(step_buf[i])
-        var dim_i = input_buf.dim(i)
+        var dim_i = Int(input_buf.dim(i))
 
         start = _normalize_and_clamp_dim(start, step, dim_i)
         stop = _normalize_and_clamp_dim(stop, step, dim_i)
@@ -339,10 +321,10 @@ fn sliced_add[
     //,
     target: StaticString,
 ](
-    c: LayoutTensor[mut=True, dtype, ...],
-    a: LayoutTensor[dtype, ...],
-    b: LayoutTensor[dtype, ...],
-    lora_end_idx: LayoutTensor[DType.int64, ...],
+    c: TileTensor[mut=True, dtype, ...],
+    a: TileTensor[dtype, ...],
+    b: TileTensor[dtype, ...],
+    lora_end_idx: TileTensor[DType.int64, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.
@@ -358,6 +340,8 @@ fn sliced_add[
         lora_end_idx: Scalar tensor with end index of LoRA token portion (rows to apply add).
         ctx: Device context for GPU operations.
     """
+    __comptime_assert lora_end_idx.rank == 1
+
     var batch_end_idx = Int(lora_end_idx[0])
 
     @parameter
@@ -366,15 +350,20 @@ fn sliced_add[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         var out_val: SIMD[dtype, width]
+        var coords = Coord(idx)
+
+        __comptime_assert a.rank == coords.rank
+        __comptime_assert b.rank == coords.rank
+        __comptime_assert c.rank == coords.rank
 
         if idx[0] >= batch_end_idx:
-            out_val = a.load[width](idx)
+            out_val = a.load[width](coords)
         else:
-            var a_val = a.load[width](idx)
-            var b_val = b.load[width](idx)
+            var a_val = a.load[width](coords)
+            var b_val = b.load[width](coords)
             out_val = a_val + b_val
 
-        c.store[width](idx, out_val)
+        c.store[width](coords, out_val)
 
     @parameter
     if target == "gpu":
@@ -383,7 +372,7 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            c.runtime_layout.shape.value.canonicalize(),
+            coord_to_index_list(c.layout.shape),
             ctx.value(),
         )
     else:
@@ -391,5 +380,5 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            c.runtime_layout.shape.value.canonicalize()
+            coord_to_index_list(c.layout.shape)
         )

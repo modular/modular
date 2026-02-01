@@ -57,11 +57,16 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
             )
 
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )
 
 
@@ -71,12 +76,14 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
 ):
     with (
         patch.object(
-            DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=10000
-        ),
-        patch.object(
             DummyLlamaPipelineModel,
             "estimate_weights_size",
             return_value=30000 * 1024 * 1024,
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_activation_memory",
+            return_value=0,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -94,11 +101,16 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> 
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )
 
 
@@ -109,13 +121,13 @@ def test_memory_estimation__raise_oom_error_all_defaults(
     with (
         patch.object(
             DummyLlamaPipelineModel,
-            "calculate_max_seq_len",
-            return_value=100000,
+            "estimate_weights_size",
+            return_value=35000 * 1024 * 1024,
         ),
         patch.object(
             DummyLlamaPipelineModel,
-            "estimate_weights_size",
-            return_value=35000 * 1024 * 1024,
+            "estimate_activation_memory",
+            return_value=0,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -131,11 +143,16 @@ def test_memory_estimation__raise_oom_error_all_defaults(
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )
 
         assert "Truncated model's default max_length from" in caplog.text
@@ -146,8 +163,13 @@ def test_memory_estimation__raise_oom_error_max_length_set() -> None:
     with (
         patch.object(
             DummyLlamaPipelineModel,
-            "calculate_max_seq_len",
-            return_value=9999999999999,
+            "estimate_weights_size",
+            return_value=35000 * 1024 * 1024,
+        ),
+        patch.object(
+            DummyLlamaPipelineModel,
+            "estimate_activation_memory",
+            return_value=0,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -166,11 +188,16 @@ def test_memory_estimation__raise_oom_error_max_length_set() -> None:
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )
 
 
@@ -199,11 +226,16 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set() -> None:
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )
 
 
@@ -214,13 +246,13 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
     with (
         patch.object(
             DummyLlamaPipelineModel,
-            "calculate_max_seq_len",
-            return_value=9999999999999,
+            "estimate_weights_size",
+            return_value=40000 * 1024 * 1024,
         ),
         patch.object(
             DummyLlamaPipelineModel,
-            "estimate_weights_size",
-            return_value=40000 * 1024 * 1024,
+            "estimate_activation_memory",
+            return_value=0,
         ),
         patch(
             "max.driver.Device.stats", new_callable=PropertyMock
@@ -236,9 +268,14 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
                 quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
             )
             devices = load_devices(mock_config.model.device_specs)
+            arch_config = DUMMY_LLAMA_ARCH.config.initialize(mock_config)
             MemoryEstimator.estimate_memory_footprint(
                 mock_config,
-                DUMMY_LLAMA_ARCH.pipeline_model,
                 mock_config.model,
+                arch_config,
                 devices,
+                DummyLlamaPipelineModel.estimate_weights_size(mock_config),
+                DummyLlamaPipelineModel.estimate_activation_memory(
+                    mock_config, mock_config.model.huggingface_config
+                ),
             )

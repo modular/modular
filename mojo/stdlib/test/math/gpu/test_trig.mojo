@@ -24,7 +24,7 @@ fn run_func[
     val: Scalar[dtype],
     ref_: Scalar[dtype],
     ctx: DeviceContext,
-) raises:
+) raises where dtype.is_floating_point():
     print("test trigonometric functions on gpu")
 
     var out = ctx.enqueue_create_buffer[dtype](1)

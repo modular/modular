@@ -278,6 +278,37 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         self.kv_pipeline.state.step()
 
 
+@fieldwise_init
+struct WarpRole(Equatable, TrivialRegisterType):
+    var _role: Int32
+    comptime Softmax0 = Self(0)
+    comptime Softmax1 = Self(1)
+    comptime Correction = Self(2)
+    comptime MMA = Self(3)
+    comptime Load = Self(4)
+    comptime Empty = Self(5)
+
+    @always_inline
+    fn __eq__(self, other: Int) -> Bool:
+        return self == Self(Int32(other))
+
+
+fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+    var wg_idx = warp_idx // 4
+    if wg_idx == 0:
+        return WarpRole.Softmax0
+    elif wg_idx == 1:
+        return WarpRole.Softmax1
+    elif wg_idx == 2:
+        return WarpRole.Correction
+    elif warp_idx == 12:
+        return WarpRole.MMA
+    elif warp_idx == 13:
+        return WarpRole.Load
+    else:
+        return WarpRole.Empty
+
+
 struct MLASmemStorage[dtype: DType, num_mbars: Int, config: FA4Config]:
     comptime q_smem_size = Self.config.BM * Self.config.padded_depth
     comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
@@ -498,9 +529,10 @@ struct SM100MLA[
         var misc_mbars: Self.MiscMBarsType = {mbar_base}
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
-        comptime num_reg_softmax = 200
-        comptime num_reg_correction = 80
-        comptime num_reg_other = 32
+        comptime num_reg_softmax = 184
+        comptime num_reg_correction = 96
+        comptime num_reg_other = 48
+        comptime num_reg_empty = 24
 
         __comptime_assert not Self.PartitionType.do_partition, (
             "Neither partitioning nor decoding are supported by the 2-q"
@@ -528,9 +560,11 @@ struct SM100MLA[
 
         barrier()
 
+        var role = warp_idx_to_role(warp_idx)
+
         # warp group partitioning
         # Two QO:
-        if warp_idx < 8:
+        if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
             var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
@@ -560,7 +594,7 @@ struct SM100MLA[
                 correction_smem,
             )
 
-        elif warp_idx < 12:
+        elif role == WarpRole.Correction:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
@@ -580,57 +614,59 @@ struct SM100MLA[
                 mask,
                 correction_smem,
             )
-        else:
+        elif role == WarpRole.Load:
             warpgroup_reg_dealloc[num_reg_other]()
-            if warp_idx == 13:  # produce
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
+                batch_size, max_seq_len, valid_length, partition
+            )
 
-                if not seq_info.is_valid():
-                    return
-                var pos: MLAPositionSummary = MLAPositionSummary.create[
-                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-                ](kv_lut, k_rope_lut, seq_info)
+            if not seq_info.is_valid():
+                return
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
 
-                Self.load(
-                    misc_mbars,
-                    pos.score_row,
-                    pos.num_keys,
-                    seq_info,
-                    max_seq_len,
-                    mask,
-                    q_tma_op,
-                    k_tma_op,
-                    k_rope_tma_op,
-                    v_tma_op,
-                    kv_lut,
-                    k_rope_lut,
-                    q_smem,
-                )
+            Self.load(
+                misc_mbars,
+                pos.score_row,
+                pos.num_keys,
+                seq_info,
+                max_seq_len,
+                mask,
+                q_tma_op,
+                k_tma_op,
+                k_rope_tma_op,
+                v_tma_op,
+                kv_lut,
+                k_rope_lut,
+                q_smem,
+            )
 
-            elif warp_idx == 12:  # Q @ K', P @ V
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+        elif role == WarpRole.MMA:
+            warpgroup_reg_dealloc[num_reg_other]()
+            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
+                batch_size, max_seq_len, valid_length, partition
+            )
 
-                if not seq_info.is_valid():
-                    tcgen05_release_allocation_lock[Self.cta_group]()
-                    tcgen05_dealloc[Self.cta_group](
-                        ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                    )
-                    return
-                var pos: MLAPositionSummary = MLAPositionSummary.create[
-                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-                ](kv_lut, k_rope_lut, seq_info)
-                Self.mma(
-                    ptr_tmem_addr[0],
-                    misc_mbars,
-                    pos.score_row,
-                    pos.num_keys,
-                    mask,
-                    q_smem,
+            if not seq_info.is_valid():
+                tcgen05_release_allocation_lock[Self.cta_group]()
+                tcgen05_dealloc[Self.cta_group](
+                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
                 )
+                return
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
+            Self.mma(
+                ptr_tmem_addr[0],
+                misc_mbars,
+                pos.score_row,
+                pos.num_keys,
+                mask,
+                q_smem,
+            )
+        elif role == WarpRole.Empty:
+            warpgroup_reg_dealloc[num_reg_empty]()
 
     @staticmethod
     @always_inline

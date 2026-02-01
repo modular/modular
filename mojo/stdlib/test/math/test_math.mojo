@@ -436,7 +436,9 @@ def _test_log_impl[
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log2_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
@@ -456,7 +458,9 @@ def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log1p_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log1p_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log1p(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol

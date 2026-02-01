@@ -27,17 +27,18 @@ from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+from layout._coord import (
+    Coord,
+    CoordLike,
+    Idx,
+    RuntimeInt,
+    ComptimeInt,
+    coord_to_index_list,
 )
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from math import ceildiv, gcd, exp
 from memory import stack_allocation
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import Atomic
 from random import Random
 from sys import align_of, bit_width_of, simd_width_of, size_of
@@ -110,14 +111,26 @@ fn TopKMaskLogitsKernel[
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
-    logits_layout: Layout,
-    masked_logits_layout: Layout,
+    logits_origin: ImmutOrigin,
+    logits_shape_types: Variadic.TypesOfTrait[CoordLike],
+    logits_stride_types: Variadic.TypesOfTrait[CoordLike],
+    masked_logits_origin: MutOrigin,
+    masked_logits_shape_types: Variadic.TypesOfTrait[CoordLike],
+    masked_logits_stride_types: Variadic.TypesOfTrait[CoordLike],
 ](
-    logits: LayoutTensor[dtype, logits_layout, MutAnyOrigin],
-    masked_logits: LayoutTensor[
-        mut=True, dtype, masked_logits_layout, MutAnyOrigin
+    logits: TileTensor[
+        shape_types=logits_shape_types,
+        stride_types=logits_stride_types,
+        dtype,
+        logits_origin,
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    masked_logits: TileTensor[
+        shape_types=masked_logits_shape_types,
+        stride_types=masked_logits_stride_types,
+        dtype,
+        masked_logits_origin,
+    ],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
     d: Int,
 ):
@@ -128,13 +141,10 @@ fn TopKMaskLogitsKernel[
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
-    var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
-        logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
+    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
+    var masked_logits_row = TileTensor(
+        masked_logits_ptr, row_major((Idx[1](), Idx(d)))
     )
-    var masked_logits_row = LayoutTensor[
-        mut=True, dtype, row_layout, MutAnyOrigin
-    ](masked_logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1}))
 
     var k = top_k_val
     if top_k_arr:
@@ -169,7 +179,10 @@ fn TopKMaskLogitsKernel[
             for i in range(ceildiv(d, block_size * vec_size)):
                 if (i * block_size + tx) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
-                        0, i * block_size * vec_size + tx * vec_size
+                        (
+                            Idx[0](),
+                            Idx(i * block_size * vec_size + tx * vec_size),
+                        ),
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
@@ -239,7 +252,7 @@ fn TopKMaskLogitsKernel[
         logits_vec = 0
         if (i * block_size + tx) * vec_size < d:
             logits_vec = logits_row.load[width=vec_size](
-                0, i * block_size * vec_size + tx * vec_size
+                (Idx[0](), Idx(i * block_size * vec_size + tx * vec_size))
             ).cast[DType.float32]()
 
         logits_vec = (logits_vec.cast[DType.float64]().gt(pivot)).select(
@@ -248,22 +261,32 @@ fn TopKMaskLogitsKernel[
 
         if (i * block_size + tx) * vec_size < d:
             masked_logits_row.store[width=vec_size](
-                0,
-                i * block_size * vec_size + tx * vec_size,
+                (Idx[0](), Idx(i * block_size * vec_size + tx * vec_size)),
                 logits_vec.cast[dtype](),
             )
 
 
 fn topk_mask_logits[
-    dtype: DType, out_idx_type: DType, block_size: Int = 1024
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int = 1024,
+    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, ...],
-    masked_logits: LayoutTensor[mut=True, dtype, ...],
+    logits: TileTensor[dtype, ...],
+    masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
-        LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=top_k_arr_shape_types,
+            stride_types=top_k_arr_stride_types,
+            out_idx_type,
+            MutExternalOrigin,
         ]
     ] = None,
 ) raises:
@@ -272,11 +295,11 @@ fn topk_mask_logits[
         logits.rank == masked_logits.rank
     ), "logits.rank must match masked_logits.rank"
 
-    var shape = logits.runtime_layout.shape.value.canonicalize()
+    var shape = coord_to_index_list(logits.layout.shape)
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = masked_logits.runtime_layout.shape.value.canonicalize()
+    var out_shape = coord_to_index_list(masked_logits.layout.shape)
     if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
         raise Error("masked_logits shape must match logits shape")
 
@@ -288,9 +311,7 @@ fn topk_mask_logits[
     if top_k_arr:
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
-        top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
-        )
+        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
 
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
@@ -299,11 +320,15 @@ fn topk_mask_logits[
             vec_size,
             dtype,
             out_idx_type,
-            logits.layout,
-            masked_logits.layout,
+            logits_origin = ImmutOrigin(logits.origin),
+            logits_shape_types = logits.shape_types,
+            logits_stride_types = logits.stride_types,
+            masked_logits_origin = masked_logits.origin,
+            masked_logits_shape_types = masked_logits.shape_types,
+            masked_logits_stride_types = masked_logits.stride_types,
         ]
         ctx.enqueue_function[kernel, kernel](
-            logits,
+            logits.as_immut(),
             masked_logits,
             top_k_buf,
             top_k_val,
@@ -333,8 +358,12 @@ fn device_sampling_from_prob[
     u: Float32,
     prob_vec: SIMD[DType.float32, vec_size],
     aggregate: Float32,
-    sampled_id_sram: UnsafePointer[Int, address_space = AddressSpace.SHARED],
-    last_valid_id_sram: UnsafePointer[Int, address_space = AddressSpace.SHARED],
+    sampled_id_sram: UnsafePointer[
+        mut=True, Int, address_space = AddressSpace.SHARED
+    ],
+    last_valid_id_sram: UnsafePointer[
+        mut=True, Int, address_space = AddressSpace.SHARED
+    ],
 ) -> Float32:
     """Device-level sampling from probability distribution with atomic operations.
     """
@@ -570,18 +599,32 @@ fn _block_reduce_value_count[
 
 
 fn TopKSamplingFromProbKernel[
+    probs_origin: ImmutOrigin,
+    probs_shape_types: Variadic.TypesOfTrait[CoordLike],
+    probs_stride_types: Variadic.TypesOfTrait[CoordLike],
+    output_origin: MutOrigin,
+    output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_stride_types: Variadic.TypesOfTrait[CoordLike],
     block_size: Int,
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
-    probs_layout: Layout,
-    output_layout: Layout,
     deterministic: Bool,
 ](
-    probs: LayoutTensor[dtype, probs_layout, MutAnyOrigin],
-    output: LayoutTensor[mut=True, out_idx_type, output_layout, MutAnyOrigin],
-    indices: UnsafePointer[Scalar[out_idx_type]],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    probs: TileTensor[
+        shape_types=probs_shape_types,
+        stride_types=probs_stride_types,
+        dtype,
+        probs_origin,
+    ],
+    output: TileTensor[
+        shape_types=output_shape_types,
+        stride_types=output_stride_types,
+        out_idx_type,
+        output_origin,
+    ],
+    indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
     d: Int,
     rng_seed: UInt64,
@@ -604,6 +647,8 @@ fn TopKSamplingFromProbKernel[
         rng_seed: Random seed for Random number generator.
         rng_offset: Random offset for Random number generator.
     """
+    __comptime_assert output.rank == 1
+
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
 
@@ -622,11 +667,8 @@ fn TopKSamplingFromProbKernel[
     if indices:
         row_idx = Int(indices.load(bx))
 
-    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
     var probs_ptr = probs.ptr + row_idx * d
-    var probs_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
-        probs_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
-    )
+    var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
 
     var probs_vec: SIMD[DType.float32, vec_size]
     var aggregate: Float32
@@ -651,7 +693,7 @@ fn TopKSamplingFromProbKernel[
             probs_vec = 0
             if (i * block_size + tx) * vec_size < d:
                 probs_vec = probs_row.load[width=vec_size](
-                    0, (i * block_size + tx) * vec_size
+                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
                 ).cast[DType.float32]()
 
             aggregate = device_sampling_from_prob[
@@ -678,7 +720,9 @@ fn TopKSamplingFromProbKernel[
             # we use the last valid index as the sampled id.
             sampled_id = last_valid_id_sram[0]
 
-        var pivot_0 = Float64(probs_row.load[width=1](0, sampled_id))
+        var pivot_0 = Float64(
+            probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
+        )
         var pivot_1 = (pivot_0 + high) / 2.0
 
         var aggregate_gt_pivot_0 = ValueCount[DType.float32](0.0, 0)
@@ -688,7 +732,7 @@ fn TopKSamplingFromProbKernel[
             probs_vec = 0
             if (i * block_size + tx) * vec_size < d:
                 probs_vec = probs_row.load[width=vec_size](
-                    0, (i * block_size + tx) * vec_size
+                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
                 ).cast[DType.float32]()
 
             var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
@@ -762,23 +806,43 @@ fn TopKSamplingFromProbKernel[
 
 
 fn topk_sampling_from_prob[
-    dtype: DType, out_idx_type: DType, block_size: Int = 1024
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int = 1024,
+    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
+    indices_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    indices_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
 ](
     ctx: DeviceContext,
-    probs: LayoutTensor[dtype, ...],
-    output: LayoutTensor[mut=True, out_idx_type, ...],
+    probs: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     deterministic: Bool = False,
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=indices_shape_types,
+            stride_types=indices_stride_types,
+            out_idx_type,
+            MutExternalOrigin,
         ]
     ] = None,
     top_k_arr: Optional[
-        LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=top_k_arr_shape_types,
+            stride_types=top_k_arr_stride_types,
+            out_idx_type,
+            MutExternalOrigin,
         ]
     ] = None,
 ) raises:
@@ -806,11 +870,11 @@ fn topk_sampling_from_prob[
     __comptime_assert probs.rank == 2, "probs rank must be 2"
     __comptime_assert output.rank == 1, "output rank must be 1"
 
-    var shape = probs.runtime_layout.shape.value.canonicalize()
+    var shape = coord_to_index_list(probs.layout.shape)
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = output.runtime_layout.shape.value.canonicalize()
+    var out_shape = coord_to_index_list(output.layout.shape)
     if out_shape[0] != batch_size:
         raise Error("output batch size must match probs batch size")
 
@@ -822,30 +886,30 @@ fn topk_sampling_from_prob[
     if indices:
         indices_buf = indices.value().to_device_buffer(ctx)
     else:
-        indices_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
-        )
+        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
     var top_k_buf: DeviceBuffer[out_idx_type]
     if top_k_arr:
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
-        top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
-        )
+        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
 
     @parameter
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKSamplingFromProbKernel[
+            ImmutOrigin(probs.origin),
+            probs.shape_types,
+            probs.stride_types,
+            output.origin,
+            output.shape_types,
+            output.stride_types,
             block_size,
             vec_size,
             dtype,
             out_idx_type,
-            probs.layout,
-            output.layout,
             deterministic,
         ]
         ctx.enqueue_function[kernel, kernel](
-            probs,
+            probs.as_immut(),
             output,
             indices_buf,
             top_k_buf,
@@ -878,31 +942,42 @@ fn TopKSoftmaxSampleKernel[
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
-    logits_layout: Layout,
-    sampled_indices_layout: Layout,
+    logits_origin: ImmutOrigin,
+    logits_shape_types: Variadic.TypesOfTrait[CoordLike],
+    logits_stride_types: Variadic.TypesOfTrait[CoordLike],
+    sampled_origin: MutOrigin,
+    sampled_shape_types: Variadic.TypesOfTrait[CoordLike],
+    sampled_stride_types: Variadic.TypesOfTrait[CoordLike],
 ](
-    logits: LayoutTensor[dtype, logits_layout, MutAnyOrigin],
-    sampled_indices: LayoutTensor[
-        mut=True, out_idx_type, sampled_indices_layout, MutAnyOrigin
+    logits: TileTensor[
+        shape_types=logits_shape_types,
+        stride_types=logits_stride_types,
+        dtype,
+        logits_origin,
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type]],
+    sampled_indices: TileTensor[
+        shape_types=sampled_shape_types,
+        stride_types=sampled_stride_types,
+        out_idx_type,
+        sampled_origin,
+    ],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
     temperature_val: Float32,
-    temperature: UnsafePointer[Float32],
+    temperature: UnsafePointer[Float32, MutExternalOrigin],
     seed_val: UInt64,
-    seed: UnsafePointer[UInt64],
+    seed: UnsafePointer[UInt64, MutExternalOrigin],
     d: Int,
 ):
+    __comptime_assert sampled_indices.rank == 1
+
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
     var row_idx = bx
 
     var logits_ptr = logits.ptr + bx * d
 
-    comptime row_layout = Layout.row_major(1, UNKNOWN_VALUE)
-    var logits_row = LayoutTensor[dtype, row_layout, MutAnyOrigin](
-        logits_ptr, RuntimeLayout[row_layout]({1, d}, {d, 1})
-    )
+    var logits_row = TileTensor(logits_ptr, row_major((Idx[1](), Idx(d))))
 
     var k = top_k_val
     if top_k_arr:
@@ -929,7 +1004,7 @@ fn TopKSoftmaxSampleKernel[
 
     # PHASE 1: Find pivot (k-th largest) via ternary search.
     var pivot = Float64(Float32.MIN)
-    var max_logit = Float32.MIN
+    var max_logit: Float32
     var logits_vec = SIMD[DType.float32, vec_size]()
 
     if k < d:
@@ -958,7 +1033,10 @@ fn TopKSoftmaxSampleKernel[
             for i in range(ceildiv(d, block_size * vec_size)):
                 if (i * block_size + tx) * vec_size < d:
                     logits_vec = logits_row.load[width=vec_size](
-                        0, i * block_size * vec_size + tx * vec_size
+                        (
+                            Idx[0](),
+                            Idx(i * block_size * vec_size + tx * vec_size),
+                        )
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
@@ -1034,7 +1112,9 @@ fn TopKSoftmaxSampleKernel[
 
     # Each thread processes elements and atomically writes to shared memory.
     for i in range(tx, d, block_size):
-        var logit = logits_row.load[width=1](0, i).cast[DType.float32]()
+        var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
+            DType.float32
+        ]()
         if Float64(logit) > pivot:
             var exp_val = exp((logit - max_logit) / temp_val)
 
@@ -1073,27 +1153,58 @@ fn TopKSoftmaxSampleKernel[
 
 
 fn topk_softmax_sample[
-    dtype: DType, out_idx_type: DType, block_size: Int = 1024
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int = 1024,
+    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
+    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
+    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        RuntimeInt[DType.int64]
+    ],
+    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
+        ComptimeInt[1]
+    ],
 ](
     ctx: DeviceContext,
-    logits: LayoutTensor[dtype, ...],
-    sampled_indices: LayoutTensor[mut=True, out_idx_type, ...],
+    logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    sampled_indices: TileTensor[
+        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
+    ],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
     top_k_arr: Optional[
-        LayoutTensor[
-            out_idx_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=top_k_arr_shape_types,
+            stride_types=top_k_arr_stride_types,
+            out_idx_type,
+            MutExternalOrigin,
         ]
     ] = None,
     temperature: Optional[
-        LayoutTensor[
-            DType.float32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=temperature_shape_types,
+            stride_types=temperature_stride_types,
+            DType.float32,
+            MutExternalOrigin,
         ]
     ] = None,
     seed: Optional[
-        LayoutTensor[
-            DType.uint64, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        TileTensor[
+            shape_types=seed_shape_types,
+            stride_types=seed_stride_types,
+            DType.uint64,
+            MutExternalOrigin,
         ]
     ] = None,
 ) raises:
@@ -1108,6 +1219,12 @@ fn topk_softmax_sample[
         dtype: The data type of the input logits tensor.
         out_idx_type: The data type of the output sampled indices.
         block_size: The number of threads per block (default is 1024).
+        top_k_arr_shape_types: The shape types of the optional top_k_arr tensor.
+        top_k_arr_stride_types: The stride types of the optional top_k_arr tensor.
+        temperature_shape_types: The shape types of the optional temperature tensor.
+        temperature_stride_types: The stride types of the optional temperature tensor.
+        seed_shape_types: The shape types of the optional seed tensor.
+        seed_stride_types: The stride types of the optional seed tensor.
 
     Args:
         ctx: DeviceContext
@@ -1137,11 +1254,11 @@ fn topk_softmax_sample[
         sampled_indices.rank == 1
     ), "sampled_indices rank must be 1"
 
-    var shape = logits.runtime_layout.shape.value.canonicalize()
+    var shape = coord_to_index_list(logits.layout.shape)
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = sampled_indices.runtime_layout.shape.value.canonicalize()
+    var out_shape = coord_to_index_list(sampled_indices.layout.shape)
     if shape[0] != out_shape[0]:
         raise Error("sampled_indices shape must be [batch_size]")
 
@@ -1156,23 +1273,17 @@ fn topk_softmax_sample[
     if top_k_arr:
         top_k_buf = top_k_arr.value().to_device_buffer(ctx)
     else:
-        top_k_buf = DeviceBuffer[out_idx_type](
-            ctx, UnsafePointer[Scalar[out_idx_type]](), 0, owning=False
-        )
+        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
     var temp_buf: DeviceBuffer[DType.float32]
     if temperature:
         temp_buf = temperature.value().to_device_buffer(ctx)
     else:
-        temp_buf = DeviceBuffer[DType.float32](
-            ctx, UnsafePointer[Scalar[DType.float32]](), 0, owning=False
-        )
+        temp_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
     var seed_buf: DeviceBuffer[DType.uint64]
     if seed:
         seed_buf = seed.value().to_device_buffer(ctx)
     else:
-        seed_buf = DeviceBuffer[DType.uint64](
-            ctx, UnsafePointer[Scalar[DType.uint64]](), 0, owning=False
-        )
+        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
 
     @parameter
     fn launch_kernel[vec_size: Int]() raises:
@@ -1181,11 +1292,15 @@ fn topk_softmax_sample[
             vec_size,
             dtype,
             out_idx_type,
-            logits.layout,
-            sampled_indices.layout,
+            logits_origin = ImmutOrigin(logits.origin),
+            logits_shape_types = logits.shape_types,
+            logits_stride_types = logits.stride_types,
+            sampled_origin = sampled_indices.origin,
+            sampled_shape_types = sampled_indices.shape_types,
+            sampled_stride_types = sampled_indices.stride_types,
         ]
         ctx.enqueue_function[kernel, kernel](
-            logits,
+            logits.as_immut(),
             sampled_indices,
             top_k_buf,
             top_k_val,

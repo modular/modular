@@ -277,11 +277,13 @@ fn bench_broadcast[
         "GB/s |",
     )
 
-    # Zero output buffers and run one more broadcast for verification.
+    # Zero output and signal buffers, then run one more broadcast for verification.
     # This ensures we're verifying fresh results, not stale data from
     # a previous iteration that might mask a broken kernel.
+    # Signal buffers must also be zeroed since 2-stage uses the payload as scratch.
     @parameter
     for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset(signal_buffers[i], 0)
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
 

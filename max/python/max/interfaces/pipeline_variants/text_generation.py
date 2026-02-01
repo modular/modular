@@ -491,6 +491,22 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+        ...
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
+        """
+        ...
+
     def jump_ahead(self, new_token: int) -> None:
         """Jump ahead in generation by adding a token and updating indices.
 

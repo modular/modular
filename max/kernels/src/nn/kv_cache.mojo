@@ -13,7 +13,6 @@
 from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import unswitch
-from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from collections import OptionalReg
@@ -24,7 +23,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout, IntTuple
+from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._coord import Coord, Idx
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
@@ -270,11 +269,6 @@ fn _fused_qkv_matmul_kv_cache[
     )
 
 
-comptime embed_fn_type = fn[dtype: DType, width: Int](
-    IndexList[4], SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
-
-
 @always_inline
 fn _fused_qkv_matmul_kv_cache_impl[
     dtype: DType,
@@ -282,8 +276,6 @@ fn _fused_qkv_matmul_kv_cache_impl[
     //,
     *,
     target: StaticString,
-    q_embed_fn: Optional[embed_fn_type] = None,
-    k_embed_fn: Optional[embed_fn_type] = None,
 ](
     hidden_state: LayoutTensor[
         dtype, address_space = AddressSpace.GENERIC, ...

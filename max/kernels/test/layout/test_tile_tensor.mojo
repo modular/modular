@@ -492,7 +492,9 @@ def test_to_layout_tensor_3d():
 
 def test_to_layout_tensor_3d_dynamic():
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx[64](), Idx[8](), Idx(4))))
+    var tensor = TileTensor(
+        stack, row_major((Idx[64](), Idx[8](), Idx(Int(4))))
+    )
     var lt = tensor.to_layout_tensor()
     assert_equal(
         materialize[lt.layout](),
@@ -608,7 +610,7 @@ fn test_coalesce_element_size() raises:
 
 fn test_to_nd_buffer_partially_dynamic() raises:
     var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(4), Idx[4]())))
+    var tensor = TileTensor(stack, row_major((Idx(Int(4)), Idx[4]())))
     var buffer = tensor._to_ndbuffer()
     assert_equal(buffer.shape.at[0](), Dim())
     assert_equal(buffer.shape.at[1](), Dim(4))
@@ -618,7 +620,7 @@ fn test_to_nd_buffer_partially_dynamic() raises:
 
 fn test_to_nd_buffer_fully_dynamic() raises:
     var stack = InlineArray[Int32, 16](fill=0)
-    var tensor = TileTensor(stack, row_major((Idx(8), Idx(2))))
+    var tensor = TileTensor(stack, row_major((Idx(Int(8)), Idx(Int(2)))))
     var buffer = tensor._to_ndbuffer()
     assert_equal(buffer.shape.at[0](), Dim())
     assert_equal(buffer.shape.at[1](), Dim())

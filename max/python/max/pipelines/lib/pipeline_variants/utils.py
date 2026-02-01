@@ -72,6 +72,7 @@ def update_context_and_prepare_responses(
     num_steps: int,
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
+    overwrite_future: bool = False,
 ) -> dict[RequestID, TextGenerationOutput]:
     """
     Update the context objects and prepare the response objects for each context in the batch after generation.
@@ -103,7 +104,14 @@ def update_context_and_prepare_responses(
                     ):
                         log_probs = log_probs_for_step[batch_index]
 
-            context.update(new_token=next_token, log_probabilities=log_probs)
+            if overwrite_future:
+                context.realize_future_token(
+                    new_token=next_token, log_probabilities=log_probs
+                )
+            else:
+                context.update(
+                    new_token=next_token, log_probabilities=log_probs
+                )
 
             if context.is_done:
                 break

@@ -142,16 +142,6 @@ class SupportedEncoding(str, Enum):
         return _SUPPORTED_ENCODING_TO_DTYPE[self]
 
     @property
-    def cache_dtype(self) -> DType:
-        """The underlying dtype used in the kvcache for correctness."""
-        if self not in _SUPPORTED_ENCODING_TO_CACHE_DTYPE:
-            raise ValueError(
-                f"SupportedEncoding({self}) does not have corresponding cache dtype."
-            )
-
-        return _SUPPORTED_ENCODING_TO_CACHE_DTYPE[self]
-
-    @property
     def is_float4(self) -> bool:
         """Returns True if this encoding represents FP4 (NVFP4)."""
         return self == SupportedEncoding.float4_e2m1fnx2
@@ -175,18 +165,6 @@ _SUPPORTED_ENCODING_TO_DTYPE = {
     SupportedEncoding.q4_0: DType.uint8,
     SupportedEncoding.q6_k: DType.uint8,
     SupportedEncoding.gptq: DType.uint8,
-}
-
-
-_SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
-    SupportedEncoding.float32: DType.float32,
-    SupportedEncoding.bfloat16: DType.bfloat16,
-    SupportedEncoding.float8_e4m3fn: DType.bfloat16,
-    SupportedEncoding.float4_e2m1fnx2: DType.bfloat16,
-    SupportedEncoding.q4_k: DType.float32,
-    SupportedEncoding.q4_0: DType.float32,
-    SupportedEncoding.q6_k: DType.float32,
-    SupportedEncoding.gptq: DType.bfloat16,
 }
 
 _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {

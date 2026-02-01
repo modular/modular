@@ -27,6 +27,7 @@ struct FunnySlice(ImplicitlyCopyable):
     var start: Int
     var upper: String
     var stride: Float64
+    var __slice_literal__: ()
 
 
 @fieldwise_init
@@ -34,6 +35,7 @@ struct BoringSlice(ImplicitlyCopyable):
     var a: Int
     var b: Int
     var c: String
+    var __slice_literal__: ()
 
 
 struct Sliceable:

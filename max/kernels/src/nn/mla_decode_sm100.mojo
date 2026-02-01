@@ -2653,6 +2653,9 @@ struct MLA_SM100_Decode[
         prompt_idx: UInt32,  # batch index
         max_seq_len: UInt32,  # for score_mod
     ):
+        __comptime_assert (
+            Self.AccumType.is_floating_point()
+        ), "AccumType must be floating point"
         comptime MaskName: String = Self.MaskType.name()
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")

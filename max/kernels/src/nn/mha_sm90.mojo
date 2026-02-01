@@ -1069,6 +1069,9 @@ fn _mha_sm90[
     # alias num_k_mmas = BK // MMA_K
 
     comptime accum_type = get_accum_type[kv_type]()
+    __comptime_assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE
     comptime o_frag_size = MMA_M * Int(MMA_N1) // WARP_SIZE
     comptime frag_simdwidth = 2

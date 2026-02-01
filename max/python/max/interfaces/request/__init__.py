@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Request types for MAX API."""
 
-from .base import Request, RequestID, RequestType
+from .base import DUMMY_REQUEST_ID, Request, RequestID, RequestType
 from .open_responses import (
     AllowedToolChoice,
     AssistantMessage,
@@ -75,6 +75,7 @@ from .open_responses import (
 )
 
 __all__ = [
+    "DUMMY_REQUEST_ID",
     "AllowedToolChoice",
     "AssistantMessage",
     "CreateResponseBody",

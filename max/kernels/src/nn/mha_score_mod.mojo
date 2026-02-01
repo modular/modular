@@ -77,6 +77,9 @@ struct AlibiScoreMod[
         k_idx: SIMD[coords_dtype, width],
         max_prompt_len: Int,
     ) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         var scale: SIMD[dtype, width]
 
         @parameter

@@ -241,6 +241,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
+    device_graph_capture: bool = Field(
+        default=False,
+        description="Enable device graph capture/replay for graph execution.",
+    )
+
     force: bool = Field(
         default=False,
         description=(
@@ -512,12 +517,12 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.create_kv_cache_config(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
 
         elif config_name == "sampling":
             if hasattr(self, "model") and self.model:
@@ -1022,6 +1027,10 @@ class PipelineConfig(ConfigFileModel):
             default_encoding=arch.default_encoding
         )
 
+        # The quantization encoding has been resolved at this point.
+        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
+        model_config.set_default_cache_dtype_if_needed()
+
         model_config.validate_and_resolve_rope_type(
             arch_rope_type=arch.rope_type
         )
@@ -1053,15 +1062,27 @@ class PipelineConfig(ConfigFileModel):
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        arch_config = arch.config.initialize(self)
+
         MemoryEstimator.estimate_memory_footprint(
             self,
-            arch.pipeline_model,
             model_config,
+            arch_config,
             devices,
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            arch.pipeline_model, self, model_config, devices
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
+            model_config,
+            devices,
+            arch_config,
         ):
             if self.max_length is None:
                 self.max_length = clamped_max_seq_len
@@ -1310,6 +1331,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    max_batch_size     : {self.max_batch_size}")
         logger.info(f"    max_seq_len        : {self.max_length}")
         logger.info(f"    cache_memory       : {memory_str}")
+        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
         logger.info("")
 
 

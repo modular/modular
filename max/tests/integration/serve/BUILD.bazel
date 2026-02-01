@@ -66,6 +66,11 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
+    # TODO(SERVOPT-949): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/core",

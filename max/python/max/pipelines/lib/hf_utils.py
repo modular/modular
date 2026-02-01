@@ -624,9 +624,6 @@ class HuggingFaceRepo:
             raise ValueError(
                 f"gguf file, but encoding not found in file name: {file}"
             )
-        elif str(file).endswith(".bin"):
-            # If this file is pytorch, return the first encoding, as Pytorch repos only likely have one.
-            return self.supported_encodings[0]
         else:
             raise ValueError(
                 f"weight path: {file} not gguf or safetensors, cannot infer encoding from file."

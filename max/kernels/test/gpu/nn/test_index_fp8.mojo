@@ -25,8 +25,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 fn test_index_fp8[
     num_heads: Int,
     depth: Int,
-    batch_size: Int,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
+](batch_size: Int, seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
         "test_index_fp8 with params:",
         "num_heads:",
@@ -154,7 +153,7 @@ fn test_index_fp8[
         ),
     )
 
-    fp8_index[batch_size, num_heads, depth](
+    fp8_index[num_heads, depth](
         o_device,
         q_device,
         qs_device,
@@ -162,6 +161,7 @@ fn test_index_fp8[
         ks_device,
         input_row_offsets_device,
         cache_row_offsets_device,
+        batch_size,
         seq_len,
         num_keys,
         ctx,
@@ -169,7 +169,7 @@ fn test_index_fp8[
     ctx.synchronize()
     ctx.enqueue_copy(o_ptr, o_device_ptr)
 
-    fp8_index_naive[batch_size, num_heads, depth](
+    fp8_index_naive[num_heads, depth](
         o_ref_device,
         q_device,
         qs_device,
@@ -177,6 +177,7 @@ fn test_index_fp8[
         ks_device,
         input_row_offsets_device,
         cache_row_offsets_device,
+        batch_size,
         seq_len,
         num_keys,
         ctx,
@@ -216,11 +217,11 @@ fn test_index_fp8[
 
 def main():
     with DeviceContext() as ctx:
-        test_index_fp8[num_heads=128, depth=128, batch_size=2](128, 128, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=2](32, 32, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=4](200, 200, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=1](501, 501, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=3](600, 600, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=4](722, 722, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=5](32, 64, ctx)
-        test_index_fp8[num_heads=128, depth=128, batch_size=2](128, 256, ctx)
+        test_index_fp8[num_heads=128, depth=128](2, 128, 128, ctx)
+        test_index_fp8[num_heads=128, depth=128](2, 32, 32, ctx)
+        test_index_fp8[num_heads=128, depth=128](4, 200, 200, ctx)
+        test_index_fp8[num_heads=128, depth=128](1, 501, 501, ctx)
+        test_index_fp8[num_heads=128, depth=128](3, 600, 600, ctx)
+        test_index_fp8[num_heads=128, depth=128](4, 722, 722, ctx)
+        test_index_fp8[num_heads=128, depth=128](5, 32, 64, ctx)
+        test_index_fp8[num_heads=128, depth=128](2, 128, 256, ctx)

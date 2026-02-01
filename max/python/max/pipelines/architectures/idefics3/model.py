@@ -439,7 +439,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_params.get_symbolic_inputs()[0]
