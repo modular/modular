@@ -933,6 +933,7 @@ struct TileTensor[
 
     comptime OriginCastType[
         mut: Bool,
+        //,
         origin: Origin[mut=mut],
     ] = TileTensor[
         shape_types = Self.shape_types,
@@ -949,12 +950,12 @@ struct TileTensor[
         origin: The origin for the result tensor.
     """
 
-    comptime _AsMut = Self.OriginCastType[True, _]
+    comptime _AsMut = Self.OriginCastType[mut=True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+    ) -> type_of(self).OriginCastType[MutAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:
@@ -973,7 +974,7 @@ struct TileTensor[
     @always_inline
     fn as_immut(
         self,
-    ) -> Self.OriginCastType[False, ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
