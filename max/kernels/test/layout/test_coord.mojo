@@ -30,7 +30,7 @@ from testing import assert_equal, assert_true, TestSuite
 
 fn test_nested_layouts() raises:
     # Create nested layouts
-    var inner = Coord(Idx[2](), Idx(3))
+    var inner = Coord(Idx[2](), Idx(Int(3)))
     var nested = Coord(inner, Idx[4]())
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
@@ -50,7 +50,7 @@ fn test_int_tuple_conversion() raises:
 fn test_list_literal_construction() raises:
     var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
         Idx[2](),
-        Idx(3),
+        Idx(Int(3)),
     )
     assert_equal(t[0].value(), 2)
     assert_equal(t[1].value(), 3)

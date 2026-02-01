@@ -24,6 +24,7 @@ from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_model_dummy import (
+    DummyLlamaArchConfig,
     DummyLlamaPipelineModel,
 )
 from test_common.registry import prepare_registry
@@ -47,6 +48,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -83,6 +85,7 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -121,6 +124,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -138,6 +142,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -180,6 +185,7 @@ def test_config__use_legacy_module_default_is_true() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -214,6 +220,7 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -248,6 +255,7 @@ def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> 
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -283,6 +291,7 @@ def test_config__use_legacy_module_with_draft_model() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,

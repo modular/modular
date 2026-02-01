@@ -17,9 +17,9 @@ from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
-from ..mistral.model_config import MistralConfig
 from . import weight_adapters
 from .model import Mistral3Model
+from .model_config import Mistral3Config
 from .tokenizer import Mistral3Tokenizer
 
 mistral3_arch = SupportedArchitecture(
@@ -38,5 +38,5 @@ mistral3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
-    config=MistralConfig,
+    config=Mistral3Config,
 )

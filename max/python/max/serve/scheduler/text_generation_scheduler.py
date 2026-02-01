@@ -28,7 +28,11 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -113,8 +117,12 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # If the batch is empty, skip
-        if not inputs and not self.support_empty_batches:
+        # Skip if there is no work to do.
+        has_pending_outputs = (
+            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            and self.pipeline.has_pending_outputs()
+        )
+        if not (inputs or self.support_empty_batches or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
@@ -174,6 +182,16 @@ class TokenGenerationScheduler(Scheduler):
                     self.batch_constructor.release_request(req_id)
 
             return len(batch_request_ids)
+
+        # Filter out all responses for requests that are already released.
+        # We can get a response for a request that is already released due to
+        # the quirk of overlap scheduling where the pipeline may produce an extra
+        # token after EOS.
+        responses = {
+            req_id: response
+            for req_id, response in responses.items()
+            if self.batch_constructor.contains(req_id)
+        }
 
         # Advance the requests and collect the invalid request IDs
         for (

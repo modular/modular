@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from layout._coord import Coord
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.slice import sliced_add
 
 from utils import IndexList
@@ -36,70 +34,48 @@ fn test_sliced_add[
 
     # Create host buffers
     var shape = IndexList[2](rows, cols)
+    var layout = row_major(Coord(shape))
     var size = rows * cols
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var a_host = NDBuffer[dtype, 2](a_host_ptr, shape)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var b_host = NDBuffer[dtype, 2](b_host_ptr, shape)
-    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var c_host = NDBuffer[dtype, 2](c_host_ptr, shape)
+    var a_host_ptr = alloc[Scalar[dtype]](size)
+    var a_host = TileTensor(a_host_ptr, layout)
+    var b_host_ptr = alloc[Scalar[dtype]](size)
+    var b_host = TileTensor(b_host_ptr, layout)
+    var c_host_ptr = alloc[Scalar[dtype]](size)
+    var c_host = TileTensor(c_host_ptr, layout)
 
     # Initialize with known patterns
-    # a: all ones
-    a_host.fill(1)
-    # b: all twos
+    # a: all ones, b: all twos, c: zeros
     for i in range(rows):
         for j in range(cols):
-            b_host[i, j] = 2.0
-    # c: zeros (will be overwritten)
-    c_host.zero()
+            var idx = a_host.layout(Coord(IndexList[2](i, j)))
+            a_host.ptr[idx] = 1.0
+            b_host.ptr[idx] = 2.0
+            c_host.ptr[idx] = 0.0
 
     # Create lora_end_idx buffer (kept on host since sliced_add reads it on host)
-    var lora_end_idx_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](lora_end_idx_host_ptr, 1)
-    lora_end_idx_host[0] = Int64(batch_end_idx)
+    var lora_end_idx_host_ptr = alloc[Int64](1)
+    var lora_end_idx_host = TileTensor(
+        lora_end_idx_host_ptr, row_major(Coord(IndexList[1](1)))
+    )
+    lora_end_idx_host.ptr[0] = Int64(batch_end_idx)
 
     # Copy to device (lora_end_idx stays on host)
     var a_device = ctx.enqueue_create_buffer[dtype](size)
     ctx.enqueue_copy(a_device, a_host_ptr)
-    var a_device_nd = NDBuffer[dtype, 2](a_device.unsafe_ptr(), shape)
+    var a_device_tensor = TileTensor(a_device.unsafe_ptr(), layout)
     var b_device = ctx.enqueue_create_buffer[dtype](size)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    var b_device_nd = NDBuffer[dtype, 2](b_device.unsafe_ptr(), shape)
+    var b_device_tensor = TileTensor(b_device.unsafe_ptr(), layout)
     var c_device = ctx.enqueue_create_buffer[dtype](size)
     ctx.enqueue_copy(c_device, c_host_ptr)
-    var c_device_nd = NDBuffer[dtype, 2](c_device.unsafe_ptr(), shape)
+    var c_device_tensor = TileTensor(c_device.unsafe_ptr(), layout)
 
     # Execute sliced_add directly
     sliced_add[target="gpu"](
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            c_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                c_device_nd.dynamic_shape.canonicalize(),
-                c_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            a_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                a_device_nd.dynamic_shape.canonicalize(),
-                a_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            b_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                b_device_nd.dynamic_shape.canonicalize(),
-                b_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[DType.int64, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lora_end_idx_host.data,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lora_end_idx_host.dynamic_shape.canonicalize(),
-                lora_end_idx_host.dynamic_stride.canonicalize(),
-            ),
-        ),
+        c_device_tensor,
+        a_device_tensor,
+        b_device_tensor,
+        lora_end_idx_host,
         Optional(ctx),
     )
 
@@ -119,7 +95,8 @@ fn test_sliced_add[
                 # Should be just a = 1
                 expected = 1.0
 
-            var actual = c_host[i, j]
+            var idx = c_host.layout(Coord(IndexList[2](i, j)))
+            var actual = c_host.ptr[idx]
             if actual != expected:
                 raise Error(
                     "Mismatch at ["

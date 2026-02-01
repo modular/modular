@@ -2035,6 +2035,9 @@ fn _mha_sm100[
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
     # warp_group_tid = tid % 128
     comptime accum_type = get_accum_type[kv_type]()
+    __comptime_assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime max_tmem_cols = 512
     comptime num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
     comptime UMMA0Type = SM100TensorAccumulatorSS[

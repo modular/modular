@@ -477,9 +477,88 @@ struct InputTilePipeline[
         """Get consumer view for MMA warp."""
         return InputConsumer(pipeline_ptr=Pointer(to=self))
 
+    # =========================================================================
+    # Linear Type API - Compiler-enforced resource management
+    # =========================================================================
+
+    @always_inline
+    fn acquire_producer_linear[
+        mut_origin: MutOrigin
+    ](ref[mut_origin] self) -> InputProducerStage[
+        mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire a producer stage handle using linear types.
+
+        Waits for the consumer to free the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var tiles = pipeline.acquire_producer_linear()
+            load_tiles(tiles.payload(), tiles.stage(), tiles.barrier())
+            tiles^.release()  # Advances to next stage
+
+        Returns:
+            An InputProducerStage handle that must be released.
+        """
+        var stage, barrier = self.acquire_producer()
+        return InputProducerStage(
+            pipeline_ptr=Pointer(to=self), stage=stage, barrier=barrier
+        )
+
+    @always_inline
+    fn acquire_consumer_linear[
+        mut_origin: MutOrigin
+    ](ref[mut_origin] self) -> InputConsumerStage[
+        mut_origin, Self.Payload, Self.num_group_stages, Self.k_group_size
+    ]:
+        """Acquire a consumer stage handle using linear types.
+
+        Waits for the producer to fill the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var tiles = pipeline.acquire_consumer_linear()
+            process_tiles(tiles.payload(), tiles.stage())
+            tiles^.release()  # Signals complete and advances
+
+        Returns:
+            An InputConsumerStage handle that must be released.
+        """
+        var stage, mbar = self.acquire_consumer()
+        return InputConsumerStage(
+            pipeline_ptr=Pointer(to=self), stage=stage, mbar=mbar
+        )
+
+    @always_inline
+    fn drain_producer(mut self):
+        """Drain pipeline to prevent CTA exit while peer is still working.
+
+        Call this after all producer iterations are complete.
+        This is the linear type equivalent of InputProducer.drain().
+        """
+
+        @parameter
+        for _ in range(Self.num_group_stages):
+            self.pipeline.wait_consumer()
+            self.pipeline.producer_step()
+
 
 # ============================================================================
-# InputProducerStage/InputConsumerStage - Context managers for tile access
+# InputProducerStage/InputConsumerStage - Unified linear types for tile access
+# ============================================================================
+#
+# These types can be used in two ways:
+#
+# 1. Linear Type API (flat, explicit):
+#    var tiles = input_pipeline.acquire_producer()
+#    load_tiles(tiles.payload(), tiles.stage(), tiles.barrier())
+#    tiles^.release()  # Compiler enforces this call
+#
+# 2. Context Manager API (scoped, automatic):
+#    with producer.acquire() as tiles:
+#        load_tiles(tiles.payload(), tiles.stage(), tiles.barrier())
+#    # release() called automatically by context manager
+#
 # ============================================================================
 
 
@@ -489,7 +568,31 @@ struct InputProducerStage[
     num_group_stages: Int,
     k_group_size: Int,
 ](TrivialRegisterType):
-    """Producer stage context manager. Released on scope exit."""
+    """Handle for producer tile access - works as context manager or linear-style.
+
+    Two usage patterns:
+
+    1. Context manager (scoped):
+        with producer.acquire() as tiles:
+            load_tiles(tiles.payload(), tiles.stage(), tiles.barrier())
+        # release() called automatically by __exit__
+
+    2. Linear-style (flat):
+        var tiles = producer.acquire()
+        load_tiles(tiles.payload(), tiles.stage(), tiles.barrier())
+        tiles.release()  # Manual release
+
+    Lifecycle:
+    1. Created via `producer.acquire()` - waits for consumer
+    2. Use `payload()`, `stage()`, `barrier()` for TMA operations
+    3. Call `release()` or let `__exit__` advance producer stage
+
+    Parameters:
+        origin: Origin of the pipeline reference.
+        Payload: The tile payload type.
+        num_group_stages: Number of synchronization stages.
+        k_group_size: Number of tiles per synchronization stage.
+    """
 
     comptime PipelineType = InputTilePipeline[
         Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -538,6 +641,15 @@ struct InputProducerStage[
         """Get the barrier pointer for TMA multicast loads."""
         return self._barrier
 
+    @always_inline
+    fn release(mut self):
+        """Advance producer to next stage (linear-style API).
+
+        Use this for flat code structure instead of context manager.
+        Equivalent to what __exit__ does.
+        """
+        self.pipeline_ptr[].release_producer()
+
 
 struct InputConsumerStage[
     origin: MutOrigin,
@@ -545,7 +657,31 @@ struct InputConsumerStage[
     num_group_stages: Int,
     k_group_size: Int,
 ](TrivialRegisterType):
-    """Consumer stage context manager. Released on scope exit."""
+    """Handle for consumer tile access - works as context manager or linear-style.
+
+    Two usage patterns:
+
+    1. Context manager (scoped):
+        with consumer.acquire() as tiles:
+            process_tiles(tiles.payload(), tiles.stage())
+        # release() called automatically by __exit__
+
+    2. Linear-style (flat):
+        var tiles = consumer.acquire()
+        process_tiles(tiles.payload(), tiles.stage())
+        tiles.release()  # Manual release
+
+    Lifecycle:
+    1. Created via `consumer.acquire()` - waits for producer
+    2. Use `payload()`, `stage()` for tile access
+    3. Call `release()` or let `__exit__` signal and advance
+
+    Parameters:
+        origin: Origin of the pipeline reference.
+        Payload: The tile payload type.
+        num_group_stages: Number of synchronization stages.
+        k_group_size: Number of tiles per synchronization stage.
+    """
 
     comptime PipelineType = InputTilePipeline[
         Self.Payload, Self.num_group_stages, Self.k_group_size
@@ -588,6 +724,15 @@ struct InputConsumerStage[
     fn mbar(self) -> MbarPtr:
         """Get the barrier pointer."""
         return self._mbar
+
+    @always_inline
+    fn release(mut self):
+        """Signal consumption and advance to next stage (linear-style API).
+
+        Use this for flat code structure instead of context manager.
+        Equivalent to what __exit__ does.
+        """
+        self.pipeline_ptr[].release_consumer()
 
 
 # ============================================================================
@@ -633,10 +778,13 @@ struct InputProducer[
     ) -> InputProducerStage[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
-        """Acquire next stage, waiting for slot availability."""
-        var stage, barrier = self.pipeline_ptr[].acquire_producer()
+        """Acquire next stage, waiting for slot availability.
+
+        Returns a context manager for loading tiles.
+        """
+        var stage_idx, barrier = self.pipeline_ptr[].acquire_producer()
         return InputProducerStage(
-            pipeline_ptr=self.pipeline_ptr, stage=stage, barrier=barrier
+            pipeline_ptr=self.pipeline_ptr, stage=stage_idx, barrier=barrier
         )
 
     @always_inline
@@ -671,10 +819,10 @@ struct InputProducer[
             The producer stage for loading tiles.
         """
         self.pipeline_ptr[].wait_consumer_if_needed(already_ready)
-        var stage = self.pipeline_ptr[].producer_stage()
-        var barrier = self.pipeline_ptr[].producer_mbar(stage)
+        var stage_idx = self.pipeline_ptr[].producer_stage()
+        var barrier = self.pipeline_ptr[].producer_mbar(stage_idx)
         return InputProducerStage(
-            pipeline_ptr=self.pipeline_ptr, stage=stage, barrier=barrier
+            pipeline_ptr=self.pipeline_ptr, stage=stage_idx, barrier=barrier
         )
 
 
@@ -707,10 +855,13 @@ struct InputConsumer[
     ) -> InputConsumerStage[
         Self.origin, Self.Payload, Self.num_group_stages, Self.k_group_size
     ]:
-        """Acquire next stage, waiting for tiles to be ready."""
-        var stage, mbar = self.pipeline_ptr[].acquire_consumer()
+        """Acquire next stage, waiting for tiles to be ready.
+
+        Returns a context manager for processing tiles.
+        """
+        var stage_idx, mbar = self.pipeline_ptr[].acquire_consumer()
         return InputConsumerStage(
-            pipeline_ptr=self.pipeline_ptr, stage=stage, mbar=mbar
+            pipeline_ptr=self.pipeline_ptr, stage=stage_idx, mbar=mbar
         )
 
     @always_inline
@@ -745,10 +896,10 @@ struct InputConsumer[
             The consumer stage for processing tiles.
         """
         self.pipeline_ptr[].wait_producer_if_needed(already_ready)
-        var stage = self.pipeline_ptr[].consumer_stage()
-        var mbar = self.pipeline_ptr[].consumer_mbar(stage)
+        var stage_idx = self.pipeline_ptr[].consumer_stage()
+        var mbar = self.pipeline_ptr[].consumer_mbar(stage_idx)
         return InputConsumerStage(
-            pipeline_ptr=self.pipeline_ptr, stage=stage, mbar=mbar
+            pipeline_ptr=self.pipeline_ptr, stage=stage_idx, mbar=mbar
         )
 
 
@@ -798,6 +949,7 @@ struct TilePipeline[
     var b_tiles: Self.BTileArray
 
     @staticmethod
+    @always_inline
     fn init_barriers(
         storage_ptr: MbarPtr,
         producer_arv_count: Int32,
@@ -1285,6 +1437,7 @@ struct OutputTilePipeline[
     var mma_complete_mask: UInt16
 
     @staticmethod
+    @always_inline
     fn init_barriers(
         storage_ptr: MbarPtr,
         producer_arv_count: Int32,
@@ -1368,6 +1521,55 @@ struct OutputTilePipeline[
     ]:
         """Get consumer view for epilogue warp."""
         return OutputConsumer(Pointer(to=self))
+
+    # =========================================================================
+    # Linear Type API - Compiler-enforced resource management
+    # =========================================================================
+
+    @always_inline
+    fn acquire_mma_linear[
+        origin: MutOrigin, //
+    ](ref[origin] self) -> MmaStage[
+        origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]:
+        """Acquire a stage for MMA using linear types.
+
+        Waits for the epilogue to free the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var stage = output_pipeline.acquire_mma_linear()
+            mma_op.mma(a_tile, b_tile, stage.tmem_offset())
+            mma_op.commit(stage.mbar())
+            stage^.release()  # Signals mma_arrive and advances
+
+        Returns:
+            An MmaStage handle that must be released.
+        """
+        var stage = self.acquire_for_mma()
+        return MmaStage(Pointer(to=self), stage)
+
+    @always_inline
+    fn acquire_epilogue_linear[
+        origin: MutOrigin, //
+    ](ref[origin] self) -> EpilogueStage[
+        origin, Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]:
+        """Acquire a stage for epilogue using linear types.
+
+        Waits for MMA to complete the current stage, then returns a
+        linear type handle that MUST be released (compiler-enforced).
+
+        Usage:
+            var stage = output_pipeline.acquire_epilogue_linear()
+            process_tmem(stage.tmem())
+            stage^.release()  # Advances to next stage
+
+        Returns:
+            An EpilogueStage handle that must be released.
+        """
+        var stage = self.acquire_for_epilogue()
+        return EpilogueStage(Pointer(to=self), stage)
 
     @always_inline
     fn get_pipeline(self) -> Self.Pipeline:
@@ -1500,6 +1702,161 @@ struct OutputConsumer[
 
     @always_inline
     fn __exit__(mut self):
+        self.pipeline_ptr[].release_from_epilogue()
+
+
+# =============================================================================
+# Unified Linear Types for OutputTilePipeline
+# =============================================================================
+#
+# These types work both as linear types (direct use) and within context managers.
+#
+# Linear Type API (flat):
+#     var stage = output_pipeline.acquire_mma_linear()
+#     mma_op.mma(a_tile, b_tile, stage.tmem_offset())
+#     stage^.release()
+#
+# Context Manager API (scoped):
+#     with output_pipeline.producer() as stage:
+#         mma_op.mma(a_tile, b_tile, stage.tmem.offset())
+#
+
+
+@explicit_destroy("Must call release() to signal MMA completion and advance")
+struct MmaStage[
+    origin: MutOrigin,
+    num_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+]:
+    """Unified linear type handle for MMA stage in output pipeline.
+
+    Works as both a linear type (direct use) and within context managers.
+
+    Lifecycle:
+    1. Created via `output_pipeline.acquire_mma_linear()` - waits for epilogue
+    2. Use `tmem()`, `tmem_offset()`, `mbar()` for MMA operations
+    3. Must call `release()` to signal mma_arrive and advance (compiler-enforced)
+
+    Parameters:
+        origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+        stage_stride_cols: TMEM column stride between stages.
+        cta_group: CTA group size (1 or 2).
+    """
+
+    comptime TilePipelineType = OutputTilePipeline[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+
+    var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    var _stage: Self.Stage
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin],
+        stage: Self.Stage,
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        self._stage = stage
+
+    @always_inline
+    fn tmem(self) -> Self.Stage.Tmem:
+        """Get the TMEM stage handle."""
+        return self._stage.tmem
+
+    @always_inline
+    fn tmem_offset(self) -> Int:
+        """Get the TMEM offset for MMA accumulator."""
+        return self._stage.tmem.offset()
+
+    @always_inline
+    fn index(self) -> UInt32:
+        """Get the current stage index."""
+        return self._stage.index
+
+    @always_inline
+    fn mbar(self) -> MbarPtr:
+        """Get the producer barrier for MMA commit."""
+        return self.pipeline_ptr[].pipeline.producer_mbar(self._stage.index)
+
+    @always_inline
+    fn release(deinit self):
+        """Signal MMA completion and advance to next stage.
+
+        This is the only way to destroy this linear type.
+        Internally calls mma_arrive (1-SM) or mma_arrive_multicast (2-SM).
+        """
+        self.pipeline_ptr[].release_from_mma(self._stage)
+
+
+@explicit_destroy("Must call release() to free stage for MMA reuse")
+struct EpilogueStage[
+    origin: MutOrigin,
+    num_stages: Int,
+    stage_stride_cols: Int,
+    cta_group: Int,
+]:
+    """Unified linear type handle for epilogue stage in output pipeline.
+
+    Works as both a linear type (direct use) and within context managers.
+
+    Lifecycle:
+    1. Created via `output_pipeline.acquire_epilogue_linear()` - waits for MMA
+    2. Use `tmem()`, `tmem_offset()` for reading MMA results
+    3. Must call `release()` to advance (compiler-enforced)
+
+    Parameters:
+        origin: Origin of the pipeline reference.
+        num_stages: Number of pipeline stages.
+        stage_stride_cols: TMEM column stride between stages.
+        cta_group: CTA group size (1 or 2).
+    """
+
+    comptime TilePipelineType = OutputTilePipeline[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+    comptime Stage = OutputStage[
+        Self.num_stages, Self.stage_stride_cols, Self.cta_group
+    ]
+
+    var pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin]
+    var _stage: Self.Stage
+
+    @always_inline
+    fn __init__(
+        out self,
+        pipeline_ptr: Pointer[Self.TilePipelineType, Self.origin],
+        stage: Self.Stage,
+    ):
+        self.pipeline_ptr = pipeline_ptr
+        self._stage = stage
+
+    @always_inline
+    fn tmem(self) -> Self.Stage.Tmem:
+        """Get the TMEM stage handle."""
+        return self._stage.tmem
+
+    @always_inline
+    fn tmem_offset(self) -> Int:
+        """Get the TMEM offset for reading MMA results."""
+        return self._stage.tmem.offset()
+
+    @always_inline
+    fn index(self) -> UInt32:
+        """Get the current stage index."""
+        return self._stage.index
+
+    @always_inline
+    fn release(deinit self):
+        """Free stage for MMA reuse and advance to next stage.
+
+        This is the only way to destroy this linear type.
+        """
         self.pipeline_ptr[].release_from_epilogue()
 
 

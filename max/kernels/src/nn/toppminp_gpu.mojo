@@ -13,9 +13,6 @@
 
 
 from math import ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, bit_width_of
 
 from builtin.dtype import _uint_type_of_width
@@ -24,8 +21,9 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.memory import external_memory
 from random import Random
-from layout import Layout, LayoutTensor, RuntimeTuple, RuntimeLayout
-from layout.int_tuple import UNKNOWN_VALUE, fill_like
+from layout._coord import Coord, CoordLike, Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -51,15 +49,15 @@ fn topk_wrapper[
     K: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T]],
+    in_buffer: UnsafePointer[Scalar[T], MutExternalOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[T]
+        mut=True, Scalar[T], MutExternalOrigin
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        mut=True, Scalar[out_idx_type], MutExternalOrigin
     ],  # Output buffer of size num_blocks_per_input * K
-    p_threshold: UnsafePointer[Scalar[T]],
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    p_threshold: UnsafePointer[mut=True, Scalar[T], MutExternalOrigin],
+    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], MutExternalOrigin],
 ):
     """
     Copy of `Kernels/mojo/nn/topk.mojo:_topk_stage1` with the addition of
@@ -251,12 +249,16 @@ fn radix_sort_pairs_kernel[
     BLOCK_SIZE: Int = 256,  # found empirically
     NUM_BITS_PER_PASS: Int = 4,
 ](
-    input_keys_: UnsafePointer[Scalar[dtype]],  # modifies input
-    output_keys_: UnsafePointer[Scalar[dtype]],
-    input_key_ids_: UnsafePointer[Scalar[out_idx_type]],  # modifies input
-    output_key_ids_: UnsafePointer[Scalar[out_idx_type]],
+    input_keys_: UnsafePointer[
+        Scalar[dtype], MutExternalOrigin
+    ],  # modifies input
+    output_keys_: UnsafePointer[mut=True, Scalar[dtype], MutExternalOrigin],
+    input_key_ids_: UnsafePointer[
+        Scalar[out_idx_type], MutExternalOrigin
+    ],  # modifies input
+    output_key_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     num_keys: Int,
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
 ):
     """
     Radix pair sort kernel for (default) descending order.
@@ -324,9 +326,7 @@ fn radix_sort_pairs_kernel[
 
     # Initialize counts[NUM_BUCKETS]
     var counts_stack = InlineArray[Int32, NUM_BUCKETS](uninitialized=True)
-    var counts_buf = LayoutTensor[DType.int32, Layout.row_major(NUM_BUCKETS)](
-        counts_stack
-    ).fill(0)
+    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]()).fill(0)
     var counts = counts_buf.ptr
 
     # Process elements and compute counts for each thread
@@ -423,9 +423,9 @@ fn radix_sort_pairs_kernel[
     var local_offsets_stack = InlineArray[Int32, NUM_BUCKETS](
         uninitialized=True
     )
-    var local_offsets_buf = LayoutTensor[
-        DType.int32, Layout.row_major(NUM_BUCKETS)
-    ](local_offsets_stack).fill(0)
+    var local_offsets_buf = TileTensor(
+        local_offsets_stack, row_major[NUM_BUCKETS]()
+    ).fill(0)
     var local_offsets = local_offsets_buf.ptr
 
     # Now, each thread processes its elements, computes destination index, write to output
@@ -470,7 +470,9 @@ fn radix_sort_pairs_kernel[
 
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
-    var _d_buffers: InlineArray[UnsafePointer[Scalar[Self.dtype]], 2]
+    var _d_buffers: InlineArray[
+        UnsafePointer[Scalar[Self.dtype], MutExternalOrigin], 2
+    ]
     var _selection: Int32
     var _size: Int
 
@@ -481,8 +483,8 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     fn __init__(
         out self,
-        current: UnsafePointer[Scalar[Self.dtype]],
-        alternate: UnsafePointer[Scalar[Self.dtype]],
+        current: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+        alternate: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
         size: Int,
     ):
         self._d_buffers = [current, alternate]
@@ -528,7 +530,7 @@ fn run_radix_sort_pairs_gpu[
     ctx: DeviceContext,
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool]],
     in_shape: IndexList,
 ) raises:
     var batch_size = in_shape[0]
@@ -567,11 +569,11 @@ fn topp_minp_sampling_kernel[
     out_idx_type: DType,
     is_top_p: Bool,
 ](
-    p_thresholds_: UnsafePointer[Scalar[dtype]],
-    sorted_probs_: UnsafePointer[Scalar[dtype]],
-    sorted_ids_: UnsafePointer[Scalar[out_idx_type]],
-    out_token_ids: UnsafePointer[Scalar[out_idx_type]],
-    skip_sort: UnsafePointer[Scalar[DType.bool]],
+    p_thresholds_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    sorted_probs_: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    sorted_ids_: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    out_token_ids: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    skip_sort: UnsafePointer[Scalar[DType.bool], MutExternalOrigin],
     vocab_size: Int,
 ):
     """
@@ -589,7 +591,6 @@ fn topp_minp_sampling_kernel[
         skip_sort: Whether sorting was skipped for this batch.
     """
     var tid = thread_idx.x
-    var block_size = block_dim.x
     var batch_id = block_idx.x
 
     if skip_sort[batch_id]:
@@ -675,12 +676,10 @@ fn _topp_minp_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    p_thresholds: LayoutTensor[dtype, ...],
-    input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, ...
+    p_thresholds: TileTensor[dtype, ...],
+    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    out_token_ids: TileTensor[
+        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -702,13 +701,13 @@ fn _topp_minp_sampling_gpu[
     Args:
         ctx: DeviceContext
             The context for GPU execution.
-        p_thresholds: LayoutTensor[type]
+        p_thresholds: TileTensor[type]
             Batch of p values (thresholds) for Top-P/Min-P sampling.
             For Top-P: cumulative probability threshold (e.g., 0.9 means sample from top 90%).
             For Min-P: min-p coefficients that determine the minimum probability threshold.
-        input_logits: LayoutTensor[type]
+        input_logits: TileTensor[type]
             Input logits tensor of shape [batch_size, vocab_size].
-        out_token_ids: LayoutTensor[out_idx_type]
+        out_token_ids: TileTensor[out_idx_type]
             Output buffer for sampled token indices of shape [batch_size, 1].
         temperature: Scalar[type]
             Temperature for softmax scaling of logits (default=1.0).
@@ -740,7 +739,7 @@ fn _topp_minp_sampling_gpu[
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
     var input_shape = IndexList[input_logits.rank](
-        input_logits.dim[0](), input_logits.dim[1]()
+        Int(input_logits.dim[0]()), Int(input_logits.dim[1]())
     )
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
@@ -750,24 +749,16 @@ fn _topp_minp_sampling_gpu[
     fn apply_temperature[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
-        var idx = input_logits.runtime_layout(
-            RuntimeTuple[fill_like(input_logits.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
+        var idx = input_logits.layout(Coord(coords))
         var val = input_logits.ptr.load[width=_simd_width](idx)
         return val / temperature
 
-    var input_size = input_logits.size()
+    var input_size = input_logits.numel()
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
-    var input_probs = LayoutTensor[
-        dtype, Layout.row_major[input_logits.rank]()
-    ](
+    var input_probs = TileTensor(
         probs_buf.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[input_logits.rank]()].row_major(
-            IndexList[2](batch_size, vocab_size)
-        ),
+        row_major((Idx(batch_size), Idx(vocab_size))),
     )
 
     _softmax_gpu[
@@ -775,7 +766,7 @@ fn _topp_minp_sampling_gpu[
         1,
         input_logits.rank,
         apply_temperature,
-    ](input_shape, input_probs, input_logits.rank - 1, ctx)
+    ](input_shape, input_probs.to_layout_tensor(), input_logits.rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
@@ -809,13 +800,15 @@ fn _topp_minp_sampling_gpu[
     # Create the input_ids buffer
     var ids_buf = ctx.enqueue_create_buffer[out_idx_type](input_size * 2)
     var probs_double_buffer = DoubleBuffer(
-        probs_buf.unsafe_ptr(),
-        probs_buf.unsafe_ptr() + input_size,
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+        probs_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        + input_size,
         input_size,
     )
     var keys_double_buffer = DoubleBuffer(
-        ids_buf.unsafe_ptr(),
-        ids_buf.unsafe_ptr() + input_size,
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+        ids_buf.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin]()
+        + input_size,
         input_size,
     )
 
@@ -865,12 +858,10 @@ fn top_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    top_ps: LayoutTensor[dtype, ...],
-    input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, ...
+    top_ps: TileTensor[dtype, ...],
+    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    out_token_ids: TileTensor[
+        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:
@@ -897,12 +888,10 @@ fn min_p_sampling_gpu[
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_logits: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    out_token_ids: LayoutTensor[
-        out_idx_type, address_space = AddressSpace.GENERIC, ...
+    min_ps: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_logits: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    out_token_ids: TileTensor[
+        mut=True, out_idx_type, address_space = AddressSpace.GENERIC, ...
     ],
     temperature: Scalar[dtype] = 1,
 ) raises:

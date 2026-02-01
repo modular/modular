@@ -113,6 +113,7 @@ fn causal_conv1d_cpu[
     bias: InputTensor[dtype=dtype, rank=1],
     output: OutputTensor[dtype=dtype, rank=3],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     comptime kChunkSize = threads * elements
     var batch = input.shape()[0]
     var seq_length = input.shape()[2]
@@ -175,6 +176,7 @@ fn causal_conv1d_kernel[
     bias: LayoutTensor[dtype, b_layout, MutAnyOrigin],
     output: LayoutTensor[dtype, i_layout, MutAnyOrigin],
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     var seq_length = input.shape[2]()
 
     # Use the 3D grid to iterate over the batch, channel and sequence length dimensions

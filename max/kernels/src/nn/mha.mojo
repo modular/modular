@@ -200,42 +200,17 @@ fn get_mha_decoding_num_partitions[
     num_heads: Int, group: Int
 ](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
     comptime sm_count = ctx.default_device_info.sm_count
-
-    @parameter
-    if has_amd_gpu_accelerator():
-        # AMD split-k strategy: scale partitioning based on occupancy
-        # 256: min context length where split-k overhead is worthwhile
-        if num_keys <= 256:
-            return 1
-
-        # Compute total work items (occupancy)
-        work_items = batch_size * (num_heads // group)
-
-        # High occupancy when work_items >= sm_count (≥1 work item per CU)
-        if work_items >= sm_count:
-            # High occupancy: scale partition size to avoid over-partitioning
-            # 128: base partition size matching kernel block (BN=128)
-            # 64: scaling factor - reduces partitions as occupancy increases
-            #     e.g., 256 work_items → scale=4 → 512-key partitions
-            #           512 work_items → scale=8 → 1024-key partitions
-            occupancy_scale = work_items // 64
-            return min(ceildiv(num_keys, 128 * occupancy_scale), WARP_SIZE)
-        else:
-            # Low occupancy: aggressive partitioning for more parallelism
-            # 128: keys per partition (matches kernel BN=128)
-            # WARP_SIZE (64): max partitions (AMD wavefront size, reduction limit)
-            return min(ceildiv(num_keys, 128), WARP_SIZE)
-    else:
-        if num_keys > 512:
-            return min(
-                next_power_of_two(
-                    min(
-                        sm_count // (batch_size * (num_heads // group)),
-                        num_keys // 512,
-                    )
-                ),
-                32,
-            )
+    # TODO: This is dumb, make it more granular as a follow up
+    if num_keys > 512:
+        return min(
+            next_power_of_two(
+                min(
+                    sm_count // (batch_size * (num_heads // group)),
+                    num_keys // 512,
+                )
+            ),
+            32,
+        )
     return 1
 
 

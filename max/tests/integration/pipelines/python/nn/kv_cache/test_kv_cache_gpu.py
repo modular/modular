@@ -50,4 +50,4 @@ async def _test_kv_cache_gpu() -> None:
     # suffixed [0] because we only have one device
     kv_tuple = kv_manager.get_runtime_inputs([batch])[0]
     assert isinstance(kv_tuple, KVCacheInputs)
-    assert len(kv_tuple) == 4
+    assert len(kv_tuple) == 5

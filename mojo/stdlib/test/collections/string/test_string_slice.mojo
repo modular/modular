@@ -929,10 +929,10 @@ def test_ascii_ljust():
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
-def test_center():
-    assert_equal(StringSlice("hello").center(4), "hello")
-    assert_equal(StringSlice("hello").center(8), " hello  ")
-    assert_equal(StringSlice("hello").center(8, "*"), "*hello**")
+def test_ascii_center():
+    assert_equal(StringSlice("hello").ascii_center(4), "hello")
+    assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
+    assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
 def test_count():
@@ -1034,11 +1034,11 @@ def test_string_slice_from_pointer():
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
-    assert_true("A", d[byte=0])
-    assert_true("B", d[byte=1])
-    assert_true("C", d[byte=2])
-    assert_true("D", d[byte=3])
-    assert_true("D", d[byte= -1])
+    assert_equal("A", d[byte=0])
+    assert_equal("B", d[byte=1])
+    assert_equal("C", d[byte=2])
+    assert_equal("D", d[byte=3])
+    assert_equal("D", d[byte= -1])
 
 
 def test_replace():

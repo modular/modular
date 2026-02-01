@@ -34,6 +34,9 @@ class RequestID:
         return self.value
 
 
+DUMMY_REQUEST_ID = RequestID("cuda_graph_dummy")
+
+
 @dataclasses.dataclass(frozen=True)
 class Request:
     """

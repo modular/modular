@@ -703,22 +703,42 @@ class GenericOracle(PipelineOracle):
             return self._weight_path_map[encoding]
         return None
 
+    def _parse_weight_path(
+        self, weight_path: str
+    ) -> tuple[str, str, str | None]:
+        """Parse weight path into (repo_id, filename, revision)."""
+        path_pieces = weight_path.split("/")
+        weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+        weight_filename = "/".join(path_pieces[2:])
+        weight_revision = hf_repo_lock.revision_for_hf_repo(weight_repo_id)
+        return weight_repo_id, weight_filename, weight_revision
+
     def create_max_pipeline(
         self,
         *,
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
+
+        # Determine weight revision: use weight repo's revision if different
+        weight_revision = model_revision
+        if weight_path:
+            weight_repo_id, _, weight_revision = self._parse_weight_path(
+                weight_path
+            )
+            if weight_repo_id == self.model_path:
+                weight_revision = model_revision
+
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
             quantization_encoding=pipelines.SupportedEncoding[encoding]
             if encoding
             else None,
             model_path=self.model_path,
-            huggingface_model_revision=revision,
-            huggingface_weight_revision=revision,
+            huggingface_model_revision=model_revision,
+            huggingface_weight_revision=weight_revision,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
             **self.config_params,
@@ -750,14 +770,14 @@ class GenericOracle(PipelineOracle):
                     revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 )
             )
-            path_pieces = weight_path.split("/")
-            weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
-            weight_filename = "/".join(path_pieces[2:])
+            weight_repo_id, weight_filename, weight_revision = (
+                self._parse_weight_path(weight_path)
+            )
             downloaded_weight_path = Path(
                 huggingface_hub.hf_hub_download(
                     repo_id=weight_repo_id,
                     filename=weight_filename,
-                    revision=hf_repo_lock.revision_for_hf_repo(weight_repo_id),
+                    revision=weight_revision,
                 )
             )
             config = transformers.AutoConfig.from_pretrained(config_path)

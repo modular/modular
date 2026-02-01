@@ -2708,6 +2708,9 @@ fn fused_silu_kernel[
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
     comptime accum_dtype = get_accum_type[input_dtype]()
+    __comptime_assert (
+        accum_dtype.is_floating_point()
+    ), "accum_dtype must be floating point"
     comptime input_dim = input_tensor.shape[1]()
     comptime output_dim = output_tensor.shape[1]()
     comptime simd_width = simd_width_of[input_dtype]()
@@ -2784,6 +2787,9 @@ fn fused_silu_fp8_kernel[
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
     comptime accum_dtype = get_accum_type[input_dtype]()
+    __comptime_assert (
+        accum_dtype.is_floating_point()
+    ), "accum_dtype must be floating point"
     comptime input_dim = input_tensor.shape[1]()
     comptime output_dim = output_tensor.shape[1]()
     comptime simd_width = simd_width_of[input_dtype]()

@@ -20,7 +20,9 @@ from testing import assert_almost_equal, TestSuite
 
 fn tanh_libm[
     dtype: DType, simd_width: Int
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](arg: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+] where dtype.is_floating_point():
     return libm_call["tanhf", "tanh"](arg)
 
 

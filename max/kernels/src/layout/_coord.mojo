@@ -208,6 +208,30 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
 
 
 fn Idx(
+    value: IntLiteral,
+) -> ComptimeInt[
+    Int(
+        mlir_value=__mlir_attr[
+            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            value.value,
+            `> : !pop.scalar<index>> : index`,
+        ]
+    )
+]:
+    """Helper to create compile-time indices.
+
+    Args:
+        value: The compile-time integer value.
+
+    Returns:
+        A `ComptimeInt` instance with the specified compile-time value.
+
+    Usage: Idx[5]() creates a ComptimeInt with value 5.
+    """
+    return {}
+
+
+fn Idx(
     value: Scalar,
 ) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
     """Helper to create runtime indices.

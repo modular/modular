@@ -24,7 +24,6 @@ from utils import Index, IndexList
 from ...utils import elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig
 from .blas import matmul as vendor_matmul
-from collections import OptionalReg
 
 
 fn matmul[
@@ -34,9 +33,7 @@ fn matmul[
     //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],

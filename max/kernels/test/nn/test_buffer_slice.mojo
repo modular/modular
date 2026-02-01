@@ -13,22 +13,19 @@
 
 
 from algorithm import elementwise
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from layout._coord import Coord, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, IndexList
 
 
-def print_elements[dtype: DType](tensor: LayoutTensor[dtype, ...]):
-    print("New shape:", tensor.runtime_layout.shape.value.canonicalize())
-    print("New strides:", tensor.runtime_layout.stride.value.canonicalize())
+def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
+    var shape = coord_to_index_list(tensor.layout.shape)
+    var stride = coord_to_index_list(tensor.layout.stride)
+    print("New shape:", shape)
+    print("New strides:", stride)
 
     @always_inline
     @parameter
@@ -36,14 +33,10 @@ def print_elements[dtype: DType](tensor: LayoutTensor[dtype, ...]):
         simd_width: Int, rank: Int, alignment: Int = 1
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.runtime_layout(
-            RuntimeTuple[fill_like(tensor.layout.shape, UNKNOWN_VALUE)](index)
-        )
+        var idx = tensor.layout(Coord(index))
         print(tensor.ptr[idx])
 
-    elementwise[print_elements_lambda, 1](
-        tensor.runtime_layout.shape.value.canonicalize()
-    )
+    elementwise[print_elements_lambda, 1](shape)
 
 
 # slice_dim
@@ -63,42 +56,38 @@ def test_slice[
     var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
-    var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-        memory1,
-        RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
+    var in_tensor = TileTensor(
+        memory1.unsafe_ptr(),
+        row_major(Coord(dims)),
     )
 
-    print("In shape:", in_tensor.runtime_layout.shape.value.canonicalize())
-    print("In strides:", in_tensor.runtime_layout.stride.value.canonicalize())
+    var shape = coord_to_index_list(in_tensor.layout.shape)
+    var stride = coord_to_index_list(in_tensor.layout.stride)
+    print("In shape:", shape)
+    print("In strides:", stride)
 
     var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var start_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        start_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+    var start_tensor = TileTensor(
+        start_tensor_mem.unsafe_ptr(),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var end_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        end_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+    var end_tensor = TileTensor(
+        end_tensor_mem.unsafe_ptr(),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var step_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
-        step_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+    var step_tensor = TileTensor(
+        step_tensor_mem.unsafe_ptr(),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     for dim in range(outer_rank):
@@ -122,11 +111,10 @@ def test_slice[
     else:
         print("As copy")
 
-        var output_buffer = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
-            output_mem,
-            RuntimeLayout[Layout.row_major[outer_rank]()].row_major(
-                sliced.runtime_layout.shape.value.canonicalize()
-            ),
+        var sliced_shape = coord_to_index_list(sliced.layout.shape)
+        var output_buffer = TileTensor(
+            output_mem.unsafe_ptr(),
+            row_major(Coord(sliced_shape)),
         )
 
         slice_as_copy(

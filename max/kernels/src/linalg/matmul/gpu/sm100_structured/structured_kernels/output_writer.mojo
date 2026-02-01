@@ -21,17 +21,28 @@ Usage:
 """
 
 from collections import Optional
-from memory import Pointer
-from sys import simd_width_of
+from memory import Pointer, UnsafePointer
+from sys import simd_width_of, size_of, align_of
 
 from gpu import WARP_SIZE, thread_idx
 from gpu import lane_id
 from gpu import warp_id as get_warp_id
+from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.int_tuple import IntTuple
+from layout.layout_tensor import zipped_divide, upcast
+from layout.runtime_tuple import idx2crd
+from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 
-from linalg.structuring import SMemTileArray
+from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import IndexList
@@ -608,3 +619,294 @@ struct TileWriter[
             @parameter
             if stage > 0 or stage == Self.num_stages - 1:
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+    @always_inline
+    fn write_absolute_with_bounds_check[
+        c_tensor_layout: Layout,
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        m_abs: UInt32,
+        n_abs: UInt32,
+        m_end: UInt32,
+        expert_scale: Float32,
+        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+    ):
+        """Write accumulated results using absolute coordinates with bounds checking.
+
+        For 1D-1D grouped kernels where M coordinate is absolute (not tile index).
+        Handles partial tiles that cross expert boundaries by using element-by-element
+        stores for rows that would exceed m_end.
+
+        Args:
+            c_tiles: SMEM tile array for C output (double-buffered).
+            output_stage: OutputStage with pipeline, index, and TMEM handle.
+            m_abs: Absolute M coordinate (start of tile in token space).
+            n_abs: Absolute N coordinate (start of tile).
+            m_end: End offset for bounds checking (exclusive).
+            expert_scale: Per-expert output scaling factor.
+            c_tensor: C tensor in GMEM (for bounds-checked stores).
+        """
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
+        var warp_id = get_warp_id()
+        var lane = lane_id()
+        var scale = expert_scale.cast[Self.accum_type]()
+
+        comptime SMEMWriter = TMEMToSMemWriter[
+            Self.c_type,
+            Self.accum_type,
+            Self.c_smem_layout,
+            Self.BM,
+            Self.BN,
+            Self.MMA_M,
+            Self.MMA_N,
+            Self.stageN,
+            Self.cta_group,
+            Self.num_output_warps,
+            Self.c_swizzle,
+            Self.transpose_c,
+        ]
+        var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
+
+        comptime StoreExecutorLocal = TMAStoreExecutor[
+            Self.c_type,
+            Self.c_smem_layout,
+            Self.BM,
+            Self.BN,
+            Self.MMA_M,
+            Self.MMA_N,
+            Self.stageN,
+            Self.stage_contiguous_size,
+            Self.cta_group,
+            Self.c_swizzle,
+            Self.transpose_c,
+            Self.is_lower_frag_required,
+            batched=False,  # Always 2D for absolute coords
+        ]
+
+        var upper_frag_partial: SIMD[Self.accum_type, Self.rep_frag_size]
+        var lower_frag_partial = SIMD[Self.accum_type, Self.rep_frag_size]()
+        var upper_frag_casted: SIMD[Self.epilogue_dtype, Self.rep_frag_size]
+        var lower_frag_casted = SIMD[Self.epilogue_dtype, Self.rep_frag_size]()
+
+        @parameter
+        for loop_stage in range(Self.num_stages):
+            # Phase 1: TMEM Load
+            var frags = accum_tiles[loop_stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+
+            upper_frag_partial = rebind[
+                SIMD[Self.accum_type, Self.rep_frag_size]
+            ](frags.upper)
+
+            @parameter
+            if Self.is_lower_frag_required:
+                lower_frag_partial = rebind[
+                    SIMD[Self.accum_type, Self.rep_frag_size]
+                ](frags.lower)
+
+            # Phase 2: Barrier Arrive
+            @parameter
+            if loop_stage == Self.num_stages - 1:
+                AccumBarrier[Self.cta_group].arrive(
+                    output_stage.pipeline, output_stage.index
+                )
+
+            # Apply expert scale factor
+            upper_frag_partial = upper_frag_partial * scale
+            if Self.is_lower_frag_required:
+                lower_frag_partial = lower_frag_partial * scale
+
+            # Cast to epilogue dtype
+            upper_frag_casted = upper_frag_partial.cast[Self.epilogue_dtype]()
+
+            @parameter
+            if Self.is_lower_frag_required:
+                lower_frag_casted = lower_frag_partial.cast[
+                    Self.epilogue_dtype
+                ]()
+
+            # Phase 3: SMEM Write
+            var c_smem_tile = c_tiles[loop_stage % 2]
+
+            comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
+            smem_writer.write_fragments[Self.rep](
+                rebind[SIMD[Self.c_type, expected_size]](
+                    upper_frag_casted.cast[Self.c_type]()
+                ),
+                rebind[SIMD[Self.c_type, expected_size]](
+                    lower_frag_casted.cast[Self.c_type]()
+                ),
+                c_smem_tile,
+            )
+
+            WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+            # Phase 4: TMA Store with bounds checking
+            comptime TMA_BM = StoreExecutorLocal.TMA_BM
+            var tile_needs_bounds_check = m_abs + UInt32(TMA_BM) > m_end
+
+            if tile_needs_bounds_check:
+                # Use element-by-element stores with bounds checking
+                Self._store_with_bounds_check[c_tensor_layout](
+                    c_smem_tile,
+                    c_tensor,
+                    m_abs,
+                    n_abs + UInt32(loop_stage * Self.stageN),
+                    m_end,
+                    UInt32(warp_id),
+                    UInt32(lane),
+                )
+            else:
+                # Fast path: TMA store for tiles fully within bounds
+                comptime StoreCoordsLocal = TMAStoreCoords[
+                    Self.BM,
+                    Self.BN,
+                    Self.MMA_M,
+                    Self.MMA_N,
+                    Self.stageN,
+                    Self.cta_group,
+                    Self.c_smem_layout.shape[0].value(),
+                    loop_stage,
+                    batched=False,
+                ]
+                var n_tile = n_abs / UInt32(Self.MMA_N)
+                var dummy_m_tile = UInt32(0)
+                var store_coords = StoreCoordsLocal(
+                    (dummy_m_tile, n_tile), UInt32(warp_id)
+                )
+                # Override coord_m with absolute M coordinate
+                store_coords.coord_m = UInt(m_abs)
+
+                StoreExecutorLocal.execute[Self.c_layout, Self.c_desc_layout](
+                    c_smem_tile,
+                    store_coords,
+                    self.c_tma_op[],
+                    UInt32(warp_id),
+                    UInt32(lane),
+                )
+
+            # Phase 5: TMA Wait (only if we did a TMA store)
+            if not tile_needs_bounds_check:
+                tma_wait_pipelined[
+                    Self.c_type,
+                    Self.c_layout,
+                    Self.c_desc_layout,
+                    loop_stage == Self.num_stages - 1,
+                ](self.c_tma_op[])
+
+            @parameter
+            if loop_stage > 0 or loop_stage == Self.num_stages - 1:
+                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+    @staticmethod
+    @always_inline
+    fn _store_with_bounds_check[
+        c_tensor_layout: Layout,
+    ](
+        c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
+        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        m_abs: UInt32,
+        n_abs: UInt32,
+        m_end: UInt32,
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """Store SMEM tile to GMEM with per-row bounds checking.
+
+        Used when the tile crosses the expert boundary (m_abs + TMA_BM > m_end).
+        Uses element-by-element stores to avoid writing past m_end.
+
+        Args:
+            c_smem_tile: SMEM tile to store.
+            c_tensor: C tensor in global memory.
+            m_abs: Absolute M coordinate (start of tile).
+            n_abs: Absolute N coordinate (start of tile).
+            m_end: End offset for bounds checking (exclusive).
+            warp_id: Current warp ID.
+            lane: Current lane ID.
+        """
+        comptime output_threads = Self.num_output_warps * WARP_SIZE
+        comptime c_smem_M = Self.c_smem_layout.shape[0].value()
+        comptime TMA_BM = 64 if Self.cta_group == 1 else 128
+        comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
+            layout,
+            element_type = DType.uint32,
+            linear_idx_type = DType.uint32,
+        ]
+        comptime simd_size = simd_width_of[Self.c_type]()
+        comptime alignment = align_of[SIMD[Self.c_type, simd_size]]()
+        comptime thread_n = Self.stageN // simd_size
+        comptime thread_layout = Layout.row_major(
+            output_threads // thread_n, thread_n
+        )
+
+        # Swizzle function
+        comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
+
+        # Ensure fence before reading from SMEM
+        if warp_id == 0 and lane == 0:
+            fence_async_view_proxy()
+
+        # Synchronize all epilogue threads
+        WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+        # Iterate over SMEM chunks
+        @parameter
+        for i in range(c_smem_M // TMA_BM):
+            var c_smem_split = c_smem_tile.tile[TMA_BM, Self.stageN](i, 0)
+            comptime split_layout = c_smem_split.layout
+            var split_rt = RLayout32Bits[split_layout]()
+            comptime zipped = zipped_divide(
+                upcast(split_layout, simd_size), thread_layout
+            )
+            var zipped_rt = RLayout32Bits[zipped]()
+
+            @parameter
+            for j in range(zipped.shape[1][0].value()):
+                var input_crd = RuntimeTuple[
+                    IntTuple(UNKNOWN_VALUE, j),
+                    element_type = DType.uint32,
+                ](Int(thread_idx.x), j)
+                var linear_idx = zipped_rt(input_crd) * UInt32(simd_size)
+                var linear_tup = RuntimeTuple[
+                    IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
+                ](Int(linear_idx))
+                var cmem_crd = idx2crd(
+                    linear_tup, split_rt.shape, split_rt.stride
+                )
+                var local_i = cmem_crd[0].get_int()
+                var local_j = cmem_crd[1].get_int()
+                var coord_m = m_abs + UInt32(i * TMA_BM)
+                var global_i = coord_m + local_i
+                var global_j = n_abs + local_j
+
+                # Bounds check: only store if within expert boundary
+                if global_i < m_end:
+
+                    @parameter
+                    if size_of[Self.c_type]() == 2:
+                        var src_ptr = c_smem_split.ptr + swizzle(linear_idx)
+                        var src = src_ptr.load[
+                            width=simd_size, alignment=alignment
+                        ]()
+                        var dst_crd = RuntimeTuple[
+                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+                        ](Int(global_i), Int(global_j))
+                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
+                            dst_crd
+                        )
+                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                    else:
+                        var src_ptr = c_smem_split.ptr + linear_idx
+                        var src = src_ptr.load[
+                            width=simd_size, alignment=alignment
+                        ]()
+                        var dst_crd = RuntimeTuple[
+                            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+                        ](Int(global_i), Int(global_j))
+                        var dst_ptr = c_tensor.ptr + c_tensor.runtime_layout(
+                            dst_crd
+                        )
+                        dst_ptr.store[width=simd_size, alignment=alignment](src)

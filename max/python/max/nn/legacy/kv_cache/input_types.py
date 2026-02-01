@@ -47,6 +47,8 @@ class NestedIterableDataclass:
         """Iterates through each field in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
+            if value is None:
+                continue
             if isinstance(value, NestedIterableDataclass):
                 yield from value
             else:
@@ -62,6 +64,7 @@ class PagedCacheInputSymbols(NestedIterableDataclass):
     cache_lengths: TensorType
     lookup_table: TensorType
     max_lengths: TensorType
+    kv_scales: BufferType | None = None  # KV scales for FP8 quantization
 
 
 @dataclass
@@ -70,6 +73,7 @@ class PagedCacheValues(NestedIterableDataclass):
     cache_lengths: TensorValue
     lookup_table: TensorValue
     max_lengths: TensorValue
+    kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
 
 
 _T = TypeVar("_T")
@@ -101,6 +105,8 @@ class KVCacheInputs:
         """Iterates through each Type in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
+            if value is None:
+                continue
             if isinstance(value, KVCacheInputs):
                 yield from value
             elif _is_sequence_of(value, KVCacheInputs):
@@ -144,6 +150,7 @@ class RaggedKVCacheInputs(KVCacheInputs):
     cache_lengths: Buffer
     lookup_table: Buffer
     max_lengths: Buffer
+    kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
 
 
 @dataclass
