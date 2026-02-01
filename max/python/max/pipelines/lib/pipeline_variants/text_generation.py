@@ -46,7 +46,7 @@ from max.interfaces import (
 from max.interfaces.tokens import TokenBuffer
 from max.nn.legacy import ReturnLogits
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import TextContext
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
@@ -190,6 +190,7 @@ class TextGenerationPipeline(
             return_logits=ReturnLogits.ALL
             if self._pipeline_config.enable_echo
             else ReturnLogits.LAST_TOKEN,
+            return_hidden_states=self._pipeline_config.return_hidden_states,
         )
 
         # Load sampler.
@@ -565,6 +566,8 @@ class TextGenerationPipeline(
 
         curr_step_inputs = model_inputs
         batch_log_probabilities: list[list[LogProbabilities | None]] = []
+        # Store hidden states from the first step for text encoder use cases
+        all_layers_hidden_states: tuple[Any, ...] | None = None
         for i in range(num_steps):
             with Tracer(f"multistep_execution_loop_step_{i}"):
                 # Execute the model and get next tokens.
@@ -573,6 +576,9 @@ class TextGenerationPipeline(
                         model_inputs=curr_step_inputs,
                         batch_size=len(flat_batch),
                     )
+                    # Store hidden states from the first step
+                    if i == 0 and model_outputs.hidden_states is not None:
+                        all_layers_hidden_states = model_outputs.hidden_states
                 except Exception:
                     batch_size = len(flat_batch)
                     cache_tokens = sum(
@@ -690,6 +696,7 @@ class TextGenerationPipeline(
             num_steps,
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
+            all_layers_hidden_states=all_layers_hidden_states,
         )
 
         # Update the cache lengths in our kv_cache manager.
