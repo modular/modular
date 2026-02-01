@@ -410,7 +410,7 @@ class TestPipelineConfigUtilityMethods:
 
         config = PipelineConfig(**kwargs)
         assert config.model.quantization_encoding == "float4_e2m1fnx2"
-        assert config.model.kv_cache.cache_dtype == DType.float8_e4m3fn
+        assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding == "float8_e4m3fn"
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
