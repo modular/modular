@@ -74,10 +74,6 @@ from builtin.variadics import Variadic
 from compile import get_type_name
 from utils import Variant
 
-# TODO: _FormatCurlyEntry and _FormatSpec should be public in the future for
-# people who want to write their own templating engines. This is not yet done
-# because the implementation is incomplete and we are missing crucial features.
-
 # ===-----------------------------------------------------------------------===#
 # Formatter
 # ===-----------------------------------------------------------------------===#
@@ -90,14 +86,14 @@ struct _PrecompiledEntries[origin: ImmutOrigin, //, *Ts: AnyType](Movable):
     var format: StringSlice[Self.origin]
 
 
-comptime _FormatArgs = VariadicPack[element_trait=AnyType, ...]
+comptime _FormatArgs = VariadicPack[element_trait=Writable, ...]
 
 
 struct _FormatUtils:
     # TODO: Have this return a `Result[_PrecompiledEntries, Error]`
     @staticmethod
     fn compile_entries[
-        *Ts: AnyType
+        *Ts: Writable
     ](format: StringSlice) -> Variant[
         _PrecompiledEntries[origin = ImmutOrigin(format.origin), *Ts],
         Error,
@@ -112,11 +108,11 @@ struct _FormatUtils:
     # allocations in the `_PrecompiledEntries` struct.
     @staticmethod
     fn format_precompiled[
-        *Ts: AnyType,
+        *Ts: Writable,
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, AnyType, *Ts],
+        args: VariadicPack[_, Writable, *Ts],
     ):
         """Format the arguments using the given format string and precompiled entries.
         """
@@ -141,32 +137,20 @@ struct _FormatUtils:
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    fn format[
-        TraitType: type_of(AnyType), //
-    ](
-        format: StringSlice, args: VariadicPack[element_trait=TraitType, ...]
+    fn format(
+        format: StringSlice, args: VariadicPack[element_trait=Writable, ...]
     ) raises -> String:
         """Format the arguments using the given format string."""
         comptime PackType = type_of(args)
-        comptime AnyTypePack = VariadicPack[
-            elt_is_mutable = PackType.elt_is_mutable,
-            origin = PackType.origin,
-            PackType.is_owned,
-            AnyType,
-            *PackType.element_types,
-        ]
-
         var compiled = Self._compile_entries[*PackType.element_types](format)
 
         var res = String(capacity=format.byte_length() + compiled.size_hint)
-        Self.format_precompiled(
-            writer=res, compiled=compiled, args=rebind[AnyTypePack](args)
-        )
+        Self.format_precompiled(writer=res, compiled=compiled, args=args)
         return res^
 
     @staticmethod
     fn _compile_entries[
-        *Ts: AnyType
+        *Ts: Writable
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntries[
@@ -280,8 +264,6 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     # TODO: ord("a") conversion flag not supported yet
     var conversion_flag: UInt8
     """The type of conversion for the entry: {ord("s"), ord("r")}."""
-    var format_spec: Optional[_FormatSpec]
-    """The format specifier."""
     # TODO: ord("a") conversion flag not supported yet
     comptime supported_conversion_flags = SIMD[DType.uint8, 2](
         UInt8(ord("s")), UInt8(ord("r"))
@@ -308,7 +290,6 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         last_curly: Int,
         field: Self._FieldVariantType,
         conversion_flag: UInt8 = 0,
-        format_spec: Optional[_FormatSpec] = None,
     ):
         """Construct a format entry.
 
@@ -319,13 +300,11 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                 field.
             field: Store the substitution field.
             conversion_flag: The type of conversion for the entry.
-            format_spec: The format specifier.
         """
         self.first_curly = first_curly
         self.last_curly = last_curly
         self.field = field
         self.conversion_flag = conversion_flag
-        self.format_spec = format_spec
 
     @always_inline
     fn is_escaped_brace(ref self) -> Bool:
@@ -407,13 +386,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         else:
             new_idx += 1
 
-        var extra = Int(new_idx < field_len)
-        var fmt_field = _build_slice(field_ptr, new_idx + extra, field_len)
-        self.format_spec = _FormatSpec.parse(fmt_field)
-        var w = Int(self.format_spec.value().width) if self.format_spec else 0
-        # fully guessing the byte width here to be at least 8 bytes per entry
-        # minus the length of the whole format specification
-        total_estimated_entry_byte_width += 8 * Int(w > 0) + w - (field_len + 2)
+        # TODO(MSTDL-2243): Add format spec parsing
 
         if field.byte_length() == 0:
             # an empty field, so it's automatic indexing
@@ -465,36 +438,13 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             for i in range(len_pos_args):
                 if i == idx:
                     var flag = self.conversion_flag
-                    var empty = flag == 0 and not self.format_spec
+                    var empty = flag == 0
 
-                    comptime ArgType = type_of(args[i])
-
-                    @parameter
-                    if conforms_to(ArgType, Stringable & Representable):
-                        ref arg = trait_downcast[Stringable & Representable](
-                            args[i]
-                        )
-                        if empty or flag == s_value:
-                            writer.write(String(arg))
-                        elif flag == r_value:
-                            writer.write(repr(arg))
-                    elif conforms_to(ArgType, Writable):
-                        ref arg = trait_downcast[Writable](args[i])
-                        if empty or flag == s_value:
-                            arg.write_to(writer)
-                        elif flag == r_value:
-                            arg.write_repr_to(writer)
-                    else:
-                        constrained[
-                            False,
-                            (
-                                "`format` requires a type that implements"
-                                " `Stringable & Representable` or `Writable`: "
-                            ),
-                            get_type_name[ArgType](),
-                        ]()
-
-                    # TODO: Support format specs
+                    ref arg = trait_downcast[Writable](args[i])
+                    if empty or flag == s_value:
+                        arg.write_to(writer)
+                    elif flag == r_value:
+                        arg.write_repr_to(writer)
 
         if self.is_escaped_brace():
             writer.write("}" if self.field[Bool] else "{")
@@ -503,292 +453,3 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         elif self.is_automatic_indexing():
             _format(auto_idx)
             auto_idx += 1
-
-
-# ===-----------------------------------------------------------------------===#
-# Format Specification
-# ===-----------------------------------------------------------------------===#
-
-
-# TODO: trait _FormattableStr: fn __format__(self, spec: FormatSpec) -> String:
-# TODO: trait _FormattableWrite: fn __format__(self, spec: FormatSpec, *, writer: Writer):
-# TODO: add usage of these traits before trying to coerce to repr/str/int/float
-
-
-struct _FormatSpec(TrivialRegisterType):
-    """Store every field of the format specifier in a byte (e.g., ord("+") for
-    sign). It is stored in a byte because every [format specifier](
-    https://docs.python.org/3/library/string.html#formatspec) is an ASCII
-    character.
-    """
-
-    var fill: UInt8
-    """If a valid align value is specified, it can be preceded by a fill
-    character that can be any character and defaults to a space if omitted.
-    """
-    var align: UInt8
-    """The meaning of the various alignment options is as follows:
-
-    | Option | Meaning|
-    |:------:|:-------|
-    |'<' | Forces the field to be left-aligned within the available space \
-    (this is the default for most objects).|
-    |'>' | Forces the field to be right-aligned within the available space \
-    (this is the default for numbers).|
-    |'=' | Forces the padding to be placed after the sign (if any) but before \
-    the digits. This is used for printing fields in the form `+000000120`. This\
-    alignment option is only valid for numeric types. It becomes the default\
-    for numbers when `0` immediately precedes the field width.|
-    |'^' | Forces the field to be centered within the available space.|
-    """
-    var sign: UInt8
-    """The sign option is only valid for number types, and can be one of the
-    following:
-
-    | Option | Meaning|
-    |:------:|:-------|
-    |'+' | indicates that a sign should be used for both positive as well as\
-    negative numbers.|
-    |'-' | indicates that a sign should be used only for negative numbers (this\
-    is the default behavior).|
-    |space | indicates that a leading space should be used on positive numbers,\
-    and a minus sign on negative numbers.|
-    """
-    var coerce_z: Bool
-    """The 'z' option coerces negative zero floating-point values to positive
-    zero after rounding to the format precision. This option is only valid for
-    floating-point presentation types.
-    """
-    var alternate_form: Bool
-    """The alternate form is defined differently for different types. This
-    option is only valid for types that implement the trait `# TODO: define
-    trait`. For integers, when binary, octal, or hexadecimal output is used,
-    this option adds the respective prefix '0b', '0o', '0x', or '0X' to the
-    output value. For float and complex the alternate form causes the result of
-    the conversion to always contain a decimal-point character, even if no
-    digits follow it.
-    """
-    var width: UInt8
-    """A decimal integer defining the minimum total field width, including any
-    prefixes, separators, and other formatting characters. If not specified,
-    then the field width will be determined by the content. When no explicit
-    alignment is given, preceding the width field by a zero ('0') character
-    enables sign-aware zero-padding for numeric types. This is equivalent to a
-    fill character of '0' with an alignment type of '='.
-    """
-    var grouping_option: UInt8
-    """The ',' option signals the use of a comma for a thousands separator. For
-    a locale aware separator, use the 'n' integer presentation type instead. The
-    '_' option signals the use of an underscore for a thousands separator for
-    floating-point presentation types and for integer presentation type 'd'. For
-    integer presentation types 'b', 'o', 'x', and 'X', underscores will be
-    inserted every 4 digits. For other presentation types, specifying this
-    option is an error.
-    """
-    var precision: UInt8
-    """The precision is a decimal integer indicating how many digits should be
-    displayed after the decimal point for presentation types 'f' and 'F', or
-    before and after the decimal point for presentation types 'g' or 'G'. For
-    string presentation types the field indicates the maximum field size - in
-    other words, how many characters will be used from the field content. The
-    precision is not allowed for integer presentation types.
-    """
-    var type: UInt8
-    """Determines how the data should be presented.
-
-    The available integer presentation types are:
-
-    | Option | Meaning|
-    |:------:|:-------|
-    |'b' |Binary format. Outputs the number in base 2.|
-    |'c' |Character. Converts the integer to the corresponding unicode\
-    character before printing.|
-    |'d' |Decimal Integer. Outputs the number in base 10.|
-    |'o' |Octal format. Outputs the number in base 8.|
-    |'x' |Hex format. Outputs the number in base 16, using lower-case letters\
-    for the digits above 9.|
-    |'X' |Hex format. Outputs the number in base 16, using upper-case letters\
-    for the digits above 9. In case '#' is specified, the prefix '0x' will be\
-    upper-cased to '0X' as well.|
-    |'n' |Number. This is the same as 'd', except that it uses the current\
-    locale setting to insert the appropriate number separator characters.|
-    |None | The same as 'd'.|
-
-    In addition to the above presentation types, integers can be formatted with
-    the floating-point presentation types listed below (except 'n' and None).
-    When doing so, Float64() is used to convert the integer to a floating-point
-    number before formatting.
-
-    The available presentation types for float and Decimal values are:
-
-    | Option | Meaning|
-    |:------:|:-------|
-    |'e' |Scientific notation. For a given precision p, formats the number in\
-    scientific notation with the letter `e` separating the coefficient from the\
-    exponent. The coefficient has one digit before and p digits after the\
-    decimal point, for a total of p + 1 significant digits. With no precision\
-    given, uses a precision of 6 digits after the decimal point for float, and\
-    shows all coefficient digits for Decimal. If no digits follow the decimal\
-    point, the decimal point is also removed unless the # option is used.|
-    |'E' |Scientific notation. Same as 'e' except it uses an upper case `E` as\
-    the separator character.|
-    |'f' |Fixed-point notation. For a given precision p, formats the number as\
-    a decimal number with exactly p digits following the decimal point. With no\
-    precision given, uses a precision of 6 digits after the decimal point for\
-    float, and uses a precision large enough to show all coefficient digits for\
-    Decimal. If no digits follow the decimal point, the decimal point is also\
-    removed unless the '#' option is used.|
-    |'F' |Fixed-point notation. Same as 'f', but converts nan to NAN and inf to\
-    INF.|
-    |'g' |General format. For a given precision p >= 1, this rounds the number\
-    to p significant digits and then formats the result in either fixed-point\
-    format or in scientific notation, depending on its magnitude. A precision\
-    of 0 is treated as equivalent to a precision of 1.\
-    The precise rules are as follows: suppose that the result formatted with\
-    presentation type 'e' and precision p-1 would have exponent exp. Then, if\
-    m <= exp < p, where m is -4 for floats and -6 for Decimals, the number is\
-    formatted with presentation type 'f' and precision p-1-exp. Otherwise, the\
-    number is formatted with presentation type 'e' and precision p-1. In both\
-    cases insignificant trailing zeros are removed from the significand, and\
-    the decimal point is also removed if there are no remaining digits\
-    following it, unless the '#' option is used.\
-    With no precision given, uses a precision of 6 significant digits for\
-    float. For Decimal, the coefficient of the result is formed from the\
-    coefficient digits of the value; scientific notation is used for values\
-    smaller than 1e-6 in absolute value and values where the place value of the\
-    least significant digit is larger than 1, and fixed-point notation is used\
-    otherwise.\
-    Positive and negative infinity, positive and negative zero, and nans, are\
-    formatted as inf, -inf, 0, -0 and nan respectively, regardless of the\
-    precision.|
-    |'G' |General format. Same as 'g' except switches to 'E' if the number gets\
-    too large. The representations of infinity and NaN are uppercased, too.|
-    |'n' |Number. This is the same as 'g', except that it uses the current\
-    locale setting to insert the appropriate number separator characters.|
-    |'%' |Percentage. Multiplies the number by 100 and displays in fixed ('f')\
-    format, followed by a percent sign.|
-    |None |For float this is like the 'g' type, except that when fixed-point\
-    notation is used to format the result, it always includes at least one\
-    digit past the decimal point, and switches to the scientific notation when\
-    exp >= p - 1. When the precision is not specified, the latter will be as\
-    large as needed to represent the given value faithfully.\
-    For Decimal, this is the same as either 'g' or 'G' depending on the value\
-    of context.capitals for the current decimal context.\
-    The overall effect is to match the output of String() as altered by the other\
-    format modifiers.|
-    """
-
-    fn __init__(
-        out self,
-        fill: UInt8 = UInt8(ord(" ")),
-        align: UInt8 = 0,
-        sign: UInt8 = UInt8(ord("-")),
-        coerce_z: Bool = False,
-        alternate_form: Bool = False,
-        width: UInt8 = 0,
-        grouping_option: UInt8 = 0,
-        precision: UInt8 = 0,
-        type: UInt8 = 0,
-    ):
-        """Construct a FormatSpec instance.
-
-        Args:
-            fill: Defaults to space.
-            align: Defaults to `0` which is adjusted to the default for the arg
-                type.
-            sign: Defaults to `-`.
-            coerce_z: Defaults to False.
-            alternate_form: Defaults to False.
-            width: Defaults to `0` which is adjusted to the default for the arg
-                type.
-            grouping_option: Defaults to `0` which is adjusted to the default for
-                the arg type.
-            precision: Defaults to `0` which is adjusted to the default for the
-                arg type.
-            type: Defaults to `0` which is adjusted to the default for the arg
-                type.
-        """
-        self.fill = fill
-        self.align = align
-        self.sign = sign
-        self.coerce_z = coerce_z
-        self.alternate_form = alternate_form
-        self.width = width
-        self.grouping_option = grouping_option
-        self.precision = precision
-        self.type = type
-
-    @staticmethod
-    fn parse(fmt_str: StringSlice) -> Optional[Self]:
-        """Parses the format spec string.
-
-        Args:
-            fmt_str: The StringSlice with the format spec.
-
-        Returns:
-            An instance of FormatSpec.
-        """
-
-        # FIXME: the need for the following dynamic characteristics will
-        # probably mean the parse method will have to be called at the
-        # formatting stage in cases where it's dynamic.
-        # TODO: add support for "{0:{1}}".format(123, "10")
-        # TODO: add support for more complex cases as well
-        # >>> width = 10
-        # >>> precision = 4
-        # >>> value = decimal.Decimal('12.34567')
-        # >>> 'result: {value:{width}.{precision}}'.format(...)
-        comptime `:` = UInt8(ord(":"))
-        var f_len = fmt_str.byte_length()
-        var f_ptr = fmt_str.unsafe_ptr()
-        var colon_idx = -1
-        var idx = 0
-        while idx < f_len:
-            if f_ptr[idx] == `:`:
-                break
-            idx += 1
-
-        if colon_idx == -1:
-            return None
-
-        # TODO: Future implementation of format specifiers
-        return None
-
-    # TODO: this should be in StringSlice.__format__(self, spec: FormatSpec, *, writer: Writer):
-    fn format(self, mut res: String, item: StringSlice):
-        """Transform a String according to its format specification.
-
-        Args:
-            res: The resulting String.
-            item: The item to format.
-        """
-
-        # TODO: align, fill, etc.
-        res += item
-
-    fn format[T: Stringable & Representable](self, mut res: String, item: T):
-        """Stringify a type according to its format specification.
-
-        Args:
-            res: The resulting String.
-            item: The item to stringify.
-        """
-        # var type_implements_format_write = True  # TODO
-        # var type_implements_format_write_raising = True  # TODO
-        # var type_implements_format = True  # TODO
-        # var type_implements_format_raising = True  # TODO
-        # var type_implements_float = True  # TODO
-        # var type_implements_float_raising = True  # TODO
-        # var type_implements_int = True  # TODO
-        # var type_implements_int_raising = True  # TODO
-
-        # TODO: send to the type's  __format__ method if it has one
-        # TODO: transform to int/float depending on format spec
-        # TODO: send to float/int 's  __format__ method
-        # their methods should stringify as hex/bin/oct etc.
-        res += String(item)
-
-
-# ===-----------------------------------------------------------------------===#
-# Utils
-# ===-----------------------------------------------------------------------===#

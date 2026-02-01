@@ -787,7 +787,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoints()
 
-    fn format[*Ts: AnyType](self, *args: *Ts) -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -799,8 +799,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         [`format` module](/mojo/std/collections/string/format/).
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Args:
             args: The substitution values.
@@ -824,20 +823,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             __comptime_assert not result.isa[Error](), String(result[Error])
             return {}
         else:
-            comptime PackType = type_of(args)
-            comptime AnyTypePack = VariadicPack[
-                elt_is_mutable = PackType.elt_is_mutable,
-                origin = PackType.origin,
-                PackType.is_owned,
-                AnyType,
-                *PackType.element_types,
-            ]
-
             var buffer = String()
             _FormatUtils.format_precompiled[*Ts](
                 buffer,
                 result[type_of(result).Ts[0]],
-                rebind[AnyTypePack](args),
+                args,
             )
             return buffer^
 

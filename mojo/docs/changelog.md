@@ -109,6 +109,9 @@ what we publish.
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 
+- `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
+  their arguments to be `Writable`.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

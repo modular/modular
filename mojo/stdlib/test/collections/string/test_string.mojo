@@ -1354,8 +1354,8 @@ def test_format_conversion_flags():
     )
 
     var d = 42
-    assert_equal("{} {!r}".format(d, d), "42 42")
-    assert_equal("{!s} {!r}".format(d, d), "42 42")
+    assert_equal("{} {!r}".format(d, d), "42 Int(42)")
+    assert_equal("{!s} {!r}".format(d, d), "42 Int(42)")
 
     assert_true(
         "Mojo SIMD[DType.float64, 1](2" in "{} {!r} {} {!r}".format(a, b, c, d)

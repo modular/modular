@@ -1938,7 +1938,7 @@ struct String(
         """
         return StringSlice(self) * n
 
-    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1953,8 +1953,7 @@ struct String(
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Returns:
             The template with the given values substituted.
