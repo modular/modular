@@ -171,7 +171,6 @@ from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
-    rms_norm_kv_cache_ragged_continuous_batching,
     rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
