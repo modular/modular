@@ -12,17 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import Dim, DimList, NDBuffer
 from math import align_up
-from memory import AddressSpace, LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of, size_of
 from utils.index import Index, IndexList
 
 from algorithm.functional import _elementwise_impl_gpu
 from gpu.host import DeviceContext, get_gpu_target
-from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import Layout, row_major
+from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
@@ -43,70 +42,6 @@ from nn.mla import _k_cache_to_buffer
 # ===-----------------------------------------------------------------------===#
 
 
-fn _to_value_or_dim(value: Int) -> Dim:
-    if value != UNKNOWN_VALUE:
-        return Dim(value)
-    else:
-        return Dim()
-
-
-fn _layout_shape_to_dim_list[rank: Int](layout: Layout) -> DimList:
-    __comptime_assert rank == 2 or rank == 3, "rank should be 2 or 3"
-
-    if rank == 2:
-        return DimList(
-            _to_value_or_dim(Int(layout.shape[0])),
-            _to_value_or_dim(Int(layout.shape[1])),
-        )
-    elif rank == 3:
-        return DimList(
-            _to_value_or_dim(Int(layout.shape[0])),
-            _to_value_or_dim(Int(layout.shape[1])),
-            _to_value_or_dim(Int(layout.shape[2])),
-        )
-    else:
-        return DimList.create_unknown[1]()
-
-
-@always_inline
-fn _layout_tensor_to_nd_buffer[
-    dtype: DType,
-    layout: Layout,
-    origin: Origin,
-    //,
-    rank: Int = 2,
-](
-    tensor: LayoutTensor[
-        dtype,
-        layout,
-        origin,
-        address_space = AddressSpace.GENERIC,
-        ...,
-    ],
-    out result: NDBuffer[
-        dtype,
-        rank,
-        origin,
-        _layout_shape_to_dim_list[rank](layout),
-    ],
-):
-    """
-    Helper function to convert a layout tensor to an NDBuffer. Will be removed
-    once quantize_dynamic_scaled_fp8 and matmul_dynamic_scaled_fp8 support
-    layout tensors.
-    """
-    __comptime_assert (
-        rank == layout.rank()
-    ), "rank should be equal to layout rank"
-
-    return type_of(result)(
-        tensor.ptr,
-        rebind[IndexList[rank]](
-            tensor.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-
-
 fn mla_prefill_branch_fp8[
     dtype: DType,
     fp8_dtype: DType,
@@ -120,28 +55,26 @@ fn mla_prefill_branch_fp8[
     score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    buffer_row_offsets: LayoutTensor[
+    buffer_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
-    cache_offsets: LayoutTensor[
+    cache_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
-    kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    kv_b_proj_scale: LayoutTensor[
+    kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    kv_b_proj_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -200,21 +133,21 @@ fn mla_prefill_branch_fp8[
         kv_params.num_heads == 1
     ), "kv_params.num_heads should be 1"
 
-    comptime num_heads = q_nope.shape[1]()
-    comptime qk_nope_head_dim = q_nope.shape[2]()
-    comptime qk_rope_head_dim = q_rope.shape[2]()
-    comptime v_head_dim = output.shape[2]()
+    comptime num_heads = q_nope.static_shape[1]
+    comptime qk_nope_head_dim = q_nope.static_shape[2]
+    comptime qk_rope_head_dim = q_rope.static_shape[2]
+    comptime v_head_dim = output.static_shape[2]
 
     __comptime_assert (
-        kv_b_proj.layout.shape.all_known()
+        kv_b_proj.shape_known
     ), "kv_b_proj's shape should be static"
-    __comptime_assert kv_b_proj.layout.shape[0].value() == num_heads * (
+    __comptime_assert kv_b_proj.static_shape[0] == num_heads * (
         qk_nope_head_dim + v_head_dim
     ), (
         "kv_b_proj.layout.shape[0] should be equal to num_heads *"
         " (qk_nope_head_dim + v_head_dim)"
     )
-    comptime kv_latent_dim = kv_b_proj.layout.shape[1].value()
+    comptime kv_latent_dim = kv_b_proj.static_shape[1]
 
     __comptime_assert (
         m_scale_granularity == 1
@@ -228,17 +161,18 @@ fn mla_prefill_branch_fp8[
         return
 
     # concatenate the q_nope and q_rope tensors
-    var seq_len = q_nope.dim(0)
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, qk_nope_head_dim + qk_rope_head_dim
-    )
+    var seq_len = Int(q_nope.dim(0))
     var q_buf = ctx.enqueue_create_buffer[dtype](
         seq_len * num_heads * (qk_nope_head_dim + qk_rope_head_dim)
     )
-    var q = LayoutTensor[dtype, q_layout](
+    var q = TileTensor(
         q_buf,
-        RuntimeLayout[q_layout].row_major(
-            Index(seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim)
+        row_major(
+            (
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[qk_nope_head_dim + qk_rope_head_dim](),
+            )
         ),
     )
 
@@ -247,24 +181,28 @@ fn mla_prefill_branch_fp8[
     @__copy_capture(q_nope, q_rope, q)
     fn concat_fn[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
-        constrained[rank == 3, "rank should be equal to 3"]()
-        var idx = rebind[IndexList[3]](idx_arg)
+    ](idx: IndexList[rank]):
+        __comptime_assert q_rope.rank == 3, "rank should be equal to 3"
+
         var token_idx = idx[0]
         var head_idx = idx[1]
         var dim_idx = idx[2]
 
+        var store_coord = Coord(Idx(token_idx), Idx(head_idx), Idx(dim_idx))
+        __comptime_assert store_coord.rank == q.rank
+
         if dim_idx < qk_nope_head_dim:
+            __comptime_assert store_coord.rank == q_nope.rank
             q.store[width=width](
-                idx,
-                q_nope.load[width=width](Index(token_idx, head_idx, dim_idx)),
+                store_coord, q_nope.load[width=width](store_coord)
             )
         else:
+            var load_coord = Coord(
+                Idx(token_idx), Idx(head_idx), Idx(dim_idx - qk_nope_head_dim)
+            )
+            __comptime_assert load_coord.rank == q_rope.rank
             q.store[width=width](
-                idx,
-                q_rope.load[width=width](
-                    Index(token_idx, head_idx, dim_idx - qk_nope_head_dim)
-                ),
+                store_coord, q_rope.load[width=width](load_coord)
             )
 
     var concat_launch_shape = IndexList[3](
@@ -279,25 +217,22 @@ fn mla_prefill_branch_fp8[
 
     # First, dump the k cache to a contiguous buffer
     # allocate a buffer for raw latent KV values
-    comptime k_latent_layout = Layout.row_major(UNKNOWN_VALUE, kv_latent_dim)
     var k_latent_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * kv_latent_dim
     )
-    var k_latent = LayoutTensor[dtype, k_latent_layout](
+    var k_latent = TileTensor(
         k_latent_buf,
-        RuntimeLayout[k_latent_layout].row_major(
-            Index(buffer_length, kv_latent_dim)
-        ),
+        row_major((Idx(buffer_length), Idx[kv_latent_dim]())),
     )
 
     # copy the k cache to the latent buffer
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     _k_cache_to_buffer(
-        buffer_row_offsets,
-        cache_offsets,
+        buffer_row_offsets.to_layout_tensor(),
+        cache_offsets.to_layout_tensor(),
         k_cache,
         Int32(buffer_length),
-        k_latent,
+        k_latent.to_layout_tensor(),
         ctx,
     )
 
@@ -307,28 +242,21 @@ fn mla_prefill_branch_fp8[
     var fp8_k_latent_buf = ctx.enqueue_create_buffer[fp8_dtype](
         buffer_length * kv_latent_dim
     )
-    var fp8_k_latent = LayoutTensor[fp8_dtype, k_latent_layout](
+    var fp8_k_latent = TileTensor(
         fp8_k_latent_buf,
-        RuntimeLayout[k_latent_layout].row_major(
-            Index(buffer_length, kv_latent_dim)
-        ),
+        row_major((Idx(buffer_length), Idx[kv_latent_dim]())),
     )
 
     # the scales are stored in a transposed, padded format
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
-    comptime fp8_k_latent_scale_layout = Layout.row_major(
-        kv_latent_dim // k_scale_granularity, UNKNOWN_VALUE
-    )
     var scales_padded_m = align_up(buffer_length, scales_m_padding)
     var fp8_k_latent_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
         scales_padded_m * kv_latent_dim // k_scale_granularity
     )
-    var fp8_k_latent_scale = LayoutTensor[
-        fp8_scale_dtype, fp8_k_latent_scale_layout
-    ](
+    var fp8_k_latent_scale = TileTensor(
         fp8_k_latent_scale_buf,
-        RuntimeLayout[fp8_k_latent_scale_layout].row_major(
-            Index(kv_latent_dim // k_scale_granularity, scales_padded_m)
+        row_major(
+            (Idx[kv_latent_dim // k_scale_granularity](), Idx(scales_padded_m))
         ),
     )
 
@@ -338,31 +266,28 @@ fn mla_prefill_branch_fp8[
     fn input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[k_latent.dtype, width]:
-        return k_latent.load[width=width](row, col)
+        return k_latent.load[width=width]((Idx(row), Idx(col)))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, k_scale_granularity, k_latent.shape[1]()
+        input_fn, k_scale_granularity, k_latent.static_shape[1]
     ](
-        _layout_tensor_to_nd_buffer(fp8_k_latent),
-        _layout_tensor_to_nd_buffer(fp8_k_latent_scale),
+        fp8_k_latent._to_ndbuffer(),
+        fp8_k_latent_scale._to_ndbuffer(),
         1200.0,
         ctx,
-        k_latent.dim[0](),
+        Int(k_latent.dim[0]()),
     )
 
     # allocate buffers for concatenated KV
-    comptime kv_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads * (qk_nope_head_dim + v_head_dim)
-    )
     var kv_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * num_heads * (qk_nope_head_dim + v_head_dim)
     )
-    var kv = LayoutTensor[dtype, kv_layout](
+    var kv = TileTensor(
         kv_buf,
-        RuntimeLayout[kv_layout].row_major(
-            Index(
-                buffer_length,
-                num_heads * (qk_nope_head_dim + v_head_dim),
+        row_major(
+            (
+                Idx(buffer_length),
+                Idx[num_heads * (qk_nope_head_dim + v_head_dim)](),
             )
         ),
     )
@@ -377,36 +302,30 @@ fn mla_prefill_branch_fp8[
         transpose_b=True,
         target=target,
     ](
-        _layout_tensor_to_nd_buffer(kv),
-        _layout_tensor_to_nd_buffer(fp8_k_latent),
-        _layout_tensor_to_nd_buffer(kv_b_proj),
-        _layout_tensor_to_nd_buffer(fp8_k_latent_scale),
-        _layout_tensor_to_nd_buffer(kv_b_proj_scale),
+        kv,
+        fp8_k_latent,
+        kv_b_proj,
+        fp8_k_latent_scale,
+        kv_b_proj_scale,
         ctx,
     )
 
     # allocate buffers for full K and V
-    comptime k_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, qk_nope_head_dim
-    )
-    comptime v_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, v_head_dim)
     var k_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * num_heads * qk_nope_head_dim
     )
     var v_buf = ctx.enqueue_create_buffer[dtype](
         buffer_length * num_heads * v_head_dim
     )
-    var k = LayoutTensor[dtype, k_layout](
+    var k = TileTensor(
         k_buf,
-        RuntimeLayout[k_layout].row_major(
-            Index(buffer_length, num_heads, qk_nope_head_dim)
+        row_major(
+            (Idx(buffer_length), Idx[num_heads](), Idx[qk_nope_head_dim]())
         ),
     )
-    var v = LayoutTensor[dtype, v_layout](
+    var v = TileTensor(
         v_buf,
-        RuntimeLayout[v_layout].row_major(
-            Index(buffer_length, num_heads, v_head_dim)
-        ),
+        row_major((Idx(buffer_length), Idx[num_heads](), Idx[v_head_dim]())),
     )
 
     # split the concatenated KV into K and V
@@ -429,7 +348,7 @@ fn mla_prefill_branch_fp8[
         var token_idx = idx[0]
         var hid_idx = idx[1]
 
-        var val = kv.aligned_load[width=width](token_idx, hid_idx)
+        var val = kv.load[width=width]((Idx(token_idx), Idx(hid_idx)))
 
         var head_idx, head_dim_idx = divmod(
             hid_idx, qk_nope_head_dim + v_head_dim
@@ -437,15 +356,15 @@ fn mla_prefill_branch_fp8[
 
         if head_dim_idx < qk_nope_head_dim:
             k.store[width=width](
-                IndexList[3](token_idx, head_idx, head_dim_idx), val
+                (Idx(token_idx), Idx(head_idx), Idx(head_dim_idx)), val
             )
         else:
             head_dim_idx -= qk_nope_head_dim
             v.store[width=width](
-                IndexList[3](token_idx, head_idx, head_dim_idx), val
+                (Idx(token_idx), Idx(head_idx), Idx(head_dim_idx)), val
             )
 
-    var launch_shape = IndexList[2](buffer_length, kv.dim(1))
+    var launch_shape = IndexList[2](buffer_length, Int(kv.dim(1)))
     comptime target_simd_width = simd_width_of[
         dtype, target = get_gpu_target()
     ]()
@@ -458,16 +377,16 @@ fn mla_prefill_branch_fp8[
         mask_str=mask_str,
         score_mod_str=score_mod_str,
     ](
-        q,
-        k,
-        v,
-        buffer_row_offsets,
-        cache_offsets,
-        input_row_offsets,
+        q.to_layout_tensor(),
+        k.to_layout_tensor(),
+        v.to_layout_tensor(),
+        buffer_row_offsets.to_layout_tensor(),
+        cache_offsets.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         kv_collection,
         layer_idx,
         scale,
-        output,
+        output.to_layout_tensor(),
         ctx,
     )
 
@@ -487,10 +406,10 @@ fn quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    b_scales: LayoutTensor[
+    c: TileTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
+    a: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    b: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    b_scales: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -500,37 +419,30 @@ fn quantize_and_bmm_fp8_helper[
     This function uses the transposed view of the input tensor `a`.
     """
 
-    comptime B = a.shape[1]()
-    comptime K = a.shape[2]()
-    comptime N = b.shape[1]()
+    comptime B = a.static_shape[1]
+    comptime K = a.static_shape[2]
+    comptime N = b.static_shape[1]
 
-    var m = a.dim(0)
-
-    comptime fp8_a_layout = Layout.row_major(B, UNKNOWN_VALUE, K)
+    var m = Int(a.dim(0))
 
     # allocate buffers for quantized a and its scales
     var fp8_a_buf = ctx.enqueue_create_buffer[fp8_dtype](B * m * K)
-    var fp8_a = LayoutTensor[fp8_dtype, fp8_a_layout](
-        fp8_a_buf, RuntimeLayout[fp8_a_layout].row_major(Index(B, m, K))
-    )
+    var fp8_a = TileTensor(fp8_a_buf, row_major((Idx[B](), Idx(m), Idx[K]())))
 
     # the scales are stored in a transposed, padded format
     comptime scales_m_padding = 16 // size_of[fp8_scale_dtype]()
-    comptime fp8_a_scale_layout = Layout.row_major(
-        B, K // k_scale_granularity, UNKNOWN_VALUE
-    )
     var scales_padded_m = align_up(m, scales_m_padding)
     var fp8_a_scale_buf = ctx.enqueue_create_buffer[fp8_scale_dtype](
         B * (K // k_scale_granularity) * scales_padded_m
     )
-    var fp8_a_scale = LayoutTensor[fp8_scale_dtype, fp8_a_scale_layout](
+    var fp8_a_scale = TileTensor(
         fp8_a_scale_buf,
-        RuntimeLayout[fp8_a_scale_layout].row_major(
-            Index(B, K // k_scale_granularity, scales_padded_m)
+        row_major(
+            (Idx[B](), Idx[K // k_scale_granularity](), Idx(scales_padded_m))
         ),
     )
 
-    var a_ndbuffer = _layout_tensor_to_nd_buffer[3](a)
+    var a_ndbuffer = a._to_ndbuffer()
 
     @parameter
     @__copy_capture(a)
@@ -539,15 +451,16 @@ fn quantize_and_bmm_fp8_helper[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
-        return a.aligned_load[width=width](Index(row, batch, col))
+        __comptime_assert a.rank == 3
+        return a.load[width=width]((Idx(row), Idx(batch), Idx(col)))
 
     batched_quantize_dynamic_scaled_fp8[
         input_fn=input_fn,
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
-        _layout_tensor_to_nd_buffer[3](fp8_a),
-        _layout_tensor_to_nd_buffer[3](fp8_a_scale),
+        fp8_a._to_ndbuffer(),
+        fp8_a_scale._to_ndbuffer(),
         1200.0,
         ctx,
         num_rows=m,
@@ -562,19 +475,24 @@ fn quantize_and_bmm_fp8_helper[
         k_scale_granularity=k_scale_granularity,
         transpose_b=True,
         target=target,
-    ](c, fp8_a, b, fp8_a_scale, b_scales, ctx)
+    ](
+        c.to_layout_tensor(),
+        fp8_a.to_layout_tensor(),
+        b.to_layout_tensor(),
+        fp8_a_scale.to_layout_tensor(),
+        b_scales.to_layout_tensor(),
+        ctx,
+    )
 
 
 @always_inline
 fn transpose_helper[
     dtype: DType
 ](
-    output_tensor: LayoutTensor[
+    output_tensor: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    input_tensor: LayoutTensor[
-        dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    input_tensor: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -586,12 +504,16 @@ fn transpose_helper[
     @__copy_capture(input_tensor, output_tensor)
     fn tranpose_fn[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         __comptime_assert rank == 3, "rank should be equal to 3"
-        var idx = rebind[IndexList[3]](idx_arg)
+        # Transpose by swapping first two dimensions: [B, N, K] -> [N, B, K]
+        var input_coord = Coord(idx)
+        var output_coord = Coord(Idx(idx[1]), Idx(idx[0]), Idx(idx[2]))
+        __comptime_assert input_coord.rank == input_tensor.rank
+        __comptime_assert output_coord.rank == output_tensor.rank
 
         output_tensor.store[width=width](
-            Index(idx[1], idx[0], idx[2]), input_tensor.load[width=width](idx)
+            output_coord, input_tensor.load[width=width](input_coord)
         )
 
     var launch_shape = Index(
@@ -618,23 +540,23 @@ fn mla_decode_branch_fp8[
     score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uk_scale: LayoutTensor[
+    w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uk_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uv_scale: LayoutTensor[
+    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
@@ -692,42 +614,37 @@ fn mla_decode_branch_fp8[
         kv_params.num_heads == 1
     ), "kv_params.num_heads should be 1"
 
-    comptime num_heads = q_nope.shape[1]()
-    comptime qk_nope_head_dim = q_nope.shape[2]()
-    comptime qk_rope_head_dim = q_rope.shape[2]()
-    comptime v_head_dim = output.shape[2]()
+    comptime num_heads = q_nope.static_shape[1]
+    comptime qk_nope_head_dim = q_nope.static_shape[2]
+    comptime qk_rope_head_dim = q_rope.static_shape[2]
+    comptime v_head_dim = output.static_shape[2]
 
     __comptime_assert (
-        w_uk.layout.shape.all_known() and w_uv.layout.shape.all_known()
+        w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
     __comptime_assert (
-        w_uk.layout.shape[2].value() == qk_nope_head_dim
-    ), "w_uk.layout.shape[2] should be equal to qk_nope_head_dim"
+        w_uk.static_shape[2] == qk_nope_head_dim
+    ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
     __comptime_assert (
-        w_uv.layout.shape[1].value() == v_head_dim
-    ), "w_uv.layout.shape[1] should be equal to v_head_dim"
-    comptime kv_latent_dim = w_uk.layout.shape[1].value()
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.static_shape[1] should be equal to v_head_dim"
+    comptime kv_latent_dim = w_uk.static_shape[1]
     __comptime_assert kv_latent_dim + qk_rope_head_dim == Int(
         kv_params.head_size
     ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
-    var seq_len = q_nope.dim(0)
+    var seq_len = Int(q_nope.dim(0))
 
     if seq_len == 0:
         return
 
     # Proceed with the fp8 batched matmul
-    comptime q_nope_proj_layout = Layout.row_major(
-        num_heads, UNKNOWN_VALUE, kv_latent_dim
-    )
     var q_nope_proj_buf = ctx.enqueue_create_buffer[dtype](
         num_heads * seq_len * kv_latent_dim
     )
-    var q_nope_proj = LayoutTensor[dtype, q_nope_proj_layout](
+    var q_nope_proj = TileTensor(
         q_nope_proj_buf,
-        RuntimeLayout[q_nope_proj_layout].row_major(
-            Index(num_heads, seq_len, kv_latent_dim)
-        ),
+        row_major((Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]())),
     )
 
     # This helper function uses the transposed view of the input tensor `q_nope`.
@@ -739,16 +656,17 @@ fn mla_decode_branch_fp8[
     ](q_nope_proj, q_nope, w_uk, w_uk_scale, ctx)
 
     # concatenate the transposed q_nope_proj and q_rope tensors
-    comptime q_full_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, kv_latent_dim + qk_rope_head_dim
-    )
     var q_full_buf = ctx.enqueue_create_buffer[dtype](
         seq_len * num_heads * (kv_latent_dim + qk_rope_head_dim)
     )
-    var q_full = LayoutTensor[dtype, q_full_layout](
+    var q_full = TileTensor(
         q_full_buf,
-        RuntimeLayout[q_full_layout].row_major(
-            Index(seq_len, num_heads, kv_latent_dim + qk_rope_head_dim)
+        row_major(
+            (
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[kv_latent_dim + qk_rope_head_dim](),
+            ),
         ),
     )
 
@@ -757,9 +675,11 @@ fn mla_decode_branch_fp8[
     @__copy_capture(q_nope_proj, q_rope, q_full)
     fn concat_fn[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx_arg: IndexList[rank]):
+    ](idx: IndexList[rank]):
         __comptime_assert rank == 3, "rank should be equal to 3"
-        var idx = rebind[IndexList[3]](idx_arg)
+        var coord = Coord(idx)
+        __comptime_assert coord.rank == q_full.rank
+        __comptime_assert q_rope.rank == 3
 
         var token_idx = idx[0]
         var head_idx = idx[1]
@@ -767,16 +687,20 @@ fn mla_decode_branch_fp8[
 
         if dim_idx < kv_latent_dim:
             q_full.store[width=width](
-                idx,
+                coord,
                 q_nope_proj.load[width=width](
-                    Index(head_idx, token_idx, dim_idx)
+                    (Idx(head_idx), Idx(token_idx), Idx(dim_idx))
                 ),
             )
         else:
             q_full.store[width=width](
-                idx,
+                coord,
                 q_rope.load[width=width](
-                    Index(token_idx, head_idx, dim_idx - kv_latent_dim)
+                    (
+                        Idx(token_idx),
+                        Idx(head_idx),
+                        Idx(dim_idx - kv_latent_dim),
+                    )
                 ),
             )
 
@@ -791,17 +715,12 @@ fn mla_decode_branch_fp8[
     )
 
     # Perform MLA decode
-    comptime raw_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_heads, kv_latent_dim
-    )
     var raw_output_buf = ctx.enqueue_create_buffer[dtype](
         seq_len * num_heads * kv_latent_dim
     )
-    var raw_output = LayoutTensor[dtype, raw_output_layout](
+    var raw_output = TileTensor(
         raw_output_buf,
-        RuntimeLayout[raw_output_layout].row_major(
-            Index(seq_len, num_heads, kv_latent_dim)
-        ),
+        row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
 
     generic_flare_mla_decode_kv_cache_ragged[
@@ -809,27 +728,23 @@ fn mla_decode_branch_fp8[
         mask_str=mask_str,
         score_mod_str=score_mod_str,
     ](
-        q_full,
-        input_row_offsets,
+        q_full.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
         kv_collection,
         layer_idx,
         scale,
-        raw_output,
+        raw_output.to_layout_tensor(),
         ctx,
     )
 
     # Create a view of the output tensor with logical shape
     # [num_heads, seq_len, v_head_dim], and map directly to
     # [seq_len, num_heads, v_head_dim] physical memory.
-    comptime output_t_layout = Layout(
-        IntTuple(num_heads, UNKNOWN_VALUE, v_head_dim),
-        IntTuple(v_head_dim, num_heads * v_head_dim, 1),
-    )
-    var output_t = LayoutTensor[dtype, output_t_layout](
+    var output_t = TileTensor(
         output.ptr,
-        RuntimeLayout[output_t_layout](
-            Index(num_heads, seq_len, v_head_dim),
-            Index(v_head_dim, num_heads * v_head_dim, 1),
+        Layout(
+            (Idx[num_heads](), Idx(seq_len), Idx[v_head_dim]()),
+            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx(1)),
         ),
     )
 
@@ -865,37 +780,35 @@ fn mla_prefill_decode_graph_fp8[
     score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    buffer_row_offsets: LayoutTensor[
+    buffer_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
-    cache_offsets: LayoutTensor[
+    cache_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     buffer_length: Int,
     max_seq_len: Int,
-    kv_b_proj: LayoutTensor[
-        fp8_dtype, address_space = AddressSpace.GENERIC, ...
-    ],
-    kv_b_proj_scale: LayoutTensor[
+    kv_b_proj: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    kv_b_proj_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uk: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uk_scale: LayoutTensor[
+    w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uk_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    w_uv: LayoutTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
-    w_uv_scale: LayoutTensor[
+    w_uv: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
+    w_uv_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,

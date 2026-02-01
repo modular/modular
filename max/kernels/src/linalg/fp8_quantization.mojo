@@ -31,6 +31,8 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._coord import coord_to_index_list
+from layout._tile_tensor import TileTensor
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast
 
@@ -418,6 +420,112 @@ fn batched_quantize_fp8_kernel[
 ########################################################
 # scaled fp8 matmul
 ########################################################
+
+
+@always_inline
+fn matmul_dynamic_scaled_fp8[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
+    transpose_b: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: TileTensor[mut=True, c_type, address_space = AddressSpace.GENERIC, ...],
+    a: TileTensor[a_type, address_space = AddressSpace.GENERIC, ...],
+    b: TileTensor[b_type, address_space = AddressSpace.GENERIC, ...],
+    a_scales: TileTensor[
+        a_scales_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        b_scales_type, address_space = AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    __comptime_assert c.rank == 2
+    __comptime_assert a.rank == 2
+    __comptime_assert b.rank == 2
+    __comptime_assert a_scales.rank == 2
+    __comptime_assert b_scales.rank == 2
+    comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
+
+    comptime c_shape = DimList(dim[c.static_shape[0]], dim[c.static_shape[1]])
+    comptime c_stride = DimList(
+        dim[c.static_stride[0]], dim[c.static_stride[1]]
+    )
+    var c_buf = NDBuffer[c_type, 2, _, c_shape, c_stride](
+        c.ptr,
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape)),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.stride)),
+    )
+    comptime a_shape = DimList(dim[a.static_shape[0]], dim[a.static_shape[1]])
+    comptime a_stride = DimList(
+        dim[a.static_stride[0]], dim[a.static_stride[1]]
+    )
+    var a_buf = NDBuffer[a_type, 2, _, a_shape, a_stride](
+        a.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape)),
+        rebind[IndexList[2]](coord_to_index_list(a.layout.stride)),
+    )
+    comptime b_shape = DimList(dim[b.static_shape[0]], dim[b.static_shape[1]])
+    comptime b_stride = DimList(
+        dim[b.static_stride[0]], dim[b.static_stride[1]]
+    )
+    var b_buf = NDBuffer[b_type, 2, _, b_shape, b_stride](
+        b.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b.layout.shape)),
+        rebind[IndexList[2]](coord_to_index_list(b.layout.stride)),
+    )
+    comptime a_scales_shape = DimList(
+        dim[a_scales.static_shape[0]], dim[a_scales.static_shape[1]]
+    )
+    comptime a_scales_stride = DimList(
+        dim[a_scales.static_stride[0]], dim[a_scales.static_stride[1]]
+    )
+    var a_scales_buf = NDBuffer[
+        a_scales_type, 2, _, a_scales_shape, a_scales_stride
+    ](
+        a_scales.ptr,
+        rebind[IndexList[2]](coord_to_index_list(a_scales.layout.shape)),
+        rebind[IndexList[2]](coord_to_index_list(a_scales.layout.stride)),
+    )
+    comptime b_scales_shape = DimList(
+        dim[b_scales.static_shape[0]], dim[b_scales.static_shape[1]]
+    )
+    comptime b_scales_stride = DimList(
+        dim[b_scales.static_stride[0]], dim[b_scales.static_stride[1]]
+    )
+    var b_scales_buf = NDBuffer[
+        b_scales_type, 2, _, b_scales_shape, b_scales_stride
+    ](
+        b_scales.ptr,
+        rebind[IndexList[2]](coord_to_index_list(b_scales.layout.shape)),
+        rebind[IndexList[2]](coord_to_index_list(b_scales.layout.stride)),
+    )
+
+    matmul_dynamic_scaled_fp8[
+        input_scale_granularity,
+        weight_scale_granularity,
+        m_scale_granularity,
+        n_scale_granularity,
+        k_scale_granularity,
+        transpose_b,
+        target,
+    ](
+        c_buf,
+        a_buf,
+        b_buf,
+        a_scales_buf,
+        b_scales_buf,
+        ctx,
+    )
 
 
 @always_inline

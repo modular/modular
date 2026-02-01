@@ -13,8 +13,9 @@
 
 from sys import simd_width_of
 
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from testing import assert_almost_equal, assert_equal
 
@@ -25,53 +26,35 @@ fn pool[
     count_boundary: Bool = False
 ](
     pool_method: PoolMethod,
-    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, DType.float32, ...],
 ) raises:
-    comptime in_layout = Layout.row_major(2, 5, 7, 2)
-
-    var in_heap = List[Float32](
-        unsafe_uninit_length=comptime (in_layout.size())
+    var in_stack = InlineArray[Scalar[DType.float32], 2 * 5 * 7 * 2](
+        uninitialized=True
     )
-    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    var input_tensor = TileTensor(in_stack, row_major[2, 5, 7, 2]())
     arange(input_tensor)
 
-    var paddings: List[Int32] = [0, 0, 0, 0]
-    var filter: List[Int32] = [3, 2]
-    var stride: List[Int32] = [2, 3]
-    var dilation: List[Int32] = [1, 1]
+    var paddings_stack = InlineArray[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
+    paddings_tensor[0] = 0
+    paddings_tensor[1] = 0
+    paddings_tensor[2] = 0
+    paddings_tensor[3] = 0
 
-    var paddings_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        paddings,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](4)
-        ),
-    )
-    var filter_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        filter,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var stride_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        stride,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var dilation_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        dilation,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
+    var filter_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_tensor = TileTensor(filter_stack, row_major[2]())
+    filter_tensor[0] = 3
+    filter_tensor[1] = 2
+
+    var stride_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_tensor = TileTensor(stride_stack, row_major[2]())
+    stride_tensor[0] = 2
+    stride_tensor[1] = 3
+
+    var dilation_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
+    dilation_tensor[0] = 1
+    dilation_tensor[1] = 1
 
     comptime simd_width = simd_width_of[DType.float32]()
 
@@ -109,13 +92,10 @@ fn test_max_pool_2d() raises:
     #   [[128., 129.],
     #    [134., 135.]]]])
 
-    comptime out_layout = Layout.row_major(2, 2, 2, 2)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 2 * 2 * 2 * 2](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[2, 2, 2, 2]()).fill(0)
     pool(PoolMethod.MAX, output_tensor)
 
     assert_equal(output_tensor[0, 0, 0, 0], 30)
@@ -150,13 +130,10 @@ fn test_avg_pool_2d() raises:
     #   [[113.0, 114.0],
     #    [119.0, 120.0]]]])
 
-    comptime out_layout = Layout.row_major(2, 2, 2, 2)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 2 * 2 * 2 * 2](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[2, 2, 2, 2]()).fill(0)
     pool(PoolMethod.AVG, output_tensor)
 
     assert_equal(output_tensor[0, 0, 0, 0], 15.0)
@@ -179,52 +156,34 @@ fn test_avg_pool_2d() raises:
 
 fn test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
-](output_tensor: LayoutTensor[mut=True, DType.float32, ...]) raises:
-    comptime in_layout = Layout.row_major(1, 7, 7, 1)
-
-    var in_heap = List[Float32](
-        unsafe_uninit_length=comptime (in_layout.size())
+](output_tensor: TileTensor[mut=True, DType.float32, ...]) raises:
+    var in_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
+        uninitialized=True
     )
-    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    var input_tensor = TileTensor(in_stack, row_major[1, 7, 7, 1]())
     arange(input_tensor)
 
-    var paddings: List[Int32] = [1, 1, 1, 1]
-    var filter: List[Int32] = [3, 3]
-    var stride: List[Int32] = [1, 1]
-    var dilation: List[Int32] = [1, 1]
+    var paddings_stack = InlineArray[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
+    paddings_tensor[0] = 1
+    paddings_tensor[1] = 1
+    paddings_tensor[2] = 1
+    paddings_tensor[3] = 1
 
-    var paddings_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        paddings,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](4)
-        ),
-    )
-    var filter_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        filter,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var stride_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        stride,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var dilation_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        dilation,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
+    var filter_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_tensor = TileTensor(filter_stack, row_major[2]())
+    filter_tensor[0] = 3
+    filter_tensor[1] = 3
+
+    var stride_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_tensor = TileTensor(stride_stack, row_major[2]())
+    stride_tensor[0] = 1
+    stride_tensor[1] = 1
+
+    var dilation_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
+    dilation_tensor[0] = 1
+    dilation_tensor[1] = 1
 
     comptime simd_width = simd_width_of[DType.float32]()
 
@@ -241,13 +200,10 @@ fn test_avg_pool_2d_with_padding[
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: True
 fn test_avg_pool_2d_with_padding_true() raises:
     print("== test_avg_pool_2d_count_boundary: True")
-    comptime out_layout = Layout.row_major(1, 7, 7, 1)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 7, 7, 1]()).fill(0)
     test_avg_pool_2d_with_padding[True](output_tensor)
 
     assert_almost_equal(output_tensor[0, 0, 0, 0], 1.7778, atol=1e-4)
@@ -304,13 +260,10 @@ fn test_avg_pool_2d_with_padding_true() raises:
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: False
 fn test_avg_pool_2d_with_padding_false() raises:
     print("== test_avg_pool_2d_count_boundary: False")
-    comptime out_layout = Layout.row_major(1, 7, 7, 1)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 7 * 7 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 7, 7, 1]()).fill(0)
     test_avg_pool_2d_with_padding[False](output_tensor)
 
     # Replace filecheck lines with assert_almost_equal
@@ -369,53 +322,35 @@ fn pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](
     pool_method: PoolMethod,
-    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, DType.float32, ...],
 ) raises:
-    comptime in_layout = Layout.row_major(1, 4, 4, 1)
-
-    var in_heap = List[Float32](
-        unsafe_uninit_length=comptime (in_layout.size())
+    var in_stack = InlineArray[Scalar[DType.float32], 1 * 4 * 4 * 1](
+        uninitialized=True
     )
-    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    var input_tensor = TileTensor(in_stack, row_major[1, 4, 4, 1]())
     arange(input_tensor)
 
-    var paddings: List[Int32] = [0, 0, 0, 0]
-    var filter: List[Int32] = [3, 3]
-    var stride: List[Int32] = [2, 2]
-    var dilation: List[Int32] = [1, 1]
+    var paddings_stack = InlineArray[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
+    paddings_tensor[0] = 0
+    paddings_tensor[1] = 0
+    paddings_tensor[2] = 0
+    paddings_tensor[3] = 0
 
-    var paddings_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        paddings,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](4)
-        ),
-    )
-    var filter_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        filter,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var stride_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        stride,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var dilation_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        dilation,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
+    var filter_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_tensor = TileTensor(filter_stack, row_major[2]())
+    filter_tensor[0] = 3
+    filter_tensor[1] = 3
+
+    var stride_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_tensor = TileTensor(stride_stack, row_major[2]())
+    stride_tensor[0] = 2
+    stride_tensor[1] = 2
+
+    var dilation_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
+    dilation_tensor[0] = 1
+    dilation_tensor[1] = 1
 
     comptime simd_width = simd_width_of[DType.float32]()
 
@@ -460,13 +395,10 @@ fn pool_ceil_test[
 # CHECK-LABEL: test_max_pool_2d_ceil
 fn test_maxpool_2d_ceil() raises:
     print("== test_max_pool_2d_ceil")
-    comptime out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test(PoolMethod.MAX, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 10.0000, atol=1e-4)
     assert_almost_equal(output_tensor[0, 0, 1, 0], 11.0000, atol=1e-4)
@@ -477,13 +409,10 @@ fn test_maxpool_2d_ceil() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_exclude_bound
 fn test_average_pool_2d_ceil_exclude_bound() raises:
     print("== test_average_pool_2d_ceil_exclude_bound")
-    comptime out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test(PoolMethod.AVG, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 5.0000, atol=1e-4)
     assert_almost_equal(output_tensor[0, 0, 1, 0], 6.5000, atol=1e-4)
@@ -494,13 +423,10 @@ fn test_average_pool_2d_ceil_exclude_bound() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_include_bound
 fn test_average_pool_2d_ceil_include_bound() raises:
     print("== test_average_pool_2d_ceil_include_bound")
-    comptime out_layout = Layout.row_major(1, 2, 2, 1)
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 2 * 2 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test[True, True](PoolMethod.AVG, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 5.0000, atol=1e-4)
     assert_almost_equal(output_tensor[0, 0, 1, 0], 4.3333, atol=1e-4)
@@ -512,59 +438,38 @@ fn test_average_pool_2d_ceil_include_bound() raises:
 fn test_max_pool_pad_dilation_2d() raises:
     print("== test_max_pool_pad_dilation_2d")
 
-    comptime in_layout = Layout.row_major(1, 4, 4, 1)
-    comptime out_layout = Layout.row_major(1, 1, 3, 1)
-
-    var in_heap = List[Float32](
-        unsafe_uninit_length=comptime (in_layout.size())
+    var in_stack = InlineArray[Scalar[DType.float32], 1 * 4 * 4 * 1](
+        uninitialized=True
     )
-    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    var input_tensor = TileTensor(in_stack, row_major[1, 4, 4, 1]())
     arange(input_tensor)
 
-    var out_heap = List[Float32](
-        unsafe_uninit_length=comptime (out_layout.size())
+    var out_stack = InlineArray[Scalar[DType.float32], 1 * 1 * 3 * 1](
+        uninitialized=True
     )
-    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
-        0
-    )
+    var output_tensor = TileTensor(out_stack, row_major[1, 1, 3, 1]()).fill(0)
 
-    var paddings: List[Int32] = [0, 0, 2, 0]
-    var filter: List[Int32] = [2, 2]
-    var stride: List[Int32] = [1, 1]
-    var dilation: List[Int32] = [3, 3]
+    var paddings_stack = InlineArray[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
+    paddings_tensor[0] = 0
+    paddings_tensor[1] = 0
+    paddings_tensor[2] = 2
+    paddings_tensor[3] = 0
 
-    var paddings_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        paddings,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](4)
-        ),
-    )
-    var filter_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        filter,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var stride_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        stride,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
-    var dilation_tensor = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        dilation,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](2)
-        ),
-    )
+    var filter_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_tensor = TileTensor(filter_stack, row_major[2]())
+    filter_tensor[0] = 2
+    filter_tensor[1] = 2
+
+    var stride_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_tensor = TileTensor(stride_stack, row_major[2]())
+    stride_tensor[0] = 1
+    stride_tensor[1] = 1
+
+    var dilation_stack = InlineArray[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
+    dilation_tensor[0] = 3
+    dilation_tensor[1] = 3
 
     comptime simd_width = simd_width_of[DType.float32]()
 
