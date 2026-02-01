@@ -27,6 +27,12 @@ what we publish.
 
 ### Language changes
 
+- Slice literals in subscripts has changed to be more similar to collection
+  literals. They now pass an empty tuple as a required `__slice_literal__`
+  keyword argument to disambiguate slices. If you have defined your own range
+  types, please add a `__slice_literal__: () = ()` argument to their
+  constructors.
+
 ### Library changes
 
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
@@ -124,3 +130,7 @@ what we publish.
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
+
+- [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
+  `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back
+  element-wise now returns correct values.

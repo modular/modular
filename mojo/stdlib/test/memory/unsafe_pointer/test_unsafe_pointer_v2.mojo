@@ -434,6 +434,28 @@ def test_load_and_store_simd():
     ptr2.free()
 
 
+def test_load_and_store_simd_bool():
+    # Regression test: storing SIMD[DType.bool, N] with width > 1 then
+    # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
+    var p = alloc[Scalar[DType.bool]](4)
+
+    p.store(0, SIMD[DType.bool, 2](True, False))
+    assert_true(p[0])
+    assert_false(p[1])
+    for i in range(2):
+        assert_equal(p.load[width=2](0)[i], p[i])
+
+    p.store(0, SIMD[DType.bool, 4](False, True, True, False))
+    assert_false(p[0])
+    assert_true(p[1])
+    assert_true(p[2])
+    assert_false(p[3])
+    for i in range(4):
+        assert_equal(p.load[width=4](0)[i], p[i])
+
+    p.free()
+
+
 def test_volatile_load_and_store_simd():
     var ptr = alloc[Int8](16)
     for i in range(16):

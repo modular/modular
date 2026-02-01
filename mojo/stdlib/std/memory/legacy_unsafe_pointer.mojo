@@ -737,6 +737,20 @@ struct LegacyUnsafePointer[
                     isInvariant = invariant._mlir_value,
                 ]((self + i).address)
             return v
+        elif dtype == DType.bool and width > 1:
+            # Bool (i1) is sub-byte, so a vector load of SIMD[bool, N]
+            # packs bits. Load as uint8 and convert to bool so each
+            # element occupies its own byte boundary.
+            return rebind[SIMD[dtype, width]](
+                self.bitcast[Scalar[DType.uint8]]()
+                .load[
+                    width=width,
+                    alignment=alignment,
+                    volatile=volatile,
+                    invariant=invariant,
+                ]()
+                .cast[DType.bool]()
+            )
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
@@ -949,10 +963,19 @@ struct LegacyUnsafePointer[
             alignment > 0
         ), "alignment must be a positive integer value"
 
-        __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            isVolatile = volatile._mlir_value,
-        ](val, self.bitcast[SIMD[dtype, width]]().address)
+        @parameter
+        if dtype == DType.bool and width > 1:
+            # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
+            # packs bits. Cast to uint8 and store so each element
+            # occupies its own byte boundary.
+            self.bitcast[Scalar[DType.uint8]]()._store[
+                alignment=alignment, volatile=volatile
+            ](val.cast[DType.uint8]())
+        else:
+            __mlir_op.`pop.store`[
+                alignment = alignment._mlir_value,
+                isVolatile = volatile._mlir_value,
+            ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
     fn strided_load[
