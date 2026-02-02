@@ -253,7 +253,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(CO::CoroutineType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
   return buildPointerType(convertDebugType(type.getElementType()),
-                          cast<IntegerAttr>(type.getAddressSpace()).getInt());
+                          type.getAddrSpaceOrZero());
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {

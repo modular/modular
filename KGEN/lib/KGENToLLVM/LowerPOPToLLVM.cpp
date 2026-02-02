@@ -1331,10 +1331,7 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
         typeConverter->convertType(op.getPtr().getType().getElementType());
 
     // Set the address space if specified.
-    unsigned addrSpace = 0;
-    if (auto addrSpaceAttr =
-            cast_or_null<IntegerAttr>(op.getPtr().getType().getAddressSpace()))
-      addrSpace = addrSpaceAttr.getInt();
+    unsigned addrSpace = op.getPtr().getType().getAddrSpaceOrZero();
 
     // Coerce the index to the same type as the pointer which is required by the
     // address space.
@@ -1418,11 +1415,8 @@ static Value materializeLLVMAlloca(OpBuilder &b, TargetInfoAttr target,
                                    int64_t align) {
   unsigned addressSpace = 0;
   auto alloca = dyn_cast<StackAllocationOp>(op);
-  if (alloca) {
-    if (auto addrSpaceAttr =
-            cast_or_null<IntegerAttr>(alloca.getType().getAddressSpace()))
-      addressSpace = addrSpaceAttr.getInt();
-  }
+  if (alloca)
+    addressSpace = alloca.getType().getAddrSpaceOrZero();
 
   bool needAddrSpaceCast = false;
   if (addressSpace == 0) {
@@ -3489,10 +3483,7 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
         getAlignment(getTypeConverter(), kgenPtrType, op.getAlignmentAttr());
 
     // Set the address space if specified.
-    unsigned addrSpace = 0;
-    if (auto addrSpaceAttr =
-            cast_or_null<IntegerAttr>(op.getType().getAddressSpace()))
-      addrSpace = addrSpaceAttr.getInt();
+    unsigned addrSpace = op.getType().getAddrSpaceOrZero();
 
     // (HACK) Add a postfix to the name here so that we can identify
     // this type of variables in the llvm module.
@@ -3666,9 +3657,7 @@ struct ConvertExternPointerSymbol
   LogicalResult matchAndRewrite(ExternPointerSymbolOp op,
                                 ExternPointerSymbolOpAdaptor adaptor,
                                 ConversionPatternRewriter &b) const override {
-    int64_t addressSpace =
-        cast<IntegerAttr>(op.getResSymbol().getType().getAddressSpace())
-            .getInt();
+    int64_t addressSpace = op.getResSymbol().getType().getAddrSpaceOrZero();
     Type resType = convertType(op.getResSymbol().getType().getElementType());
     unsigned align = getAlignment(
         getTypeConverter(), op.getResSymbol().getType(), op.getAlignmentAttr());

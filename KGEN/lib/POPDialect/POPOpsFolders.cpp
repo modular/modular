@@ -3117,8 +3117,7 @@ ErrorOrSuccess GlobalAllocOp::compile(Payload &payload, TargetInfoAttr target) {
   else
     payload.align = *DataLayoutInterface::getTypeABIAlign(target, type);
 
-  payload.addressSpace =
-      cast<IntegerAttr>(getType().getAddressSpace()).getInt();
+  payload.addressSpace = getType().getAddrSpaceOrZero();
   return success();
 }
 
@@ -3145,8 +3144,7 @@ GlobalAllocOp::parametric_compile(Payload &payload, TargetInfoAttr target,
   else
     payload.align = *DataLayoutInterface::getTypeABIAlign(target, type);
 
-  payload.addressSpace =
-      cast<IntegerAttr>(resultType.getAddressSpace()).getInt();
+  payload.addressSpace = resultType.getAddrSpaceOrZero();
   return success();
 }
 
