@@ -248,9 +248,6 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_INDEX_LIST_TYPE_NAME =
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_VARIADIC_TENSORS_NAME = "tensor::VariadicTensors";
 
-// We support lists of DPS tensors for a few operations
-constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "std::List";
-
 // The stored mojo type symbol name of device contexts in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
     "std::DeviceContextPtr";
