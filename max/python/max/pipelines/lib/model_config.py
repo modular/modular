@@ -511,7 +511,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         import json
 
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, list_repo_files
 
         # Extract class name and version
         class_name = model_index.get("_class_name")
@@ -531,9 +531,31 @@ class MAXModelConfig(MAXModelConfigBase):
             # Try to load the component's config file
             component_config = {}
             try:
+                repo_files = list_repo_files(
+                    repo_id=self.huggingface_model_repo.repo_id,
+                    revision=self.huggingface_model_repo.revision,
+                )
+                candidate_files = [
+                    repo_file
+                    for repo_file in repo_files
+                    if repo_file.startswith(f"{component_name}/")
+                    and repo_file.endswith("config.json")
+                ]
+                if not candidate_files:
+                    raise FileNotFoundError(
+                        f"No *config.json found under component '{component_name}'."
+                    )
+                config_filename = candidate_files[0]
+                if len(candidate_files) > 1:
+                    logger.debug(
+                        "Multiple config candidates for %s: %s. Using %s.",
+                        component_name,
+                        candidate_files,
+                        config_filename,
+                    )
                 config_file_path = hf_hub_download(
                     repo_id=self.huggingface_model_repo.repo_id,
-                    filename=f"{component_name}/config.json",
+                    filename=config_filename,
                     revision=self.huggingface_model_repo.revision,
                 )
                 with open(config_file_path) as f:
