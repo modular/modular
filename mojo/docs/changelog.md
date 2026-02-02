@@ -35,8 +35,13 @@ what we publish.
 
 ### Library changes
 
-- The `itertools` module now includes `cycle(iterable)`, which lazily creates
-  an iterator that cycles through the elements of an iterable indefinitely.
+- The `itertools` module now includes three new iterator combinators:
+  - `cycle(iterable)`: Creates an iterator that cycles through elements
+    indefinitely
+  - `take_while[predicate](iterable)`: Yields elements while the predicate
+    returns True
+  - `drop_while[predicate](iterable)`: Drops elements while the predicate
+    returns True, then yields the rest
 
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
   `cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `acosh`, `asinh`, `atanh`,
