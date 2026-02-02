@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -345,7 +345,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             else:
                 trait_downcast[Writable](element).write_to(w)
 
-        write_sequence_to[ElementFn=iterate](writer, open="{", close="}")
+        write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
         _ = iterator^
 
     @no_inline

@@ -35,6 +35,9 @@ what we publish.
 
 ### Library changes
 
+- The `itertools` module now includes `cycle(iterable)`, which lazily creates
+  an iterator that cycles through the elements of an iterable indefinitely.
+
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
   `cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `acosh`, `asinh`, `atanh`,
   `cosh`, `sinh`, `expm1`, `log10`, `log1p`, `logb`, `cbrt`, `erfc`, `j0`,
@@ -108,6 +111,9 @@ what we publish.
 
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
+
+- `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
+  their arguments to be `Writable`.
 
 ### Tooling changes
 
