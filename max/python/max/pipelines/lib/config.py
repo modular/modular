@@ -842,10 +842,6 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Prefix caching is not supported with the Overlap scheduler."
                 )
-            if self.enable_chunked_prefill:
-                raise ValueError(
-                    "Chunked prefill is not supported with the Overlap scheduler."
-                )
             if self.sampling.enable_structured_output:
                 raise ValueError(
                     "Structured outputs are not supported with the Overlap scheduler."

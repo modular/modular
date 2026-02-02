@@ -448,29 +448,21 @@ class TextBatchConstructor:
         else:
             replica.tg_reqs[ctx.request_id] = ctx
 
-    def advance_requests_and_collect_invalid_ids(
-        self, executed_batches: list[list[TextContext]]
-    ) -> list[RequestID]:
-        """Advances request state based on executed CE batches and returns invalid IDs.
+    def advance_requests(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> None:
+        """Advances request state based on executed CE batches.
 
         This method updates per-replica queues by moving executed context encoding (CE)
         requests into the text generation (TG) queues. If the last request in a batch
         is chunked and still requires additional CE work, it is moved back to the CE
-        queue for that replica, and its request ID is returned so upstream callers can
-        remove any partial responses for that request.
+        queue for that replica.
 
         Args:
-            executed_batches: A list of per-replica context batches that have just
-                been executed by CE.
-
-        Returns:
-            A list of request IDs that should be treated as invalid by upstream
-            consumers (for example, to be removed from the responses queue) because
-            they represent chunked requests that must be re-processed by CE.
+            inputs: the inputs for the batch.
         """
-        chunked_request_ids: list[RequestID] = []
         for per_replica_batch, replica in zip(
-            executed_batches, self.replicas, strict=True
+            inputs.batches, self.replicas, strict=True
         ):
             # It is possible that the batch is empty for a replica.
             if len(per_replica_batch) == 0:
@@ -486,10 +478,6 @@ class TextBatchConstructor:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
                 replica.ce_reqs.move_to_end(last_request.request_id, last=False)
-
-                chunked_request_ids.append(last_request.request_id)
-
-        return chunked_request_ids
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""

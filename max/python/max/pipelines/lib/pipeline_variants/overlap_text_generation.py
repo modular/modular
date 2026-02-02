@@ -269,7 +269,12 @@ class ScatterFutureTokenProcessor:
         }
         for prev_idx, context in enumerate(prev_flat_batch):
             req_id = context.request_id
-            if req_id in req_id_to_idx_in_batch:
+            # If generated_length is still 0, then there is no placeholder future
+            # token. This is possible due to chunked prefill.
+            if (
+                req_id in req_id_to_idx_in_batch
+                and context.tokens.generated_length
+            ):
                 future_tok_indices_np[prev_idx] = req_id_to_idx_in_batch[req_id]
 
         # Execute the scatter_nd kernel.
