@@ -194,6 +194,36 @@ class PixelGenerationTokenizer(
         #     self._scheduler.config, "use_flow_sigmas", False
         # )
 
+    @staticmethod
+    def _compute_empirical_mu(image_seq_len: int, num_steps: int) -> float:
+        """Compute empirical mu for Flux2 timestep scheduling.
+
+        Taken from:
+        https://github.com/black-forest-labs/flux2/blob/5a5d316b1b42f6b59a8c9194b77c8256be848432/src/flux2/sampling.py#L251
+
+        Args:
+            image_seq_len: Length of image sequence (H*W after packing).
+            num_steps: Number of inference steps.
+
+        Returns:
+            Empirical mu value for scheduler.
+        """
+        a1, b1 = 8.73809524e-05, 1.89833333
+        a2, b2 = 0.00016927, 0.45666666
+
+        if image_seq_len > 4300:
+            mu = a2 * image_seq_len + b2
+            return float(mu)
+
+        m_200 = a2 * image_seq_len + b2
+        m_10 = a1 * image_seq_len + b1
+
+        a = (m_200 - m_10) / 190.0
+        b = m_200 - 200.0 * a
+        mu = a * num_steps + b
+
+        return float(mu)
+
     def _calculate_shift(
         self,
         image_seq_len: int,
@@ -202,10 +232,44 @@ class PixelGenerationTokenizer(
         base_shift: float = 0.5,
         max_shift: float = 1.15,
     ) -> float:
+        """Calculate shift for Flux1 timestep scheduling using linear interpolation."""
         m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
         b = base_shift - m * base_seq_len
         mu = image_seq_len * m + b
         return mu
+
+    def _calculate_mu(
+        self,
+        image_seq_len: int,
+        num_inference_steps: int,
+    ) -> float:
+        """Calculate mu for timestep scheduling, automatically selecting Flux1 or Flux2 method.
+
+        Args:
+            image_seq_len: Length of image sequence (H*W after packing).
+            num_inference_steps: Number of inference steps.
+
+        Returns:
+            Mu value for scheduler.
+        """
+        # Check if this is Flux2 pipeline
+        is_flux2 = (
+            self._pipeline_class_name == "Flux2Pipeline"
+            or (self._pipeline_class_name and "flux2" in self._pipeline_class_name.lower())
+        )
+
+        if is_flux2:
+            # Use Flux2 empirical mu calculation
+            return self._compute_empirical_mu(image_seq_len, num_inference_steps)
+        else:
+            # Use Flux1 linear interpolation (default)
+            return self._calculate_shift(
+                image_seq_len,
+                self._base_image_seq_len,
+                self._max_image_seq_len,
+                self._base_shift,
+                self._max_shift,
+            )
 
     @staticmethod
     def _prepare_latent_image_ids(
@@ -569,13 +633,8 @@ class PixelGenerationTokenizer(
         latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
-        mu = self._calculate_shift(
-            image_seq_len,
-            self._base_image_seq_len,
-            self._max_image_seq_len,
-            self._base_shift,
-            self._max_shift,
-        )
+        # Calculate mu using appropriate method for Flux1 or Flux2
+        mu = self._calculate_mu(image_seq_len, request.num_inference_steps)
 
         num_inference_steps = image_options.steps
         sigmas: npt.NDArray[np.float32] | None = (
