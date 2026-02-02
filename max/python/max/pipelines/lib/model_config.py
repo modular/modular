@@ -523,7 +523,7 @@ class MAXModelConfig(MAXModelConfigBase):
             repo_id=self.huggingface_model_repo.repo_id,
             revision=self.huggingface_model_repo.revision,
         )
-        compoent_configs = {}
+        component_configs = {}
         for file_name in repo_files:
             if file_name.endswith("config.json") and "/" in file_name:
                 try:
@@ -534,7 +534,7 @@ class MAXModelConfig(MAXModelConfigBase):
                         revision=self.huggingface_model_repo.revision,
                     )
                     with open(cfg_path) as f:
-                        compoent_configs[compoent_name] = json.load(f)
+                        component_configs[compoent_name] = json.load(f)
                 except Exception as e:
                     logger.debug(f"Could not load config for {file_name}: {e}")
 
@@ -550,7 +550,7 @@ class MAXModelConfig(MAXModelConfigBase):
             components[component_name] = {
                 "library": library,
                 "class_name": class_type,
-                "config_dict": compoent_configs.get(component_name, {}),
+                "config_dict": component_configs.get(component_name, {}),
             }
 
         # Build the final config structure
