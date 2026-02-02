@@ -1216,11 +1216,7 @@ fn _topk_stage2[
         @parameter
         if sampling:
             # Storing the top-K logits in shmem for sampling
-            s_id = (
-                (idxs_sram + vals_smem_size).bitcast[Int]()
-                # comes from external_memory via vals_sram
-                .unsafe_origin_cast[MutExternalOrigin]()
-            )
+            s_id = (idxs_sram + vals_smem_size).bitcast[Int]()
             # The 2* below is for warp align safety
             s_val2 = (s_id + 2 * k_batch).bitcast[Scalar[T]]()
 
