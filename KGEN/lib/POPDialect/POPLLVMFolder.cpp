@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPUtils.h"
 
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -230,42 +231,7 @@ static ErrorTreeOrSuccess interpretMemcpy(Location loc,
         "interpreting llvm.memcpy takes pack of 3: dst addr, src addr, count");
   }
 
-  auto count = dyn_cast<IntegerAttr>(values[2]);
-  if (!count)
-    return ErrorTree(loc, "interpreting llvm.memcpy 3nd operand count is not "
-                          "interpreted correctly");
-
-  if (!count.getInt())
-    return success();
-
-  auto dst = dyn_cast<M::PointerAttr>(values[0]);
-  auto src = dyn_cast<M::PointerAttr>(values[1]);
-
-  if (!dst)
-    return ErrorTree(loc, "interpreting llvm.memcpy 1st operand dst addr is "
-                          "not interpreted correctly");
-  if (!src)
-    return ErrorTree(loc, "interpreting llvm.memcpy 2nd operand src addr is "
-                          "not interpreted correctly");
-
-  ErrorOr<void *> dstAddrOr =
-      state.getWritableMemory(dst.getAddr(), size_t(count.getInt()));
-  ErrorOr<const void *> srcAddrOr =
-      state.getReadableMemory(src.getAddr(), size_t(count.getInt()));
-
-  if (dstAddrOr.isError())
-    return ErrorTree(
-        loc,
-        "interpreting llvm.memcpy can't get dst memory from the interpreter");
-
-  if (srcAddrOr.isError())
-    return ErrorTree(
-        loc,
-        "interpreting llvm.memcpy can't get src memory from the interpreter");
-
-  std::memcpy(*dstAddrOr, *srcAddrOr, count.getInt());
-
-  return success();
+  return POP::interpretMemcpy(values[0], values[1], values[2], loc, state);
 }
 
 static ErrorTreeOrSuccess interpretPOPIntrinsics(StringAttr name, Location loc,

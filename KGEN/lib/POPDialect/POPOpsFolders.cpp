@@ -2178,6 +2178,25 @@ AlignedFreeOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// MemcpyOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess MemcpyOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  return interpretMemcpy(operands[0], operands[1], operands[2], getLoc(),
+                         state);
+}
+
+ErrorTreeOrSuccess
+MemcpyOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  return interpretMemcpy(state.getReboundAttribute(operands[0]),
+                         state.getReboundAttribute(operands[1]),
+                         state.getReboundAttribute(operands[2]), getLoc(),
+                         state);
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 

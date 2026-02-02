@@ -343,3 +343,13 @@ kgen.func @invalid_simd_reduce_and(%arg0: i32) {
   %0 = pop.simd.reduce_and %arg0 : i32
   kgen.return
 }
+
+
+// -----
+
+kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.pointer<scalar<i32>>) {
+  %0 = kgen.param.constant: index = <4>
+  // expected-error @below {{'pop.memcpy' op source and destination must have same element type, got '!pop.scalar<i32>' and '!pop.scalar<f32>'}}
+  pop.memcpy %dst, %src, %0 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
+  kgen.return
+}

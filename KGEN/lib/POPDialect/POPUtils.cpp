@@ -10,6 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/POPDialect/POPUtils.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/Interpreter/InterpreterState.h"
+#include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "mlir/IR/Builders.h"
@@ -469,4 +472,57 @@ OpFoldResult POP::foldSIMDShr(Attribute val, Attribute shft,
         return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
                       !lhs.isSigned());
       });
+}
+
+template <typename State>
+static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
+                                          Attribute len, Location loc,
+                                          State &state) {
+  auto lenAttr = dyn_cast<IntegerAttr>(len);
+  if (!lenAttr)
+    return ErrorTree(loc, "interpreting memcpy 3nd operand len is not "
+                          "interpreted correctly");
+
+  if (!lenAttr.getInt())
+    return success();
+
+  auto dstPtr = dyn_cast<M::PointerAttr>(dst);
+  auto srcPtr = dyn_cast<M::PointerAttr>(src);
+
+  if (!dstPtr)
+    return ErrorTree(loc, "interpreting memcpy 1st operand dst addr is "
+                          "not interpreted correctly");
+  if (!srcPtr)
+    return ErrorTree(loc, "interpreting memcpy 2nd operand src addr is "
+                          "not interpreted correctly");
+
+  ErrorOr<void *> dstAddrOr =
+      state.getWritableMemory(dstPtr.getAddr(), size_t(lenAttr.getInt()));
+  ErrorOr<const void *> srcAddrOr =
+      state.getReadableMemory(srcPtr.getAddr(), size_t(lenAttr.getInt()));
+
+  if (dstAddrOr.isError())
+    return ErrorTree(
+        loc, "interpreting memcpy can't get dst memory from the interpreter");
+
+  if (srcAddrOr.isError())
+    return ErrorTree(
+        loc, "interpreting memcpy can't get src memory from the interpreter");
+
+  std::memcpy(*dstAddrOr, *srcAddrOr, lenAttr.getInt());
+
+  return success();
+}
+
+ErrorTreeOrSuccess POP::interpretMemcpy(Attribute dst, Attribute src,
+                                        Attribute len, Location loc,
+                                        InterpreterState &state) {
+  return ::interpretMemcpy<InterpreterState>(dst, src, len, loc, state);
+}
+
+ErrorTreeOrSuccess POP::interpretMemcpy(Attribute dst, Attribute src,
+                                        Attribute len, Location loc,
+                                        ParametricInterpreterState &state) {
+  return ::interpretMemcpy<ParametricInterpreterState>(dst, src, len, loc,
+                                                       state);
 }
