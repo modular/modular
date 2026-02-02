@@ -922,13 +922,14 @@ def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
     page_size: Int,
+    cache_dtype: DType,
     //,
     target: StaticString,
     multiply_before_cast: Bool,
     per_head_norm: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
-        dtype,
+        cache_dtype,
         params,
         page_size,
     ],
@@ -1026,7 +1027,7 @@ def rms_norm_kv_cache_ragged_paged[
             tok_idx=cache_token_idx,
             head_idx=head_idx,
             head_dim_idx=head_dim_idx,
-        )
+        ).cast[dtype]()
 
     @always_inline
     @parameter
@@ -1060,7 +1061,7 @@ def rms_norm_kv_cache_ragged_paged[
             tok_idx=cache_token_idx,
             head_idx=head_idx,
             head_dim_idx=head_dim_idx,
-            val=val,
+            val=val.cast[cache_dtype](),
         )
 
     with Trace[TraceLevel.OP, target=target](
@@ -1441,7 +1442,7 @@ fn generic_get_continuous_cache[
 
 
 fn generic_get_paged_cache[
-    dtype: DType
+    dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6],
     cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
@@ -1496,7 +1497,9 @@ fn generic_get_paged_cache[
 
 
 fn generic_get_paged_cache[
-    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
     cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],

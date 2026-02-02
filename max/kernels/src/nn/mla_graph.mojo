@@ -823,6 +823,11 @@ fn mla_prefill_decode_graph_fp8[
     if seq_len == 0:
         return
 
+    # TODO: Remove this once prefill and decode branches support FP8 KV cache KERN-2394.
+    __comptime_assert (
+        collection_t.dtype == dtype
+    ), "This KVCache DType is not supported."
+
     if max_seq_len == 1:
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,

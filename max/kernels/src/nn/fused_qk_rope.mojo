@@ -16,6 +16,7 @@ from math import gcd
 from sys.info import _current_target, simd_width_of
 
 from algorithm.functional import elementwise
+from utils.numerics import get_accum_type
 from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
@@ -119,20 +120,28 @@ fn rope_k_cache[
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
     comptime width_2 = width // 2
     comptime cache_type = cache_t.dtype
+    # TODO: Remove this once FP8 KVCache is supported (KERN-2394).
+    comptime accum_type = get_accum_type[cache_type]()
 
-    var val: SIMD[cache_type, width]
+    var val: SIMD[accum_type, width]
 
     @parameter
     if interleaved:
-        val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
+        val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx).cast[
+            accum_type
+        ]()
     else:
-        val = rebind[SIMD[cache_type, width]](
-            k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).interleave(
-                k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im)
+        val = rebind[SIMD[accum_type, width]](
+            k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re)
+            .cast[accum_type]()
+            .interleave(
+                k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im).cast[
+                    accum_type
+                ]()
             )
         )
 
-    var res = _rope(val, freq_val)
+    var res = _rope(val, freq_val).cast[cache_type]()
 
     @parameter
     if interleaved:
@@ -330,12 +339,6 @@ fn fused_qk_rope_ragged[
         rope_dim == q_head_size and rope_dim == Int(k_head_size)
     ) or interleaved, (
         "Partial RoPE operation only supported for interleaved pattern"
-    )
-    __comptime_assert collection_t.dtype == dtype, (
-        "Expected cache dtype "
-        + String(collection_t.dtype)
-        + " to match input dtype "
-        + String(dtype)
     )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))

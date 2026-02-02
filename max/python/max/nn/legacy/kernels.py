@@ -990,6 +990,7 @@ def fused_qk_ragged_rope(
 
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
     }
 
     if position_ids is not None:
@@ -1551,6 +1552,7 @@ def flare_mla_decode_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
+    # TODO: This check needs to be removed once FP8 KVCache is supported (KERN-2394).
     if input.dtype != kv_params.dtype:
         raise ValueError(
             f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
@@ -1655,11 +1657,6 @@ def flare_mla_prefill_ragged(
     if input.rank != input_rank_expected:
         raise ValueError(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
-        )
-
-    if input.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -2058,11 +2055,6 @@ def mla_prefill_decode_graph_fp8(
     if q_nope.rank != input_rank_expected:
         raise ValueError(
             f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
-        )
-
-    if q_nope.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -2466,6 +2458,7 @@ def rms_norm_key_cache(
                 f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
             )
 
+    # TODO: Remove this check once FP8 KVCache is supported (KERN-2394).
     if gamma.dtype != kv_params.dtype:
         raise TypeError(
             f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
