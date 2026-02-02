@@ -123,12 +123,12 @@ enum class OperandEffect {
   regConsume,
 
   /// This is used by operations that load the value, things like RefLoadOp,
-  /// LoadConsumeOp, OwnershipUseOp, and passing a borrowed operand.
+  /// LoadConsumeOp, OwnershipUseOp, MemcpyOp, and passing a borrowed operand.
   memLoad,
 
   /// This is store to the pointer that overwrites whatever is in it with a new
-  /// owned value.  For example, RefStoreOp and ByRefResult call operands all do
-  /// this.
+  /// owned value.  For example, RefStoreOp, MemcpyOp and ByRefResult call
+  /// operands all do this.
   memStoreOwned,
 
   /// mut arg to a function call.  Value must be initialized before the

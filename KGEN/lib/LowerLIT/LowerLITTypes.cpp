@@ -725,6 +725,21 @@ static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
   return {};
 }
 
+static Value lowerOp(MemcpyOp op, MemcpyOpAdaptor adaptor, LITTypeLowerer &b) {
+  TypedAttr target =
+      ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
+  Value dst = adaptor.getDst();
+  auto elementTypeAttr =
+      TypeParamAttr::get(cast<PointerType>(dst.getType()).getElementType(),
+                         TypeType::get(dst.getContext()));
+  Value sizeOfElt = ParamConstantOp::create(
+      b, op.getLoc(),
+      ParamOperatorAttr::get(POC::GetSizeOf, {elementTypeAttr, target}));
+  // Note - swap the source and destination operands around.
+  b.replaceOpWithNewOp<POP::MemcpyOp>(op, dst, adaptor.getSrc(), sizeOfElt);
+  return {};
+}
+
 static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                      LITTypeLowerer &b) {
   if (op.usesFieldAccess()) {
@@ -887,7 +902,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
         .Case<MaterializeIntoOp, StructInsertOp, StructExtractOp, RefImmutOp,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
-              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
+              RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp,
+              RefPackExtractOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
