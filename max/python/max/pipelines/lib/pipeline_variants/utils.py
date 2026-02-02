@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -72,7 +73,7 @@ def update_context_and_prepare_responses(
     num_steps: int,
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
-    overwrite_future: bool = False,
+    all_layers_hidden_states: tuple[Any, ...] | None = None,
 ) -> dict[RequestID, TextGenerationOutput]:
     """
     Update the context objects and prepare the response objects for each context in the batch after generation.
