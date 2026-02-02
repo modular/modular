@@ -42,7 +42,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer:
+trait Indexer(ImplicitlyDestructible):
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
@@ -84,7 +84,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable:
+trait Intable(ImplicitlyDestructible):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or

@@ -33,6 +33,58 @@ what we publish.
   types, please add a `__slice_literal__: () = ()` argument to their
   constructors.
 
+- `trait` declarations no longer automatically inherit from
+  `ImplicitlyDestructible`. `struct` declarations are not changed, and continue
+  to inherit from `ImplicitlyDestructible`.
+
+  Previously, the `@explicit_destroy` annotation was required to opt-out of
+  `ImplicitlyDestructible` conformance. Now, if a trait's usage depends on
+  implicit destructibility, it must opt-in explicitly:
+
+  ```mojo
+  # Before
+  trait Foo:
+      ...
+
+  # After:
+  trait Foo(ImplicitlyDestructible):
+      ...
+  ```
+
+  Conversely, if a trait wanted to support non-implicitly-destructible types,
+  it no longer needs to be annotated with `@explicit_destroy`:
+
+  ```mojo
+  # Before
+  @explicit_destroy
+  trait Foo:
+      ...
+
+  # After
+  trait Foo:
+      ...
+  ```
+
+  Making `struct` continue to inherit from `ImplicitlyDestructible` and not
+  `trait` is intended to balance usability and familiarity in the common case,
+  with the need to foster broad Mojo ecosystem support for explicitly destroyed
+  types.
+
+  It's not a problem if the majority of `struct` types are
+  `ImplicitlyDestructible` in practice. However, if many ecosystem libraries are
+  written with unnecessary `ImplicitlyDestructible` bounds, that would hamper
+  the usability of any individual `struct` type that opts-in to being explicitly
+  destroyed.
+
+  Libraries with generic algorithms and types should be written to accomodate
+  linear types. Making `ImplicitlyDestructible` opt-in for traits
+  encourages a default stance of support, with specific types and functions
+  only opting-in to the narrower `ImplicitlyDestructible` requirement if they
+  truly need it.
+
+  The majority of generic algorithms that take their inputs by reference should
+  not be affected.
+
 ### Library changes
 
 - The `itertools` module now includes three new iterator combinators:

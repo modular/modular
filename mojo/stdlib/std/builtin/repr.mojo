@@ -18,7 +18,7 @@ The functions and traits provided here are built-ins, so you don't need to impor
 from collections import Deque, LinkedList, Set
 
 
-trait Representable:
+trait Representable(ImplicitlyDestructible):
     """A trait that describes a type that has a String representation.
 
     Any type that conforms to the `Representable` trait can be used with the

@@ -91,7 +91,7 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait(Copyable):
+trait LayoutTrait(Copyable, ImplicitlyDestructible):
     """Defines the interface for mapping between logical coordinates and memory indices.
 
     The `LayoutTrait` provides a common interface for all layout types, including

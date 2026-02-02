@@ -30,9 +30,6 @@ These traits are built into Mojo and do not need to be imported.
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO(MOCO-1468): Add @explicit_destroy here so we get an error message,
-#     preferably one that mentions a link the user can go to to learn about
-#     linear types.
 trait AnyType:
     """The most basic trait that all Mojo types extend by default.
 

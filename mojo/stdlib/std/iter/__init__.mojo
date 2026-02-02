@@ -89,7 +89,7 @@ struct StopIteration(TrivialRegisterType, Writable):
         writer.write("StopIteration")
 
 
-trait Iterator(Movable):
+trait Iterator(ImplicitlyDestructible, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
