@@ -197,3 +197,7 @@ what we publish.
 - [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
   `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back
   element-wise now returns correct values.
+
+- `StringSlice.find`: Fixed integer overflow bug in SIMD string search that
+  caused searches to fail when searching for strings longer than
+  `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.
