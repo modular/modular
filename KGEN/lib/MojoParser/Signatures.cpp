@@ -387,6 +387,11 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   // Parse optional where clauses.
   while (p.consumeIfSoftIdentifier("where")) {
+    if (kind == ArgListKind::kArgList) {
+      p.emitError(loc,
+                  "where clauses can only be used for compile time parameters");
+      return failure();
+    }
     ParsedConstraint constraint;
     if (constraint.parse(p))
       return failure();

@@ -319,6 +319,10 @@ fn always_inline_builtin_4(a: Bool):
   if a:
      pass
 
+# expected-error @+1 {{where clauses can only be used for compile time parameters}}
+fn illegal_runtime_where[x: Int](a: Int where a > 1):
+  pass
+
 # expected-note @+1 {{function declared here}}
 fn simple_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here}}
