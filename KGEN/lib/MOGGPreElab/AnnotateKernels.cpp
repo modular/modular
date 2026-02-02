@@ -35,8 +35,6 @@ static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor", "managed_tensor_slice", "VariadicTensors"};
-static constexpr std::array<StringLiteral, 4> kMaxList = {"std", "collections",
-                                                          "list", "List"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
@@ -449,30 +447,6 @@ static Attribute getUnboundParameters(KGENModule &kgenModule,
   return builder.getDictionaryAttr(result);
 }
 
-/// Return a set of named attributes mapping all unbound parameters in the list
-/// of tensor struct
-static Attribute getUnboundParametersForTensorList(KGENModule &kgenModule,
-                                                   LIT::StructType structType) {
-  // TODO(GEX-1126): consider a tuple which only contains tensors to
-  // simplify this
-  [[maybe_unused]] auto allParameters = structType.getParamValues();
-
-  ASSERT_STREAM(allParameters.size() >= toIndex(ListParams::kNumParams),
-                << "Expected at least " << toIndex(ListParams::kNumParams)
-                << " parameters on the list-of-tensor type");
-  SmallVector<NamedAttribute> listNamedAttrs;
-
-  auto elementTypeAttr = cast<KGEN::TypeParamAttr>(
-      structType.getParamValues()[toIndex(ListParams::kElementType)]);
-  auto elementTypeStruct =
-      cast<LIT::StructType>(elementTypeAttr.getTypeValue());
-
-  if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice))
-    return Builder(structType.getContext()).getUnitAttr();
-
-  return getUnboundParameters(kgenModule, elementTypeStruct);
-}
-
 ArrayAttr labelParameters(MLIRContext *ctx, KGENModule &kgenModule,
                           TypeRange types) {
   Builder builder(ctx);
@@ -488,15 +462,9 @@ ArrayAttr labelParameters(MLIRContext *ctx, KGENModule &kgenModule,
       continue;
     }
 
-    if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
-      auto parameters =
-          getUnboundParametersForTensorList(kgenModule, asStructType);
-      valueParameters.push_back(parameters);
-    } else {
-      // Otherwise we have an opaque type
-      auto parameters = getUnboundParameters(kgenModule, asStructType);
-      valueParameters.push_back(parameters);
-    }
+    // Otherwise we have an opaque type
+    auto parameters = getUnboundParameters(kgenModule, asStructType);
+    valueParameters.push_back(parameters);
   }
 
   return builder.getArrayAttr(valueParameters);
@@ -592,27 +560,6 @@ extractIOSpecSubFields(LIT::StructType structType) {
     auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
     auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
     return std::make_pair(mut, input);
-  }
-
-  // Check if this is a list of tensors
-  if (symbolMatches(structType.getSymbol(), kMaxList)) {
-    static constexpr unsigned kElementType = 0;
-    [[maybe_unused]] auto allParameters = structType.getParamValues();
-
-    ASSERT_STREAM(allParameters.size() >= 1,
-                  << "Expected at least one parameter on the list type");
-
-    auto elementTypeAttr =
-        cast<KGEN::TypeParamAttr>(structType.getParamValues()[kElementType]);
-    auto elementTypeStruct =
-        cast<LIT::StructType>(elementTypeAttr.getTypeValue());
-
-    // Only handle lists of ManagedTensorSlice
-    if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice)) {
-      return std::make_pair(TypedAttr(), TypedAttr());
-    }
-
-    return extractMutInputFromTensorStruct(elementTypeStruct);
   }
 
   // Unsupported type
@@ -739,15 +686,6 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
     if (!hasIOSpec) {
       error = true;
       continue;
-    }
-
-    if (symbolMatches(structType.getSymbol(), kMaxList) &&
-        ioSpec != IOSpec::InputTensor) {
-
-      emitError(loc, "Only input tensors are allowed as the element type for "
-                     "list arguments at the moment.");
-
-      return std::nullopt;
     }
 
     bool isOutput = isOutputIOSpec(*ioSpec);

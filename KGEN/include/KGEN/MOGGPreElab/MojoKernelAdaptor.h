@@ -56,13 +56,6 @@ struct VariadicTensorOperandAdaptor : TensorOperandAdaptor {
   }
 };
 
-struct ListOfTensorOperandAdaptor : TensorOperandAdaptor {
-  static constexpr StringLiteral typeName = MOJO_TENSOR_LIST_NAME;
-  bool operator==(const ListOfTensorOperandAdaptor &other) const {
-    return mut == other.mut;
-  }
-};
-
 struct ScalarOperandAdaptor {
   static constexpr StringLiteral typeName = MOJO_INTERNAL_DPS_SIMD_TYPE_NAME;
   bool operator==(const ScalarOperandAdaptor &other) const { return true; }
@@ -118,12 +111,10 @@ struct MojoKernelOperandSourceDescriptor {
   bool isByRefResult;
 };
 
-using MojoKernelOperandVariant =
-    std::variant<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
-                 ListOfTensorOperandAdaptor, ScalarOperandAdaptor,
-                 OpaqueOperandAdaptor, DevicesContextPtrOperandAdaptor,
-                 DevicesContextPtrListOperandAdaptor,
-                 UnsupportedOperandAdaptor>;
+using MojoKernelOperandVariant = std::variant<
+    TensorOperandAdaptor, VariadicTensorOperandAdaptor, ScalarOperandAdaptor,
+    OpaqueOperandAdaptor, DevicesContextPtrOperandAdaptor,
+    DevicesContextPtrListOperandAdaptor, UnsupportedOperandAdaptor>;
 
 struct MojoKernelOperandAdaptor {
   MojoKernelOperandAdaptor() = default;
@@ -197,9 +188,7 @@ struct MojoKernelOperandAdaptor {
 
   bool isTensorType() const {
     return std::holds_alternative<TensorOperandAdaptor>(underlyingType) ||
-           std::holds_alternative<VariadicTensorOperandAdaptor>(
-               underlyingType) ||
-           std::holds_alternative<ListOfTensorOperandAdaptor>(underlyingType);
+           std::holds_alternative<VariadicTensorOperandAdaptor>(underlyingType);
   }
 
   bool isFusedTensorType() const {
@@ -207,8 +196,7 @@ struct MojoKernelOperandAdaptor {
       return false;
 
     bool fused;
-    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
-                  ListOfTensorOperandAdaptor>(
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor>(
         [&](auto &&obj) { fused = obj.fused; }, underlyingType);
 
     return fused;
@@ -219,8 +207,7 @@ struct MojoKernelOperandAdaptor {
       return false;
 
     bool match = false;
-    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
-                  ListOfTensorOperandAdaptor>(
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor>(
         [&](auto &&obj) { match = (spec == obj.ioSpec); }, underlyingType);
 
     return match;
@@ -231,8 +218,7 @@ struct MojoKernelOperandAdaptor {
       return false;
 
     bool isMutable;
-    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
-                  ListOfTensorOperandAdaptor>(
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor>(
         [&](auto &&obj) { isMutable = obj.mut; }, underlyingType);
 
     return isMutable;
@@ -529,12 +515,6 @@ template <typename StreamType>
 StreamType &operator<<(StreamType &os,
                        const VariadicTensorOperandAdaptor &tensors) {
   os << "*" << *static_cast<const TensorOperandAdaptor *>(&tensors);
-  return os;
-}
-
-template <typename StreamType>
-StreamType &operator<<(StreamType &os, const ListOfTensorOperandAdaptor &list) {
-  os << "List[" << *static_cast<const TensorOperandAdaptor *>(&list) << "]";
   return os;
 }
 
