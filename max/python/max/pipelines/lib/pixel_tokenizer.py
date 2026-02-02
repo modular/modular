@@ -82,6 +82,13 @@ class PixelGenerationTokenizer(
     ) -> None:
         self.model_path = model_path
 
+        components_dict = pipeline_config.model.diffusers_config.get('components', {})
+        if delegate_config := components_dict.get(subfolder, {}).get("config_dict", {}):
+            max_length = max_length or delegate_config.get("model_max_length", None)
+        
+        if delegate_config_2 := components_dict.get(subfolder_2, {}).get("config_dict", {}):
+            secondary_max_length = secondary_max_length or delegate_config_2.get("model_max_length", None)
+        
         if max_length is None:
             raise ValueError(
                 "diffusion models frequently have an unbounded max length. Please provide a max length"
