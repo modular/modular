@@ -519,6 +519,25 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Build components dict with loaded configs
         components = {}
+        repo_files = list_repo_files(
+            repo_id=self.huggingface_model_repo.repo_id,
+            revision=self.huggingface_model_repo.revision,
+        )
+        compoent_configs = {}
+        for file_name in repo_files:
+            if file_name.endswith("config.json") and "/" in file_name:
+                try:
+                    compoent_name = file_name.split("/")[0]
+                    cfg_path = hf_hub_download(
+                        repo_id=self.huggingface_model_repo.repo_id,
+                        filename=file_name,
+                        revision=self.huggingface_model_repo.revision,
+                    )
+                    with open(cfg_path) as f:
+                        compoent_configs[compoent_name] = json.load(f)
+                except Exception as e:
+                    logger.debug(f"Could not load config for {file_name}: {e}")
+
         for component_name, component_info in model_index.items():
             if component_name.startswith("_"):
                 continue
@@ -528,45 +547,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             library, class_type = component_info
 
-            # Try to load the component's config file
-            component_config = {}
-            try:
-                repo_files = list_repo_files(
-                    repo_id=self.huggingface_model_repo.repo_id,
-                    revision=self.huggingface_model_repo.revision,
-                )
-                candidate_files = [
-                    repo_file
-                    for repo_file in repo_files
-                    if repo_file.startswith(f"{component_name}/")
-                    and repo_file.endswith("config.json")
-                ]
-                if not candidate_files:
-                    raise FileNotFoundError(
-                        f"No *config.json found under component '{component_name}'."
-                    )
-                config_filename = candidate_files[0]
-                if len(candidate_files) > 1:
-                    logger.debug(
-                        "Multiple config candidates for %s: %s. Using %s.",
-                        component_name,
-                        candidate_files,
-                        config_filename,
-                    )
-                config_file_path = hf_hub_download(
-                    repo_id=self.huggingface_model_repo.repo_id,
-                    filename=config_filename,
-                    revision=self.huggingface_model_repo.revision,
-                )
-                with open(config_file_path) as f:
-                    component_config = json.load(f)
-            except Exception as e:
-                logger.debug(f"Could not load config for {component_name}: {e}")
-
             components[component_name] = {
                 "library": library,
                 "class_name": class_type,
-                "config_dict": component_config,
+                "config_dict": compoent_configs.get(component_name, {}),
             }
 
         # Build the final config structure
