@@ -3625,14 +3625,6 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
 
-  // TODO(MOCO-1468): Remove this, put an @explicit_destroy on
-  // AnyType's definition.
-  if (traitOp.getSymName() == "AnyType") {
-    // TODO(MOCO-1468): Remove this, specify it in the code.
-    traitOp.setLinearTypeErrorMsg(std::make_optional(
-        llvm::StringRef("Unhandled explicit_destroy type AnyType")));
-  }
-
   // Make every trait inherit from `AnyType`, except itself.
   if (parentTraits.empty() && traitOp.getSymName() != "AnyType") {
     if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
@@ -3643,7 +3635,18 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     }
   }
 
-  std::string linearTypeErrorMsg;
+  // Check if the trait conforms to ImplicitlyDestructible by checking the
+  // parent traits list. We can't use doesNominalTypeConformTo or
+  // lookupBuiltinTrait here because they would trigger signature resolution
+  // and cause a cycle when resolving base traits like AnyType.
+  bool conformsToImplicitlyDestructible =
+      traitOp.getSymName() == "ImplicitlyDestructible" ||
+      llvm::any_of(parentTraits, [](SymbolRefAttr symbol) {
+        return symbol.getLeafReference().getValue() == "ImplicitlyDestructible";
+      });
+
+  // Parse @explicit_destroy decorator if present.
+  std::optional<std::string> linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
       // TODO(MOCO-1468): Remove this, always require argument to
@@ -3672,24 +3675,24 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
       }
     }
   }
-  // TODO(MOCO-1468): Remove else; always require argument to @explicit_destroy.
-  if (!linearTypeErrorMsg.empty()) {
-    traitOp.setLinearTypeErrorMsg(
-        std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
-  } else {
-    // Make every trait inherit from `AnyType`, except itself and
-    // AnyType.
-    if (traitOp.getSymName() != "ImplicitlyDestructible" &&
-        traitOp.getSymName() != "AnyType") {
-      if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
-              "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc())) {
-        parentTraits.push_back(implicitlyDestructibleDecl->getSymbolRef());
-        // Update immediateParents only if it is empty, otherwise some other
-        // parent trait will have already added it.
-        if (immediateParents.empty())
-          immediateParents.insert(implicitlyDestructibleDecl->getSymbolRef());
-      }
+
+  // Validate @explicit_destroy usage and set error message for linear traits.
+  if (conformsToImplicitlyDestructible) {
+    if (linearTypeErrorMsg) {
+      shared.emitError(decl.getLoc(),
+                       "@explicit_destroy cannot be used on a trait that "
+                       "conforms to ImplicitlyDestructible");
+      return failure();
     }
+  } else {
+    // Trait does not conform to ImplicitlyDestructible, so it is a linear type.
+    // Set a default error message if @explicit_destroy wasn't used.
+    if (!linearTypeErrorMsg) {
+      linearTypeErrorMsg = "unhandled explicitly destroyed type '" +
+                           traitOp.getDeclName().str() + "'";
+    }
+    traitOp.setLinearTypeErrorMsg(
+        std::make_optional(llvm::StringRef(*linearTypeErrorMsg)));
   }
 
   // Insert the implicit trait parameter:

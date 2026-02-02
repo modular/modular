@@ -579,7 +579,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
 
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
-# CHECK-SAME: (!AnyType_ImplicitlyDestructible_GreatGrandFather)
+# CHECK-SAME: (!AnyType_GreatGrandFather)
 trait GreatGrandFather:
     # CHECK: lit.fn @"foo
     fn foo(self):
@@ -915,7 +915,7 @@ struct ParamType[x: Int](TrivialRegisterType):
 
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
 @register_passable
-trait RGTrait:
+trait RGTrait(ImplicitlyDestructible):
     # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
     fn doSomething(self):
         ...

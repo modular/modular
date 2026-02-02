@@ -43,10 +43,10 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
         pass
 
 
-# CHECK-LABEL: @"foo
-# expected-error @below {{Unhandled explicit_destroy type AnyType}}
+# CHECK-LABEL: @"test_any_type_error
+# expected-error @below {{unhandled explicitly destroyed type 'AnyType'}}
 # expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
-fn foo[T: AnyType](var x: T):
+fn test_any_type_error[T: AnyType](var x: T):
     pass
 
 
@@ -116,3 +116,95 @@ fn testExplicitWithDel():
 # This comes from stubs library.
 # CHECK-LABEL: lit.struct.decl @Coroutine
 # CHECK-NOT: destructor :!lit.generator
+
+
+# ===----------------------------------------------------------------------=== #
+# Trait with custom @explicit_destroy error message
+# ===----------------------------------------------------------------------=== #
+
+# Trait without @explicit_destroy and without ImplicitlyDestructible
+trait PlainTrait:
+    fn do_something(self):
+        ...
+
+
+@explicit_destroy
+trait ExplicitDestroyNoMessage:
+    fn destroy_no_msg(deinit self):
+        ...
+
+
+@explicit_destroy("Use `destroy()` method.")
+trait ExplicitDestroyWithMessage:
+    fn destroy(deinit self):
+        ...
+
+
+# Test: Plain trait without @explicit_destroy
+# expected-error @below {{unhandled explicitly destroyed type 'PlainTrait'}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_plain_trait[T: PlainTrait](var value: T):
+    pass
+
+# Test: Trait with @explicit_destroy but no custom message
+# expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_generic_linear_no_message[T: ExplicitDestroyNoMessage](var value: T):
+    pass
+
+
+# Test: Trait with @explicit_destroy("...") custom message
+# expected-error @below {{Use `destroy()` method.}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_generic_linear_with_message[T: ExplicitDestroyWithMessage](var value: T):
+    pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Trait composition with @explicit_destroy
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use custom_foo_destroy().")
+trait LinearFoo:
+    fn custom_foo_destroy(deinit self):
+        ...
+
+
+@explicit_destroy("Use custom_bar_destroy().")
+trait LinearBar:
+    fn custom_bar_destroy(deinit self):
+        ...
+
+
+# Test: First trait has custom message - uses that message
+# expected-error @below {{Use custom_foo_destroy().}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_foo_and_bar[T: LinearFoo & LinearBar](var value: T):
+    pass
+
+
+# Test: First trait has no custom message - uses generic "Unhandled" message
+# (Documents current behavior where iteration order matters)
+# expected-error @below {{Unhandled explicit_destroy type ExplicitDestroyNoMessage}}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_no_msg_first[T: ExplicitDestroyNoMessage & LinearBar](var value: T):
+    pass
+
+
+# ===----------------------------------------------------------------------=== #
+# @explicit_destroy("") on linear traits (valid but poor form)
+# ===----------------------------------------------------------------------=== #
+
+# Test: Empty string message is valid on a linear trait (trait without
+# ImplicitlyDestructible). The empty message will be used as the error.
+@explicit_destroy("")
+trait LinearWithEmptyMessage:
+    fn consume(deinit self):
+        ...
+
+
+# expected-error @below {{abandoned without being explicitly destroyed: }}
+# expected-note @below {{consider adding trait conformance to ImplicitlyDestructible}}
+fn take_linear_empty_message[T: LinearWithEmptyMessage](var value: T):
+    pass

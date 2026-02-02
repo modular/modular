@@ -380,8 +380,10 @@ TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
         TraitDeclOp traitDecl(traitMap.at(symbol));
-        auto errorMsg = traitDecl.getLinearTypeErrorMsg();
-        if (errorMsg)
+
+        // If the trait has a linear type error message set, it means it does
+        // not conform to ImplicitlyDestructible and is a linear type.
+        if (auto errorMsg = traitDecl.getLinearTypeErrorMsg())
           return errorMsg;
       }
     }
