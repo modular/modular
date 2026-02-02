@@ -300,10 +300,21 @@ def _get_nvfp4_input_types(
             ),
             device=device,
         ),
-        TensorType(DType.uint32, shape=(1,), device=device),
-        TensorType(DType.int32, shape=(num_experts,), device=device),
-        TensorType(DType.float32, shape=(num_experts,), device=device),
-        TensorType(DType.uint32, shape=(2,), device=device),
+        TensorType(
+            DType.uint32, shape=(1,), device=device
+        ),  # expert_start_indices
+        TensorType(
+            DType.uint32, shape=(num_experts,), device=device
+        ),  # a_scale_offsets
+        TensorType(
+            DType.int32, shape=(num_experts,), device=device
+        ),  # expert_ids
+        TensorType(
+            DType.float32, shape=(num_experts,), device=device
+        ),  # expert_scales
+        TensorType(
+            DType.uint32, shape=(2,), device=device
+        ),  # expert_usage_stats_host
     ]
 
 
@@ -322,6 +333,7 @@ def _call_nvfp4_matmul(
             inputs[5].tensor,
             inputs[6].tensor,
             inputs[7].tensor,
+            inputs[8].tensor,
         )
 
 

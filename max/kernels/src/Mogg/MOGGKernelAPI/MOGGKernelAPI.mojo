@@ -7650,7 +7650,6 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         b_type: DType,
         scales_type: DType,
         //,
-        tokens_padded_per_expert: Bool,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7677,7 +7676,6 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             b_type: The input B data type. Constraints: Must be `uint8`.
             scales_type: The scale factor data type.
                 Constraints: Must be `float8_e4m3fn`.
-            tokens_padded_per_expert: Whether tokens are padded per expert.
             target: The target GPU device.
 
         Args:

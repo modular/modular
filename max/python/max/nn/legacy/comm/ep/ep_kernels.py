@@ -26,6 +26,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    Shape,
     StaticDim,
     TensorType,
     TensorValue,
@@ -35,6 +36,80 @@ from max.graph import (
 
 from ...float8_config import Float8Config
 from .ep_config import NUM_GROUPS, EPConfig
+
+
+def _ep_dispatch_output_types(
+    max_recv_tokens: int,
+    token_last_dim: int,
+    n_local_experts: int,
+    config: EPConfig,
+    device_ref: DeviceRef,
+) -> list[TensorType]:
+    """Returns the output types for the EP dispatch kernel."""
+
+    output_tokens_type = TensorType(
+        dtype=config.dispatch_dtype,
+        shape=[max_recv_tokens, token_last_dim],
+        device=device_ref,
+    )
+    expert_start_indices_type = TensorType(
+        dtype=DType.uint32,
+        shape=[n_local_experts + 1],
+        device=device_ref,
+    )
+    expert_ids_type = TensorType(
+        dtype=DType.int32,
+        shape=[n_local_experts],
+        device=device_ref,
+    )
+    src_info_type = TensorType(
+        dtype=DType.int32,
+        shape=[max_recv_tokens, 2],
+        device=device_ref,
+    )
+
+    if config.dispatch_fp8_config is not None:
+        float8_config = config.dispatch_fp8_config
+
+        out_scales_type = float8_config.quantized_scales_type(
+            Shape([max_recv_tokens, config.hidden_size]), device_ref
+        )
+
+        if config.dispatch_dtype.is_float8():
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        elif float8_config.is_nvfp4:
+            # NVFP4 format will produce an extra tensor for offsets of the
+            # padded scales.
+            scales_offsets_type = TensorType(
+                dtype=DType.uint32,
+                shape=[n_local_experts],
+                device=device_ref,
+            )
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
+                scales_offsets_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    return [
+        output_tokens_type,
+        expert_start_indices_type,
+        expert_ids_type,
+        src_info_type,
+    ]
 
 
 def call_ep_init(
@@ -73,15 +148,20 @@ def call_ep_init(
         "max_token_per_rank": config.max_tokens_per_rank,
         "n_gpus_per_node": config.n_gpus_per_node,
     }
-    if config.dispatch_dtype.is_float8():
-        assert config.dispatch_fp8_config is not None
-        parameters["dispatch_scale_granularity"] = str(
-            config.dispatch_fp8_config.granularity
-        )
-        parameters["dispatch_scale_dtype"] = config.dispatch_fp8_config.dtype
+    if config.dispatch_fp8_config is not None:
+        if config.dispatch_fp8_config.is_nvfp4:
+            parameters["dispatch_fmt_str"] = "NVFP4"
+            parameters["dispatch_scale_dtype"] = DType.float8_e4m3fn
+        elif config.dispatch_dtype.is_float8():
+            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+            parameters["dispatch_scale_dtype"] = DType.float32
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
     else:
-        # fill in dummy values for non-float8 cases
-        parameters["dispatch_scale_granularity"] = "none"
+        # fill in dummy values for non-quantized cases
+        parameters["dispatch_fmt_str"] = "BF16"
         parameters["dispatch_scale_dtype"] = DType.float32
 
     results = ops.inplace_custom(
@@ -106,6 +186,7 @@ def call_ep_dispatch_async(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    input_scales: TensorValue | None = None,
 ) -> None:
     """Initiate Expert Parallelism token dispatch phase (async).
 
@@ -132,6 +213,8 @@ def call_ep_dispatch_async(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
+        input_scales: Optional input scales tensor. Required for NVFP4
+            dispatch. Shape: (1,) or (n_experts,).
 
     Note:
         This is a non-blocking operation. Call call_ep_dispatch_wait() to wait
@@ -148,24 +231,40 @@ def call_ep_dispatch_async(
         "n_nodes": config.n_nodes,
     }
     op_name = "ep.dispatch_async"
-    if config.dispatch_dtype.is_float8():
-        assert config.dispatch_fp8_config is not None
-        assert config.dispatch_fp8_config.granularity == "block"
-        parameters["dispatch_fmt_str"] = "BlockwiseFP8"
-    else:
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        topk_ids,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+
+    if config.dispatch_fp8_config is not None:
+        float8_config = config.dispatch_fp8_config
+        if float8_config.is_nvfp4:
+            if input_scales is None:
+                raise ValueError(
+                    "input_scales must be provided when using NVFP4 dispatch"
+                )
+            op_name += ".nvfp4"
+            input_vals.append(1.0 / input_scales.to(input_tokens.device))
+        elif config.dispatch_dtype.is_float8():
+            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    elif config.dispatch_dtype == DType.bfloat16:
         parameters["dispatch_fmt_str"] = "BF16"
+    else:
+        raise ValueError(f"Unsupported dispatch dtype: {config.dispatch_dtype}")
 
     ops.inplace_custom(
         op_name,
         device=input_tokens.device,
-        values=[
-            atomic_counter,
-            input_tokens,
-            topk_ids,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-        ],
+        values=input_vals,
         out_types=[],
         parameters=parameters,
     )
@@ -248,58 +347,45 @@ def call_ep_dispatch_wait(
         max_recv_tokens += config.max_tokens_per_rank
         n_local_experts += 1
 
-    basic_out_types: list[TensorType] = [
-        TensorType(
-            dtype=config.dispatch_dtype,
-            shape=[max_recv_tokens, config.hidden_size],
-            device=device_ref,
-        ),  # output_tokens
-        TensorType(
-            dtype=DType.uint32,
-            shape=[n_local_experts + 1],
-            device=device_ref,
-        ),  # expert_start_indices
-        TensorType(
-            dtype=DType.int32,
-            shape=[n_local_experts],
-            device=device_ref,
-        ),  # expert_ids
-        TensorType(
-            dtype=DType.int32,
-            shape=[max_recv_tokens, 2],
-            device=device_ref,
-        ),  # src_info
-    ]
+    output_last_dim = config.hidden_size
+    if (
+        config.dispatch_fp8_config is not None
+        and config.dispatch_fp8_config.is_nvfp4
+    ):
+        output_last_dim //= 2
 
-    if config.dispatch_dtype.is_float8():
-        assert config.dispatch_fp8_config is not None
-        assert (
-            config.dispatch_fp8_config.block_size is not None
-            and config.dispatch_fp8_config.block_size[1] == 128
-        ), "Only support block_size=[1, 128] for input activations."
+    output_vals = _ep_dispatch_output_types(
+        max_recv_tokens,
+        output_last_dim,
+        n_local_experts,
+        config,
+        device_ref,
+    )
 
-        basic_out_types.insert(
-            1,
-            TensorType(
-                dtype=config.dispatch_fp8_config.dtype,
-                shape=[
-                    config.hidden_size
-                    // config.dispatch_fp8_config.block_size[1],
-                    max_recv_tokens,
-                ],
-                device=device_ref,
-            ),
-        )  # output_scales
-        op_name += ".fp8"
-        parameters["dispatch_scale_granularity"] = str(
-            config.dispatch_fp8_config.granularity
-        )
+    if config.dispatch_fp8_config is not None:
+        float8_config = config.dispatch_fp8_config
+
+        if config.dispatch_dtype.is_float8():
+            op_name += ".fp8"
+            parameters["dispatch_scale_granularity"] = str(
+                float8_config.input_scale.granularity
+            )
+        elif float8_config.is_nvfp4:
+            op_name += ".nvfp4"
+            if config.fused_shared_expert:
+                raise ValueError(
+                    "NVFP4 dispatch with fused shared expert is not supported"
+                )
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
 
     results = ops.inplace_custom(
         op_name,
         device=device_ref,
         values=input_vals,
-        out_types=basic_out_types,
+        out_types=output_vals,
         parameters=parameters,
     )
 
@@ -485,6 +571,7 @@ def call_ep_dispatch(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    input_scales: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
     """Execute fused Expert Parallelism token dispatch (async + wait).
 
@@ -512,6 +599,8 @@ def call_ep_dispatch(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
+        input_scales: Optional input scales tensor. Needed for NVFP4 dispatch.
+            Shape: (1,)
 
     Returns:
         A tuple containing:
@@ -550,65 +639,55 @@ def call_ep_dispatch(
         max_recv_tokens += config.max_tokens_per_rank
         n_local_experts += 1
 
-    basic_out_types: list[TensorType] = [
-        TensorType(
-            dtype=config.dispatch_dtype,
-            shape=[max_recv_tokens, config.hidden_size],
-            device=device_ref,
-        ),  # output_tokens
-        TensorType(
-            dtype=DType.uint32,
-            shape=[n_local_experts + 1],
-            device=device_ref,
-        ),  # expert_start_indices
-        TensorType(
-            dtype=DType.int32,
-            shape=[n_local_experts],
-            device=device_ref,
-        ),  # expert_ids
-        TensorType(
-            dtype=DType.int32,
-            shape=[max_recv_tokens, 2],
-            device=device_ref,
-        ),  # src_info
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        topk_ids,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
     ]
 
-    if config.dispatch_dtype.is_float8():
-        assert config.dispatch_fp8_config is not None
-        assert (
-            config.dispatch_fp8_config.block_size is not None
-            and config.dispatch_fp8_config.block_size[1] == 128
-        ), "Only support block_size=[1, 128] for input activations."
+    token_last_dim = config.hidden_size
+    if (
+        config.dispatch_fp8_config is not None
+        and config.dispatch_fp8_config.is_nvfp4
+    ):
+        token_last_dim //= 2
 
-        basic_out_types.insert(
-            1,
-            TensorType(
-                dtype=config.dispatch_fp8_config.dtype,
-                shape=[
-                    config.hidden_size
-                    // config.dispatch_fp8_config.block_size[1],
-                    max_recv_tokens,
-                ],
-                device=device_ref,
-            ),
-        )  # output_scales
-        op_name += ".fp8"
-        parameters["dispatch_scale_granularity"] = str(
-            config.dispatch_fp8_config.granularity
-        )
+    output_vals = _ep_dispatch_output_types(
+        max_recv_tokens,
+        token_last_dim,
+        n_local_experts,
+        config,
+        device_ref,
+    )
+
+    if config.dispatch_fp8_config is not None:
+        float8_config = config.dispatch_fp8_config
+
+        if config.dispatch_dtype.is_float8():
+            op_name += ".fp8"
+            parameters["dispatch_scale_granularity"] = str(
+                float8_config.input_scale.granularity
+            )
+        elif float8_config.is_nvfp4:
+            if input_scales is None:
+                raise ValueError(
+                    "input_scales must be provided when using NVFP4 dispatch"
+                )
+            op_name += ".nvfp4"
+            input_vals.append(1.0 / input_scales.to(device_ref))
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
 
     results = ops.inplace_custom(
         op_name,
         device=device_ref,
-        values=[
-            atomic_counter,
-            input_tokens,
-            topk_ids,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-        ],
-        out_types=basic_out_types,
+        values=input_vals,
+        out_types=output_vals,
         parameters=parameters,
     )
 
@@ -759,11 +838,13 @@ def fused_silu(
     )[0].tensor
 
 
-def fused_silu_fp8(
+def fused_silu_quantized(
     input: TensorValue,
     row_offsets: TensorValue,
     fp8_config: Float8Config,
     out_type: DType,
+    input_scales: TensorValue | None = None,
+    scales_offsets: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Perform fused SILU operation for all the MLPs in the EP MoE module.
 
@@ -782,60 +863,60 @@ def fused_silu_fp8(
             tokens in the input tensor.
             Shape: (n_local_experts + 1,)
         fp8_config: FP8 configuration.
+        out_type: Output dtype.
+        input_scales: Optional input scales tensor. Needed by NVFP4.
+        scales_offsets: Optional scales offsets tensor. Needed by NVFP4.
 
     Returns:
         A tuple containing:
         - output_tokens: Output tokens after the SILU operation.
             Shape: (max_recv_tokens, hidden_size)
-        - output_scales: Output scales after the SILU operation.
-            Shape: (hidden_size // block_size, max_recv_tokens)
+        - output_scales: Output scales after the SILU operation. Shape depends
+            on the quantization format.
     """
 
     if input.rank != 2:
         raise ValueError("input_tokens must be rank 2 tensor")
-
-    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
 
     if not isinstance(input.shape[1], StaticDim):
         raise ValueError(
             f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
         )
 
-    if (
-        fp8_config.input_scale.block_size is None
-        or fp8_config.input_scale.block_size[1] != 128
-    ):
+    hidden_size = input.shape[1] // 2
+    op_name = "ep.fused_silu"
+    input_vals: list[Value[Any]] = [input, row_offsets]
+
+    if fp8_config.is_nvfp4:
+        op_name += ".nvfp4"
+        hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
+        assert scales_offsets is not None and input_scales is not None, (
+            "scales_offsets and input_scales must be provided when using NVFP4"
+        )
+        input_vals.append(scales_offsets)
+        input_vals.append(1.0 / input_scales.to(input.device))
+    elif out_type.is_float8():
+        op_name += ".fp8"
+    else:
         raise ValueError(
-            "Only support block_size=[1, 128] for input activations."
+            f"Unsupported quantization format: {fp8_config.quant_method}"
         )
 
-    hidden_size = input.shape[1] // 2
-    block_size = fp8_config.input_scale.block_size[1]
-    num_blocks = hidden_size // block_size
-    scales_type = fp8_config.input_scale.dtype
-
-    # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
-    padding_size = 16 // scales_type.size_in_bytes
-    a_scales_dim1 = (
-        (input.shape[0] + padding_size - 1) // padding_size
-    ) * padding_size
+    out_scales_type = fp8_config.quantized_scales_type(
+        Shape([input.shape[0], input.shape[1] // 2]), input.device
+    )
 
     result = ops.custom(
-        "ep.fused_silu_fp8",
+        op_name,
         device=input.device,
-        values=[input, row_offsets],
+        values=input_vals,
         out_types=[
             TensorType(
                 dtype=out_type,
                 shape=[input.shape[0], hidden_size],
                 device=input.device,
             ),
-            TensorType(
-                dtype=scales_type,
-                shape=[num_blocks, a_scales_dim1],
-                device=input.device,
-            ),
+            out_scales_type,
         ],
     )
 

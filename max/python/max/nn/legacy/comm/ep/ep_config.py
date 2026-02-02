@@ -16,7 +16,7 @@
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.nn.legacy.float8_config import Float8InputScaleSpec
+from max.nn.legacy.float8_config import Float8Config
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -74,20 +74,32 @@ class EPConfig:
     node_id: int = -1
     """ID of the current node. Will be set by the EPCommInitializer."""
 
-    dispatch_fp8_config: Float8InputScaleSpec | None = None
-    """Configuration for float8 quantization of the dispatch tokens."""
+    dispatch_fp8_config: Float8Config | None = None
+    """Float8 configuration used for dispatch token quantization."""
 
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
     def __post_init__(self):
-        if self.dispatch_dtype.is_float8():
+        if self.dispatch_dtype != DType.bfloat16:
             if self.dispatch_fp8_config is None:
                 raise ValueError(
-                    "dispatch_fp8_config must be specified when dispatch_dtype is float8_e4m3fn or float8_e4m3fnuz"
+                    "dispatch_fp8_config must be specified when dispatch_dtype is not bfloat16"
                 )
 
-            if not self.dispatch_fp8_config.is_block:
-                raise NotImplementedError(
-                    "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
+            if self.dispatch_dtype.is_float8():
+                if not self.dispatch_fp8_config.input_scale.is_block:
+                    raise NotImplementedError(
+                        "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
+                    )
+
+            elif self.dispatch_dtype in (DType.uint8, DType.float4_e2m1fn):
+                if not self.dispatch_fp8_config.is_nvfp4:
+                    raise ValueError(
+                        "dispatch_fp8_config must be an NVFP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
+                    )
+
+            else:
+                raise ValueError(
+                    f"Unsupported dispatch dtype: {self.dispatch_dtype}"
                 )

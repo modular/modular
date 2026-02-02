@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -47,7 +47,7 @@ class MoEQuantized(MoE):
         """Selects the quantization strategy for this MoE."""
         assert self.float8_config is not None
         if self.float8_config.is_nvfp4:
-            return Nvfp4Strategy()
+            return Nvfp4Strategy(self.float8_config, self.dtype)
         return Fp8Strategy(self.float8_config, self.dtype)
 
     @property
@@ -56,12 +56,6 @@ class MoEQuantized(MoE):
         assert self.float8_config is not None
         assert self.float8_config.input_scale.block_size is not None
         return self.float8_config.input_scale.block_size[1]
-
-    def _reference_expert(self) -> Any:
-        """Provides an expert to source shared scale metadata from."""
-        if self._fused_shared_expert:
-            return self.shared_experts
-        return self.experts[0]
 
     def _with_shared_expert(self, values: list[_T], shared: _T) -> list[_T]:
         """Prepends shared expert value if fused shared expert is enabled."""
@@ -72,19 +66,23 @@ class MoEQuantized(MoE):
 
     def _nvfp4_scales(self) -> Nvfp4Scales:
         """Collects NVFP4 input and expert scales for matmuls."""
-        expert = self._reference_expert()
-        if expert.gate_proj.input_scale is None:
-            raise ValueError("NVFP4 gate_proj is missing input_scale")
-        if expert.down_proj.input_scale is None:
-            raise ValueError("NVFP4 down_proj is missing input_scale")
+        gate_up_input = self._collect_input_scale("gate_proj", collect_all=True)
+        down_input = self._collect_input_scale("down_proj")
 
-        gate_up_input = expert.gate_proj.input_scale
-        down_input = expert.down_proj.input_scale
+        # For gate/up projs, current EP communication kernels only support one
+        # global input scale for all experts, hence we use the max input scale
+        # across all experts.
+        gate_up_max_scale = ops.max(gate_up_input, axis=0)
+        gate_up_input = ops.broadcast_to(gate_up_max_scale, gate_up_input.shape)
+        local_gate_up_input = ops.broadcast_to(
+            gate_up_max_scale, down_input.shape
+        )
 
         return Nvfp4Scales(
             gate_up_input=gate_up_input,
             down_input=down_input,
-            gate_up_expert=self._collect_scale_2("gate_proj") * gate_up_input,
+            gate_up_expert=self._collect_scale_2("gate_proj")
+            * local_gate_up_input,
             down_expert=self._collect_scale_2("down_proj") * down_input,
         )
 
@@ -93,6 +91,18 @@ class MoEQuantized(MoE):
         scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
         scales = self._with_shared_expert(
             scales, getattr(self.shared_experts, proj_name).weight_scale_2
+        )
+        return ops.stack(scales, axis=0)
+
+    def _collect_input_scale(
+        self, proj_name: str, collect_all: bool = False
+    ) -> TensorValue:
+        """Stacks per-expert input scales for NVFP4 kernels."""
+
+        expert_collect = self._all_experts if collect_all else self.experts
+        scales = [getattr(e, proj_name).input_scale for e in expert_collect]
+        scales = self._with_shared_expert(
+            scales, getattr(self.shared_experts, proj_name).input_scale
         )
         return ops.stack(scales, axis=0)
 
@@ -162,55 +172,34 @@ class MoEQuantized(MoE):
 
         device_id = self.devices[0].id
         expert_inputs = self.ep_batch_manager.ep_dispatch(
-            x, router_idx, device_id
+            x, router_idx, device_id, nvfp4.gate_up_input if nvfp4 else None
         )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales, self.down_proj_scales, x.device
         )
 
-        if self.ep_batch_manager.config.dispatch_fp8_config is None:
-            hidden, expert_start, expert_ids, usage_stats = expert_inputs
-            hidden, input_scales = strategy.quantize(
-                hidden,
-                self._token_group_size,
-                nvfp4.gate_up_input if nvfp4 else None,
-            )
-        else:
-            hidden, input_scales, expert_start, expert_ids, usage_stats = (
-                expert_inputs
-            )
-
         gate_up = strategy.grouped_matmul(
-            hidden,
             self.gate_up_proj,
-            input_scales,
             gate_up_scales,
-            expert_start,
-            expert_ids,
-            usage_stats,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
             tokens_padded_per_expert=True,
+            expert_inputs=expert_inputs,
         )
 
         down_in, silu_scales = strategy.fused_silu_quantize(
             gate_up,
-            expert_start,
-            self._token_group_size,
-            self.moe_dim,
-            nvfp4.down_input if nvfp4 else None,
+            input_scales=nvfp4.down_input if nvfp4 else None,
+            expert_inputs=expert_inputs,
         )
 
+        down_inputs = (down_in, silu_scales) + expert_inputs[2:]
         down = strategy.grouped_matmul(
-            down_in,
             self.down_proj,
-            silu_scales,
             down_scales,
-            expert_start,
-            expert_ids,
-            usage_stats,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
             tokens_padded_per_expert=True,
+            expert_inputs=down_inputs,
         )
 
         out = self.ep_batch_manager.ep_combine(down, router_weight, device_id)
@@ -264,15 +253,29 @@ class MoEQuantized(MoE):
             self.gate_up_proj_scales, self.down_proj_scales, permuted.device
         )
 
-        gate_up = strategy.grouped_matmul(
+        expert_inputs: tuple[TensorValue, ...] = (
             permuted_quant,
-            self.gate_up_proj,
             permuted_scales,
-            gate_up_scales,
             expert_start,
             expert_ids,
             usage_stats.to(DeviceRef.CPU()),
+        )
+
+        if nvfp4:
+            a_scale_offsets = ops.constant(
+                0, dtype=DType.uint32, device=x.device
+            ).broadcast_to([expert_ids.shape[0]])
+            expert_inputs = (
+                *expert_inputs[:3],
+                a_scale_offsets,
+                *expert_inputs[3:],
+            )
+
+        gate_up = strategy.grouped_matmul(
+            self.gate_up_proj,
+            gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
+            expert_inputs=expert_inputs,
         )
 
         gate_up = silu_gate(gate_up, self.moe_dim)
@@ -282,15 +285,13 @@ class MoEQuantized(MoE):
             nvfp4.down_input if nvfp4 else None,
         )
 
+        down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
+
         down = strategy.grouped_matmul(
-            gate_up_quant,
             self.down_proj,
-            gate_up_scales,
             down_scales,
-            expert_start,
-            expert_ids,
-            usage_stats.to(DeviceRef.CPU()),
             expert_scales=nvfp4.down_expert if nvfp4 else None,
+            expert_inputs=down_inputs,
         )
 
         down = ops.gather(down, restore_order, axis=0).reshape(

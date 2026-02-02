@@ -52,10 +52,13 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
+    NVFP4TokenFormat,
     TokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
+    fused_silu_nvfp4_kernel,
+    input_scales_wrapper_type,
 )
 
 
@@ -76,8 +79,8 @@ struct Struct_ep_init:
         n_experts: Int,
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
-        dispatch_scale_granularity: StaticString,
         dispatch_scale_dtype: DType,
+        dispatch_fmt_str: StaticString,
         //,
         target: StaticString,
     ](
@@ -98,8 +101,8 @@ struct Struct_ep_init:
             n_experts: Total number of experts across all GPUs.
             max_token_per_rank: Maximum number of tokens per GPU.
             n_gpus_per_node: Number of GPUs per node.
-            dispatch_scale_granularity: FP8 quant granularity of the dispatch tokens.
             dispatch_scale_dtype: DType of the dispatch scale.
+            dispatch_fmt_str: String indicating the dispatch format.
             target: Target for this kernel.
 
         Arguments:
@@ -128,7 +131,7 @@ struct Struct_ep_init:
 
         # Infer message sizes for dispatch phases
         @parameter
-        if dispatch_dtype.is_float8():
+        if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
@@ -140,11 +143,27 @@ struct Struct_ep_init:
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
 
-        else:
+        elif dispatch_fmt_str == "NVFP4":
+            comptime token_fmt_type = NVFP4TokenFormat[
+                fp4_dtype=dispatch_dtype,
+                scales_dtype=dispatch_scale_dtype,
+                output_layout = Layout(),
+                scales_layout = Layout(),
+                scales_offset_layout = Layout(),
+                hidden_size,
+                top_k,
+                gpu_alignment,
+            ]
+            dispatch_msg_size = token_fmt_type.msg_size()
+
+        elif dispatch_fmt_str == "BF16":
             comptime token_fmt_type = BF16TokenFormat[
                 output_layout = Layout(), hidden_size, top_k, gpu_alignment
             ]
             dispatch_msg_size = token_fmt_type.msg_size()
+
+        else:
+            raise Error("Invalid dispatch format string: ", dispatch_fmt_str)
 
         var dispatch_send_size = max_token_per_rank * dispatch_msg_size
         var dispatch_recv_size = (
@@ -312,6 +331,72 @@ struct Struct_ep_dispatch_async:
 
         else:
             raise Error("Invalid dispatch format string: ", dispatch_fmt_str)
+
+
+@compiler.register("ep.dispatch_async.nvfp4")
+struct Struct_ep_dispatch_async_nvfp4:
+    @always_inline
+    @staticmethod
+    @parameter
+    fn execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        target: StaticString,
+    ](
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2],
+        topk_ids: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism async dispatch kernel. Tokens are
+        transferred in NVFP4 format.
+        """
+        var input_scales_tensor = input_scales.to_layout_tensor()
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_scales_tensor)
+        fn input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+            # Currently only use one global input scale for all experts
+            return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
+
+        comptime token_fmt_type = NVFP4TokenFormat[
+            fp4_dtype=dispatch_dtype,
+            scales_dtype = DType.float8_e4m3fn,
+            output_layout = Layout(),
+            scales_layout = Layout(),
+            scales_offset_layout = Layout(),
+            hidden_size,
+            top_k,
+        ]
+        ep_dispatch_async_kernel_api[
+            token_fmt_type,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            target,
+            input_scales_wrapper=input_scales_fn,
+        ](
+            atomic_counters.to_layout_tensor(),
+            input_tokens.to_layout_tensor(),
+            topk_ids.to_layout_tensor(),
+            send_ptrs.to_layout_tensor(),
+            recv_ptrs.to_layout_tensor(),
+            recv_count_ptrs.to_layout_tensor(),
+            context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -579,6 +664,66 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
         )
 
 
+@compiler.register("ep.dispatch_wait.nvfp4")
+struct Struct_ep_dispatch_wait_nvfp4:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5],
+        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        scales_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
+        src_info: OutputTensor[dtype = DType.int32, rank=2],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism dispatch completion kernel. Received
+        tokens are in NVFP4 format.
+        """
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var output_scales_tensor = output_scales.to_layout_tensor()
+        var scales_offsets_tensor = scales_offsets.to_layout_tensor()
+
+        __comptime_assert (
+            output_tokens_tensor.shape[1]() * 2 == hidden_size
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
+
+        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+        )
+
+        ep_dispatch_wait_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            target,
+        ](
+            format_handler,
+            row_offsets.to_layout_tensor(),
+            expert_ids.to_layout_tensor(),
+            src_info.to_layout_tensor(),
+            recv_ptrs.to_layout_tensor(),
+            recv_count_ptrs.to_layout_tensor(),
+            atomic_counters.to_layout_tensor(),
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Fused Dispatch Kernel
 # ===-----------------------------------------------------------------------===#
@@ -692,6 +837,82 @@ struct Struct_ep_dispatch_fp8:
             n_nodes,
             fused_shared_expert,
             target,
+        ](
+            format_handler,
+            row_offsets.to_layout_tensor(),
+            expert_ids.to_layout_tensor(),
+            src_info.to_layout_tensor(),
+            atomic_counters.to_layout_tensor(),
+            input_tokens.to_layout_tensor(),
+            topk_ids.to_layout_tensor(),
+            send_ptrs.to_layout_tensor(),
+            recv_ptrs.to_layout_tensor(),
+            recv_count_ptrs.to_layout_tensor(),
+            context,
+        )
+
+
+@compiler.register("ep.dispatch.nvfp4")
+struct Struct_ep_dispatch_nvfp4:
+    @always_inline
+    @staticmethod
+    @parameter
+    fn execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5],
+        row_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        scales_offsets: OutputTensor[dtype = DType.uint32, rank=1],
+        expert_ids: OutputTensor[dtype = DType.int32, rank=1],
+        src_info: OutputTensor[dtype = DType.int32, rank=2],
+        atomic_counters: MutableInputTensor[dtype = DType.int32, rank=1],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2],
+        topk_ids: InputTensor[dtype = DType.int32, rank=2],
+        send_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        recv_count_ptrs: InputTensor[dtype = DType.uint64, rank=1],
+        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the fused Expert Parallelism NVFP4 dispatch kernel. Tokens
+        are dispatched in NVFP4 format.
+        """
+        var output_tokens_tensor = output_tokens.to_layout_tensor()
+        var output_scales_tensor = output_scales.to_layout_tensor()
+        var scales_offsets_tensor = scales_offsets.to_layout_tensor()
+        var input_scales_tensor = input_scales.to_layout_tensor()
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_scales_tensor)
+        fn input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+            # Currently only use one global input scale for all experts
+            return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
+
+        var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+        )
+
+        ep_fused_dispatch_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+            target,
+            input_scales_wrapper=input_scales_fn,
         ](
             format_handler,
             row_offsets.to_layout_tensor(),
@@ -1044,7 +1265,7 @@ struct Struct_ep_fused_silu:
             )
 
 
-@compiler.register("ep.fused_silu_fp8")
+@compiler.register("ep.fused_silu.fp8")
 struct Struct_ep_fused_silu_fp8:
     @always_inline
     @staticmethod
@@ -1111,7 +1332,7 @@ struct Struct_ep_fused_silu_fp8:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.fused_silu_fp8",
+            "ep.fused_silu.fp8",
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
@@ -1120,6 +1341,96 @@ struct Struct_ep_fused_silu_fp8:
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(),
+            )
+
+
+@compiler.register("ep.fused_silu.nvfp4")
+struct Struct_ep_fused_silu_nvfp4:
+    @always_inline
+    @staticmethod
+    fn execute[
+        fp4_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=fp4_dtype, rank=2],
+        scales: OutputTensor[dtype=scales_dtype, rank=5],
+        input: InputTensor[dtype=input_dtype, rank=2],
+        row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        scales_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        input_scales: InputTensor[dtype = DType.float32, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel with NVFP4
+        quantization.
+
+        This function launches the fused_silu_nvfp4 kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens. Once the SILU operation is performed,
+        the output will be quantized to the NVFP4 format. The scales tensor
+        will be padded and zero-filled.
+        """
+        # Ensure this kernel only runs on GPU targets
+        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+
+        var output_tensor = output.to_layout_tensor()
+        var scales_tensor = scales.to_layout_tensor()
+        var input_tensor = input.to_layout_tensor().get_immutable()
+        var row_offsets_tensor = row_offsets.to_layout_tensor().get_immutable()
+        var scales_offsets_tensor = (
+            scales_offsets.to_layout_tensor().get_immutable()
+        )
+        var input_scales_tensor = (
+            input_scales.to_layout_tensor().get_immutable()
+        )
+
+        var gpu_ctx = context.get_device_context()
+        comptime hw_info = gpu_ctx.default_device_info
+
+        comptime fused_silu_nvfp4 = fused_silu_nvfp4_kernel[
+            fp4_dtype,
+            scales_dtype,
+            input_dtype,
+            output_tensor.layout,
+            scales_tensor.layout,
+            input_tensor.layout,
+            row_offsets_tensor.layout,
+            scales_offsets_tensor.layout,
+            input_scales_tensor.layout,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+        ]
+
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            # fmt: off
+            return String(
+                "fp4_dtype=", fp4_dtype,
+                ";scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu.nvfp4",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu_nvfp4, fused_silu_nvfp4](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                scales_offsets_tensor,
+                input_scales_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
                 attributes=pdl_launch_attributes(),

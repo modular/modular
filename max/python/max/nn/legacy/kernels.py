@@ -2723,11 +2723,11 @@ def grouped_dynamic_scaled_nvfp4_matmul(
     a_scales: TensorValue,
     b_scales: TensorValue,
     expert_start_indices: TensorValue,
+    a_scale_offsets: TensorValue,
     expert_ids: TensorValue,
     expert_scales: TensorValue,
     expert_usage_stats_host: TensorValue,
     out_type: DType = DType.bfloat16,
-    tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -2752,6 +2752,7 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             float8_e4m3fn.
         expert_start_indices: Indices indicating where each expert's tokens
             start in ``hidden_states``.
+        a_scale_offsets: The offsets of the input scale tiles for each expert.
         expert_ids: The expert ID for each group.
         expert_scales: Per-expert scaling factors with shape ``[num_experts]``.
             Dtype must be float32. Multiplied with the matmul output in the
@@ -2866,10 +2867,6 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             f"{SF_ATOM_M[0]}, {SF_ATOM_M[1]}, {SF_ATOM_K}] but got {b_scales.shape}"
         )
 
-    a_scale_offsets = ops.constant(
-        0, dtype=DType.uint32, device=hidden_states.device
-    ).broadcast_to([expert_ids.shape[0]])
-
     output = ops.custom(
         "mo.grouped.matmul.dynamic.scaled.nvfp4",
         device=hidden_states.device,
@@ -2892,9 +2889,6 @@ def grouped_dynamic_scaled_nvfp4_matmul(
                 device=hidden_states.device,
             ),
         ],
-        parameters={
-            "tokens_padded_per_expert": tokens_padded_per_expert,
-        },
     )[0].tensor
 
     return output
