@@ -959,6 +959,42 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
 }
 
 //===----------------------------------------------------------------------===//
+// MemcpyOp
+//===----------------------------------------------------------------------===//
+
+def POP_MemcpyOp : POPOp<"memcpy", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "memcpy operation";
+  let description = [{
+    Performs an in-memory copy operation between the source pointer and
+    destination pointer. The length is given in number of bytes to copy. The
+    two pointers may have differing address space qualifiers.
+
+    Example:
+
+    ```mlir
+    pop.memcpy %dst, %src, 4 : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>>
+    ```
+  }];
+
+  let arguments = (ins Arg<PointerType, "", [MemWrite]>:$dst,
+                       Arg<PointerType, "", [MemRead]>:$src,
+                       Index:$len, OptionalAttr<AttrOfType<I1>>:$isVolatile);
+  let assemblyFormat = [{
+    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
+    $dst `,` $src `,` $len
+    attr-dict `:` qualified(type($src)) `->` qualified(type($dst))
+  }];
+
+  let builders = [
+    OpBuilder<(ins "Value":$dst, "Value":$src, "Value":$len,
+                   CArg<"bool", "false">:$isVolatile)>
+  ];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // OffsetOp
 //===----------------------------------------------------------------------===//
 

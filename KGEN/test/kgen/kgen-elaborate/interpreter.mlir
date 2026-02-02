@@ -973,3 +973,47 @@ kgen.generator @callIt()->!kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
 
   kgen.return %0: !kgen.pointer<struct<(array<1, scalar<ui128>>)>>
 }
+
+
+// -----
+
+kgen.generator @memcpy_1(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx3 = index.constant 3
+
+  %p0 = pop.stack_allocation 1 x !kgen.struct<(index, index, index, index)>
+  %p1 = pop.stack_allocation 1 x !kgen.struct<(index, index, index, index)>
+
+  %p = pop.pointer.bitcast %p0 : !kgen.pointer<!kgen.struct<(index, index, index, index)>> to !kgen.pointer<index>
+  %q = pop.pointer.bitcast %p1 : !kgen.pointer<!kgen.struct<(index, index, index, index)>> to !kgen.pointer<index>
+
+  pop.store %idx0, %p : !kgen.pointer<index>
+  %p2 = pop.offset %p[%idx1] : !kgen.pointer<index>
+  pop.store %idx1, %p2 : !kgen.pointer<index>
+  %p3 = pop.offset %p[%idx2] : !kgen.pointer<index>
+  pop.store %idx2, %p3 : !kgen.pointer<index>
+  %p4 = pop.offset %p2[%idx2] : !kgen.pointer<index>
+  pop.store %idx3, %p4 : !kgen.pointer<index>
+
+  %len = kgen.param.constant: index = <get_sizeof(struct<(index, index, index, index)>, current_target())>
+  pop.memcpy %q, %p, %len: !kgen.pointer<index> -> !kgen.pointer<index>
+
+  %ptr = pop.offset %q[%arg0] : !kgen.pointer<index>
+  %result = pop.load %ptr : !kgen.pointer<index>
+  kgen.return %result : index
+}
+
+// CHECK-LABEL: kgen.func @constexpr_memcpy
+kgen.generator @constexpr_memcpy() {
+  // CHECK-NEXT: = <0>
+  %0 = kgen.param.constant = <apply(:(index) -> index @memcpy_1, 0)>
+  // CHECK-NEXT: = <1>
+  %1 = kgen.param.constant = <apply(:(index) -> index @memcpy_1, 1)>
+  // CHECK-NEXT: = <2>
+  %2 = kgen.param.constant = <apply(:(index) -> index @memcpy_1, 2)>
+  // CHECK-NEXT: = <3>
+  %3 = kgen.param.constant = <apply(:(index) -> index @memcpy_1, 3)>
+  kgen.return
+}

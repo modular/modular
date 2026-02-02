@@ -1809,6 +1809,23 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPMemcpy
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPMemcpy : ConvertPOPToLLVMPattern<MemcpyOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    bool isVolatile = getBoolAttrValue(adaptor.getIsVolatileAttr(), false);
+    rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
+        op, adaptor.getDst(), adaptor.getSrc(), adaptor.getLen(), isVolatile);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPVariadicCreate
 //===----------------------------------------------------------------------===//
 
@@ -3082,6 +3099,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,
+      ConvertPOPMemcpy,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,

@@ -33,3 +33,23 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
   // CHECK-LABEL: llvm.mlir.global internal @my_global() {addr_space = 3 : i32, alignment = 4 : i64} : !llvm.array<2 x f32>
 }
+
+// -----
+
+#target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// CHECK-LABEL: @memcpy
+kgen.func @memcpy(%p: !kgen.pointer<scalar<f32>>, %q: !kgen.pointer<scalar<f32>, 1>) {
+  // CHECK:      [[SRC:%.*]] = builtin.unrealized_conversion_cast %arg1 : !kgen.pointer<scalar<f32>, 1> to !llvm.ptr<1>
+  // CHECK-NEXT: [[DST:%.*]] = builtin.unrealized_conversion_cast %arg0 : !kgen.pointer<scalar<f32>> to !llvm.ptr
+  // CHECK-NEXT: [[IDX4:%.*]] = kgen.param.constant = <4>
+  // CHECK-NEXT: [[IDX:%.*]] = builtin.unrealized_conversion_cast [[IDX4]] : index to i64
+  // CHECK-NEXT: "llvm.intr.memcpy"([[DST]], [[SRC]], [[IDX]])
+  %len = kgen.param.constant: index = <get_sizeof(scalar<f32>, #target)>
+  pop.memcpy %p, %q, %len : !kgen.pointer<scalar<f32>, 1> -> !kgen.pointer<scalar<f32>>
+  kgen.return
+}
+
+}

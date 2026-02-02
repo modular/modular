@@ -268,6 +268,29 @@ LogicalResult StoreOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// MemcpyOp
+//===----------------------------------------------------------------------===//
+
+void MemcpyOp::build(OpBuilder &b, OperationState &state, Value dst, Value src,
+                     Value len, bool isVolatile) {
+  build(b, state, dst, src, len,
+        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr());
+}
+
+LogicalResult MemcpyOp::verify() {
+  auto dstType = cast<PointerType>(getDst().getType());
+  auto srcType = cast<PointerType>(getSrc().getType());
+
+  if (dstType.getElementType() != srcType.getElementType()) {
+    return emitOpError(
+               "source and destination must have same element type, got ")
+           << srcType.getElementType() << " and " << dstType.getElementType();
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayCreateOp
 //===----------------------------------------------------------------------===//
 

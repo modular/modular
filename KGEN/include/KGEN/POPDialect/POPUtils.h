@@ -373,6 +373,14 @@ OpFoldResult foldIndexForTarget(
     ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
     llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn);
 
+/// Interpret a memcpy operation.
+ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src, Attribute len,
+                                   Location loc, InterpreterState &state);
+/// Interpret a memcpy operation.
+ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src, Attribute len,
+                                   Location loc,
+                                   ParametricInterpreterState &state);
+
 } // namespace M::KGEN::POP
 
 #endif // KGEN_POPDIALECT_POPUTILS_H
