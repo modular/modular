@@ -66,7 +66,7 @@ struct S1[X: Int](TrivialRegisterType, R1, R1Child, R2):
     # CHECK-NEXT: kgen.witness "N" : !Int = X
     # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
-    # CHECK-NEXT: immediateParents = #M<symbols[[[ANYTYPE_NAME]]]>
+    # CHECK-NEXT: immediateParents = #M<symbols[]>
     # CHECK-SAME: traitRef = [[R1_NAME:(@[^:]+::)+@R1]]
 
     # CHECK: kgen.conformance @{{.*}}R1Child

@@ -99,7 +99,7 @@ fn foo3[T: ImplicitlyDestructible](var x: T):
     pass
 
 
-trait Iterator:
+trait Iterator(ImplicitlyDestructible):
     comptime Element: AnyType
 
 

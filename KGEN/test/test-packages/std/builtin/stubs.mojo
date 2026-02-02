@@ -813,7 +813,7 @@ trait Copyable(Movable):
     comptime __copyinit__is_trivial: Bool
 
 
-trait ImplicitlyCopyable(Copyable):
+trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
     pass
 
 
@@ -1256,7 +1256,7 @@ struct StopIteration(TrivialRegisterType):
     pass
 
 
-trait Iterator(Movable):
+trait Iterator(ImplicitlyDestructible, Movable):
     comptime Element: Movable
 
     fn __next__(mut self) raises StopIteration -> Self.Element:
@@ -1414,7 +1414,7 @@ fn trait_downcast_var[
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable:
+trait Intable(ImplicitlyDestructible):
     fn __int__(self) -> Int:
         ...
 

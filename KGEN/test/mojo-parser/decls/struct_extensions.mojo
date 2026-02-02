@@ -161,7 +161,7 @@ __extension Spaceship(Flying):
 # CHECK-NEXT: kgen.witness "fly_to
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@ImplicitlyDestructible]>, traitRef = @struct_extensions::@Flying}
+# CHECK-NEXT: } attributes {immediateParents = #M<symbols[]>, traitRef = @struct_extensions::@Flying}
 
 
 # // -----
@@ -238,8 +238,7 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.trait.decl @Flying
-# All traits implicitly inherit from ImplicitlyDestructible (unless builtins are disabled)
-# CHECK-SAME: immediateParents = #M<symbols[@{{.*}}::@ImplicitlyDestructible]>
+# CHECK-NOT: immediateParents
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
@@ -257,8 +256,7 @@ __extension Spaceship(Flying):
 # CHECK-NEXT: kgen.witness "fly_to($0&,::Int)"
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# Since Flying inherits from ImplicitlyDestructible, the conformance should have ImplicitlyDestructible.
-# CHECK-NEXT: } attributes {immediateParents = #M<symbols[@{{.*}}::@ImplicitlyDestructible]>, traitRef = @struct_extensions::@Flying}
+# CHECK-NEXT: } attributes {immediateParents = #M<symbols[]>, traitRef = @struct_extensions::@Flying}
 
 # // -----
 
