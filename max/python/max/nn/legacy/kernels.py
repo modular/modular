@@ -1785,9 +1785,10 @@ def flare_mla_prefill_plan(
 
 
 def mla_prefill_branch_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+    q: TensorValue,
     input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_a_proj_layernorm: TensorValue,
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
@@ -1798,11 +1799,14 @@ def mla_prefill_branch_fp8(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    epsilon: float,
     v_head_dim: int,
     float8_config: Float8Config,
 ) -> TensorValue:
     """
     This is a manually fused kernel that performs the following operations:
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Copy the KV latent values from PagedKVCache to a contiguous buffer.
     - Quantize the KV latent values to fp8.
     - Up-project the latent KV values to full K and V through a matmul.
@@ -1810,12 +1814,14 @@ def mla_prefill_branch_fp8(
     - Perform MLA prefill.
 
     Args:
-        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_rope_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
         buffer_row_offsets: Indicates where each request's KV latent values
             should be stored in the contiguous buffer. This is a 1D tensor of
             shape [num_batches + 1].
@@ -1832,20 +1838,21 @@ def mla_prefill_branch_fp8(
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
         mask_variant: Mask variant.
-        scale: scale for the attention calculation.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
         float8_config: Float8Config for the weight matrix.
     """
 
     input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
+    if q.rank != input_rank_expected:
         raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+            f"expected q of rank {input_rank_expected} but got {q.rank}"
         )
 
-    if q_nope.dtype != kv_params.dtype:
+    if q.dtype != kv_params.dtype:
         raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
+            f"expected q to be dtype: {kv_params.dtype}, got {q.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -1874,9 +1881,10 @@ def mla_prefill_branch_fp8(
     }
 
     input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
+        q,
         input_row_offsets,
+        freqs_cis,
+        kv_a_proj_layernorm,
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
@@ -1885,20 +1893,21 @@ def mla_prefill_branch_fp8(
         *kv_collection,
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     return ops.inplace_custom(
         "mo.mla.graph.prefill.paged",
-        device=q_nope.device,
+        device=q.device,
         values=input_values,
         out_types=[
             TensorType(
-                dtype=q_nope.dtype,
+                dtype=q.dtype,
                 shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
+                    q.shape[0],
+                    q.shape[1],
                     v_head_dim,
                 ],
-                device=q_nope.device,
+                device=q.device,
             )
         ],
         parameters=parameters,
@@ -1906,9 +1915,10 @@ def mla_prefill_branch_fp8(
 
 
 def mla_decode_branch_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+    q: TensorValue,
     input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_a_proj_layernorm: TensorValue,
     w_uk: TensorValue,
     w_uk_scale: TensorValue,
     w_uv: TensorValue,
@@ -1918,12 +1928,15 @@ def mla_decode_branch_fp8(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    epsilon: float,
     v_head_dim: int,
     float8_config: Float8Config,
 ) -> TensorValue:
     """
     This is a manually fused kernel that performs the following operations:
 
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Project q_nope to kv_latent_dim through a fp8 batched matmul:
       q_nope_proj = q_nope_t @ w_uk
     - Concatenate q_nope_proj and q_rope:
@@ -1933,12 +1946,14 @@ def mla_decode_branch_fp8(
       output = raw_output_t @ w_uv
 
     Args:
-        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_rope_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
         w_uk: Weight matrix for projecting q_nope to kv_latent_dim. Shape:
             [num_heads, kv_latent_dim, qk_nope_head_dim].
         w_uk_scale: The scale for the weight matrix. Shape varies depending on
@@ -1951,20 +1966,21 @@ def mla_decode_branch_fp8(
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
         mask_variant: Mask variant.
-        scale: scale for the attention calculation.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
         float8_config: Float8Config for the weight matrix.
     """
 
     input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
+    if q.rank != input_rank_expected:
         raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+            f"expected q of rank {input_rank_expected} but got {q.rank}"
         )
 
-    if q_nope.dtype != kv_params.dtype:
+    if q.dtype != kv_params.dtype:
         raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
+            f"expected q to be dtype: {kv_params.dtype}, got {q.dtype}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -1993,8 +2009,10 @@ def mla_decode_branch_fp8(
     }
 
     input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
+        q,
+        input_row_offsets,
+        freqs_cis,
+        kv_a_proj_layernorm,
         input_row_offsets,
         w_uk,
         w_uk_scale,
@@ -2003,20 +2021,21 @@ def mla_decode_branch_fp8(
         *kv_collection,
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     return ops.inplace_custom(
         "mo.mla.graph.decode.paged",
-        device=q_nope.device,
+        device=q.device,
         values=input_values,
         out_types=[
             TensorType(
-                dtype=q_nope.dtype,
+                dtype=q.dtype,
                 shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
+                    q.shape[0],
+                    q.shape[1],
                     v_head_dim,
                 ],
-                device=q_nope.device,
+                device=q.device,
             )
         ],
         parameters=parameters,
@@ -2024,9 +2043,10 @@ def mla_decode_branch_fp8(
 
 
 def mla_prefill_decode_graph_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+    q: TensorValue,
     input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_a_proj_layernorm: TensorValue,
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
@@ -2041,20 +2061,24 @@ def mla_prefill_decode_graph_fp8(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    epsilon: float,
     v_head_dim: int,
     float8_config: Float8Config,
 ) -> TensorValue:
     """
-    This is a manually fused kernel that performs attention calculation for the MultiLatentAttentionWithRopeFp8 Module.
-    It will automatically switch between prefill and decode compute paths based on the maximum sequence length in this batch.
+    This is a manually fused kernel that performs attention calculation for the
+    MultiLatentAttentionWithRopeFp8 Module. It will automatically switch between
+    prefill and decode compute paths based on the maximum sequence length in
+    this batch.
 
-    See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the prefill and decode compute paths respectively.
+    See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the prefill and
+    decode compute paths respectively.
     """
 
     input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
+    if q.rank != input_rank_expected:
         raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+            f"expected q of rank {input_rank_expected} but got {q.rank}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -2083,9 +2107,10 @@ def mla_prefill_decode_graph_fp8(
     }
 
     input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
+        q,
         input_row_offsets,
+        freqs_cis,
+        kv_a_proj_layernorm,
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
@@ -2098,20 +2123,21 @@ def mla_prefill_decode_graph_fp8(
         *kv_collection,
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     return ops.inplace_custom(
         "mo.mla.graph.prefill.decode.paged",
-        device=q_nope.device,
+        device=q.device,
         values=input_values,
         out_types=[
             TensorType(
-                dtype=q_nope.dtype,
+                dtype=q.dtype,
                 shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
+                    q.shape[0],
+                    q.shape[1],
                     v_head_dim,
                 ],
-                device=q_nope.device,
+                device=q.device,
             )
         ],
         parameters=parameters,

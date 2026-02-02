@@ -7276,6 +7276,8 @@ struct Struct_mla_prefill_graph_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7287,9 +7289,10 @@ struct Struct_mla_prefill_graph_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
@@ -7301,6 +7304,7 @@ struct Struct_mla_prefill_graph_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7326,12 +7330,14 @@ struct Struct_mla_prefill_graph_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
@@ -7347,6 +7353,8 @@ struct Struct_mla_decode_graph_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7358,9 +7366,10 @@ struct Struct_mla_decode_graph_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3],
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3],
@@ -7371,6 +7380,7 @@ struct Struct_mla_decode_graph_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7396,12 +7406,14 @@ struct Struct_mla_decode_graph_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 w_uk.to_tile_tensor[DType.int64](),
                 w_uk_scale.to_tile_tensor[DType.int64](),
                 w_uv.to_tile_tensor[DType.int64](),
@@ -7416,6 +7428,8 @@ struct Struct_mla_prefill_graph_decode_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7427,9 +7441,10 @@ struct Struct_mla_prefill_graph_decode_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
@@ -7445,6 +7460,7 @@ struct Struct_mla_prefill_graph_decode_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7471,12 +7487,14 @@ struct Struct_mla_prefill_graph_decode_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),

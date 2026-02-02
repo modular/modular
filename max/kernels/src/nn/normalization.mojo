@@ -87,10 +87,16 @@ fn block_reduce[
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0 and lane_idx < UInt(max_warps_per_block):
-        var block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](
-            m2_shared[lane_idx]
-        )
+    if warp_id == 0:
+        var block_m2 = Scalar[dtype](0)
+
+        if lane_idx < UInt(max_warps_per_block):
+            block_m2 = m2_shared[lane_idx]
+
+        # On some GPUs, the warp-level reduction implicitly requires all lanes
+        # to participate in the reduction. Otherwise, we would get deadlocks.
+        block_m2 = warp.lane_group_sum[num_lanes=max_warps_per_block](block_m2)
+
         if lane_idx == 0:
             m2_broadcast[0] = block_m2
     barrier()
