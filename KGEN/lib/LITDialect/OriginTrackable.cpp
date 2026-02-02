@@ -459,6 +459,12 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
+  // Memcpy consumes its operand and transfers it into the result.
+  if (isa<MemcpyOp>(op)) {
+    setOperandEffects({OperandEffect::memLoad, OperandEffect::memStoreOwned});
+    return {};
+  }
+
   // MaterializeInto overwrites the memory using the (materialized) parameter
   // value.
   if (isa<MaterializeIntoOp>(op)) {

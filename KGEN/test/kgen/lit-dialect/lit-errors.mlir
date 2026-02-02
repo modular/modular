@@ -330,3 +330,11 @@ lit.fn @ref_from_kgen_ptr_address_space_mismatch<life: origin<0>>(
                                     -> !lit.ref<index, imm life>
   lit.end_fn
 }
+
+// -----
+
+lit.fn @invalid_memcpy<out: origin<1>, in: origin<0>>(%dst: !lit.ref<f32, mut out>, %src: !lit.ref<index, imm in>) {
+  // expected-error @below {{'lit.memcpy' op failed to verify that all of {src, dst} have same element types}}
+  lit.memcpy %src, %dst : !lit.ref<index, imm in>-> !lit.ref<f32, mut out>
+  lit.end_fn
+}
