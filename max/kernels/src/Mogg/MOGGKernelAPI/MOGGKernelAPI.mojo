@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -171,7 +171,6 @@ from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
-    rms_norm_kv_cache_ragged_continuous_batching,
     rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
@@ -2881,12 +2880,12 @@ struct AvgPool:
         ctx: DeviceContextPtr,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             False,
             ctx,
         )
@@ -2904,11 +2903,11 @@ struct AvgPool:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2931,12 +2930,12 @@ struct AvgPoolCeilModeTrue:
         ctx: DeviceContextPtr,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             True,
             ctx,
         )
@@ -2954,11 +2953,11 @@ struct AvgPoolCeilModeTrue:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2980,12 +2979,12 @@ struct MaxPool:
         ctx: DeviceContextPtr,
     ) raises:
         max_pool[target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             False,
             ctx,
         )
@@ -3003,11 +3002,11 @@ struct MaxPool:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -3029,12 +3028,12 @@ struct MaxPoolCeilModeTrue:
         ctx: DeviceContextPtr,
     ) raises:
         max_pool[target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             True,
             ctx,
         )
@@ -3052,11 +3051,11 @@ struct MaxPoolCeilModeTrue:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -6627,6 +6626,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     dtype: DType,
     freq_dtype: DType,
+    cache_dtype: DType,
     //,
     *,
     interleaved: Bool,
@@ -6636,7 +6636,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection[dtype, ...],
+    kv_collection: PagedKVCacheCollection[cache_dtype, ...],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2],
     layer_idx: UInt32,
@@ -6717,11 +6717,12 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         freq_dtype: DType,
         //,
         target: StaticString,
+        cache_dtype: DType = dtype,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -7324,18 +7325,18 @@ struct Struct_mla_prefill_graph_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                buffer_row_offsets_1d.to_layout_tensor(),
-                cache_offsets_1d.to_layout_tensor(),
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
-                kv_b_proj.to_layout_tensor(),
-                kv_b_proj_scale.to_layout_tensor(),
+                kv_b_proj.to_tile_tensor[DType.int64](),
+                kv_b_proj_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7394,17 +7395,17 @@ struct Struct_mla_decode_graph_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                w_uk.to_layout_tensor(),
-                w_uk_scale.to_layout_tensor(),
-                w_uv.to_layout_tensor(),
-                w_uv_scale.to_layout_tensor(),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7469,23 +7470,23 @@ struct Struct_mla_prefill_graph_decode_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                buffer_row_offsets_1d.to_layout_tensor(),
-                cache_offsets_1d.to_layout_tensor(),
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
                 Int(kv_collection.max_seq_length),
-                kv_b_proj.to_layout_tensor(),
-                kv_b_proj_scale.to_layout_tensor(),
-                w_uk.to_layout_tensor(),
-                w_uk_scale.to_layout_tensor(),
-                w_uv.to_layout_tensor(),
-                w_uv_scale.to_layout_tensor(),
+                kv_b_proj.to_tile_tensor[DType.int64](),
+                kv_b_proj_scale.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7568,12 +7569,12 @@ struct Struct_moe_create_indices:
         context: DeviceContextPtr,
     ) raises:
         moe_create_indices[target=target](
-            token_expert_order.to_layout_tensor(),
-            expert_start_indices.to_layout_tensor(),
-            restore_token_order.to_layout_tensor(),
-            expert_ids.to_layout_tensor(),
-            expert_usage_stats.to_layout_tensor(),
-            topk_ids.to_layout_tensor(),
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -7621,10 +7622,10 @@ struct Struct_moe_router_group_limited:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_layout_tensor(),
-            expert_weights.to_layout_tensor(),
-            expert_scores.to_layout_tensor().get_immutable(),
-            expert_bias.to_layout_tensor().get_immutable(),
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )
@@ -8336,10 +8337,11 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         dtype: DType,
         multiply_before_cast: Bool,
         per_head_norm: Bool,
+        cache_dtype: DType,
         //,
         target: StaticString,
     ](
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
