@@ -227,23 +227,28 @@ bool LegalizePOPOperations::operationRequiresLegalization(
 
 bool LegalizePOPOperations::conversionRequiresLegalization(
     CastOp castOp, TargetInfoAttr target) const {
-  if (!typeRequiresLegalization(castOp.getInput().getType()) &&
-      !typeRequiresLegalization(castOp.getOutput().getType()))
-    return false;
-
-  KGENDType fromType = getScalarKGENDType(castOp.getInput().getType());
-  KGENDType toType = getScalarKGENDType(castOp.getOutput().getType());
+  Type fromType = castOp.getInput().getType();
+  Type toType = castOp.getOutput().getType();
+  KGENDType fromDType = getScalarKGENDType(fromType);
+  KGENDType toDType = getScalarKGENDType(toType);
+  if (!typeRequiresLegalization(fromType) &&
+      !typeRequiresLegalization(toType)) {
+    // Special case for FP16 -> BF16 on NVPTX
+    // TODO: Correctly provide all supported types instead of this hack.
+    if (fromDType != KGENDType::f16 || toDType != KGENDType::bf16)
+      return false;
+  }
 
   auto targetConversionsIt = targetLegalConversion.find(getTargetKey(target));
   assert(targetConversionsIt != targetLegalConversion.end() &&
          "targetLegalConversion map was not initialized");
 
   // If there's no direct conversion available, then legalization is required
-  auto typeConversionsIt = targetConversionsIt->second.find(fromType);
+  auto typeConversionsIt = targetConversionsIt->second.find(fromDType);
   if (typeConversionsIt == targetConversionsIt->second.end())
     return true;
 
-  return !typeConversionsIt->second.contains(toType);
+  return !typeConversionsIt->second.contains(toDType);
 }
 
 //===----------------------------------------------------------------------===//
