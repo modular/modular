@@ -64,8 +64,11 @@ bool isFirstLevelTypeExpr(TypedAttr attr);
 //===----------------------------------------------------------------------===//
 
 /// Demangle a mangled parameter name if it is has a "`" postfix and and
-/// trailing depth and unique ID.
-StringRef demangleParameterName(StringRef name);
+/// trailing depth and unique ID. If `forUser` is true, then any prefixes for
+/// autoparameters are removed.  If not, only the `42 suffix is removed.  The
+/// later is important when calculating the ASTDecl name for a parameter.  The
+/// former is useful when printing the name.
+StringRef demangleParameterName(StringRef name, bool forUser = false);
 
 //===----------------------------------------------------------------------===//
 // Parsing and Printing

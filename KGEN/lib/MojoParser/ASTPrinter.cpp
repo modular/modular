@@ -303,7 +303,8 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, bool elideOriginOf,
                                  SharedState &shared, raw_ostream &os) {
   // If this is an implicit parameter injected due to auto-parameterization,
   // then it will have a uniquing identifier on it, rip that off.
-  auto demangledName = demangleParameterName(declRef.getName());
+  auto demangledName =
+      demangleParameterName(declRef.getName(), /*forUser*/ true);
 
   ASTDecl *ctxDecl = shared.declResolver->getDeclCurrentlyProcessing();
   if (!ctxDecl) {

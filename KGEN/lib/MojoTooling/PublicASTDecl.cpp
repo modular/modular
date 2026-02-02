@@ -73,7 +73,7 @@ static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
     return true;
 
   // Ignore name mangled parameters, which are autoparams.
-  if (demangleParameterName(paramName) != paramName)
+  if (demangleParameterName(paramName, /*forUser*/ true) != paramName)
     return true;
 
   // Exclude inferred parameters that were synthesized by the compiler
@@ -586,7 +586,8 @@ static ParameterEvaluator populatePublicParameterDecls(
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
     }
     PassingKind passingKind = paramListAttr.getPassingKind(idx);
-    StringRef paramName = demangleParameterName(paramListAttr.getName(idx));
+    StringRef paramName =
+        demangleParameterName(paramListAttr.getName(idx), /*forUser*/ true);
     VariadicKind variadicKind = paramListAttr.getVariadicKind(idx);
     Type reboundType = evaluator.getReboundType(paramType);
 

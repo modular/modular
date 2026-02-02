@@ -336,7 +336,8 @@ static SmallVector<StringAttr> getFunctionParameterNames(FnOp funcOp) {
        funcOp.getFuncTypeGenerator().getParamListAttrs().getPogs())
     if (pogAttr.getPassingKind() != PassingKind::Implicit &&
         // Ignore name mangled parameters, which are autoparams.
-        demangleParameterName(pogAttr.getName()) == pogAttr.getName())
+        demangleParameterName(pogAttr.getName(), /*forUser*/ true) ==
+            pogAttr.getName())
       result.emplace_back(pogAttr.getName());
   return result;
 }
@@ -367,7 +368,8 @@ static SmallVector<StringAttr> getAliasParameterNames(AliasDeclOp aliasOp) {
   for (PogMetadataAttr pogAttr : generatorType.getParamListAttrs().getPogs())
     if (pogAttr.getPassingKind() != PassingKind::Implicit &&
         // Ignore name mangled parameters, which are autoparams.
-        demangleParameterName(pogAttr.getName()) == pogAttr.getName())
+        demangleParameterName(pogAttr.getName(), /*forUser*/ true) ==
+            pogAttr.getName())
       result.emplace_back(pogAttr.getName());
 
   return result;
@@ -733,7 +735,8 @@ private:
     // Grab the parameters to the struct.
     llvm::MapVector<StringRef, const char *> seenParameters;
     for (ParamDeclAttr decl : structOp.getParams()) {
-      StringRef demangled = demangleParameterName(decl.getName());
+      StringRef demangled =
+          demangleParameterName(decl.getName(), /*forUser*/ true);
       // Don't need to document auto-parameters.
       if (demangled == decl.getName())
         seenParameters.insert({demangled, nullptr});
