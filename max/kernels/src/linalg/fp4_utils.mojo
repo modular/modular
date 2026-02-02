@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from sys._assembly import inlined_assembly
 from sys import is_nvidia_gpu, bit_width_of
-from sys.info import _is_sm_100x_or_newer
+from sys.info import _is_sm_100x_or_newer, align_of
+from utils.index import IndexList
 from utils.numerics import FPUtils
 from memory import bitcast
 from layout import Layout, LayoutTensor
@@ -188,24 +189,32 @@ fn set_scale_factor[
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
+    width: Int,
 ](
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
     row_idx: Int,
     col_idx: Int,
-    scale_value: Scalar[scales_dtype],
+    scale_value: SIMD[scales_dtype, width],
 ):
     constrained[
         scales_tensor.rank == 5,
         "scales_tensor must be 5D for non-batched scales tensor",
     ]()
+    __comptime_assert (
+        width <= SF_ATOM_K
+    ), "width must be less than or equal to SF_ATOM_K"
 
-    scales_tensor[
-        row_idx // SF_MN_GROUP_SIZE,
-        col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-        row_idx % SF_ATOM_M[0],
-        (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-        (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-    ] = rebind[Scalar[scales_dtype]](scale_value)
+    comptime align = align_of[SIMD[scales_dtype, width]]()
+    scales_tensor.store[store_alignment=align](
+        IndexList[5](
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ),
+        scale_value,
+    )
 
 
 fn get_scale_factor[

@@ -35,6 +35,7 @@ from comm.sync import can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
+from math import ceildiv
 from shmem.ep import (
     ep_dispatch_async_kernel_api,
     ep_dispatch_wait_kernel_api,
@@ -44,10 +45,21 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
+    NVFP4TokenFormat,
     TokenFormat,
 )
 from testing import assert_almost_equal, assert_equal
 from utils import IndexList
+
+from linalg.fp4_utils import (
+    E2M1_TO_FLOAT32,
+    NVFP4_SF_VECTOR_SIZE,
+    SF_ATOM_M,
+    SF_ATOM_K,
+    SF_MN_GROUP_SIZE,
+    get_scale_factor,
+)
+from gpu.host.info import B200
 
 
 fn legalize_topk_ids[
@@ -102,6 +114,8 @@ trait DispatchTestT:
         self,
         dev_idx: Int,
         slot_idx: Int,
+        expert_idx: Int,
+        expert_token_idx: Int,
         token_idx: Int,
         hid_dim_idx: Int,
         expected_val: BFloat16,
@@ -187,6 +201,8 @@ struct BF16DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
+        expert_idx: Int,
+        expert_token_idx: Int,
         token_idx: Int,
         hid_dim_idx: Int,
         expected_val: BFloat16,
@@ -341,6 +357,8 @@ struct BlockwiseFP8DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
+        expert_idx: Int,
+        expert_token_idx: Int,
         token_idx: Int,
         hid_dim_idx: Int,
         expected_val: BFloat16,
@@ -377,6 +395,251 @@ struct BlockwiseFP8DispatchTest[
             + String(hid_dim_idx),
             rtol=1e-1,
             atol=1e-1,
+        )
+
+
+struct NVFP4DispatchTest[
+    fp4_dtype: DType,
+    scales_dtype: DType,
+    _hidden_size: Int,
+    _top_k: Int,
+    _n_experts: Int,
+    _n_ranks: Int,
+    _n_slots: Int,
+    _n_tokens_per_rank: Int,
+](DispatchTestT):
+    comptime hidden_size = Self._hidden_size
+    comptime top_k = Self._top_k
+    comptime n_experts = Self._n_experts
+    comptime n_ranks = Self._n_ranks
+    comptime n_slots = Self._n_slots
+    comptime n_tokens_per_rank = Self._n_tokens_per_rank
+    comptime max_recv_num_tokens = Self.n_experts * Self.n_tokens_per_rank
+    comptime n_local_experts = Self.n_experts // Self.n_ranks
+
+    comptime scales_padded_size = Self.n_local_experts * ceildiv(
+        Self.max_recv_num_tokens * Self.n_ranks, SF_MN_GROUP_SIZE
+    ) * SF_MN_GROUP_SIZE
+
+    comptime uint8_last_dim = Self.hidden_size // 2
+
+    comptime output_layout = Layout.row_major(
+        Self.n_tokens_per_rank * Self.n_experts, Self.uint8_last_dim
+    )
+    comptime output_scales_layout = Layout.row_major(
+        Self.scales_padded_size // SF_MN_GROUP_SIZE,
+        ceildiv(Self.hidden_size, SF_ATOM_K * NVFP4_SF_VECTOR_SIZE),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    )
+    comptime output_scales_offset_layout = Layout.row_major(
+        Self.n_experts // Self.n_ranks,
+    )
+
+    comptime TokenFormatType = NVFP4TokenFormat[
+        fp4_dtype = Self.fp4_dtype,
+        scales_dtype = Self.scales_dtype,
+        output_layout = Self.output_layout,
+        scales_layout = Self.output_scales_layout,
+        scales_offset_layout = Self.output_scales_offset_layout,
+        Self.hidden_size,
+        Self.top_k,
+    ]
+
+    var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
+    var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
+    var device_output_scales_offset_bufs_list: List[DeviceBuffer[DType.uint32]]
+    var host_output_bufs_list: List[
+        UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+    ]
+    var host_output_scales_bufs_list: List[
+        UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+    ]
+    var host_output_scales_offset_bufs_list: List[
+        UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
+    ]
+
+    fn __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+        self.device_output_bufs_list = List[DeviceBuffer[Self.fp4_dtype]](
+            capacity=Self.n_ranks
+        )
+        self.device_output_scales_bufs_list = List[
+            DeviceBuffer[Self.scales_dtype]
+        ](capacity=Self.n_ranks)
+        self.device_output_scales_offset_bufs_list = List[
+            DeviceBuffer[DType.uint32]
+        ](capacity=Self.n_ranks)
+        self.host_output_bufs_list = List[
+            UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
+        ](capacity=Self.n_ranks)
+        self.host_output_scales_bufs_list = List[
+            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
+        ](capacity=Self.n_ranks)
+        self.host_output_scales_offset_bufs_list = List[
+            UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
+        ](capacity=Self.n_ranks)
+        for i in range(Self.n_ranks):
+            self.device_output_bufs_list.append(
+                list_of_ctx[i].enqueue_create_buffer[Self.fp4_dtype](
+                    Self.n_slots
+                    * Self.max_recv_num_tokens
+                    * Self.uint8_last_dim
+                )
+            )
+            self.device_output_scales_bufs_list.append(
+                list_of_ctx[i].enqueue_create_buffer[Self.scales_dtype](
+                    Self.n_slots
+                    * Self.scales_padded_size
+                    * Self.hidden_size
+                    // NVFP4_SF_VECTOR_SIZE
+                )
+            )
+            self.device_output_scales_offset_bufs_list.append(
+                list_of_ctx[i].enqueue_create_buffer[DType.uint32](
+                    Self.n_slots * (Self.n_experts // Self.n_ranks)
+                )
+            )
+            self.host_output_bufs_list.append(
+                alloc[Scalar[Self.fp4_dtype]](
+                    Self.n_slots
+                    * Self.max_recv_num_tokens
+                    * Self.uint8_last_dim
+                )
+            )
+            self.host_output_scales_bufs_list.append(
+                alloc[Scalar[Self.scales_dtype]](
+                    Self.n_slots
+                    * Self.scales_padded_size
+                    * Self.hidden_size
+                    // NVFP4_SF_VECTOR_SIZE
+                )
+            )
+            self.host_output_scales_offset_bufs_list.append(
+                alloc[Scalar[DType.uint32]](
+                    Self.n_slots * (Self.n_experts // Self.n_ranks)
+                )
+            )
+
+    fn __del__(deinit self):
+        for i in range(Self.n_ranks):
+            self.host_output_bufs_list[i].free()
+            self.host_output_scales_bufs_list[i].free()
+            self.host_output_scales_offset_bufs_list[i].free()
+
+    @always_inline
+    fn get_token_handler(
+        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+    ):
+        var output_tensor = LayoutTensor[
+            Self.fp4_dtype, Self.output_layout, MutAnyOrigin
+        ](
+            self.device_output_bufs_list[dev_idx].unsafe_ptr()
+            + slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim,
+        )
+        var output_scales_tensor = LayoutTensor[
+            Self.scales_dtype, Self.output_scales_layout, MutAnyOrigin
+        ](
+            self.device_output_scales_bufs_list[dev_idx].unsafe_ptr()
+            + slot_idx
+            * Self.scales_padded_size
+            * Self.hidden_size
+            // NVFP4_SF_VECTOR_SIZE
+        )
+        var output_scales_offset_tensor = LayoutTensor[
+            DType.uint32, Self.output_scales_offset_layout, MutAnyOrigin
+        ](
+            self.device_output_scales_offset_bufs_list[dev_idx].unsafe_ptr()
+            + slot_idx * (Self.n_experts // Self.n_ranks)
+        )
+
+        result = Self.TokenFormatType(
+            output_tensor, output_scales_tensor, output_scales_offset_tensor
+        )
+
+    @always_inline
+    fn save_outputs_to_host(
+        self, list_of_ctx: List[DeviceContext]
+    ) raises -> None:
+        for i in range(Self.n_ranks):
+            list_of_ctx[i].enqueue_copy(
+                self.host_output_bufs_list[i], self.device_output_bufs_list[i]
+            )
+            list_of_ctx[i].enqueue_copy(
+                self.host_output_scales_bufs_list[i],
+                self.device_output_scales_bufs_list[i],
+            )
+            list_of_ctx[i].enqueue_copy(
+                self.host_output_scales_offset_bufs_list[i],
+                self.device_output_scales_offset_bufs_list[i],
+            )
+            list_of_ctx[i].synchronize()
+
+    @always_inline
+    fn check_output_val(
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        expert_idx: Int,
+        expert_token_idx: Int,
+        token_idx: Int,
+        hid_dim_idx: Int,
+        expected_val: BFloat16,
+    ) raises -> None:
+        var output_offset = (
+            slot_idx * Self.max_recv_num_tokens * Self.uint8_last_dim
+            + token_idx * Self.uint8_last_dim
+            + (hid_dim_idx // 2)
+        )
+
+        var host_scales_tensor = LayoutTensor[
+            Self.scales_dtype, Self.output_scales_layout, MutAnyOrigin
+        ](
+            self.host_output_scales_bufs_list[dev_idx]
+            + slot_idx
+            * Self.scales_padded_size
+            * Self.hidden_size
+            // NVFP4_SF_VECTOR_SIZE
+        )
+
+        var expert_start_index = token_idx - expert_token_idx
+        var scales_block_id = (
+            expert_start_index // SF_MN_GROUP_SIZE
+            + self.host_output_scales_offset_bufs_list[dev_idx][
+                slot_idx * (Self.n_experts // Self.n_ranks) + expert_idx
+            ]
+        )
+        var _scales_tensor = type_of(host_scales_tensor)(
+            host_scales_tensor.ptr_at_offset(
+                IndexList[5](Int(scales_block_id), 0, 0, 0, 0)
+            )
+        )
+
+        var uint8_val = self.host_output_bufs_list[dev_idx][output_offset]
+
+        var token_scale = get_scale_factor[SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE](
+            _scales_tensor, expert_token_idx, hid_dim_idx
+        )
+        var token_val = (
+            E2M1_TO_FLOAT32[Int((uint8_val >> ((hid_dim_idx % 2) * 4)) & 0x0F)]
+            * token_scale.cast[DType.float32]()
+        )
+
+        assert_almost_equal(
+            expected_val,
+            token_val.cast[DType.bfloat16](),
+            "Scaled by :"
+            + String(token_scale)
+            + "Output value mismatch for dev "
+            + String(dev_idx)
+            + " slot "
+            + String(slot_idx)
+            + " token "
+            + String(token_idx)
+            + " hid_dim "
+            + String(hid_dim_idx),
+            rtol=2.5e-1,
+            atol=2.5e-1,
         )
 
 
@@ -866,6 +1129,7 @@ fn test_dispatch_common[
             for expert_idx in range(n_local_experts):
                 var curr_local_expert = slot_expert_ids[expert_idx]
                 var curr_expert = n_local_experts * dev_idx + curr_local_expert
+                var expert_token_idx = 0
 
                 for remote_rank in range(n_ranks):
                     var expert_rank_offset = (
@@ -921,10 +1185,14 @@ fn test_dispatch_common[
                             dispatch_test.check_output_val(
                                 dev_idx,
                                 slot_idx,
+                                expert_idx,
+                                expert_token_idx,
                                 Int(token_idx),
                                 i,
                                 remote_token_val,
                             )
+
+                        expert_token_idx += 1
 
             assert_equal(
                 received_tokens,
@@ -992,6 +1260,30 @@ def test_dispatch_blockwise_fp8[
     ](list_of_ctx)
 
 
+def test_dispatch_nvfp4[
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    n_ranks: Int,
+    n_slots: Int,
+    n_tokens_per_rank: Int,
+    bench_e2e: Bool = False,
+](list_of_ctx: List[DeviceContext]):
+    comptime dispatch_test_type = NVFP4DispatchTest[
+        fp4_dtype = DType.uint8,
+        scales_dtype = DType.float8_e4m3fn,
+        _hidden_size=hidden_size,
+        _top_k=top_k,
+        _n_experts=n_experts,
+        _n_ranks=n_ranks,
+        _n_slots=n_slots,
+        _n_tokens_per_rank=n_tokens_per_rank,
+    ]
+    test_dispatch_common[
+        DispatchTestType=dispatch_test_type, bench_e2e=bench_e2e
+    ](list_of_ctx)
+
+
 def main():
     comptime test_gpu_counts = (2, 4, 8)
 
@@ -1035,3 +1327,17 @@ def main():
             n_tokens_per_rank=64,
             bench_e2e=False,
         ](ctx)
+
+        comptime device_info = DeviceContext.default_device_info
+
+        @parameter
+        if has_nvidia_gpu_accelerator() and device_info == B200:
+            test_dispatch_nvfp4[
+                hidden_size=7168,
+                top_k=8,
+                n_experts = num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=3,
+                n_tokens_per_rank=64,
+                bench_e2e=False,
+            ](ctx)
