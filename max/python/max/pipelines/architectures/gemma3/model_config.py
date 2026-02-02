@@ -206,6 +206,10 @@ class Gemma3Config(ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
+        # If this is a multimodal config (has text_config), extract the text config
+        # for text-only Gemma3Config initialization
+        if hasattr(huggingface_config, "text_config"):
+            huggingface_config = huggingface_config.text_config
         return cls.initialize_from_config(pipeline_config, huggingface_config)
 
     @classmethod
