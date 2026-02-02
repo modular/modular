@@ -256,10 +256,13 @@ thread's `workerID` (stored in thread-local storage) against the target
 
 The `utils/benchmarking/tools/autotune_gpu_numa` tool can help determine the
 optimal CPU-to-GPU mapping for your system. It benchmarks GPU kernel launch
-latency from each NUMA node and outputs a recommended configuration:
+latency from each NUMA node and outputs a recommended configuration.
+
+This tool does have a dependency on the Python `click` module, so if you will
+need to ensure this is installed first.
 
 ```bash
-python utils/benchmarking/tools/autotune_gpu_numa/autotune_gpu_numa.py
+bazelw run //utils/benchmarking/tools/autotune_gpu_numa:autotune_gpu_numa
 ```
 
 This script will infer the most optimal mapping of GPUs to CPU NUMA nodes, and
