@@ -87,8 +87,8 @@ fn write_sequence_to[
     W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
 ](
     mut writer: W,
-    open: StaticString = "[",
-    close: StaticString = "]",
+    start: StaticString = "[",
+    end: StaticString = "]",
     sep: StaticString = ", ",
 ):
     """Writes a sequence of elements to a writer using a callback function.
@@ -109,11 +109,11 @@ fn write_sequence_to[
 
     Args:
         writer: The writer to write to.
-        open: The opening delimiter (default: `"["`).
-        close: The closing delimiter (default: `"]"`).
+        start: The starting delimiter (default: `"["`).
+        end: The ending delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
     """
-    writer.write_string(open)
+    writer.write_string(start)
 
     var sequence_writer = _SequenceWriter(writer, sep)
 
@@ -123,7 +123,7 @@ fn write_sequence_to[
             sequence_writer.next_element()
         except:
             break
-    writer.write_string(close)
+    writer.write_string(end)
 
 
 @always_inline
@@ -132,8 +132,8 @@ fn write_sequence_to[
 ](
     mut writer: Some[Writer],
     *args: *Ts,
-    open: StaticString,
-    close: StaticString,
+    start: StaticString,
+    end: StaticString,
     sep: StaticString = ", ",
 ):
     """Writes a sequence of writable values to a writer with delimiters.
@@ -147,48 +147,11 @@ fn write_sequence_to[
     Args:
         writer: The writer to write to.
         args: The variadic list of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
+        start: The starting delimiter.
+        end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    write_sequence_to(writer, pack=args, open=open, close=close, sep=sep)
-
-
-@always_inline
-fn write_sequence_to[
-    *Ts: Writable,
-](
-    mut writer: Some[Writer],
-    pack: VariadicPack[_, Writable, *Ts],
-    open: StaticString,
-    close: StaticString,
-    sep: StaticString = ", ",
-):
-    """Writes a sequence of writable values from a pack to a writer with delimiters.
-
-    This function formats a variadic pack of writable values as a delimited
-    sequence, writing each element separated by the specified separator and
-    enclosed by opening and closing delimiters.
-
-    Parameters:
-        Ts: Types of the values in the pack. Must conform to `Writable`.
-
-    Args:
-        writer: The writer to write to.
-        pack: The variadic pack of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
-        sep: The separator between items (default: `", "`).
-    """
-
-    @parameter
-    fn elements[i: Int](mut writer: Some[Writer]):
-        pack[i].write_to(writer)
-
-    write_sequence_to[
-        size = type_of(pack).__len__(),
-        ElementFn=elements,
-    ](writer, open, close, sep)
+    args._write_to(writer, start=start, end=end, sep=sep)
 
 
 # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
@@ -372,7 +335,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        write_sequence_to(self._writer[], args, open="[", close="]")
+        args._write_to(self._writer[], start="[", end="]")
         return self
 
     @always_inline
@@ -389,7 +352,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        write_sequence_to(self._writer[], args, open="(", close=")")
+        args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
     @always_inline

@@ -343,7 +343,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             else:
                 trait_downcast[Writable](element).write_to(w)
 
-        write_sequence_to[ElementFn=iterate](writer, open="{", close="}")
+        write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
         _ = iterator^
 
     @no_inline

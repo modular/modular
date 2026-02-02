@@ -477,37 +477,15 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(args.__len__()):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             self = String()
-            _write(self)
+            args._write_to(self, end=end, sep=sep)
         else:
             self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
@@ -547,37 +525,15 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             self = String()
-            _write(self)
+            args._write_to(self, end=end, sep=sep)
         else:
             self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
     @staticmethod
@@ -599,38 +555,16 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             var result = String()
-            _write(result)
+            args._write_to(result, end=end, sep=sep)
             return result^
         else:
             var result = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
             return result^
 
@@ -646,23 +580,14 @@ struct String(
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
+        args._write_to(total_bytes, sep="")
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
-            _write(self)
+            args._write_to(self, sep="")
         else:
             self.reserve(total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, sep="")
             buffer.flush()
 
     fn write[T: Writable](mut self, value: T):
