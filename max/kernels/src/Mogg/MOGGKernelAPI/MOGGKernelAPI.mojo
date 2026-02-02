@@ -4567,56 +4567,6 @@ fn concat_from_list_shape_impl[
     return output_shape
 
 
-@compiler.register("mo.concat_from_list")
-struct ConcatFromList:
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        inputs: List[
-            InputTensor[
-                static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-            ]
-        ],
-        axis: Scalar,
-        ctx: DeviceContextPtr,
-    ) raises:
-        __comptime_assert (
-            target == "cpu"
-        ), "only cpu is supported for concat_from_list"
-
-        comptime inputs_layout = Layout.row_major[rank]()
-
-        # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        var input_as_tile_tensors = [
-            i.to_tile_tensor[DType.int64]().as_any_origin().as_immut()
-            for i in inputs
-        ]
-
-        _concat_cpu[dtype, None, False](
-            output.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
-            input_as_tile_tensors,
-        )
-
-    @staticmethod
-    fn shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        inputs: List[
-            InputTensor[
-                static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-            ]
-        ],
-        axis: Scalar,
-    ) raises -> IndexList[rank]:
-        return concat_from_list_shape_impl(Int(axis), inputs)
-
-
 # ===-----------------------------------------------------------------------===#
 # Split kernels
 # ===-----------------------------------------------------------------------===#
