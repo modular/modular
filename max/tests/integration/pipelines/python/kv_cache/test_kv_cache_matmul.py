@@ -254,8 +254,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     ) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
-        assert np.any(result != np.nan)
-        assert np.any(result != np.inf)
+        assert np.all(np.isfinite(result))
 
 
 @dataclass(frozen=True)
