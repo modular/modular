@@ -35,6 +35,9 @@ what we publish.
 
 ### Library changes
 
+- The `itertools` module now includes `cycle(iterable)`, which lazily creates
+  an iterator that cycles through the elements of an iterable indefinitely.
+
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
   `cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `acosh`, `asinh`, `atanh`,
   `cosh`, `sinh`, `expm1`, `log10`, `log1p`, `logb`, `cbrt`, `erfc`, `j0`,

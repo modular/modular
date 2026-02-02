@@ -496,6 +496,116 @@ fn product[
 
 
 # ===-----------------------------------------------------------------------===#
+# cycle
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
+    Copyable, Iterable, Iterator
+):
+    """Iterator that cycles through an iterable indefinitely.
+
+    This iterator keeps a copy of the original iterator and resets to it
+    when the current iterator is exhausted. This is a lazy implementation
+    that does no work at construction time.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var _orig: Self.InnerIteratorType
+    var _iter: Self.InnerIteratorType
+
+    fn __init__(out self, var iterator: Self.InnerIteratorType):
+        """Creates a cycle iterator from an iterator.
+
+        Args:
+            iterator: The iterator to cycle through.
+        """
+        self._orig = iterator.copy()
+        self._iter = iterator^
+
+    fn __copyinit__(out self, existing: Self):
+        self._orig = existing._orig.copy()
+        self._iter = existing._iter.copy()
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn copy(self) -> Self:
+        var result = Self(self._orig.copy())
+        result._iter = self._iter.copy()
+        return result^
+
+    @always_inline
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            # Reset to original and try again
+            self._iter = self._orig.copy()
+            # If this also raises StopIteration, the original was empty
+            return next(self._iter)
+
+
+@always_inline
+fn cycle[
+    IterableType: Iterable
+](ref iterable: IterableType) -> _CycleIterator[
+    downcast[type_of(iter(iterable)), Copyable & Iterator]
+]:
+    """Creates an iterator that cycles through an iterable indefinitely.
+
+    This function returns an iterator that yields elements from the input
+    iterable repeatedly in an infinite loop. The elements are yielded in
+    the same order as they appear in the original iterable.
+
+    This is a lazy implementation - no work is done at construction time.
+    The iterator keeps a copy of the original iterator and resets to it
+    when exhausted.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to cycle through.
+
+    Returns:
+        An iterator that yields elements from the iterable forever.
+
+    Examples:
+
+    ```mojo
+    # Cycle through a list
+    var colors = ["red", "green", "blue"]
+    var color_cycle = cycle(colors)
+
+    # Get 6 elements (cycles twice)
+    var count = 0
+    for color in color_cycle:
+        print(color)
+        count += 1
+        if count >= 6:
+            break
+    # Output: red, green, blue, red, green, blue
+    ```
+    """
+    return _CycleIterator(
+        rebind_var[downcast[type_of(iter(iterable)), Copyable & Iterator]](
+            iter(iterable)
+        )
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # repeat
 # ===-----------------------------------------------------------------------===#
 
