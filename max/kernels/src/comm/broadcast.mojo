@@ -13,7 +13,7 @@
 """Multi-GPU broadcast kernel implementation."""
 
 from collections import InlineArray
-from math import ceildiv
+from math import align_down, ceildiv
 from gpu.host import DeviceContext, get_gpu_target
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -114,6 +114,21 @@ fn broadcast_multimem_kernel[
                 consistency = Consistency.RELAXED,
             ](out_ptr + elem_idx, data)
 
+        # Handle tail elements (when num_elements is not a multiple of simd_width)
+        # Spread across threads instead of just thread 0
+        var tail_start = num_simd_vectors * simd_width
+        var tail_idx = tail_start + global_tid
+        if tail_idx < num_elements:
+            var data = input_buffer.load[width=1](
+                input_buffer.get_nd_index(tail_idx)
+            )
+            multimem_st[
+                dtype,
+                simd_width=1,
+                scope = Scope.GPU,
+                consistency = Consistency.RELAXED,
+            ](out_ptr + tail_idx, data)
+
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
@@ -162,6 +177,17 @@ fn broadcast_pull_1stage_kernel[
                 input_buffer.get_nd_index(elem_idx)
             ),
         )
+
+    # Handle tail elements (when num_elements is not a multiple of simd_width)
+    # Spread across threads instead of just thread 0
+    var tail_start = num_simd_vectors * simd_width
+    var tail_idx = tail_start + global_tid
+    if tail_idx < num_elements:
+        output_buffer.store[width=1](
+            output_buffer.get_nd_index(tail_idx),
+            input_buffer.load[width=1](input_buffer.get_nd_index(tail_idx)),
+        )
+
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
@@ -257,30 +283,36 @@ fn broadcast_pull_2stage_kernel[
     )
     var my_payload = payloads[my_rank]
 
+    # Calculate tail info (only last chunk can have tail elements)
+    # Since part_size is SIMD-aligned, only the last GPU's chunk can have tail
+    var tail_start = align_down(num_elements, simd_width)
+    var aligned_chunk_end = tail_start if my_rank == ngpus - 1 else my_chunk_end
+
     if is_root:
-        # Root: copy all N from source to dest, AND write our chunk to payload
-        # Single loop to avoid reading data twice
-        var num_simd_vectors = num_elements // simd_width
-        for idx in range(global_tid, num_simd_vectors, stride):
-            var elem_idx = idx * simd_width
+        # Root Stage 1: Write only our chunk to payload (for others to gather)
+        for idx in range(
+            my_chunk_start + thr_local_start, aligned_chunk_end, elem_stride
+        ):
             var data = root_input_ptr.address_space_cast[
                 _target_address_space
-            ]().load[width=simd_width, alignment=alignment, invariant=True](
-                elem_idx
+            ]().load[width=simd_width, alignment=alignment, invariant=True](idx)
+            my_payload.address_space_cast[_target_address_space]().store[
+                alignment=alignment
+            ](idx - my_chunk_start, data)
+
+        # Handle tail for root's chunk (spread across threads)
+        var tail_idx = aligned_chunk_end + global_tid
+        if tail_idx < my_chunk_end:
+            var data = root_input_ptr.address_space_cast[
+                _target_address_space
+            ]().load[width=1, invariant=True](tail_idx)
+            my_payload.address_space_cast[_target_address_space]().store(
+                tail_idx - my_chunk_start, data
             )
-            # Always write to result
-            result.store[width=simd_width, alignment=alignment](
-                result.get_nd_index(elem_idx), data
-            )
-            # Also write to payload if this is our chunk (for others to gather)
-            if elem_idx >= my_chunk_start and elem_idx < my_chunk_end:
-                my_payload.address_space_cast[_target_address_space]().store[
-                    alignment=alignment
-                ](elem_idx - my_chunk_start, data)
     else:
         # Non-root: read our chunk from root, write to payload + result
         for idx in range(
-            my_chunk_start + thr_local_start, my_chunk_end, elem_stride
+            my_chunk_start + thr_local_start, aligned_chunk_end, elem_stride
         ):
             var data = root_input_ptr.address_space_cast[
                 _target_address_space
@@ -294,20 +326,56 @@ fn broadcast_pull_2stage_kernel[
                 result.get_nd_index(idx), data
             )
 
+        # Handle tail elements (only last GPU can have tail, spread across threads)
+        var tail_idx = aligned_chunk_end + global_tid
+        if tail_idx < my_chunk_end:
+            var data = root_input_ptr.address_space_cast[
+                _target_address_space
+            ]().load[width=1, invariant=True](tail_idx)
+            my_payload.address_space_cast[_target_address_space]().store(
+                tail_idx - my_chunk_start, data
+            )
+            result.store[width=1](result.get_nd_index(tail_idx), data)
+
     # Barrier with memory fence to ensure scatter is complete
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
         rank_sigs, my_sig, my_rank
     )
 
-    # === Stage 2: Gather remaining chunks ===
+    # === Stage 2: Gather remaining chunks / Root copies to result ===
     # Non-root GPUs gather the chunks they don't have from all other GPUs.
-    # Root skips this - it already has all data from Stage 1.
-    # Use round-robin access pattern to balance NVLink traffic.
-    if not is_root:
-        # Calculate max chunk size (last chunk may have remainder)
-        var max_chunk_size = num_elements - (ngpus - 1) * part_size
+    # Root copies all elements to result (overlaps with non-root gathering).
+    if is_root:
+        # Root: copy all elements from input to result
+        var num_simd_vectors = num_elements // simd_width
+        for idx in range(global_tid, num_simd_vectors, stride):
+            var elem_idx = idx * simd_width
+            var data = root_input_ptr.address_space_cast[
+                _target_address_space
+            ]().load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            result.store[width=simd_width, alignment=alignment](
+                result.get_nd_index(elem_idx), data
+            )
 
-        for idx in range(thr_local_start, max_chunk_size, elem_stride):
+        # Handle tail elements (spread across threads)
+        var root_tail_idx = tail_start + global_tid
+        if root_tail_idx < num_elements:
+            var data = root_input_ptr.address_space_cast[
+                _target_address_space
+            ]().load[width=1, invariant=True](root_tail_idx)
+            result.store[width=1](result.get_nd_index(root_tail_idx), data)
+    else:
+        # Calculate max chunk size and its aligned portion
+        var last_chunk_size = num_elements - (ngpus - 1) * part_size
+        var last_aligned_size = align_down(last_chunk_size, simd_width)
+        # Use the larger of part_size or last_aligned_size for loop bound
+        var max_aligned_chunk_size = (
+            part_size if part_size > last_aligned_size else last_aligned_size
+        )
+
+        for idx in range(thr_local_start, max_aligned_chunk_size, elem_stride):
 
             @parameter
             for offset in range(1, ngpus):
@@ -315,15 +383,15 @@ fn broadcast_pull_2stage_kernel[
                 var src_rank = (my_rank + offset) % ngpus
 
                 var chunk_start = src_rank * part_size
-                var chunk_end = (
-                    num_elements if src_rank
-                    == ngpus - 1 else chunk_start + part_size
+                # Use aligned size for last chunk, full size for others
+                var chunk_size = (
+                    last_aligned_size if src_rank == ngpus - 1 else part_size
                 )
 
                 var src_payload = payloads[src_rank]
 
-                # Check if idx is within this chunk's bounds
-                if idx < (chunk_end - chunk_start):
+                # Check if idx is within this chunk's aligned bounds
+                if idx < chunk_size:
                     var data = src_payload.address_space_cast[
                         _target_address_space
                     ]().load[
@@ -335,6 +403,23 @@ fn broadcast_pull_2stage_kernel[
                     result.store[width=simd_width, alignment=alignment](
                         result.get_nd_index(chunk_start + idx), data
                     )
+
+        # Handle tail elements from last GPU's chunk (thread 0 only)
+        # Skip if we're the last GPU (we already have our tail from Stage 1)
+        var last_chunk_start = (ngpus - 1) * part_size
+        if (
+            global_tid == 0
+            and my_rank != ngpus - 1
+            and last_aligned_size < last_chunk_size
+        ):
+            var last_payload = payloads[ngpus - 1]
+            for i in range(last_aligned_size, last_chunk_size):
+                var data = last_payload.address_space_cast[
+                    _target_address_space
+                ]().load[width=1, invariant=True](i)
+                result.store[width=1](
+                    result.get_nd_index(last_chunk_start + i), data
+                )
 
     # Final barrier to ensure all GPUs complete before returning
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
@@ -401,7 +486,7 @@ fn broadcast[
 
     var grid_size = min(
         max_num_blocks,
-        ceildiv(num_elements // simd_width, BLOCK_SIZE),
+        ceildiv(ceildiv(num_elements, simd_width), BLOCK_SIZE),
     )
 
     @parameter
@@ -517,20 +602,14 @@ fn broadcast_2stage[
         "Buffer shapes don't match",
     )
 
-    if num_elements % simd_width != 0:
-        raise Error(
-            "non SIMD-width multiple number of elements unsupported by"
-            " broadcast_2stage"
-        )
-
     comptime BLOCK_SIZE = 256
     # Limit blocks - tuning parameter
     comptime MAX_BLOCKS = 384
 
-    # Grid size: each GPU processes 1/ngpus of the elements in scatter phase
+    # Grid size based on per-GPU chunk size.
     var grid_size = min(
         _max_num_blocks.or_else(MAX_BLOCKS),
-        ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
+        ceildiv(ceildiv(num_elements, simd_width * ngpus), BLOCK_SIZE),
     )
 
     comptime kernel = broadcast_pull_2stage_kernel[
