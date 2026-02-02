@@ -190,9 +190,9 @@ class PixelGenerationTokenizer(
             scheduler_component.get("class_name"),
             scheduler_component.get("config_dict", {}),
         )
-        self._scheduler_use_flow_sigmas = getattr(
-            self._scheduler.config, "use_flow_sigmas", False
-        )
+        # self._scheduler_use_flow_sigmas = getattr(
+        #     self._scheduler.config, "use_flow_sigmas", False
+        # )
 
     def _calculate_shift(
         self,
@@ -359,34 +359,96 @@ class PixelGenerationTokenizer(
 
         tokenizer_output: Any
 
+        # Check if this is Flux2 pipeline (uses Mistral3Tokenizer with chat_template)
+        # Flux2 requires apply_chat_template for proper tokenization
+        is_flux2 = (
+            self._pipeline_class_name == "Flux2Pipeline"
+            or "flux2" in self._pipeline_class_name.lower()
+            if self._pipeline_class_name
+            else False
+        )
+
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
-            return delegate(
-                prompt_str,
-                padding="max_length",
-                max_length=max_sequence_length,
-                truncation=True,
-                add_special_tokens=add_special_tokens,
-            )
+            
+            # For Flux2, use apply_chat_template with format_input
+            if is_flux2 and not use_secondary:
+                # Import here to avoid circular dependencies
+                from max.pipelines.architectures.flux2.system_messages import (
+                    SYSTEM_MESSAGE,
+                )
+                from max.pipelines.architectures.flux2.pipeline_flux2 import (
+                    format_input,
+                )
+                
+                # Format prompt using Flux2 chat template
+                messages_batch = format_input(
+                    prompts=[prompt_str], system_message=SYSTEM_MESSAGE
+                )
+                
+                # Use apply_chat_template for Flux2
+                return delegate.apply_chat_template(
+                    messages_batch[0],  # format_input returns list of conversations
+                    add_generation_prompt=False,
+                    tokenize=True,
+                    return_dict=True,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=max_sequence_length,
+                    return_length=False,
+                    return_overflowing_tokens=False,
+                )
+            else:
+                # Standard tokenization for other pipelines
+                return delegate(
+                    prompt_str,
+                    padding="max_length",
+                    max_length=max_sequence_length,
+                    truncation=True,
+                    add_special_tokens=add_special_tokens,
+                )
 
         # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
         # Add a standard (non-async) lock in the executor thread if needed.
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
+        # Extract input_ids and attention_mask
+        if isinstance(tokenizer_output, dict):
+            # apply_chat_template returns a dict
+            input_ids = tokenizer_output["input_ids"]
+            attention_mask = tokenizer_output.get("attention_mask", None)
+            if attention_mask is None:
+                attention_mask = [1] * len(input_ids)
+            
+            # Extract real tokens only (using attention mask) for Flux2
+            if is_flux2 and not use_secondary:
+                # Filter to keep only real tokens (where mask == 1)
+                real_token_ids = [
+                    token_id
+                    for token_id, mask in zip(input_ids[0], attention_mask[0])
+                    if mask == 1
+                ]
+                input_ids = [real_token_ids]
+                attention_mask = [[1] * len(real_token_ids)]
+        else:
+            # Standard tokenizer output
+            input_ids = tokenizer_output.input_ids
+            attention_mask = tokenizer_output.attention_mask
+
         if (
             max_sequence_length
-            and len(tokenizer_output.input_ids) > max_sequence_length
+            and len(input_ids) > max_sequence_length
         ):
             raise ValueError(
-                f"Input string is larger than tokenizer's max length ({len(tokenizer_output.input_ids)} > {max_sequence_length})."
+                f"Input string is larger than tokenizer's max length ({len(input_ids)} > {max_sequence_length})."
             )
 
-        encoded_prompt = np.array(tokenizer_output.input_ids)
-        attention_mask = np.array(tokenizer_output.attention_mask).astype(
+        encoded_prompt = np.array(input_ids)
+        attention_mask_array = np.array(attention_mask).astype(
             np.bool_
         )
 
-        return encoded_prompt, attention_mask
+        return encoded_prompt, attention_mask_array
 
     async def decode(
         self,
@@ -404,7 +466,6 @@ class PixelGenerationTokenizer(
     ) -> npt.NDArray[np.float32]:
         """Post-process pixel data from model output (NCHW -> NHWC, normalized)."""
         pixel_data = (pixel_data * 0.5 + 0.5).clip(min=0.0, max=1.0)
-        pixel_data = pixel_data.transpose(0, 2, 3, 1)
         return pixel_data
 
     async def new_context(self, request: OpenResponsesRequest) -> PixelContext:
@@ -519,7 +580,7 @@ class PixelGenerationTokenizer(
         num_inference_steps = image_options.steps
         sigmas: npt.NDArray[np.float32] | None = (
             None
-            if self._scheduler_use_flow_sigmas
+            if False
             else np.linspace(
                 1.0,
                 1.0 / num_inference_steps,
@@ -538,9 +599,9 @@ class PixelGenerationTokenizer(
             timesteps = ((1000.0 - timesteps) / 1000.0).astype(np.float32)
         else:
             timesteps = (timesteps / 1000.0).astype(np.float32)
-        num_warmup_steps: int = max(
-            len(timesteps) - num_inference_steps * self._scheduler.order, 0
-        )
+        # num_warmup_steps: int = max(
+        #     len(timesteps) - num_inference_steps * self._scheduler.order, 0
+        # )
 
         latents, latent_image_ids = self._prepare_latents(
             image_options.num_images,

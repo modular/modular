@@ -47,6 +47,7 @@ from max.pipelines import PipelineConfig
 from max.pipelines.architectures.flux1.pipeline_flux import (
     FluxPipeline,
 )
+from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
@@ -175,20 +176,29 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
-    tokenizer = PixelGenerationTokenizer(
-        model_path=args.model,
-        pipeline_config=config,
-        subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
-        max_length=77,  # Standard max length for CLIP-based encoders
-        subfolder_2="tokenizer_2",
-        secondary_max_length=512,  # Standard max length for T5 encoders
-    )
+    is_flux2 = "FLUX.2" in args.model
+    if is_flux2:
+        tokenizer = PixelGenerationTokenizer(
+            model_path=args.model,
+            pipeline_config=config,
+            subfolder="tokenizer",
+            max_length=512,
+        )
+    else:
+        tokenizer = PixelGenerationTokenizer(
+            model_path=args.model,
+            pipeline_config=config,
+            subfolder="tokenizer",
+            max_length=77,
+            subfolder_2="tokenizer_2",
+            secondary_max_length=512,
+        )
 
     # Step 3: Initialize the pipeline
     # The pipeline executes the diffusion model
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
-        pipeline_model=FluxPipeline,
+        pipeline_model=Flux2Pipeline if is_flux2 else FluxPipeline,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
