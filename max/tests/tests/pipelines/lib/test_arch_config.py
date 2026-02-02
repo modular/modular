@@ -82,6 +82,7 @@ def create_mock_pipeline_config(
         enable_kvcache_swapping_to_host
     )
     mock_kv_cache_config.host_kvcache_swap_space_gb = host_kvcache_swap_space_gb
+    mock_kv_cache_config.cache_dtype = DType.bfloat16
 
     mock_model.kv_cache = mock_kv_cache_config
     mock_config.model = mock_model
@@ -108,6 +109,9 @@ def test_arch_config_protocol_check() -> None:
         @classmethod
         def initialize(cls, pipeline_config: PipelineConfig) -> TestConfig:
             return cls()
+
+        def get_max_seq_len(self) -> int:
+            return 2048
 
     assert isinstance(TestConfig(), ArchConfig)
 
@@ -166,7 +170,7 @@ class TestArchConfigWithAttentionKVCache:
         )
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
-        assert result.cache_dtype == DType.float32
+        assert result.cache_dtype == DType.bfloat16
         assert result.data_parallel_degree == 1
 
     def test_create_with_only_dtype(self) -> None:
@@ -174,7 +178,6 @@ class TestArchConfigWithAttentionKVCache:
         config = ConcreteArchConfig(dtype=DType.bfloat16, devices=[])
 
         assert config.dtype == DType.bfloat16
-        assert config.cache_dtype is None
         # devices should be what we passed
         assert config.devices == []
         # kv_cache_config should be default

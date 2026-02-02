@@ -1,5 +1,7 @@
+load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 
 package(default_visibility = ["//visibility:public"])
@@ -112,4 +114,40 @@ modular_py_binary(
         "@rules_python//python/runfiles",
         requirement("pyyaml"),
     ],
+)
+
+mojo_copts_toolchain(
+    name = "_mojo_copts_toolchain",
+    copts = select({
+        "//:linux_x86_64": [
+            "-target-triple=x86_64-unknown-linux-gnu",
+            "--target-cpu=x86-64-v3",
+        ],
+        "//:linux_aarch64": [
+            "-target-triple=aarch64-unknown-linux-gnu",
+            "--target-cpu=neoverse-v1",
+        ],
+        "@platforms//os:macos": [
+            "--target-cpu=apple-m1",
+        ],
+    }) + select({
+        "//:asan": ["--sanitize=address"],
+        "//:tsan": ["--sanitize=thread"],
+        "//conditions:default": [],
+    }) + select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    package_copts = select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+toolchain(
+    name = "mojo_copts_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+    toolchain = ":_mojo_copts_toolchain",
+    toolchain_type = "@rules_mojo//:copts_toolchain_type",
 )

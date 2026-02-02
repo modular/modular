@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,10 +47,10 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RopeType, SupportedEncoding
+from .config_enums import PipelineRole, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
-from .interfaces import ArchConfig, PipelineModel
+from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -122,11 +122,17 @@ def get_pipeline_for_task(
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
-    elif (
-        task == PipelineTask.TEXT_GENERATION
-        and pipeline_config.enable_overlap_scheduler
-    ):
-        return OverlapTextGenerationPipeline[TextContext]
+    elif pipeline_config.enable_overlap_scheduler:
+        role = pipeline_config.pipeline_role
+        if (
+            task == PipelineTask.TEXT_GENERATION
+            and role == PipelineRole.PrefillAndDecode
+        ):
+            return OverlapTextGenerationPipeline[TextContext]
+        raise ValueError(
+            "Overlap scheduler is only supported for TEXT_GENERATION task "
+            f"and PrefillAndDecode pipeline role, got {task} and {role}"
+        )
     elif task == PipelineTask.TEXT_GENERATION:
         return TextGenerationPipeline[TextContext]
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -168,6 +174,8 @@ class SupportedArchitecture:
                 },
                 pipeline_model=MyModel,
                 tokenizer=TextTokenizer,
+                context_type=TextContext,
+                config=MyModelConfig,  # Architecture-specific config class
                 default_weights_format=WeightsFormat.safetensors,
                 rope_type=RopeType.none,
                 weight_adapters={
@@ -211,8 +219,14 @@ class SupportedArchitecture:
     or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
     """
 
-    config: ArchConfig | None = None
-    """The architecture-specific configuration for the model."""
+    config: type[ArchConfig]
+    """The architecture-specific configuration class for the model.
+
+    This class must implement the :obj:`ArchConfig` protocol, providing an
+    :obj:`initialize` method that creates a configuration instance from a
+    :obj:`PipelineConfig`. For models with KV cache, this should be a class
+    implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
+    """
 
     rope_type: RopeType = RopeType.none
     """The type of RoPE (Rotary Position Embedding) used by the model."""
@@ -582,9 +596,14 @@ class PipelineRegistry:
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        # Use ArchConfigWithKVCache if available for max_seq_len
+        if issubclass(arch.config, ArchConfigWithKVCache):
+            arch_config = arch.config.initialize(pipeline_config)
+            max_length = arch_config.get_max_seq_len()
+        else:
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
         if (
@@ -651,9 +670,8 @@ class PipelineRegistry:
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        max_length = arch.pipeline_model.calculate_max_seq_len(
-            pipeline_config, huggingface_config=huggingface_config
-        )
+        arch_config = arch.config.initialize(pipeline_config)
+        max_length = arch_config.get_max_seq_len()
 
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix

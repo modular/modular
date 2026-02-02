@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,6 @@ from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
 from .tuning_configs import _get_tuning_list_bf16, TuningConfigSM90
-from collections import OptionalReg
 from .config import (
     build_configs,
     build_configs_generic,
@@ -2806,7 +2805,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 )
                 return DISPATCH_HIT
 
-            elif m < 257:
+            elif m < 256:
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
@@ -2826,6 +2825,31 @@ fn matmul_dispatch_sm90_bf16_fp32[
                     config=config,
                     schedule = MatmulSchedule.NONE,
                     swapAB=True,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                    ctx,
+                )
+                return DISPATCH_HIT
+            elif m == 256:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    block_tile_shape=Index(64, 48, 64),
+                    mma_shape=Index(64, 48, 16),
+                    cluster_shape=Index(1, 2, 1),
+                    num_pipeline_stages=14,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                    k_group_size=2,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.NONE,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
@@ -3373,7 +3397,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                         return DISPATCH_HIT
 
         @parameter
-        fn get_k_groups[N: Int]() -> OptionalReg[UInt]:
+        fn get_k_groups[N: Int]() -> Optional[UInt]:
             @parameter
             if N == 1536:
                 return None
@@ -3381,7 +3405,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return UInt(1)
 
         @parameter
-        fn get_consumer_groups[N: Int]() -> OptionalReg[Int]:
+        fn get_consumer_groups[N: Int]() -> Optional[Int]:
             @parameter
             if N == 1536:
                 return 1

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,11 +22,7 @@ from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.rotary_embedding import LinearScalingParams
 from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    RopeType,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -210,6 +206,10 @@ class Gemma3Config(ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
+        # If this is a multimodal config (has text_config), extract the text config
+        # for text-only Gemma3Config initialization
+        if hasattr(huggingface_config, "text_config"):
+            huggingface_config = huggingface_config.text_config
         return cls.initialize_from_config(pipeline_config, huggingface_config)
 
     @classmethod
@@ -235,7 +235,7 @@ class Gemma3Config(ArchConfigWithKVCache):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = quantization_encoding.dtype
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (

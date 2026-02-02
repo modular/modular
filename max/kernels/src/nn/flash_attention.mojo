@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,6 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import to_index_list
@@ -618,6 +617,9 @@ struct _FlashAttention[
         scale: Float32,
         sink_weight: Optional[Scalar[Self.dtype]] = None,
     ):
+        __comptime_assert (
+            Self.dtype.is_floating_point()
+        ), "dtype must be floating point"
         var qk_row_ptr = qk_block_ptr
         var o_row_ptr = o_block_ptr
 

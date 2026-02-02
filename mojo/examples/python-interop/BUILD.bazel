@@ -34,6 +34,12 @@ modular_py_binary(
     ],
 )
 
+# TODO(GEX-3156): Investigate and enable on Apple GPU
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 modular_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
@@ -43,7 +49,7 @@ modular_py_binary(
         "//max:MOGGKernelAPI",
         "//max:layout",
     ],
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
     deps = [
         "@mojo//:python",
     ],

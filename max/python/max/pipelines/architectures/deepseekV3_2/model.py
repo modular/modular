@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,9 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.pipelines.lib import (
-    CompilationTimer,
-)
+from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.float8 import parse_float8_config
 from typing_extensions import override

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,7 @@ import functools
 from collections.abc import Sequence
 from typing import Any
 
+from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -89,7 +90,13 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
             f"data_parallel_degree must match the number of devices ({num_devices}). "
             "Tensor-parallel attention is not supported for DeepseekV3."
         )
-    if num_devices > 1 and config.ep_config is None:
+    # Skip EP validation in virtual device mode (compilation-only) since EP
+    # will be disabled later due to NVSHMEM linking requirements
+    if (
+        num_devices > 1
+        and config.ep_config is None
+        and not is_virtual_device_mode()
+    ):
         raise ValueError(
             "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
         )
@@ -149,7 +156,12 @@ class DeepseekV3DecoderLayer(Module):
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
-        self.mlp_shards = self.mlp.shard(config.devices)
+
+        self.mlp_shards: list[MLP | MoE]
+        if self.mlp.sharding_strategy is not None:
+            self.mlp_shards = list(self.mlp.shard(config.devices))
+        else:
+            self.mlp_shards = [self.mlp]
 
         # Create normalization layers
         create_norm = functools.partial(
@@ -231,11 +243,10 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             num_devices = len(config.devices)
-            moe.sharding_strategy = (
-                ShardingStrategy.expert_parallel(num_devices)
-                if self.ep_manager is not None
-                else ShardingStrategy.replicate(num_devices)
-            )
+            if num_devices > 1:
+                moe.sharding_strategy = ShardingStrategy.expert_parallel(
+                    num_devices
+                )
             return moe
         else:
             mlp = MLP(
@@ -442,7 +453,13 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
+        freqs_cis = ops.distributed_broadcast(
+            self.rope.freqs_cis.to(devices[0]), signal_buffers
+        )
+        # Note: input_row_offsets uses distribute_value instead of broadcast
+        # because its size depends on batch size and may be too small for
+        # the broadcast kernel's SIMD requirements.
+        # TODO: Rebase once kernel fix is merged
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
         if len(devices) > 1:
@@ -575,7 +592,9 @@ class DeepseekV3(Module):
             h0 = h[0]
             last_token_indices = input_row_offsets_[0][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = distribute_value(last_token_h, devices)
+            last_token_distributed = ops.distributed_broadcast(
+                last_token_h, signal_buffers
+            )
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(

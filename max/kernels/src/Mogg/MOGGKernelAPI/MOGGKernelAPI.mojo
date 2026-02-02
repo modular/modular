@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -92,7 +92,7 @@ from linalg.fp4_quantization import (
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from linalg.grouped_matmul_sm100_1d1d import (
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_dynamic_scaled_nvfp4,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
@@ -171,7 +171,6 @@ from nn.kv_cache import (
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
     print_kv_cache_paged_generic_gpu,
-    rms_norm_kv_cache_ragged_continuous_batching,
     rms_norm_kv_cache_ragged_paged,
 )
 from nn.kv_cache_ragged import (
@@ -182,9 +181,7 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_ragged_paged_plan,
     generic_flash_attention_kv_cache_ragged,
     generic_flash_attention_kv_cache_ragged_sink,
-    generic_fused_qk_rope_bshd_continuous_batch_ragged,
     generic_fused_qk_rope_bshd_paged_ragged,
-    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
@@ -703,6 +700,9 @@ struct Tanh(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return tanh(x)
 
 
@@ -713,6 +713,9 @@ struct ACos(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return acos(x)
 
 
@@ -723,6 +726,9 @@ struct ATanh(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return atanh(x)
 
 
@@ -733,6 +739,9 @@ struct Cos(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return cos(x)
 
 
@@ -743,6 +752,9 @@ struct Sin(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return sin(x)
 
 
@@ -753,6 +765,9 @@ struct Erf(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return erf(x)
 
 
@@ -763,6 +778,9 @@ struct Exp(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return exp(x)
 
 
@@ -843,6 +861,9 @@ struct Log1p(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        __comptime_assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
         return log1p(x)
 
 
@@ -2107,19 +2128,19 @@ struct Slice:
         ],
     ):
         var view_buffer = slice_as_view(
-            input.to_layout_tensor(),
-            starts.to_layout_tensor(),
-            stops.to_layout_tensor(),
-            steps.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
         )
 
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.shape.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.shape)
             ),
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.stride.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.stride)
             ),
         }
 
@@ -2156,10 +2177,10 @@ struct Slice:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             slice_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                starts.to_layout_tensor(),
-                stops.to_layout_tensor(),
-                steps.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                starts.to_tile_tensor[DType.int64](),
+                stops.to_tile_tensor[DType.int64](),
+                steps.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2202,11 +2223,11 @@ struct MutableStoreSlice:
         ctx: DeviceContextPtr,
     ) raises:
         copy_to_slice[target=target](
-            to_buffer.to_layout_tensor(),
-            in_slice.to_layout_tensor(),
-            starts.to_layout_tensor(),
-            stops.to_layout_tensor(),
-            steps.to_layout_tensor(),
+            to_buffer.to_tile_tensor[DType.int64](),
+            in_slice.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
             ctx,
         )
 
@@ -2297,7 +2318,7 @@ struct SliceDim:
         ],
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
-            input.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
             Int(starts),
             Int(stops),
             Int(steps),
@@ -2306,10 +2327,10 @@ struct SliceDim:
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.shape.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.shape)
             ),
             rebind[IndexList[rank]](
-                view_buffer.runtime_layout.stride.value.canonicalize()
+                coord_to_index_list(view_buffer.layout.stride)
             ),
         }
 
@@ -2381,8 +2402,8 @@ struct ArgMax:
                 var cuda_ctx = ctx.get_device_context()
                 argmax_gpu(
                     cuda_ctx,
-                    input.to_layout_tensor(),
-                    output.to_layout_tensor(),
+                    input.to_tile_tensor[DType.int64](),
+                    output.to_tile_tensor[DType.int64](),
                 )
 
 
@@ -2420,8 +2441,8 @@ struct ArgMin:
                 var cuda_ctx = ctx.get_device_context()
                 argmin_gpu(
                     cuda_ctx,
-                    input.to_layout_tensor(),
-                    output.to_layout_tensor(),
+                    input.to_tile_tensor[DType.int64](),
+                    output.to_tile_tensor[DType.int64](),
                 )
 
 
@@ -2859,12 +2880,12 @@ struct AvgPool:
         ctx: DeviceContextPtr,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             False,
             ctx,
         )
@@ -2882,11 +2903,11 @@ struct AvgPool:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2909,12 +2930,12 @@ struct AvgPoolCeilModeTrue:
         ctx: DeviceContextPtr,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             True,
             ctx,
         )
@@ -2932,11 +2953,11 @@ struct AvgPoolCeilModeTrue:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -2958,12 +2979,12 @@ struct MaxPool:
         ctx: DeviceContextPtr,
     ) raises:
         max_pool[target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             False,
             ctx,
         )
@@ -2981,11 +3002,11 @@ struct MaxPool:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -3007,12 +3028,12 @@ struct MaxPoolCeilModeTrue:
         ctx: DeviceContextPtr,
     ) raises:
         max_pool[target=target](
-            input.to_layout_tensor(),
-            filter.to_layout_tensor(),
-            strides.to_layout_tensor(),
-            dilations.to_layout_tensor(),
-            paddings.to_layout_tensor(),
-            output.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
             True,
             ctx,
         )
@@ -3030,11 +3051,11 @@ struct MaxPoolCeilModeTrue:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -4938,10 +4959,10 @@ struct ConvTranspose:
             )
 
         var stride_tuple = IndexList[
-            type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
         ](0)
         var dilation_tuple = IndexList[
-            type_of(input.to_layout_tensor()).layout.rank() - 2
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
         ](0)
 
         @parameter
@@ -4980,17 +5001,14 @@ struct ConvTranspose:
         @parameter
         if is_cpu[target]():
             conv_transposed_cpu[
-                input.dtype,
-                filter.dtype,  # Filter dtype.
-                output.dtype,  # Output dtype.
                 filter_packed,
                 filter_is_cfrs,
                 lambdas_have_fusion,
                 output_fn,
             ](
-                output.to_layout_tensor(),
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
@@ -5007,7 +5025,7 @@ struct ConvTranspose:
 
             var cuda_ctx = ctx.get_device_context()
             var pad_tuple = IndexList[
-                type_of(input.to_layout_tensor()).layout.rank() - 2
+                type_of(input.to_tile_tensor[DType.int64]()).rank - 2
             ](0)
 
             @parameter
@@ -5025,9 +5043,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](),
             ](
-                output.to_layout_tensor(),
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -5047,12 +5065,12 @@ struct ConvTranspose:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             conv_transpose_shape[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
-                filter.to_layout_tensor(),
-                strides.to_layout_tensor(),
-                dilations.to_layout_tensor(),
-                paddings.to_layout_tensor(),
-                output_paddings.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+                output_paddings.to_tile_tensor[DType.int64](),
             )
         )
 
@@ -6608,6 +6626,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
 fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     dtype: DType,
     freq_dtype: DType,
+    cache_dtype: DType,
     //,
     *,
     interleaved: Bool,
@@ -6617,7 +6636,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3],
     input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection[dtype, ...],
+    kv_collection: PagedKVCacheCollection[cache_dtype, ...],
     freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2],
     position_ids: ManagedTensorSlice[dtype = DType.uint32, rank=2],
     layer_idx: UInt32,
@@ -6698,11 +6717,12 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         freq_dtype: DType,
         //,
         target: StaticString,
+        cache_dtype: DType = dtype,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -7305,18 +7325,18 @@ struct Struct_mla_prefill_graph_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                buffer_row_offsets_1d.to_layout_tensor(),
-                cache_offsets_1d.to_layout_tensor(),
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
-                kv_b_proj.to_layout_tensor(),
-                kv_b_proj_scale.to_layout_tensor(),
+                kv_b_proj.to_tile_tensor[DType.int64](),
+                kv_b_proj_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7375,17 +7395,17 @@ struct Struct_mla_decode_graph_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                w_uk.to_layout_tensor(),
-                w_uk_scale.to_layout_tensor(),
-                w_uv.to_layout_tensor(),
-                w_uv_scale.to_layout_tensor(),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7450,23 +7470,23 @@ struct Struct_mla_prefill_graph_decode_paged:
                 score_mod_str=score_mod_str,
                 target=target,
             ](
-                output.to_layout_tensor(),
-                q_nope.to_layout_tensor(),
-                q_rope.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
+                output.to_tile_tensor[DType.int64](),
+                q_nope.to_tile_tensor[DType.int64](),
+                q_rope.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
-                buffer_row_offsets_1d.to_layout_tensor(),
-                cache_offsets_1d.to_layout_tensor(),
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
                 Int(kv_collection.max_seq_length),
-                kv_b_proj.to_layout_tensor(),
-                kv_b_proj_scale.to_layout_tensor(),
-                w_uk.to_layout_tensor(),
-                w_uk_scale.to_layout_tensor(),
-                w_uv.to_layout_tensor(),
-                w_uv_scale.to_layout_tensor(),
+                kv_b_proj.to_tile_tensor[DType.int64](),
+                kv_b_proj_scale.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
             )
 
@@ -7549,12 +7569,12 @@ struct Struct_moe_create_indices:
         context: DeviceContextPtr,
     ) raises:
         moe_create_indices[target=target](
-            token_expert_order.to_layout_tensor(),
-            expert_start_indices.to_layout_tensor(),
-            restore_token_order.to_layout_tensor(),
-            expert_ids.to_layout_tensor(),
-            expert_usage_stats.to_layout_tensor(),
-            topk_ids.to_layout_tensor(),
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
             context,
         )
 
@@ -7602,10 +7622,10 @@ struct Struct_moe_router_group_limited:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_layout_tensor(),
-            expert_weights.to_layout_tensor(),
-            expert_scores.to_layout_tensor().get_immutable(),
-            expert_bias.to_layout_tensor().get_immutable(),
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )
@@ -8034,8 +8054,8 @@ fn layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        filter.to_layout_tensor(),
-        packed_filter.to_layout_tensor(),
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
         1,
     )
 
@@ -8143,7 +8163,9 @@ struct PackConvTransposeFilterShape:
         rank + 1
     ]:
         return rebind[IndexList[rank + 1]](
-            pack_filter_shape_conv_transpose(filter_buf.to_layout_tensor(), 1)
+            pack_filter_shape_conv_transpose(
+                filter_buf.to_tile_tensor[DType.int64](), 1
+            )
         )
 
 
@@ -8315,10 +8337,11 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         dtype: DType,
         multiply_before_cast: Bool,
         per_head_norm: Bool,
+        cache_dtype: DType,
         //,
         target: StaticString,
     ](
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -8735,9 +8758,6 @@ struct Struct_min_p_sampling:
     ) raises:
         __comptime_assert is_valid_target[target](), "not a valid target"
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
-        var min_ps_buf = managed_tensor_slice_to_ndbuffer(min_ps)
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
@@ -8754,9 +8774,9 @@ struct Struct_min_p_sampling:
                 var cuda_ctx = ctx.get_device_context()
                 min_p_sampling_gpu(
                     cuda_ctx,
-                    min_ps.to_layout_tensor(),
-                    input.to_layout_tensor(),
-                    out_token_ids.to_layout_tensor(),
+                    min_ps.to_tile_tensor[DType.int64](),
+                    input.to_tile_tensor[DType.int64](),
+                    out_token_ids.to_tile_tensor[DType.int64](),
                     temperature,
                 )
 
@@ -10017,9 +10037,9 @@ struct SpatialMerge:
         var cuda_ctx = ctx.get_device_context()
 
         spatial_merge[dtype](
-            output.to_layout_tensor(),
-            input.to_layout_tensor(),
-            grid_thw.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            grid_thw.to_tile_tensor[DType.int64](),
             Int(hidden_size),
             Int(merge_size),
             cuda_ctx,
@@ -10098,9 +10118,9 @@ struct Struct_sliced_add_ragged:
         lora_end_idx: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var c_layout_tensor = c.to_layout_tensor()
-        var a_layout_tensor = a.to_layout_tensor()
-        var b_layout_tensor = b.to_layout_tensor()
+        var c_tile_tensor = c.to_tile_tensor[DType.int64]()
+        var a_tile_tensor = a.to_tile_tensor[DType.int64]()
+        var b_tile_tensor = b.to_tile_tensor[DType.int64]()
 
         with Trace[TraceLevel.OP, target=target](
             "sliced-add",
@@ -10111,18 +10131,18 @@ struct Struct_sliced_add_ragged:
             if is_gpu[target]():
                 ctx: Optional[DeviceContext] = context.get_device_context()
                 sliced_add[target=target](
-                    c_layout_tensor,
-                    a_layout_tensor,
-                    b_layout_tensor,
-                    lora_end_idx.to_layout_tensor(),
+                    c_tile_tensor,
+                    a_tile_tensor,
+                    b_tile_tensor,
+                    lora_end_idx.to_tile_tensor[DType.int64](),
                     ctx,
                 )
             else:
                 sliced_add[target=target](
-                    c_layout_tensor,
-                    a_layout_tensor,
-                    b_layout_tensor,
-                    lora_end_idx.to_layout_tensor(),
+                    c_tile_tensor,
+                    a_tile_tensor,
+                    b_tile_tensor,
+                    lora_end_idx.to_tile_tensor[DType.int64](),
                     None,
                 )
 

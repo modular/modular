@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ from builtin.variadics import (
 )
 from builtin.dtype import _unsigned_integral_type_of
 from gpu import thread_idx, block_dim, lane_id
-from gpu.host import DeviceBuffer, HostBuffer
+from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
 from utils import IndexList
@@ -92,7 +92,24 @@ struct TileTensor[
 
     @staticmethod
     fn get_type_name() -> String:
-        return "TileTensor"
+        """
+        Gets the name of the host type (the one implementing this trait).
+
+        Returns:
+            The host type's name.
+        """
+
+        return String(
+            "TileTensor[mut = ",
+            Self.mut,
+            ", dtype = ",
+            Self.dtype,
+            ", address_space = ",
+            Self.address_space,
+            ", linear_idx_type = ",
+            Self.linear_idx_type,
+            "]",
+        )
 
     comptime GenericType = TileTensor[
         shape_types = Self.shape_types,
@@ -916,6 +933,7 @@ struct TileTensor[
 
     comptime OriginCastType[
         mut: Bool,
+        //,
         origin: Origin[mut=mut],
     ] = TileTensor[
         shape_types = Self.shape_types,
@@ -932,12 +950,12 @@ struct TileTensor[
         origin: The origin for the result tensor.
     """
 
-    comptime _AsMut = Self.OriginCastType[True, _]
+    comptime _AsMut = Self.OriginCastType[mut=True, _]
 
     @always_inline("nodebug")
     fn as_any_origin(
         self: Self._AsMut,
-    ) -> type_of(self).OriginCastType[True, MutAnyOrigin]:
+    ) -> type_of(self).OriginCastType[MutAnyOrigin]:
         """Casts the origin of the mutable `LayoutTensor` to `MutAnyOrigin`.
 
         Returns:
@@ -956,7 +974,7 @@ struct TileTensor[
     @always_inline
     fn as_immut(
         self,
-    ) -> Self.OriginCastType[False, ImmutOrigin(Self.origin)]:
+    ) -> Self.OriginCastType[ImmutOrigin(Self.origin)]:
         """
         Return an immutable version of this tensor.
 
@@ -964,6 +982,26 @@ struct TileTensor[
             A `LayoutTensor` covering the same elements, but without mutability.
         """
         return {self.ptr.as_immutable(), self.layout}
+
+    @always_inline
+    fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+        """Convert the tensor to a `DeviceBuffer`.
+
+        Args:
+            ctx: The device context to use.
+
+        Returns:
+            A `DeviceBuffer` containing the tensor's data.
+        """
+        __comptime_assert (
+            Self.address_space == Self.address_space.GENERIC
+        ), "DeviceBuffer is only used on GENERIC address space"
+        return DeviceBuffer[Self.dtype](
+            ctx,
+            self.ptr,
+            self.numel(),
+            owning=False,
+        )
 
 
 @always_inline("nodebug")

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -347,9 +347,9 @@ def test_ascii_ljust():
 
 
 def test_center():
-    assert_equal("hello".center(4), "hello")
-    assert_equal("hello".center(8), " hello  ")
-    assert_equal("hello".center(8, "*"), "*hello**")
+    assert_equal("hello".ascii_center(4), "hello")
+    assert_equal("hello".ascii_center(8), " hello  ")
+    assert_equal("hello".ascii_center(8, "*"), "*hello**")
 
 
 def test_float_conversion():

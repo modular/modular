@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,6 +35,7 @@ from .hf_utils import (
 )
 from .interfaces import (
     AlwaysSignalBuffersMixin,
+    InputKey,
     KVCacheMixin,
     ModelInputs,
     ModelOutputs,
@@ -46,6 +47,9 @@ from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
 from .model_config import MAXModelConfig, MAXModelConfigBase
+from .pipeline_variants.overlap_text_generation import (
+    OverlapTextGenerationPipeline,
+)
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .profiling_config import ProfilingConfig
@@ -94,6 +98,7 @@ __all__ = [
     "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
+    "OverlapTextGenerationPipeline",
     "PipelineConfig",
     "PipelineModel",
     "PipelineRole",

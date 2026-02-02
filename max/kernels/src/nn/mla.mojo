@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -152,7 +152,7 @@ fn flare_mla_decoding[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -176,7 +176,7 @@ fn flare_mla_decoding[
         not ragged or rank == 3
     ), "only support rank 3 inputs for ragged inputs."
     __comptime_assert (
-        q.dtype == cache_t.dtype == output.dtype
+        q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
     @always_inline
@@ -256,7 +256,7 @@ fn flare_mla_decoding[
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     __comptime_assert q.rank == 4, "only support rank 4 inputs."
 
@@ -347,7 +347,7 @@ fn flare_mla_decoding_dispatch[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ]
     ] = None,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -1363,7 +1363,7 @@ fn flare_mla_prefill[
     """
     __comptime_assert rank == 3, "only support ragged inputs"
     __comptime_assert (
-        q.dtype == cache_t.dtype == output.dtype
+        q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     __comptime_assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
@@ -2947,7 +2947,9 @@ fn _k_cache_to_buffer[
         var head_dim_idx = idx[1]
 
         var cache_val = rebind[SIMD[dtype, width]](
-            k_cache.load[width=width](batch_idx, 0, token_idx, head_dim_idx)
+            k_cache.load[width=width](
+                batch_idx, 0, token_idx, head_dim_idx
+            ).cast[dtype]()
         )
 
         buffer.store(idx, cache_val)

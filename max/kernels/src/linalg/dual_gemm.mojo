@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,6 @@ from sys import align_of, is_defined, simd_width_of
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -798,7 +797,9 @@ fn multistage_dual_gemm_kernel[
 
 fn swilu[
     dtype: DType, width: Int
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     return (x * y) / (1 + exp(-x))
 
 
@@ -962,9 +963,7 @@ fn dual_gemm[
     *,
     transpose_b: Bool,
     binary_lambda_fn: binary_fn_type = swilu,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],

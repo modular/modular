@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,14 @@ from __future__ import annotations
 from max.driver import Buffer, DeviceStream
 
 
+def _combine_lists(
+    a: list[Buffer] | None, b: list[Buffer] | None
+) -> list[Buffer]:
+    a = a or []
+    b = b or []
+    return [*a, *b]
+
+
 class BlockCopyEngine:
     def __init__(
         self,
@@ -26,6 +34,8 @@ class BlockCopyEngine:
         device_tensors: list[Buffer],
         num_host_blocks: int,
         host_tensors: list[Buffer] | None,
+        device_scale_tensors: list[Buffer] | None,
+        host_scale_tensors: list[Buffer] | None,
     ) -> None:
         if num_host_blocks > 0 and host_tensors is None:
             raise ValueError(
@@ -41,9 +51,13 @@ class BlockCopyEngine:
             raise ValueError("Block size must be positive")
 
         # There is at least 1 device tensors
-        self.device_tensors = device_tensors
+        # Device scale tensors are only non-null if KVCache quantization is enabled.
+        self.device_tensors = _combine_lists(
+            device_tensors, device_scale_tensors
+        )
         # There can be 0 or len(self.device_tensors) host tensors
-        self.host_tensors = host_tensors
+        # Host scale tensors are only non-null if KVCache quantization is enabled.
+        self.host_tensors = _combine_lists(host_tensors, host_scale_tensors)
 
         self.block_size = block_size
         self.num_device_blocks = num_device_blocks
@@ -54,8 +68,7 @@ class BlockCopyEngine:
 
         # Scheduling memory copies on separate stream is only useful if we have
         # pinned host memory.
-
-        if self.host_tensors is not None:
+        if self.host_tensors:
             self.main_streams = [
                 self.host_tensors[i].device.default_stream
                 for i in range(len(self.device_tensors))
@@ -69,28 +82,34 @@ class BlockCopyEngine:
         return self.d2h_auxiliary_streams is not None
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
-        if self.host_tensors is None:
+        if not self.host_tensors:
             raise ValueError(
                 "Attempted to enqueue h2d copy but there is no host tensor"
             )
 
         # Copy block from host to each of the devices
         for device_tensor, host_tensor in zip(
-            self.device_tensors, self.host_tensors, strict=True
+            self.device_tensors,
+            self.host_tensors,
+            strict=True,
         ):
             device_tensor[dst, :, :, :, :, :].inplace_copy_from(
                 host_tensor[src, :, :, :, :, :]
             )
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
-        if self.host_tensors is None:
+        if not self.host_tensors:
             raise ValueError(
                 "Attempted to enqueue d2h copy but there is no host tensor"
             )
 
         # Copy the data from one device to the host.
         for i, (device_tensor, host_tensor) in enumerate(
-            zip(self.device_tensors, self.host_tensors, strict=True)
+            zip(
+                self.device_tensors,
+                self.host_tensors,
+                strict=True,
+            )
         ):
             src_block = device_tensor[src, :, :, :, :, :]
             dst_block = host_tensor[dst, :, :, :, :, :]

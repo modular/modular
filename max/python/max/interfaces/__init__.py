@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -68,7 +68,7 @@ from .pipeline_variants import (
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
-from .request import Request, RequestID, RequestType
+from .request import DUMMY_REQUEST_ID, Request, RequestID, RequestType
 from .scheduler import Scheduler, SchedulerError, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
@@ -98,6 +98,7 @@ Example:
 """
 
 __all__ = [
+    "DUMMY_REQUEST_ID",
     "AudioGenerationContextType",
     "AudioGenerationInputs",
     "AudioGenerationMetadata",

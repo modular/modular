@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -205,6 +205,30 @@ fn Idx[value: Int]() -> ComptimeInt[value]:
     Usage: Idx[5]() creates a ComptimeInt with value 5.
     """
     return ComptimeInt[value]()
+
+
+fn Idx(
+    value: IntLiteral,
+) -> ComptimeInt[
+    Int(
+        mlir_value=__mlir_attr[
+            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            value.value,
+            `> : !pop.scalar<index>> : index`,
+        ]
+    )
+]:
+    """Helper to create compile-time indices.
+
+    Args:
+        value: The compile-time integer value.
+
+    Returns:
+        A `ComptimeInt` instance with the specified compile-time value.
+
+    Usage: Idx[5]() creates a ComptimeInt with value 5.
+    """
+    return {}
 
 
 fn Idx(

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,9 @@ fn kernel_laneid(x: UnsafePointer[Int]):
     x[0] = Int(lane_id())
 
 
-fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):
+fn kernel_exp[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype]]) where dtype.is_floating_point():
     x[0] = exp(x[0])
 
 

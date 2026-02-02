@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,6 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import OptionalReg
 from sys import (
     align_of,
     bit_width_of,
@@ -94,7 +93,7 @@ fn test[
     arange_a: Bool = False,
     arange_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
-    config: OptionalReg[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
+    config: Optional[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
     M: Optional[Int] = None,
     N: Optional[Int] = None,
     K: Optional[Int] = None,

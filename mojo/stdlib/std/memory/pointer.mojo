@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,7 @@ from memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named
-from reflection.type_info import _unqualified_type_name
+from format._utils import FormatStruct, Named, TypeNames
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace
@@ -361,7 +360,7 @@ struct Pointer[
         """
         FormatStruct(writer, "Pointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 

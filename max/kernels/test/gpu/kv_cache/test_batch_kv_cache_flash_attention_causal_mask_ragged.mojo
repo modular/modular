@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,8 +32,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-
-from sys import has_amd_gpu_accelerator
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -396,14 +394,10 @@ def execute_ragged_flash_attention[
                                     ragged_offset + s, h, Int(hd)
                                 ]
                                 try:
-                                    # amd uses more aggressive split-k partitioning
-                                    var rtol_bf16 = (
-                                        2e-2 if has_amd_gpu_accelerator() else 1e-2
-                                    )
                                     assert_almost_equal(
                                         ref_val,
                                         test_val,
-                                        rtol=rtol_bf16 if dtype
+                                        rtol=1e-2 if dtype
                                         == DType.bfloat16 else 1e-4,
                                         atol=5e-3,  # numerical instability between naive and optimized kernels
                                     )

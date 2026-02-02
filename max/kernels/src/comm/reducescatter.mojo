@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -147,7 +147,7 @@ struct ReduceScatterConfig[
             num_elements if my_rank
             == Self.ngpus - 1 else self.rank_start + part
         )
-        self.largest_part = part + (num_elements % Self.ngpus)
+        self.largest_part = num_elements - (Self.ngpus - 1) * part
         self.thr_local_start = thread_idx * Self.simd_width
 
 

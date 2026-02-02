@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -334,8 +334,8 @@ fn irfft[
     Currently, only applies it to the last dimension.
 
     Args:
-        input: Complex input tensor (LayoutTensor).
-        output: Real output tensor (LayoutTensor).
+        input: Complex input tensor (TileTensor).
+        output: Real output tensor (TileTensor).
         n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
         buffer_size_mb: Estimated buffer size in MB.
         ctx: Device context.

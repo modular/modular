@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,14 +17,28 @@ standard library for formatting and writing data. These utilities are not
 intended for public use and may change without notice.
 """
 
+from builtin.constrained import _constrained_conforms_to
 from io.io import _printf
 from os import abort
+from reflection.type_info import _unqualified_type_name
 from sys import align_of, size_of
 from sys.info import is_gpu
 from sys.param_env import env_get_int
 
 from bit import byte_swap
 from memory import Span, bitcast, memcpy
+
+
+fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
+    @parameter
+    for i in range(Variadic.size(Ts)):
+        comptime T = Ts[i]
+        _constrained_conforms_to[
+            conforms_to(T, Writable),
+            Parent=Parent,
+            Element=T,
+            ParentConformsTo="Writable",
+        ]()
 
 
 struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
@@ -73,8 +87,8 @@ fn write_sequence_to[
     W: Writer, ElementFn: fn[T: Writer](mut T) raises StopIteration capturing
 ](
     mut writer: W,
-    open: StaticString = "[",
-    close: StaticString = "]",
+    start: StaticString = "[",
+    end: StaticString = "]",
     sep: StaticString = ", ",
 ):
     """Writes a sequence of elements to a writer using a callback function.
@@ -95,11 +109,11 @@ fn write_sequence_to[
 
     Args:
         writer: The writer to write to.
-        open: The opening delimiter (default: `"["`).
-        close: The closing delimiter (default: `"]"`).
+        start: The starting delimiter (default: `"["`).
+        end: The ending delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
     """
-    writer.write_string(open)
+    writer.write_string(start)
 
     var sequence_writer = _SequenceWriter(writer, sep)
 
@@ -109,7 +123,7 @@ fn write_sequence_to[
             sequence_writer.next_element()
         except:
             break
-    writer.write_string(close)
+    writer.write_string(end)
 
 
 @always_inline
@@ -118,8 +132,8 @@ fn write_sequence_to[
 ](
     mut writer: Some[Writer],
     *args: *Ts,
-    open: StaticString,
-    close: StaticString,
+    start: StaticString,
+    end: StaticString,
     sep: StaticString = ", ",
 ):
     """Writes a sequence of writable values to a writer with delimiters.
@@ -133,49 +147,72 @@ fn write_sequence_to[
     Args:
         writer: The writer to write to.
         args: The variadic list of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
+        start: The starting delimiter.
+        end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    write_sequence_to(writer, pack=args, open=open, close=close, sep=sep)
+    args._write_to(writer, start=start, end=end, sep=sep)
 
 
+# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 fn write_sequence_to[
-    *Ts: Writable,
+    size: Int,
+    ElementFn: fn[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
-    pack: VariadicPack[_, Writable, *Ts],
-    open: StaticString,
-    close: StaticString,
+    open: StaticString = "[",
+    close: StaticString = "]",
     sep: StaticString = ", ",
 ):
-    """Writes a sequence of writable values from a pack to a writer with delimiters.
+    """Writes a compile-time sized sequence of elements using an indexed callback.
 
-    This function formats a variadic pack of writable values as a delimited
-    sequence, writing each element separated by the specified separator and
+    This function writes a fixed number of elements determined at compile time by
+    calling the provided callback function for each index from 0 to `size - 1`.
+    Each element is separated by the specified separator, and the sequence is
     enclosed by opening and closing delimiters.
 
+    This overload is useful when you have a compile-time known number of elements
+    and need to generate each element based on its index.
+
     Parameters:
-        Ts: Types of the values in the pack. Must conform to `Writable`.
+        size: The number of elements in the sequence (must be known at compile time).
+        ElementFn: A callback function that writes a single element given its index.
+            It receives a mutable writer and the index as a compile-time parameter.
 
     Args:
         writer: The writer to write to.
-        pack: The variadic pack of values to write.
-        open: The opening delimiter.
-        close: The closing delimiter.
-        sep: The separator between items (default: `", "`).
+        open: The opening delimiter (default: `"["`).
+        close: The closing delimiter (default: `"]"`).
+        sep: The separator between elements (default: `", "`).
     """
     writer.write_string(open)
 
     @parameter
-    for i in range(pack.__len__()):
+    for i in range(size):
 
         @parameter
         if i != 0:
             writer.write_string(sep)
-        pack[i].write_to(writer)
+        ElementFn[i=i](writer)
+
     writer.write_string(close)
+
+
+@fieldwise_init
+struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
+    """A wrapper type that writes a comma-separated list of type names."""
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        @parameter
+        fn elements[i: Int](mut writer: Some[Writer]):
+            writer.write_string(_unqualified_type_name[Self.Types[i]]())
+
+        write_sequence_to[
+            size = Variadic.size(Self.Types),
+            ElementFn=elements,
+        ](writer, open="", close="")
 
 
 struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
@@ -298,7 +335,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        write_sequence_to(self._writer[], args, open="[", close="]")
+        args._write_to(self._writer[], start="[", end="]")
         return self
 
     @always_inline
@@ -315,7 +352,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        write_sequence_to(self._writer[], args, open="(", close=")")
+        args._write_to(self._writer[], start="(", end=")")
 
     # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
     @always_inline

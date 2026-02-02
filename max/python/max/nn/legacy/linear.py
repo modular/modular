@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -462,7 +462,7 @@ class Linear(Module, Shardable):
             assert self.weight_scale is not None
             weight_scale: TensorValue = self.weight_scale
 
-            if self.float8_config.quant_method == "modelopt":
+            if self.float8_config.is_nvfp4:
                 assert self.input_scale is not None
                 assert self.weight_scale_2 is not None
                 res = matmul_float4(

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,6 +27,7 @@ struct FunnySlice(ImplicitlyCopyable):
     var start: Int
     var upper: String
     var stride: Float64
+    var __slice_literal__: ()
 
 
 @fieldwise_init
@@ -34,6 +35,7 @@ struct BoringSlice(ImplicitlyCopyable):
     var a: Int
     var b: Int
     var c: String
+    var __slice_literal__: ()
 
 
 struct Sliceable:
