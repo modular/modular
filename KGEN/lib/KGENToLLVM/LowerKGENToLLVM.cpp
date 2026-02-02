@@ -934,7 +934,13 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
     auto indexAttr = cast<IntegerAttr>(op.getIndex());
     int64_t llvmIdx = getTypeConverter()->getRemappedFieldIndex(
         kgenStructType, indexAttr.getInt());
-    LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
+    unsigned addrSpace = 0;
+    if (auto addrSpaceAttr =
+            dyn_cast_if_present<IntegerAttr>(ptrType.getAddressSpace())) {
+      addrSpace = addrSpaceAttr.getInt();
+    }
+    LLVM::LLVMPointerType opaquePtr =
+        LLVM::LLVMPointerType::get(getContext(), addrSpace);
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, opaquePtr, elementType, adaptor.getContainer(),
         ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(llvmIdx)});

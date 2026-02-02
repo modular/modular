@@ -1623,7 +1623,8 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
   auto elementTypes = structType.getElementTypes();
   assert(elementTypes && "build requires concrete struct type");
   Type resultEltType = (*elementTypes)[index];
-  Type resultType = PointerType::get(resultEltType);
+  Type resultType =
+      PointerType::get(resultEltType, pointerType.getAddressSpace());
 
   result.addOperands(container);
   result.addAttribute("index",
@@ -1700,7 +1701,8 @@ ParseResult StructGEPOp::parse(OpAsmParser &parser, OperationState &result) {
       return parser.emitError(parser.getCurrentLocation(),
                               "struct field index out of bounds");
 
-    resultType = PointerType::get((*elementTypes)[index]);
+    resultType =
+        PointerType::get((*elementTypes)[index], pointerType.getAddressSpace());
   }
 
   // Resolve operand and set result
