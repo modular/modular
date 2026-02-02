@@ -67,6 +67,7 @@ MODELS = {
         "B200",
         "MI355",
         "2xH100",
+        "8xMI355",  # Currently needs nvshmem
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": [
