@@ -782,6 +782,14 @@ LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
   return failure();
 }
 
+std::optional<unsigned> PointerType::getAddrSpace() const {
+  if (TypedAttr addrSpaceAttr = getAddressSpace()) {
+    if (auto addrSpaceIntAttr = dyn_cast<IntegerAttr>(addrSpaceAttr))
+      return addrSpaceIntAttr.getInt();
+  }
+  return std::nullopt;
+}
+
 //===----------------------------------------------------------------------===//
 // DTypeType
 //===----------------------------------------------------------------------===//

@@ -363,6 +363,12 @@ def PointerType : KGENType<"Pointer", "pointer", [
     /// Get the element type as the provided type.
     template <typename ElTy>
     ElTy getElementAs() { return llvm::cast<ElTy>(getElementType()); }
+
+    /// Returns the address space, or std::nullopt if unresolved.
+    std::optional<unsigned> getAddrSpace() const;
+
+    /// Returns the address space, or zero if unresolved.
+    unsigned getAddrSpaceOrZero() const { return getAddrSpace().value_or(0); }
   }];
 }
 

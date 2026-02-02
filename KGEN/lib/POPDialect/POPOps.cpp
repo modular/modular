@@ -442,22 +442,19 @@ LogicalResult StackAllocationOp::verify() {
     return success();
   }
 
-  unsigned addressSpace = 0;
-  if (TypedAttr addrSpaceAttr = getType().getAddressSpace()) {
-    auto addrSpaceIntAttr = dyn_cast<IntegerAttr>(addrSpaceAttr);
-    if (!addrSpaceIntAttr) {
-      // The value is not yet concrete. Assume it's good.
-      return success();
-    }
-    addressSpace = addrSpaceIntAttr.getInt();
+  std::optional<unsigned> addressSpace = getType().getAddrSpace();
+  if (!addressSpace) {
+    // The address space is not yet concrete. Assume it's good.
+    return success();
   }
+
   // LLVM IR verifies the address space on alloca instruction on AMDGPU.
   // TODO: Re-enable this check when stdlib is updated.
   if (0 && target.getTriple().isAMDGCN()) {
     if (addressSpace != llvm::AMDGPUAS::PRIVATE_ADDRESS) {
       return emitOpError("expected private address space (")
              << (unsigned)llvm::AMDGPUAS::PRIVATE_ADDRESS
-             << "), but got address space (" << addressSpace << ')';
+             << "), but got address space (" << *addressSpace << ')';
     }
     return success();
   }
@@ -466,7 +463,7 @@ LogicalResult StackAllocationOp::verify() {
     if (addressSpace != llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL) {
       return emitOpError("expected local address space (")
              << (unsigned)llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL
-             << "), but got address space (" << addressSpace << ')';
+             << "), but got address space (" << *addressSpace << ')';
     }
     return success();
   }
