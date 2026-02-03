@@ -25,52 +25,10 @@ from typing import Any
 
 import max._interpreter_ops as ops
 import numpy as np
-from max import _core
+from max import _core, graph
 from max._core.dialects import mo, mosh
-from max._core.dialects.m import ArrayElementsAttr
 from max.driver import Buffer, Device
 from max.dtype import DType
-
-
-def _elements_attr_to_numpy(attr: Any, dtype: DType, shape: list[int]) -> Any:
-    """Convert an ElementsAttr to a numpy array.
-
-    Args:
-        attr: The elements attribute (dense array).
-        dtype: The target dtype.
-        shape: The target shape.
-
-    Returns:
-        A numpy array with the constant values.
-    """
-
-    # Handle M::ArrayElementsAttr - has a data property with PrimitiveArrayAttr
-    if isinstance(attr, ArrayElementsAttr):
-        # ArrayElementsAttr.data is a PrimitiveArrayAttr
-        # PrimitiveArrayAttr.data returns Sequence[int] (raw bytes)
-        primitive_attr = attr.data
-        raw_bytes = bytes(primitive_attr.data)
-        np_dtype = dtype.to_numpy()
-        return np.frombuffer(raw_bytes, dtype=np_dtype).reshape(shape)
-
-    # ElementsAttr should have methods to extract values
-    # Try various approaches based on the attribute type
-    if hasattr(attr, "to_numpy"):
-        return attr.to_numpy()
-
-    if hasattr(attr, "__iter__"):
-        # Try to iterate over values
-        values = list(attr)
-        np_dtype = dtype.to_numpy()
-        return np.array(values, dtype=np_dtype).reshape(shape)
-
-    # Last resort: try to get raw data if available
-    if hasattr(attr, "raw_data"):
-        np_dtype = dtype.to_numpy()
-        return np.frombuffer(attr.raw_data, dtype=np_dtype).reshape(shape)
-
-    raise ValueError(f"Cannot convert attribute to numpy: {type(attr)}")
-
 
 # Type alias for op handlers
 # Signature: (interpreter, op, input_buffers) -> output_buffers
@@ -205,51 +163,6 @@ def _get_output_device(op: _core.Operation, devices: list[Device]) -> Device:
     return _find_device(devices, "cpu", 0)
 
 
-def _extract_static_shape(shape_attr: Any) -> list[int] | None:
-    """Extract static shape from a shape attribute.
-
-    Returns None if the shape contains dynamic dimensions.
-
-    The shape_attr is typically a MOSH::ShapeAttr with a `values` property
-    containing TypedAttr elements. For static shapes, these are IntegerAttrs.
-    """
-    try:
-        # Handle MOSH::ShapeAttr - has a values property
-        if isinstance(shape_attr, mosh.ShapeAttr):
-            shape = []
-            for dim_attr in shape_attr.values:
-                # Check if it's an IntegerAttr (has .value property with int)
-                if hasattr(dim_attr, "value"):
-                    val = dim_attr.value
-                    if isinstance(val, int):
-                        shape.append(val)
-                    else:
-                        # Could be a symbolic dimension
-                        return None
-                else:
-                    # Dynamic or symbolic dimension
-                    return None
-            return shape
-
-        # Fallback: check if it's directly iterable with value properties
-        if hasattr(shape_attr, "__iter__"):
-            shape = []
-            for dim in shape_attr:
-                if hasattr(dim, "value"):
-                    # It's an IntegerAttr or similar
-                    shape.append(int(dim.value))
-                elif isinstance(dim, int):
-                    shape.append(dim)
-                else:
-                    # Dynamic dimension
-                    return None
-            return shape
-
-        return None
-    except (TypeError, AttributeError):
-        return None
-
-
 # Constant operations
 
 
@@ -257,10 +170,17 @@ def _extract_static_shape(shape_attr: Any) -> list[int] | None:
 def _handle_constant(
     devices: list[Device], op: mo.ConstantOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.constant by materializing its value.
+    """Handle mo.constant by materializing its value via C++ binding.
 
     Constants are mo.constant ops with embedded #M.dense_array values in the
-    'value' attribute.
+    'value' attribute. Supported attribute types:
+    - ArrayElementsAttr (#M.dense_array)
+    - DenseResourceElementsAttr (external blob)
+    - AlignedBytesAttr (#M.aligned_bytes)
+
+    This implementation always copies data from the MLIR attribute into a new
+    Buffer. For splat constants (1 element in source, many in output), the
+    single value is replicated.
 
     Args:
         devices: List of available devices.
@@ -271,39 +191,27 @@ def _handle_constant(
         List containing the materialized constant buffer.
     """
     # Extract the result type to get dtype and shape info
-    result = list(op.results)[0]
-    result_type = result.type
+    result_type = graph.Type.from_mlir(op.results[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    dtype = result_type.dtype
+    shape = result_type.shape
 
-    if isinstance(result_type, mo.TensorType):
-        dtype = DType(result_type.dtype.value)
-        # Extract shape from shape_attr
-        # For now, handle static shapes only
-        shape = _extract_static_shape(result_type.shape_attr)
-        if shape is None:
-            raise NotImplementedError(
-                "Dynamic shapes not yet supported for constants"
-            )
-    else:
+    if not graph.Shape.is_static(shape):
+        raise ValueError("Dynamic shapes not supported for constants")
+
+    target_device = result_type.device.to_device()
+    if not target_device.is_host:
         raise NotImplementedError(
-            f"Constant with non-tensor type: {result_type}"
+            f"Constant handling for device {target_device} not yet implemented. "
+            "Only CPU constants are currently supported."
         )
 
-    # Extract the value attribute
-    # The value is an ElementsAttr (dense array)
-    value_attr = op.value
-    # Convert to numpy and create buffer
-    # ElementsAttr should support conversion to numpy
-    try:
-        # TODO(EMF-95): Do not convert to intermediate numpy array here.
-        numpy_array = _elements_attr_to_numpy(value_attr, dtype, shape)
-        buffer = Buffer.from_numpy(numpy_array)
-        # Move to the appropriate device specified by the tensor type
-        target_device = _get_output_device(op, devices)
-        if not target_device.is_host:
-            buffer = buffer.to(target_device)
-        return [buffer]
-    except Exception as e:
-        raise NotImplementedError(f"Failed to materialize constant: {e}") from e
+    # Use C++ binding to create buffer directly from attribute
+    return [
+        _core.graph._buffer_from_constant_attr(
+            op.value, dtype, graph.Shape(shape).static_dims, target_device
+        )
+    ]
 
 
 # Mutable load operations
@@ -376,18 +284,14 @@ def _handle_static_broadcast_to(
     input_np = inputs[0].to_numpy()
 
     # Get target shape from result type
-    result = list(op.results)[0]
-    result_type = result.type
-    target_shape: tuple[int, ...] | None = None
-    if isinstance(result_type, mo.TensorType):
-        static_shape = _extract_static_shape(result_type.shape_attr)
-        if static_shape is not None:
-            target_shape = tuple(static_shape)
-
-    if target_shape is None:
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    shape = result_type.shape
+    if not graph.Shape.is_static(shape):
         raise NotImplementedError(
             f"Cannot determine broadcast target shape for {op}"
         )
+    target_shape = graph.Shape(shape).static_dims
 
     # Perform broadcast using numpy
     broadcast_np = np.broadcast_to(input_np, target_shape)
@@ -420,20 +324,17 @@ def _handle_broadcast_to(
     input_np = inputs[0].to_numpy()
 
     # Try to get target shape from result type first (static case)
-    result = list(op.results)[0]
-    result_type = result.type
-    target_shape: tuple[int, ...] | None = None
-    if isinstance(result_type, mo.TensorType):
-        static_shape = _extract_static_shape(result_type.shape_attr)
-        if static_shape is not None:
-            target_shape = tuple(static_shape)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
 
-    # For dynamic shapes, get from the new_shape operand
-    if target_shape is None and len(inputs) > 1:
+    shape = result_type.shape
+    if graph.Shape.is_static(shape):
+        target_shape = graph.Shape(shape).static_dims
+    elif len(inputs) > 1:
+        # For dynamic shapes, get from the new_shape operand
         assert isinstance(inputs[1], Buffer)
-        target_shape = tuple(inputs[1].to_numpy().tolist())
-
-    if target_shape is None:
+        target_shape = inputs[1].to_numpy().tolist()
+    else:
         raise NotImplementedError(
             f"Cannot determine broadcast target shape for {op}"
         )
@@ -564,18 +465,12 @@ def _reshape_common(
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
     # Get target shape from result type
-    result = list(op.results)[0]
-    result_type = result.type
-    if isinstance(result_type, mo.TensorType):
-        target_shape = _extract_static_shape(result_type.shape_attr)
-        if target_shape is None:
-            raise NotImplementedError(
-                f"Dynamic shapes not supported for {op_name}"
-            )
-    else:
-        raise NotImplementedError(
-            f"{op_name} with non-tensor result: {result_type}"
-        )
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    shape = result_type.shape
+    if not graph.Shape.is_static(shape):
+        raise NotImplementedError(f"Dynamic shapes not supported for {op_name}")
+    target_shape = graph.Shape(shape).static_dims
 
     result_np = input_np.reshape(target_shape)
     output = Buffer.from_numpy(result_np)
