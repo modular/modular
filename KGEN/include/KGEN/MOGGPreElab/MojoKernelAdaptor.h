@@ -232,11 +232,10 @@ struct MojoKernelOperandAdaptor {
   }
 };
 
-template <typename FuncOpType>
 struct MojoKernelFunctionAdaptor {
   // The underlying LIT or KGEN function.
   // Marked mutable because getSymName is not const for some reason.
-  mutable FuncOpType mojoCode;
+  mutable KGEN::LIT::FnOp mojoCode;
   // Input arguments.
   SmallVector<MojoKernelOperandAdaptor> inputArguments;
   // Output arguments (DPS).
@@ -244,7 +243,7 @@ struct MojoKernelFunctionAdaptor {
   // Output result which could be an argument if the function throws.
   std::optional<MojoKernelOperandAdaptor> outputResult;
 
-  MojoKernelFunctionAdaptor(FuncOpType op) : mojoCode(op) {
+  MojoKernelFunctionAdaptor(KGEN::LIT::FnOp op) : mojoCode(op) {
     auto argumentTypesNames = mojoCode->template getAttrOfType<ArrayAttr>(
         KGEN::MOGGPreElab::MOGG_ARG_TYPE_NAMES);
     auto resultTypeNameAttr =
@@ -309,8 +308,8 @@ struct MojoKernelFunctionAdaptor {
 
   // Synthesize the execute function from an elementwise method.
   static MojoKernelFunctionAdaptor
-  synthesizeExecuteFromElementwise(FuncOpType op) {
-    FuncOpType mojoCode = op;
+  synthesizeExecuteFromElementwise(KGEN::LIT::FnOp op) {
+    KGEN::LIT::FnOp mojoCode = op;
     MojoKernelFunctionAdaptor res;
     res.mojoCode = op;
     auto argumentTypesNames = mojoCode->template getAttrOfType<ArrayAttr>(
@@ -367,12 +366,8 @@ struct MojoKernelFunctionAdaptor {
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {
     StringRef sourceName;
-    if constexpr (std::is_same_v<LIT::FnOp, FuncOpType>) {
-      if (mojoCode.getSymName().has_value())
-        sourceName = *mojoCode.getSymName();
-    } else {
-      sourceName = mojoCode.getSymName();
-    }
+    if (mojoCode.getSymName().has_value())
+      sourceName = *mojoCode.getSymName();
 
     if (auto name = mojoCode->getAttr("sourceName"))
       sourceName = cast<StringAttr>(name).strref();
@@ -398,21 +393,20 @@ private:
 
 // A helper struct that provides useful information about a kernel after being
 // lowered through the Mojo compiler.
-template <typename FuncOpType>
 struct MojoKernelAdaptor {
   StringRef originalStructName;
   // The name of the op it implements.
   StringRef registeredOpName;
   // The kernel's entry point.
-  std::optional<MojoKernelFunctionAdaptor<FuncOpType>> executeFunction;
+  std::optional<MojoKernelFunctionAdaptor> executeFunction;
   // The kernel's optional shape function.
-  std::optional<MojoKernelFunctionAdaptor<FuncOpType>> shapeFunction;
+  std::optional<MojoKernelFunctionAdaptor> shapeFunction;
 
   // The kernel's optional elementwise function.
-  std::optional<MojoKernelFunctionAdaptor<FuncOpType>> elementwiseFunction;
+  std::optional<MojoKernelFunctionAdaptor> elementwiseFunction;
 
-  MojoKernelAdaptor(StringRef structName, FuncOpType execute, FuncOpType shape,
-                    FuncOpType elementwise)
+  MojoKernelAdaptor(StringRef structName, KGEN::LIT::FnOp execute,
+                    KGEN::LIT::FnOp shape, KGEN::LIT::FnOp elementwise)
       : originalStructName(structName) {
     if (execute) {
       executeFunction.emplace(execute);
@@ -441,8 +435,9 @@ struct MojoKernelAdaptor {
       if (!execute) {
         // We synthetize the execute function signature from the elementwise
         // function.
-        executeFunction = MojoKernelFunctionAdaptor<
-            FuncOpType>::synthesizeExecuteFromElementwise(elementwise);
+        executeFunction =
+            MojoKernelFunctionAdaptor::synthesizeExecuteFromElementwise(
+                elementwise);
       }
     }
   }
@@ -457,9 +452,8 @@ struct MojoKernelAdaptor {
 // Printers
 //===----------------------------------------------------------------------===//
 
-template <typename StreamType, typename FuncOpType>
-StreamType &operator<<(StreamType &os,
-                       const MojoKernelAdaptor<FuncOpType> &adaptor) {
+template <typename StreamType>
+StreamType &operator<<(StreamType &os, const MojoKernelAdaptor &adaptor) {
   os << "@register(" << adaptor.registeredOpName.str() << ")\n";
   os << "struct " << adaptor.originalStructName.str();
   if (adaptor.executeFunction.has_value()) {
@@ -475,9 +469,8 @@ StreamType &operator<<(StreamType &os,
   return os;
 }
 
-template <typename StreamType, typename FuncOpType>
-StreamType &operator<<(StreamType &os,
-                       const MojoKernelFunctionAdaptor<FuncOpType> &func) {
+template <typename StreamType>
+StreamType &operator<<(StreamType &os, const MojoKernelFunctionAdaptor &func) {
   return func.printNested(os, "");
 }
 
