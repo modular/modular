@@ -13,15 +13,14 @@
 
 """Flux2 attention and feedforward layers."""
 
-from typing import Optional, Tuple
-
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module, module_dataclass
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu
-from max.tensor import Tensor
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
+
 from .embeddings import apply_rotary_emb, get_1d_rotary_pos_embed
 from .normalizations import WeightedRMSNorm
 
@@ -53,9 +52,9 @@ class Flux2FeedForward(Module):
     def __init__(
         self,
         dim: int,
-        dim_out: Optional[int] = None,
+        dim_out: int | None = None,
         mult: float = 3.0,
-        inner_dim: Optional[int] = None,
+        inner_dim: int | None = None,
         bias: bool = False,
     ):
         """Initialize Flux2FeedForward.
@@ -95,9 +94,9 @@ class Flux2PosEmbed(Module):
     """Flux2 positional embedding with per-axis RoPE dimensions."""
 
     theta: int
-    axes_dim: Tuple[int, ...]
+    axes_dim: tuple[int, ...]
 
-    def __init__(self, theta: int, axes_dim: Tuple[int, ...]):
+    def __init__(self, theta: int, axes_dim: tuple[int, ...]):
         """Initialize Flux2PosEmbed.
 
         Args:
@@ -107,7 +106,7 @@ class Flux2PosEmbed(Module):
         self.theta = theta
         self.axes_dim = tuple(axes_dim)
 
-    def __call__(self, ids: Tensor) -> Tuple[Tensor, Tensor]:
+    def __call__(self, ids: Tensor) -> tuple[Tensor, Tensor]:
         """Compute rotary position embeddings.
 
         Args:
@@ -156,11 +155,11 @@ class Flux2Attention(Module):
         dim_head: int = 64,
         dropout: float = 0.0,
         bias: bool = False,
-        added_kv_proj_dim: Optional[int] = None,
-        added_proj_bias: Optional[bool] = True,
+        added_kv_proj_dim: int | None = None,
+        added_proj_bias: bool | None = True,
         out_bias: bool = True,
         eps: float = 1e-5,
-        out_dim: Optional[int] = None,
+        out_dim: int | None = None,
         elementwise_affine: bool = True,
     ):
         """Initialize Flux2Attention.
@@ -226,9 +225,7 @@ class Flux2Attention(Module):
             self.add_v_proj = Linear(
                 added_kv_proj_dim, self.inner_dim, bias=added_proj_bias
             )
-            self.to_add_out = Linear(
-                self.inner_dim, query_dim, bias=out_bias
-            )
+            self.to_add_out = Linear(self.inner_dim, query_dim, bias=out_bias)
         else:
             self.norm_added_q = None
             self.norm_added_k = None
@@ -240,10 +237,10 @@ class Flux2Attention(Module):
     def __call__(
         self,
         hidden_states: Tensor,
-        encoder_hidden_states: Optional[Tensor] = None,
+        encoder_hidden_states: Tensor | None = None,
         # attention_mask: Optional[Tensor] = None,
-        image_rotary_emb: Optional[Tuple[Tensor, Tensor]] = None,
-    ) -> Tensor | Tuple[Tensor, Tensor]:
+        image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+    ) -> Tensor | tuple[Tensor, Tensor]:
         """Apply dual-stream attention.
 
         Args:
@@ -383,7 +380,7 @@ class Flux2ParallelSelfAttention(Module):
         bias: bool = False,
         out_bias: bool = True,
         eps: float = 1e-5,
-        out_dim: Optional[int] = None,
+        out_dim: int | None = None,
         elementwise_affine: bool = True,
         mlp_ratio: float = 4.0,
         mlp_mult_factor: int = 2,
@@ -438,8 +435,8 @@ class Flux2ParallelSelfAttention(Module):
     def __call__(
         self,
         hidden_states: Tensor,
-        attention_mask: Optional[Tensor] = None,
-        image_rotary_emb: Optional[Tuple[Tensor, Tensor]] = None,
+        attention_mask: Tensor | None = None,
+        image_rotary_emb: tuple[Tensor, Tensor] | None = None,
     ) -> Tensor:
         """Apply parallel self-attention and MLP.
 

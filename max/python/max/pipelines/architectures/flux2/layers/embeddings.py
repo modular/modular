@@ -14,7 +14,6 @@
 """Embedding layers for Flux2."""
 
 import math
-from typing import Optional, Tuple
 
 from max import functional as F
 from max.dtype import DType
@@ -64,7 +63,7 @@ def get_timestep_embedding(
 
 def apply_rotary_emb(
     x: Tensor,
-    freqs_cis: Tuple[Tensor, Tensor],
+    freqs_cis: tuple[Tensor, Tensor],
     use_real: bool = True,
     use_real_unbind_dim: int = -1,
     sequence_dim: int = 2,
@@ -164,7 +163,7 @@ def get_1d_rotary_pos_embed(
     theta: float = 10000.0,
     use_real: bool = True,
     repeat_interleave_real: bool = True,
-) -> Tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor]:
     """Precompute the frequency tensor for complex exponentials (cis) with given dimensions.
 
     Args:
@@ -272,9 +271,9 @@ class TimestepEmbedding(Module):
         in_channels: int,
         time_embed_dim: int,
         act_fn: str = "silu",
-        out_dim: Optional[int] = None,
+        out_dim: int | None = None,
         post_act_fn: str | None = None,
-        cond_proj_dim: Optional[int] = None,
+        cond_proj_dim: int | None = None,
         sample_proj_bias: bool = True,
     ):
         """Initialize TimestepEmbedding MLP.

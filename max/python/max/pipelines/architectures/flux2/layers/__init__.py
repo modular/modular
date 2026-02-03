@@ -22,9 +22,9 @@ from .flux2_attention import (
 )
 
 __all__ = [
-    "Flux2SwiGLU",
-    "Flux2FeedForward",
-    "Flux2PosEmbed",
     "Flux2Attention",
+    "Flux2FeedForward",
     "Flux2ParallelSelfAttention",
+    "Flux2PosEmbed",
+    "Flux2SwiGLU",
 ]

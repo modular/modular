@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Optional, Tuple
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import TensorType
 from max.nn import Linear, Module
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
@@ -31,7 +30,6 @@ from .layers.normalizations import (
     AdaLayerNormContinuous,
     WeightedLayerNorm,
 )
-from .model_config import Flux2Config
 
 
 class Flux2TimestepGuidanceEmbeddings(Module):
@@ -115,7 +113,7 @@ class Flux2Modulation(Module):
 
     def __call__(
         self, temb: Tensor
-    ) -> Tuple[Tuple[Tensor, Tensor, Tensor], ...]:
+    ) -> tuple[tuple[Tensor, Tensor, Tensor], ...]:
         """Generate modulation parameters from timestep embedding.
 
         Args:
@@ -211,14 +209,14 @@ class Flux2TransformerBlock(Module):
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
-        temb_mod_params_img: Tuple[
-            Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]
+        temb_mod_params_img: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
         ],
-        temb_mod_params_txt: Tuple[
-            Tuple[Tensor, Tensor, Tensor], Tuple[Tensor, Tensor, Tensor]
+        temb_mod_params_txt: tuple[
+            tuple[Tensor, Tensor, Tensor], tuple[Tensor, Tensor, Tensor]
         ],
-        image_rotary_emb: Optional[Tuple[Tensor, Tensor]] = None,
-    ) -> Tuple[Tensor, Tensor]:
+        image_rotary_emb: tuple[Tensor, Tensor] | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """Forward pass for dual-stream transformer block.
 
         Args:
@@ -333,12 +331,12 @@ class Flux2SingleTransformerBlock(Module):
     def __call__(
         self,
         hidden_states: Tensor,
-        encoder_hidden_states: Optional[Tensor] = None,
-        temb_mod_params: Optional[Tuple[Tensor, Tensor, Tensor]] = None,
-        image_rotary_emb: Optional[Tuple[Tensor, Tensor]] = None,
+        encoder_hidden_states: Tensor | None = None,
+        temb_mod_params: tuple[Tensor, Tensor, Tensor] | None = None,
+        image_rotary_emb: tuple[Tensor, Tensor] | None = None,
         split_hidden_states: bool = False,
-        text_seq_len: Optional[int] = None,
-    ) -> Tensor | Tuple[Tensor, Tensor]:
+        text_seq_len: int | None = None,
+    ) -> Tensor | tuple[Tensor, Tensor]:
         """Forward pass for single-stream transformer block.
 
         Args:
@@ -394,7 +392,7 @@ class Flux2Transformer2DModel(Module):
 
     def __init__(
         self,
-        config,
+        config: Flux2Config,
     ):
         """Initialize Flux2Transformer2DModel.
 
@@ -527,10 +525,14 @@ class Flux2Transformer2DModel(Module):
             self.max_dtype, shape=["batch_size"], device=self.max_device
         )
         img_ids_type = TensorType(
-            DType.int64, shape=["batch_size", "image_seq_len", 4], device=self.max_device
+            DType.int64,
+            shape=["batch_size", "image_seq_len", 4],
+            device=self.max_device,
         )
         txt_ids_type = TensorType(
-            DType.int64, shape=["batch_size", "text_seq_len", 4], device=self.max_device
+            DType.int64,
+            shape=["batch_size", "text_seq_len", 4],
+            device=self.max_device,
         )
         guidance_type = TensorType(
             self.max_dtype, shape=["batch_size"], device=self.max_device
@@ -578,10 +580,14 @@ class Flux2Transformer2DModel(Module):
             self.max_dtype, shape=[batch_size], device=self.max_device
         )
         img_ids_type = TensorType(
-            DType.int64, shape=[batch_size, image_seq_len, 4], device=self.max_device
+            DType.int64,
+            shape=[batch_size, image_seq_len, 4],
+            device=self.max_device,
         )
         txt_ids_type = TensorType(
-            DType.int64, shape=[batch_size, text_seq_len, 4], device=self.max_device
+            DType.int64,
+            shape=[batch_size, text_seq_len, 4],
+            device=self.max_device,
         )
         guidance_type = TensorType(
             self.max_dtype, shape=[batch_size], device=self.max_device
