@@ -433,6 +433,7 @@ def test_config_init__raises_with_no_model_path() -> None:
         _ = PipelineConfig(weight_path="file.gguf")
 
 
+@prepare_registry
 @mock_pipeline_config_hf_dependencies
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
