@@ -195,13 +195,13 @@ fn TopKMaskLogitsKernel[
                     var idx = (i * block_size + tx) * vec_size + j
 
                     # Count elements greater than pivot_0 (higher ternary search bound).
-                    probs_gt_pivot_0_count[j] = 1 if (
+                    probs_gt_pivot_0_count[j] = Int32(1) if (
                         Float64(logits_vec[j]) > pivot_0 and idx < d
-                    ) else 0
+                    ) else Int32(0)
                     # Count elements greater than pivot_1 (lower ternary search bound).
-                    probs_gt_pivot_1_count[j] = 1 if (
+                    probs_gt_pivot_1_count[j] = Int32(1) if (
                         Float64(logits_vec[j]) > pivot_1 and idx < d
-                    ) else 0
+                    ) else Int32(0)
 
                     # Track the minimum value that's greater than 'low'.
                     # Used to narrow the search range from below.
@@ -235,9 +235,9 @@ fn TopKMaskLogitsKernel[
             )
 
             # Update the search bounds based on the counts and the minimum/maximum values.
-            if aggregate_gt_pivot_1 >= k:
+            if aggregate_gt_pivot_1 >= Int32(k):
                 low = pivot_1
-            elif aggregate_gt_pivot_0 >= k:
+            elif aggregate_gt_pivot_0 >= Int32(k):
                 low = pivot_0
                 high = min(pivot_1, Float64(max_le_high))
             else:
@@ -504,8 +504,8 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     @parameter
     for i in reversed(range(limit)):
         comptime offset = 1 << i
-        result.value += warp.shuffle_down(result.value, offset)
-        result.count += warp.shuffle_down(result.count, offset)
+        result.value += warp.shuffle_down(result.value, UInt32(offset))
+        result.count += warp.shuffle_down(result.count, UInt32(offset))
     return result
 
 
@@ -748,16 +748,16 @@ fn TopKSamplingFromProbKernel[
                 # For pivot_0.
                 var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
                 probs_gt_pivot_0_values[j] = probs_vec[j] if gt_pivot_0 else 0.0
-                probs_gt_pivot_0_counts[j] = 1 if (
+                probs_gt_pivot_0_counts[j] = Int32(1) if (
                     gt_pivot_0 and is_valid
-                ) else 0
+                ) else Int32(0)
 
                 # For pivot_1.
                 var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
                 probs_gt_pivot_1_values[j] = probs_vec[j] if gt_pivot_1 else 0.0
-                probs_gt_pivot_1_counts[j] = 1 if (
+                probs_gt_pivot_1_counts[j] = Int32(1) if (
                     gt_pivot_1 and is_valid
-                ) else 0
+                ) else Int32(0)
 
             var thread_value_0 = probs_gt_pivot_0_values.reduce_add()
             var thread_count_0 = probs_gt_pivot_0_counts.reduce_add()
@@ -783,11 +783,11 @@ fn TopKSamplingFromProbKernel[
             aggregate_gt_pivot_0 += block_vc_0
             aggregate_gt_pivot_1 += block_vc_1
 
-        if aggregate_gt_pivot_0.count < k:
+        if aggregate_gt_pivot_0.count < Int32(k):
             # Case 1: pivot_0 accepted - found acceptable threshold.
             break
 
-        if aggregate_gt_pivot_1.count < k:
+        if aggregate_gt_pivot_1.count < Int32(k):
             # Case 2: pivot_0 rejected, pivot_1 accepted.
             # Narrow search to [pivot_0, pivot_1].
             low = pivot_0
@@ -802,7 +802,7 @@ fn TopKSamplingFromProbKernel[
     barrier()
 
     if tx == 0:
-        output[bx] = sampled_id
+        output[bx] = Scalar[out_idx_type](sampled_id)
 
 
 fn topk_sampling_from_prob[
@@ -1046,12 +1046,12 @@ fn TopKSoftmaxSampleKernel[
                 for j in range(vec_size):
                     var idx = (i * block_size + tx) * vec_size + j
 
-                    probs_gt_pivot_0_count[j] = 1 if (
+                    probs_gt_pivot_0_count[j] = Int32(1) if (
                         Float64(logits_vec[j]) > pivot_0 and idx < d
-                    ) else 0
-                    probs_gt_pivot_1_count[j] = 1 if (
+                    ) else Int32(0)
+                    probs_gt_pivot_1_count[j] = Int32(1) if (
                         Float64(logits_vec[j]) > pivot_1 and idx < d
-                    ) else 0
+                    ) else Int32(0)
 
                     if Float64(logits_vec[j]) > low and idx < d:
                         min_gt_low = min(min_gt_low, logits_vec[j])
@@ -1075,9 +1075,9 @@ fn TopKSoftmaxSampleKernel[
                 max_le_high
             )
 
-            if aggregate_gt_pivot_1 >= k:
+            if aggregate_gt_pivot_1 >= Int32(k):
                 low = pivot_1
-            elif aggregate_gt_pivot_0 >= k:
+            elif aggregate_gt_pivot_0 >= Int32(k):
                 low = pivot_0
                 high = min(pivot_1, Float64(max_le_high))
             else:

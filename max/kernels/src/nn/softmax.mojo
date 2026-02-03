@@ -1267,9 +1267,11 @@ fn _online_softmax_iter_for_mma_output[
                 @parameter
                 for row in range(frag_num_rows):
                     var score_row_idx = (
-                        col_tile * num_colwise_lanes * frag_num_rows
-                        + lane_row * frag_num_rows
-                        + row
+                        UInt32(col_tile)
+                        * num_colwise_lanes
+                        * UInt32(frag_num_rows)
+                        + UInt32(lane_row * frag_num_rows)
+                        + UInt32(row)
                     )
 
                     # warp scratch has layout row_major(num_warps, num_rows). The
@@ -1289,9 +1291,11 @@ fn _online_softmax_iter_for_mma_output[
                 @parameter
                 for row in range(frag_num_rows):
                     var score_row_idx = (
-                        col_tile * num_colwise_lanes * frag_num_rows
-                        + lane_row * frag_num_rows
-                        + row
+                        UInt32(col_tile)
+                        * num_colwise_lanes
+                        * UInt32(frag_num_rows)
+                        + UInt32(lane_row * frag_num_rows)
+                        + UInt32(row)
                     )
 
                     @parameter
@@ -1393,9 +1397,11 @@ fn _online_softmax_iter_for_mma_output[
                 for row in range(frag_num_rows):
                     # Each thread handle two rows in the mma output.
                     var score_row_idx = (
-                        col_tile * num_colwise_lanes * frag_num_rows
-                        + lane_row * frag_num_rows
-                        + row
+                        UInt32(col_tile)
+                        * num_colwise_lanes
+                        * UInt32(frag_num_rows)
+                        + UInt32(lane_row * frag_num_rows)
+                        + UInt32(row)
                     )
 
                     warp_scratch[
@@ -1414,9 +1420,11 @@ fn _online_softmax_iter_for_mma_output[
                 @parameter
                 for row in range(frag_num_rows):
                     var score_row_idx = (
-                        col_tile * num_colwise_lanes * frag_num_rows
-                        + lane_row * frag_num_rows
-                        + row
+                        UInt32(col_tile)
+                        * num_colwise_lanes
+                        * UInt32(frag_num_rows)
+                        + UInt32(lane_row * frag_num_rows)
+                        + UInt32(row)
                     )
 
                     score_frag_rowsum[col_tile, row] = 0
@@ -1652,9 +1660,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             @parameter
             for row in range(frag_num_rows):
                 var score_row_idx = (
-                    col_tile * num_lanes_m
-                    + (lane // num_lanes_n) * frag_num_rows
-                    + row
+                    UInt32(col_tile) * num_lanes_m
+                    + (lane // num_lanes_n) * UInt32(frag_num_rows)
+                    + UInt32(row)
                 )
                 # warp scratch has layout row_major(num_warps, num_rows). The
                 # "score_row_idx" is the idx-th row in the score matrix.
@@ -1673,9 +1681,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             @parameter
             for row in range(frag_num_rows):
                 var score_row_idx = (
-                    col_tile * num_lanes_m
-                    + (lane // num_lanes_n) * frag_num_rows
-                    + row
+                    UInt32(col_tile) * num_lanes_m
+                    + (lane // num_lanes_n) * UInt32(frag_num_rows)
+                    + UInt32(row)
                 )
 
                 interwarp_frag_rowmax[col_tile, row] = rebind[Scalar[dtype]](
@@ -1725,9 +1733,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             @parameter
             for row in range(frag_num_rows):
                 var score_row_idx = (
-                    col_tile * num_lanes_m
-                    + (lane // num_lanes_n) * frag_num_rows
-                    + row
+                    UInt32(col_tile) * num_lanes_m
+                    + (lane // num_lanes_n) * UInt32(frag_num_rows)
+                    + UInt32(row)
                 )
                 var c = rebind[Scalar[dtype]](correction[col_tile, row])
                 warp_scratch[Int(warp_x), Int(score_row_idx)] = (
@@ -1745,9 +1753,9 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             @parameter
             for row in range(frag_num_rows):
                 var score_row_idx = (
-                    col_tile * num_lanes_m
-                    + (lane // num_lanes_n) * frag_num_rows
-                    + row
+                    UInt32(col_tile) * num_lanes_m
+                    + (lane // num_lanes_n) * UInt32(frag_num_rows)
+                    + UInt32(row)
                 )
                 interwarp_frag_rowsum[col_tile, row] = rebind[Scalar[dtype]](
                     warp_scratch[0, Int(score_row_idx)]

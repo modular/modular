@@ -778,7 +778,7 @@ struct ConvDirectNHWC[
 
         @parameter
         for i in range(micro_kernel_height):
-            input_base_offsets[i] = (
+            input_base_offsets[i] = Int32(
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
                 )
@@ -3322,10 +3322,10 @@ fn _conv_cudnn[
             ptr_meta[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             get_cudnn_dtype[input_type](),
-            input.dim[0](),
-            input.dim[3](),
-            input.dim[1](),
-            input.dim[2](),
+            Int16(input.dim[0]()),
+            Int16(input.dim[3]()),
+            Int16(input.dim[1]()),
+            Int16(input.dim[2]()),
         )
     )
 
@@ -3334,22 +3334,22 @@ fn _conv_cudnn[
             ptr_meta[].ptr_filter_desc,
             get_cudnn_dtype[filter_type](),
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter.dim[0](),
-            filter.dim[1](),
-            filter.dim[2](),
-            filter.dim[3](),
+            Int16(filter.dim[0]()),
+            Int16(filter.dim[1]()),
+            Int16(filter.dim[2]()),
+            Int16(filter.dim[3]()),
         )
     )
 
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
             ptr_meta[].ptr_conv_desc,
-            padding[0],
-            padding[1],
-            stride[0],
-            stride[1],
-            dilation[0],
-            dilation[1],
+            Int16(padding[0]),
+            Int16(padding[1]),
+            Int16(stride[0]),
+            Int16(stride[1]),
+            Int16(dilation[0]),
+            Int16(dilation[1]),
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             # cuDNN 8+ requires float32 accumulation when the I/O tensors are
             # bfloat16.
@@ -3360,7 +3360,9 @@ fn _conv_cudnn[
     )
 
     check_cudnn_error(
-        cudnnSetConvolutionGroupCount(ptr_meta[].ptr_conv_desc, num_groups)
+        cudnnSetConvolutionGroupCount(
+            ptr_meta[].ptr_conv_desc, Int16(num_groups)
+        )
     )
 
     check_cudnn_error(
@@ -3368,10 +3370,10 @@ fn _conv_cudnn[
             ptr_meta[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             get_cudnn_dtype[output_type](),
-            output.dim[0](),
-            output.dim[3](),
-            output.dim[1](),
-            output.dim[2](),
+            Int16(output.dim[0]()),
+            Int16(output.dim[3]()),
+            Int16(output.dim[1]()),
+            Int16(output.dim[2]()),
         )
     )
 
@@ -3492,9 +3494,11 @@ fn conv_gpu[
 
         @parameter
         for i in range(conv_rank):
+            comptime SIMDInt = Scalar[DType.int]
+
             var axis = i + 1  # skip batch axis
-            paddings_tensor[2 * axis] = padding[2 * i]  # before
-            paddings_tensor[2 * axis + 1] = padding[2 * i + 1]  # after
+            paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before
+            paddings_tensor[2 * axis + 1] = SIMDInt(padding[2 * i + 1])  # after
 
         var input_shape = rebind[IndexList[full_rank]](
             input.runtime_layout.shape.value.canonicalize()

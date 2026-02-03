@@ -45,7 +45,7 @@ from nn.topk import TopK_2
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn moe_create_indices_kernel[
     input_type: DType,
@@ -290,21 +290,21 @@ fn moe_create_indices_kernel[
                     )
 
                 # fill the expert_ids array with the active expert ids
-                expert_ids[num_experts_used] = i
+                expert_ids[num_experts_used] = Int32(i)
 
                 num_experts_used += 1
 
         # this is the token length for the last expert
-        expert_start_indices[num_experts_used] = num_tokens
+        expert_start_indices[num_experts_used] = UInt32(num_tokens)
         var last_expert_token_length = (
-            num_tokens - expert_start_indices[num_experts_used - 1]
+            UInt32(num_tokens) - expert_start_indices[num_experts_used - 1]
         )
         max_M = max(
             max_M, rebind[Scalar[indices_type]](last_expert_token_length)
         )
 
         expert_usage_stats[0] = max_M
-        expert_usage_stats[1] = num_experts_used
+        expert_usage_stats[1] = UInt32(num_experts_used)
 
 
 @always_inline
@@ -403,8 +403,8 @@ fn _count_expert_tokens[
             offset += preceding_thread_writes
 
             # If this token matches, store its index in shared memory
-            if state and offset < expected_count:
-                smem[0, offset] = idx + i
+            if state and offset < UInt64(expected_count):
+                smem[0, offset] = UInt32(idx + i)
 
     var expert_id = (
         topk_ids[
@@ -422,8 +422,8 @@ fn _count_expert_tokens[
     var offset = total_writes + preceding_thread_writes
     total_writes += warp_writes
 
-    if state and offset < expected_count:
-        smem[0, offset] = bg_params.remainder_start_idx
+    if state and offset < UInt64(expected_count):
+        smem[0, offset] = UInt32(bg_params.remainder_start_idx)
 
     return total_writes
 
@@ -496,13 +496,13 @@ fn _copy_tokens_smem_to_gmem[
             @parameter
             for i in range(width):
                 token_expert_order[
-                    g_offset_copy + smem_idx + i
+                    g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 ] = source_vector[i]
                 restore_token_order[Int(source_vector[i])] = (
-                    g_offset_copy + smem_idx + i
+                    g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 )
 
-    var start_idx = UInt((smem_writes // width) * width)
+    var start_idx = UInt((smem_writes // UInt64(width)) * UInt64(width))
 
     g_offset_copy += UInt32(start_idx)
 
@@ -567,15 +567,17 @@ fn _copy_tokens_to_gmem[
                 MaskType
             ](state)
             var thr_tokens_seen = (
-                tokens_seen + preceding_thread_writes + (1 if state else 0)
+                tokens_seen
+                + preceding_thread_writes
+                + UInt64(1 if state else 0)
             )
 
             # we have already writeen expected_count tokens to global memory since they were in shared memory.
             # so we only need to write the remaining tokens to global memory.
-            if thr_tokens_seen >= expected_count and state:
+            if thr_tokens_seen >= UInt64(expected_count) and state:
                 token_expert_order[
                     g_offset_copy + UInt32(preceding_thread_writes)
-                ] = (idx + i)
+                ] = UInt32(idx + i)
                 restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
                 )
@@ -596,20 +598,20 @@ fn _copy_tokens_to_gmem[
     # Use same warp voting technique for remainder elements
     var _, preceding_thread_writes = calculate_warp_offset[MaskType](state)
     var temp_current_writes = (
-        tokens_seen + preceding_thread_writes + (1 if state else 0)
+        tokens_seen + preceding_thread_writes + UInt64(1 if state else 0)
     )
 
-    if temp_current_writes >= expected_count and state:
+    if temp_current_writes >= UInt64(expected_count) and state:
         token_expert_order[
             g_offset_copy + UInt32(preceding_thread_writes)
-        ] = bg_params.remainder_start_idx
+        ] = UInt32(bg_params.remainder_start_idx)
         restore_token_order[
             bg_params.remainder_start_idx
         ] = g_offset_copy + UInt32(preceding_thread_writes)
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn moe_create_indices_bucket_group_kernel[
     input_type: DType,
@@ -772,7 +774,7 @@ fn moe_create_indices_bucket_group_kernel[
         )
 
         # write the rest of the tokens not in shared memory into global memory
-        if total_writes > expected_count:
+        if total_writes > UInt64(expected_count):
             _copy_tokens_to_gmem[expected_count](
                 topk_ids,
                 smem,
@@ -930,13 +932,13 @@ fn _warp_bitonic_sort[
         @parameter
         for step_i in reversed(range(stage_i)):
             var step = 1 << step_i
-            val = bitonic_sort_step(val, step, stage, i)
+            val = bitonic_sort_step(val, UInt32(step), UInt32(stage), i)
 
     return val
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn group_limited_router_kernel[
     scores_type: DType,
@@ -1084,7 +1086,7 @@ fn group_limited_router_kernel[
             )
 
             if tid < topk_group:
-                selected_group[tid] = sorted_group_id.p
+                selected_group[tid] = Int32(sorted_group_id.p)
 
         # Check if this group is selected
         barrier()
@@ -1092,15 +1094,15 @@ fn group_limited_router_kernel[
 
         @parameter
         for i in range(topk_group):
-            if selected_group[i] == thread_group_id:
-                selected_group_smem_offset = i * n_experts_per_tok
+            if selected_group[i] == Int32(thread_group_id):
+                selected_group_smem_offset = Int32(i * n_experts_per_tok)
 
         if selected_group_smem_offset >= 0:
             # Store the selected group's top `n_experts_per_tok` experts in
             # shared memory.
             if tid_in_group < n_experts_per_tok:
                 shared_mem[
-                    selected_group_smem_offset + tid_in_group
+                    selected_group_smem_offset + Int32(tid_in_group)
                 ] = sorted_group
 
         # Now, we use the first warp to find the global top `n_experts_per_tok` experts.

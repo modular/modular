@@ -88,13 +88,15 @@ fn calculate_symmetric_vector[
     # data is ~[1, 1, 1, 1] + `negative_steps`
     var f32_scale = (max_value / 1.0) if (
         result_range == 0
-    ) else result_range / positive_steps
+    ) else result_range / Scalar[input_dtype](positive_steps)
 
     # TODO: consider clipping values
     var data_rounded = round(data / f32_scale).cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
-    var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
+    var data_quantized = (data_rounded + Int8(negative_steps)).cast[
+        DType.uint8
+    ]()
 
     return data_quantized, f32_scale
 
