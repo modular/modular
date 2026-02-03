@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -377,7 +377,7 @@ fn test_dual_matmul[
     _ = mat_a^
     _ = mat_b01^
 
-    comptime cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
+    comptime cbrt_eps = exp2(Float64(FPUtils[dst_type].mantissa_width()) / -3)
     comptime dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):

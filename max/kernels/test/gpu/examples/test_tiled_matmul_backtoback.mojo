@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -697,7 +697,9 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
         for k in range(K):
             # mat_a.tensor[m, k] = ((m + 1) / K).cast[src_type]()
             # mat_a.tensor[m, k] = (1 / K).cast[src_type]()
-            mat_a_tensor[m, k] = ((k + m * K) / (M * K)).cast[src_type]()
+            mat_a_tensor[m, k] = (Float64(k + m * K) / Float64(M * K)).cast[
+                src_type
+            ]()
     for k in range(K):
         for l in range(L):
             # mat_b.tensor[k, l] = 1

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -247,13 +247,7 @@ class PrefillScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        pruned_ids = (
-            self.batch_constructor.advance_requests_and_collect_invalid_ids(
-                inputs.batches
-            )
-        )
-        for request_id in pruned_ids:
-            del responses[request_id]
+        self.batch_constructor.advance_requests(inputs)
 
         # Send fully encoded requests to decode queue.
         for replica_idx, replica in enumerate(self.batch_constructor.replicas):

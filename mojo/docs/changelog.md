@@ -33,7 +33,67 @@ what we publish.
   types, please add a `__slice_literal__: () = ()` argument to their
   constructors.
 
+- `trait` declarations no longer automatically inherit from
+  `ImplicitlyDestructible`. `struct` declarations are not changed, and continue
+  to inherit from `ImplicitlyDestructible`.
+
+  Previously, the `@explicit_destroy` annotation was required to opt-out of
+  `ImplicitlyDestructible` conformance. Now, if a trait's usage depends on
+  implicit destructibility, it must opt-in explicitly:
+
+  ```mojo
+  # Before
+  trait Foo:
+      ...
+
+  # After:
+  trait Foo(ImplicitlyDestructible):
+      ...
+  ```
+
+  Conversely, if a trait wanted to support non-implicitly-destructible types,
+  it no longer needs to be annotated with `@explicit_destroy`:
+
+  ```mojo
+  # Before
+  @explicit_destroy
+  trait Foo:
+      ...
+
+  # After
+  trait Foo:
+      ...
+  ```
+
+  Making `struct` continue to inherit from `ImplicitlyDestructible` and not
+  `trait` is intended to balance usability and familiarity in the common case,
+  with the need to foster broad Mojo ecosystem support for explicitly destroyed
+  types.
+
+  It's not a problem if the majority of `struct` types are
+  `ImplicitlyDestructible` in practice. However, if many ecosystem libraries are
+  written with unnecessary `ImplicitlyDestructible` bounds, that would hamper
+  the usability of any individual `struct` type that opts-in to being explicitly
+  destroyed.
+
+  Libraries with generic algorithms and types should be written to accomodate
+  linear types. Making `ImplicitlyDestructible` opt-in for traits
+  encourages a default stance of support, with specific types and functions
+  only opting-in to the narrower `ImplicitlyDestructible` requirement if they
+  truly need it.
+
+  The majority of generic algorithms that take their inputs by reference should
+  not be affected.
+
 ### Library changes
+
+- The `itertools` module now includes three new iterator combinators:
+  - `cycle(iterable)`: Creates an iterator that cycles through elements
+    indefinitely
+  - `take_while[predicate](iterable)`: Yields elements while the predicate
+    returns True
+  - `drop_while[predicate](iterable)`: Drops elements while the predicate
+    returns True, then yields the rest
 
 - Math functions in `std.math` (`exp`, `exp2`, `log2`, `erf`, `tanh`, `sin`,
   `cos`, `tan`, `acos`, `asin`, `atan`, `atan2`, `acosh`, `asinh`, `atanh`,
@@ -109,6 +169,14 @@ what we publish.
 - All traits and structs with `@register_passable("trivial")` decorator are now
   extending `TrivialRegisterType` trait. The decorator is removed from them.
 
+- `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
+  their arguments to be `Writable`.
+
+- The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
+  casting the operands to Float64 before dividing. This deprecation is to help
+  prepare to migrate `Int.__truediv__` to return `Int`, which could be a quietly
+  breaking change.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
@@ -134,3 +202,7 @@ what we publish.
 - [Issue #5875](https://github.com/modular/modular/issues/5875): Storing
   `SIMD[DType.bool, N]` with width > 1 to a pointer and reading back
   element-wise now returns correct values.
+
+- `StringSlice.find`: Fixed integer overflow bug in SIMD string search that
+  caused searches to fail when searching for strings longer than
+  `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.

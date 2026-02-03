@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -280,7 +280,7 @@ fn run_mma_fp32_tf32(
 
     var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print("Basic Tensor core kernel:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -335,7 +335,7 @@ fn run_mma_fp32_tf32(
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -447,7 +447,7 @@ fn run_mma_fp32_bf16(
 
     var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print("Basic Tensor core kernel:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -501,7 +501,7 @@ fn run_mma_fp32_bf16(
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -611,7 +611,7 @@ fn run_mma_fp32_bf16_2(
 
     var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print("Basic Tensor core kernel:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -666,7 +666,7 @@ fn run_mma_fp32_bf16_2(
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -776,7 +776,7 @@ fn run_mma_fp32_fp16(
 
     var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print("Basic Tensor core kernel:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -831,7 +831,7 @@ fn run_mma_fp32_fp16(
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -941,7 +941,7 @@ fn run_mma_fp16_fp16(
 
     var nstime = ctx.execution_time[run_func_mma](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print("Basic Tensor core kernel:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -995,7 +995,7 @@ fn run_mma_fp16_fp16(
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("Naive matmul kernel:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")

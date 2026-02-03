@@ -13,6 +13,7 @@ modular_py_library(
         "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/graph",
         "@mojo//:python",
         requirement("numpy"),
     ],
