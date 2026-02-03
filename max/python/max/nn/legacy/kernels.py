@@ -2042,6 +2042,64 @@ def mla_decode_branch_fp8(
     )[0].tensor
 
 
+def _build_mla_mask_parameters(
+    mask_variant: MHAMaskVariant,
+) -> dict[str, int | str | DType]:
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    return {
+        "mask_str": mha_mask_config.attention_mask_variant.value,
+        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
+    }
+
+
+def _validate_mla_prefill_decode_graph_inputs(
+    q: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_params: KVCacheParams,
+    layer_idx: TensorValue,
+    *,
+    op_name: str,
+    tensor_name: str = "q",
+    expected_dtype: DType | None = None,
+) -> None:
+    input_rank_expected = 3
+    if q.rank != input_rank_expected:
+        raise ValueError(
+            f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
+        )
+
+    if expected_dtype is not None and q.dtype != expected_dtype:
+        raise ValueError(
+            f"expected {tensor_name} to be dtype: {expected_dtype}, got {q.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+
+    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
+        raise ValueError(
+            f"unsupported cache strategy for {op_name}: {kv_params.cache_strategy}"
+        )
+
+    assert kv_params.page_size is not None
+
+
+def _build_mla_prefill_decode_out_type(
+    q: TensorValue,
+    v_head_dim: int,
+) -> TensorType:
+    return TensorType(
+        dtype=q.dtype,
+        shape=[q.shape[0], q.shape[1], v_head_dim],
+        device=q.device,
+    )
+
+
 def mla_prefill_decode_graph_fp8(
     q: TensorValue,
     input_row_offsets: TensorValue,
@@ -2065,45 +2123,52 @@ def mla_prefill_decode_graph_fp8(
     v_head_dim: int,
     float8_config: Float8Config,
 ) -> TensorValue:
+    """Fused MLA prefill/decode kernel for FP8.
+
+    Switches between prefill and decode based on the maximum sequence length in
+    the batch. See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the
+    dedicated paths.
+
+    Args:
+        q: Combined query tensor with nope+rope parts.
+        input_row_offsets: Row offsets for the batch.
+        freqs_cis: RoPE frequency tensor.
+        kv_a_proj_layernorm: RMSNorm gamma for KV cache.
+        buffer_row_offsets, cache_offsets, buffer_length: One-shot prefill plan.
+        kv_b_proj, kv_b_proj_scale: KV up-projection weights and scales.
+        w_uk, w_uk_scale, w_uv, w_uv_scale: Decode projection weights/scales.
+        kv_params: KV cache parameters.
+        kv_collection: Paged KV cache values.
+        layer_idx: Layer index (uint32).
+        mask_variant: Attention mask variant.
+        scale: Attention scale.
+        epsilon: RMSNorm epsilon.
+        v_head_dim: Value head dimension.
+        float8_config: Float8 configuration used for scaling.
+
+    Returns:
+        Output tensor of shape [total_seq_len, num_heads, v_head_dim].
+
+    Raises:
+        ValueError: If input ranks/dtypes or cache strategy are invalid.
+        AssertionError: If float8 scale block sizes are not set.
     """
-    This is a manually fused kernel that performs attention calculation for the
-    MultiLatentAttentionWithRopeFp8 Module. It will automatically switch between
-    prefill and decode compute paths based on the maximum sequence length in
-    this batch.
 
-    See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the prefill and
-    decode compute paths respectively.
-    """
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_prefill_decode_graph_fp8",
+    )
 
-    input_rank_expected = 3
-    if q.rank != input_rank_expected:
-        raise ValueError(
-            f"expected q of rank {input_rank_expected} but got {q.rank}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
-
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
-        )
-
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
-        )
-
-    assert kv_params.page_size is not None
     assert float8_config.input_scale.block_size is not None
     assert float8_config.weight_scale.block_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
+    parameters = {
+        **_build_mla_mask_parameters(mask_variant),
         "m_scale_granularity": float8_config.input_scale.block_size[0],
         "n_scale_granularity": float8_config.weight_scale.block_size[0],
         "k_scale_granularity": float8_config.weight_scale.block_size[1],
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
     }
 
     input_values: MutableSequence[Value[Any]] = [
@@ -2129,17 +2194,91 @@ def mla_prefill_decode_graph_fp8(
         "mo.mla.graph.prefill.decode.paged",
         device=q.device,
         values=input_values,
-        out_types=[
-            TensorType(
-                dtype=q.dtype,
-                shape=[
-                    q.shape[0],
-                    q.shape[1],
-                    v_head_dim,
-                ],
-                device=q.device,
-            )
-        ],
+        out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
+        parameters=parameters,
+    )[0].tensor
+
+
+def mla_prefill_decode_graph_bf16(
+    q: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    buffer_length: TensorValue,
+    kv_b_proj: TensorValue,
+    w_uk: TensorValue,
+    w_uv: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    epsilon: float,
+    v_head_dim: int,
+) -> TensorValue:
+    """BF16 mega-kernel for MLA prefill/decode.
+
+    Switches between prefill and decode based on the maximum sequence length in
+    the batch.
+
+    Args:
+        q: Combined query tensor with nope+rope parts.
+        input_row_offsets: Row offsets for the batch.
+        freqs_cis: RoPE frequency tensor.
+        kv_norm_gamma: RMSNorm gamma for KV cache.
+        buffer_row_offsets, cache_offsets, buffer_length: One-shot prefill plan.
+        kv_b_proj: KV up-projection weights.
+        w_uk, w_uv: Decode/output projection weights.
+        kv_params: KV cache parameters.
+        kv_collection: Paged KV cache values.
+        layer_idx: Layer index (uint32).
+        mask_variant: Attention mask variant.
+        scale: Attention scale.
+        epsilon: RMSNorm epsilon.
+        v_head_dim: Value head dimension.
+
+    Returns:
+        Output tensor of shape [total_seq_len, num_heads, v_head_dim].
+
+    Raises:
+        ValueError: If input ranks/dtypes or cache strategy are invalid.
+    """
+
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_prefill_decode_graph_bf16",
+        expected_dtype=kv_params.dtype,
+    )
+
+    parameters = _build_mla_mask_parameters(mask_variant)
+
+    input_values: MutableSequence[Value[Any]] = [
+        q,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        buffer_row_offsets[0],  # one-shot prefill.
+        cache_offsets[0],  # one-shot prefill.
+        buffer_length[0],  # one-shot prefill.
+        kv_b_proj,
+        w_uk,
+        w_uv,
+        *kv_collection,
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+
+    return ops.inplace_custom(
+        "mo.mla.graph.prefill.decode.bf16.paged",
+        device=q.device,
+        values=input_values,
+        out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
         parameters=parameters,
     )[0].tensor
 
