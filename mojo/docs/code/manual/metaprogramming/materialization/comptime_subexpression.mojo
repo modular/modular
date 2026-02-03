@@ -11,30 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.globals import global_constant
 from testing import assert_equal
+from layout import Layout
 
 
-fn use_lookup(idx: Int) -> Int64:
-    comptime numbers: InlineArray[Int64, 10] = [
-        1,
-        3,
-        14,
-        34,
-        63,
-        101,
-        148,
-        204,
-        269,
-        343,
-    ]
-    ref lookup_table = global_constant[numbers]()
-    if idx < len(lookup_table):
-        return lookup_table[idx]
-    else:
-        return 0
+fn lookup_fn[idx: Int](value: Int) -> Int:
+    comptime my_constants = [3, 6, 9]
+    return comptime (my_constants[idx]) * value
+
+
+fn layout_size() -> Int:
+    comptime layout = Layout.row_major(16, 8)
+    var size = comptime (layout.size())
+    return size
 
 
 def main():
-    var x = use_lookup(3)
-    assert_equal(x, 34)
+    var x = lookup_fn[1](4)
+    assert_equal(x, 24)
+
+    var y = layout_size()
+    assert_equal(y, 128)
