@@ -276,18 +276,24 @@ class PixelGenerationTokenizer(
 
     @staticmethod
     def _prepare_latent_image_ids(
-        height: int, width: int
+        height: int,
+        width: int,
+        batch_size: int | None = None,
     ) -> npt.NDArray[np.float32]:
-        latent_image_ids = np.zeros((height, width, 3))
-        latent_image_ids[..., 1] = (
-            latent_image_ids[..., 1] + np.arange(height)[:, None]
+        t_coords, h_coords, w_coords, l_coords = np.meshgrid(
+            np.array([0]),
+            np.arange(height),
+            np.arange(width),
+            np.array([0]),
+            indexing="ij",
         )
-        latent_image_ids[..., 2] = (
-            latent_image_ids[..., 2] + np.arange(width)[None, :]
-        )
-        return latent_image_ids.reshape(-1, latent_image_ids.shape[-1]).astype(
-            np.float32
-        )
+        latent_ids = np.stack([t_coords, h_coords, w_coords, l_coords], axis=-1)
+        latent_ids = latent_ids.reshape(-1, 4)
+        
+        if batch_size is not None:
+            latent_ids = np.tile(latent_ids[np.newaxis, :, :], (batch_size, 1, 1))
+        
+        return latent_ids.astype(np.float32)
 
     def _randn_tensor(
         self,
@@ -362,7 +368,7 @@ class PixelGenerationTokenizer(
 
         latents = self._randn_tensor(shape, seed)
         latent_image_ids = self._prepare_latent_image_ids(
-            latent_height // 2, latent_width // 2
+            latent_height // 2, latent_width // 2, batch_size=batch_size
         )
 
         return latents, latent_image_ids
