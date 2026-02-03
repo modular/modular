@@ -27,13 +27,13 @@ import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
 from max._core.dialects import mo, mosh
-from max.driver import Buffer, Device
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
 # Type alias for op handlers
-# Signature: (interpreter, op, input_buffers) -> output_buffers
+# Signature: (op, input_buffers) -> output_buffers
 OpHandler = Callable[
-    [list[Device], Any, Sequence[Buffer | None]],
+    [Any, Sequence[Buffer | None]],
     Sequence[Buffer | None],
 ]
 
@@ -57,7 +57,7 @@ def register_op_handler(
 
     Example:
         @register_op_handler(mo.AddOp)
-        def _handle_add(devices, op, inputs):
+        def _handle_add(op, inputs):
             # Implementation
             return [output_buffer]
     """
@@ -101,101 +101,12 @@ def lookup_handler(op: _core.Operation) -> OpHandler | None:
     return None
 
 
-# Helper functions for type conversion and device handling
-
-
-def _find_device(devices: list[Device], label: str, device_id: int) -> Device:
-    """Find a device matching the given label and ID.
-
-    Args:
-        devices: List of available devices.
-        label: Device label ("cpu" or "gpu").
-        device_id: Device ID.
-
-    Returns:
-        The matching device, or the first host device as fallback.
-    """
-    # Normalize label for comparison
-    is_host = label.lower() == "cpu"
-
-    for device in devices:
-        if is_host and device.is_host:
-            return device
-        elif not is_host and not device.is_host:
-            # For GPU, we could also check device ID if needed
-            # For now, return first non-host device
-            return device
-
-    # Fallback: return first device that matches host requirement
-    for device in devices:
-        if device.is_host:
-            return device
-
-    # Last resort: return first device
-    return devices[0]
-
-
-def _get_output_device(op: _core.Operation, devices: list[Device]) -> Device:
-    """Get the target device for an operation's output.
-
-    Extracts the device from the operation's first result type. For MO tensor
-    types, the device is encoded in the device_ref attribute.
-
-    Args:
-        op: The operation to get the output device for.
-        devices: List of available devices to match against.
-
-    Returns:
-        The target device for the operation's output.
-    """
-    # Get the result type
-    results = list(op.results)
-    if not results:
-        # Operations without results - use CPU as default
-        return _find_device(devices, "cpu", 0)
-
-    result_type = results[0].type
-    if isinstance(result_type, mo.TensorType):
-        device_ref = result_type.device_ref
-        return _find_device(devices, device_ref.label, device_ref.id)
-
-    # Fallback to CPU for non-tensor types
-    return _find_device(devices, "cpu", 0)
-
-
-def _get_host_output_device(
-    op: _core.Operation, devices: list[Device]
-) -> Device:
-    """Get the target device for an operation's output, requiring it to be host.
-
-    This function validates that the target device is a host (CPU) device
-    and raises an exception if not. Use this for operations that cannot
-    fall back to CPU execution when targeting GPU.
-
-    Args:
-        op: The operation to get the output device for.
-        devices: List of available devices to match against.
-
-    Returns:
-        The target device for the operation's output.
-
-    Raises:
-        NotImplementedError: If the target device is not a host device.
-    """
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        raise NotImplementedError(
-            f"GPU execution not supported for {type(op).__name__} in MO interpreter"
-        )
-    return target_device
-
-
 # Constant operations
 
 
 @register_op_handler(mo.ConstantOp)
 def _handle_constant(
-    devices: list[Device], op: mo.ConstantOp, inputs: Sequence[Buffer | None]
+    op: mo.ConstantOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.constant by materializing its value via C++ binding.
 
@@ -211,7 +122,6 @@ def _handle_constant(
     value is replicated on CPU before transfer.
 
     Args:
-        devices: List of available devices.
         op: The constant operation.
         inputs: Input buffers (empty for constants).
 
@@ -231,9 +141,8 @@ def _handle_constant(
 
     # Always create buffer on CPU first (C++ binding uses memcpy which
     # requires host memory). Splatting also happens on CPU.
-    cpu_device = _find_device(devices, "cpu", 0)
     cpu_buffer = _core.graph._buffer_from_constant_attr(
-        op.value, dtype, graph.Shape(shape).static_dims, cpu_device
+        op.value, dtype, graph.Shape(shape).static_dims, CPU()
     )
 
     # Transfer to target device if not CPU
@@ -248,7 +157,7 @@ def _handle_constant(
 
 @register_op_handler(mo.MutableLoadOp)
 def _handle_mutable_load(
-    devices: list[Device], op: mo.MutableLoadOp, inputs: Sequence[Buffer | None]
+    op: mo.MutableLoadOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer | None]:
     """Handle mo.mutable.load by passing through the input buffer.
 
@@ -257,7 +166,6 @@ def _handle_mutable_load(
     The second input is the chain (None since chains are skipped).
 
     Args:
-        devices: List of available devices (unused).
         op: The mutable load operation (unused).
         inputs: Input buffers - first is the buffer to load, second is the chain
             (None).
@@ -276,14 +184,13 @@ def _handle_mutable_load(
 
 @register_op_handler(mo.RebindOp)
 def _handle_rebind(
-    devices: list[Device], op: mo.RebindOp, inputs: Sequence[Buffer | None]
+    op: mo.RebindOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer | None]:
     """Handle mo.rebind by passing through the input buffer.
 
     Rebind is a shape assertion that doesn't change the underlying data.
 
     Args:
-        devices: List of available devices (unused).
         op: The rebind operation (unused).
         inputs: Input buffers - contains the tensor to rebind.
 
@@ -295,14 +202,12 @@ def _handle_rebind(
 
 @register_op_handler(mo.StaticBroadcastToOp)
 def _handle_static_broadcast_to(
-    devices: list[Device],
     op: mo.StaticBroadcastToOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
     """Handle mo.static.broadcast_to by broadcasting to the target shape.
 
     Args:
-        devices: List of available devices.
         op: The static broadcast operation.
         inputs: Input buffers - contains the tensor to broadcast.
 
@@ -326,19 +231,16 @@ def _handle_static_broadcast_to(
     broadcast_np = np.broadcast_to(input_np, target_shape)
     # broadcast_to returns a view, make a copy
     output_np = broadcast_np.copy()
-    output_buffer = Buffer.from_numpy(output_np)
-    _get_host_output_device(op, devices)
-    return [output_buffer]
+    return [Buffer.from_numpy(output_np)]
 
 
 @register_op_handler(mo.BroadcastToOp)
 def _handle_broadcast_to(
-    devices: list[Device], op: mo.BroadcastToOp, inputs: Sequence[Buffer | None]
+    op: mo.BroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.broadcast_to by broadcasting to the target shape.
 
     Args:
-        devices: List of available devices.
         op: The broadcast operation.
         inputs: Input buffers - first is the tensor to broadcast,
             second (optional) is the target shape tensor.
@@ -369,9 +271,7 @@ def _handle_broadcast_to(
     broadcast_np = np.broadcast_to(input_np, target_shape)
     # broadcast_to returns a view, make a copy
     output_np = broadcast_np.copy()
-    output_buffer = Buffer.from_numpy(output_np)
-    _get_host_output_device(op, devices)
-    return [output_buffer]
+    return [Buffer.from_numpy(output_np)]
 
 
 # Helper for device validation
@@ -404,14 +304,15 @@ def binary_elementwise_handler(op_type: type) -> OpHandler:
     op_binding = ops.BINARY_ELEMENTWISE[op_type]
 
     def handler(
-        devices: list[Device],
         op: _core.Operation,
         inputs: Sequence[Buffer | None],
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
 
-        target_device = _get_output_device(op, devices)
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -437,14 +338,15 @@ def binary_comparison_handler(op_type: type) -> OpHandler:
     op_binding = ops.BINARY_ELEMENTWISE_COMPARISON[op_type]
 
     def handler(
-        devices: list[Device],
         op: _core.Operation,
         inputs: Sequence[Buffer | None],
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
 
-        target_device = _get_output_device(op, devices)
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -473,13 +375,14 @@ def unary_elementwise_handler(op_type: type) -> OpHandler:
     op_binding = ops.UNARY_ELEMENTWISE[op_type]
 
     def handler(
-        devices: list[Device],
         op: _core.Operation,
         inputs: Sequence[Buffer | None],
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
 
-        target_device = _get_output_device(op, devices)
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -503,31 +406,27 @@ for op_type in ops.UNARY_ELEMENTWISE:
 
 @register_op_handler(mo.MatmulOp)
 def _handle_matmul(
-    devices: list[Device], op: mo.MatmulOp, inputs: Sequence[Buffer | None]
+    op: mo.MatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.matmul by dispatching to matmul kernel."""
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
-    _get_host_output_device(op, devices)
     lhs_np = inputs[0].to_numpy()
     rhs_np = inputs[1].to_numpy()
     result_np = np.matmul(lhs_np, rhs_np)
-    output = Buffer.from_numpy(result_np)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 # Shape manipulation operations
 
 
 def _reshape_common(
-    devices: list[Device],
     op: _core.Operation,
     inputs: Sequence[Buffer | None],
     op_name: str,
 ) -> Sequence[Buffer]:
     """Common implementation for reshape operations."""
     assert isinstance(inputs[0], Buffer)
-    _get_host_output_device(op, devices)
     input_np = inputs[0].to_numpy()
     # Get target shape from result type
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
@@ -538,35 +437,32 @@ def _reshape_common(
     target_shape = graph.Shape(shape).static_dims
 
     result_np = input_np.reshape(target_shape)
-    output = Buffer.from_numpy(result_np)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 @register_op_handler(mo.ReshapeOp)
 def _handle_reshape(
-    devices: list[Device], op: mo.ReshapeOp, inputs: Sequence[Buffer | None]
+    op: mo.ReshapeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.reshape."""
-    return _reshape_common(devices, op, inputs, "reshape")
+    return _reshape_common(op, inputs, "reshape")
 
 
 @register_op_handler(mo.StaticReshapeOp)
 def _handle_static_reshape(
-    devices: list[Device],
     op: mo.StaticReshapeOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
     """Handle mo.static.reshape - reshape without inferred dimensions."""
-    return _reshape_common(devices, op, inputs, "static reshape")
+    return _reshape_common(op, inputs, "static reshape")
 
 
 @register_op_handler(mo.TransposeOp)
 def _handle_transpose(
-    devices: list[Device], op: mo.TransposeOp, inputs: Sequence[Buffer | None]
+    op: mo.TransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.transpose."""
     assert isinstance(inputs[0], Buffer)
-    _get_host_output_device(op, devices)
     input_np = inputs[0].to_numpy()
     # TransposeOp should have a permutation attribute
     # For now, use default transpose (reverse axes)
@@ -575,13 +471,12 @@ def _handle_transpose(
         result_np = np.transpose(input_np, axes=perm)
     else:
         result_np = np.transpose(input_np)
-    output = Buffer.from_numpy(result_np)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 @register_op_handler(mo.SliceOp)
 def _handle_slice(
-    devices: list[Device], op: mo.SliceOp, inputs: Sequence[Buffer | None]
+    op: mo.SliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.slice - tensor slicing with start/stop/step.
 
@@ -608,9 +503,7 @@ def _handle_slice(
     result_np = input_np[tuple(slices)]
     # Ensure we have a contiguous array
     result_np = np.ascontiguousarray(result_np)
-    output = Buffer.from_numpy(result_np)
-    _get_host_output_device(op, devices)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 # Shape/parameter operations
@@ -618,38 +511,32 @@ def _handle_slice(
 
 @register_op_handler(mo.ShapeOfOp)
 def _handle_shape_of(
-    devices: list[Device], op: mo.ShapeOfOp, inputs: Sequence[Buffer | None]
+    op: mo.ShapeOfOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.shape_of - returns the shape of a tensor as a 1D si64 tensor."""
     assert isinstance(inputs[0], Buffer)
-    _get_host_output_device(op, devices)
     shape = inputs[0].shape
     result_np = np.array(shape, dtype=np.int64)
-    output = Buffer.from_numpy(result_np)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 @register_op_handler(mo.BroadcastShapeOp)
 def _handle_broadcast_shape(
-    devices: list[Device],
     op: mo.BroadcastShapeOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
     """Handle mo.broadcast_shape - compute broadcast shape of two shapes."""
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
-    _get_host_output_device(op, devices)
     shape_x = tuple(inputs[0].to_numpy().tolist())
     shape_y = tuple(inputs[1].to_numpy().tolist())
     result_shape = np.broadcast_shapes(shape_x, shape_y)
     result_np = np.array(result_shape, dtype=np.int64)
-    output = Buffer.from_numpy(result_np)
-    return [output]
+    return [Buffer.from_numpy(result_np)]
 
 
 @register_op_handler(mo.ShapeToTensorOp)
 def _handle_shape_to_tensor(
-    devices: list[Device],
     op: mo.ShapeToTensorOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
@@ -667,7 +554,6 @@ def _handle_shape_to_tensor(
 
 @register_op_handler(mosh.ParamToValueOp)
 def _handle_param_to_value(
-    devices: list[Device],
     op: mosh.ParamToValueOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:

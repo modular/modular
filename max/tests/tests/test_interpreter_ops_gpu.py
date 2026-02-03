@@ -42,7 +42,7 @@ class TestConstantGPU:
             c = ops.constant([1.0, 2.0, 3.0], dtype=DType.float32, device=gpu)
             graph.output(c)
 
-        interp = MOInterpreter(devices=[CPU(), gpu])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -69,7 +69,7 @@ class TestConstantGPU:
             )
             graph.output(c)
 
-        interp = MOInterpreter(devices=[CPU(), gpu])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         result = outputs[0]
@@ -97,7 +97,7 @@ class TestConstantGPU:
             )
             graph.output(cpu_const, gpu_const)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 2
@@ -115,7 +115,7 @@ class TestConstantGPU:
             c = ops.constant([1, 2, 3, 4], dtype=dtype, device=gpu)
             graph.output(c)
 
-        interp = MOInterpreter(devices=[CPU(), gpu])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         result = outputs[0]
@@ -153,7 +153,7 @@ class TestElementwiseGPU:
         a_gpu = Buffer.from_dlpack(a_torch)
         b_gpu = Buffer.from_dlpack(b_torch)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
 
         with pytest.raises(ValueError):
             interp.execute(graph, [a_gpu, b_gpu])
@@ -184,7 +184,7 @@ class TestElementwiseGPU:
         a_cpu = Buffer.from_dlpack(a_torch_cpu)
         b_gpu = Buffer.from_dlpack(b_torch_gpu)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
 
         with pytest.raises(Exception):
             interp.execute(graph, [a_cpu, b_gpu])
@@ -208,7 +208,7 @@ class TestElementwiseGPU:
         )
         a_gpu = Buffer.from_dlpack(a_torch)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
 
         with pytest.raises(Exception, match="GPU execution not supported"):
             interp.execute(graph, [a_gpu])
@@ -260,7 +260,7 @@ class TestElementwiseGPU:
         a_gpu = Buffer.from_dlpack(a_torch)
         b_gpu = Buffer.from_dlpack(b_torch)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
         result = interp.execute(graph, [a_gpu, b_gpu])[0]
 
         assert isinstance(result, Buffer)
@@ -333,7 +333,7 @@ class TestElementwiseGPU:
             )
         a_gpu = Buffer.from_dlpack(a_torch)
 
-        interp = MOInterpreter(devices=[cpu, gpu])
+        interp = MOInterpreter()
         result = interp.execute(graph, [a_gpu])[0]
 
         assert isinstance(result, Buffer)

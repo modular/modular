@@ -27,21 +27,14 @@ from max.graph import Graph, TensorType, ops
 class TestMOInterpreter:
     """Tests for MOInterpreter class."""
 
-    def test_init_requires_device(self) -> None:
-        """Test that interpreter requires at least one device."""
-        with pytest.raises(ValueError, match="At least one device"):
-            MOInterpreter(devices=[])
-
-    def test_init_with_device(self) -> None:
-        """Test interpreter initialization with a device."""
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
-        assert interp.devices == [device]
+    def test_init(self) -> None:
+        """Test interpreter initialization."""
+        interp = MOInterpreter()
+        assert interp is not None
 
     def test_validate_inputs_wrong_count(self) -> None:
         """Test that validate_inputs catches input count mismatch."""
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
 
         class MockGraph:
             @property
@@ -66,7 +59,7 @@ class TestOpHandlerRegistry:
         op_type: Any = MockOpType
 
         @register_op_handler(op_type)
-        def test_handler(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def test_handler(op: Any, inputs: Any) -> list[Any]:
             return []
 
         assert op_type in _MO_OP_HANDLERS
@@ -84,11 +77,11 @@ class TestOpHandlerRegistry:
         op_type: Any = MockOpType
 
         @register_op_handler(op_type)
-        def handler1(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def handler1(op: Any, inputs: Any) -> list[Any]:
             return [1]
 
         @register_op_handler(op_type)
-        def handler2(interp: Any, op: Any, inputs: Any) -> list[Any]:
+        def handler2(op: Any, inputs: Any) -> list[Any]:
             return [2]
 
         assert _MO_OP_HANDLERS[op_type] is handler2
@@ -108,8 +101,7 @@ class TestGraphExecution:
             graph.output(c)
 
         # Execute through interpreter
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         # Verify output
@@ -139,8 +131,7 @@ class TestGraphExecution:
         )
         input_buffer = Buffer.from_numpy(input_np)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [input_buffer])
 
         assert len(outputs) == 1
@@ -169,8 +160,7 @@ class TestGraphExecution:
             e = ops.sub(d, one)  # [8, 11, 14]
             graph.output(e)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -189,8 +179,7 @@ class TestGraphExecution:
             prod_ab = ops.mul(a, b)
             graph.output(sum_ab, prod_ab)
 
-        device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 2
