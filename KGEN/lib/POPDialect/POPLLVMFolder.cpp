@@ -19,7 +19,8 @@ using namespace KGEN;
 using namespace POP;
 
 static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
-                                      llvm::LLVMContext &llvmCtx) {
+                                      llvm::LLVMContext &llvmCtx,
+                                      TargetInfoAttr target) {
   if (dtype.isInt())
     return llvm::IntegerType::get(llvmCtx, dtype.getIntegerWidthInBits());
 
@@ -30,6 +31,11 @@ static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
     return llvm::Type::getFloatTy(llvmCtx);
   case DType::f64:
     return llvm::Type::getDoubleTy(llvmCtx);
+  case KGENDType::index:
+  case KGENDType::uindex:
+    if (auto indexBitWidth = target.getIndexBitWidth())
+      return llvm::IntegerType::get(llvmCtx, *indexBitWidth);
+    return {};
   default:
     return {};
   }
@@ -50,7 +56,7 @@ static llvm::Type *convertTypeToLLVM(Type type, llvm::LLVMContext &llvmCtx,
     auto optDType = simd.getResolvedDType();
     auto optSize = simd.getResolvedSize();
     if (optDType && optSize) {
-      if (auto dtypeType = convertDTypeToLLVM(*optDType, llvmCtx)) {
+      if (auto dtypeType = convertDTypeToLLVM(*optDType, llvmCtx, target)) {
         if (*optSize == 1) // simd<1> is a scalar.
           return dtypeType;
         return llvm::VectorType::get(dtypeType, *optSize, /*scalable*/ false);
@@ -77,6 +83,8 @@ static llvm::Constant *convertAttrToLLVM(TypedAttr attr,
   // Convert SIMD values.
   if (auto simdAttr = dyn_cast<SIMDAttr>(attr)) {
     SmallVector<llvm::Constant *> elts;
+    std::optional<int64_t> indexBitWidth =
+        target ? target.getIndexBitWidth() : std::nullopt;
     for (auto elt : simdAttr.getValues()) {
       llvm::Constant *value = nullptr;
       if (elt.getDType().isBool())
@@ -85,6 +93,13 @@ static llvm::Constant *convertAttrToLLVM(TypedAttr attr,
         value = llvm::ConstantInt::get(llvmCtx, elt.getIntVal());
       else if (elt.getDType().isFloat())
         value = llvm::ConstantFP::get(llvmCtx, elt.getFloatVal());
+      else if (elt.getDType().isUIndex() && indexBitWidth) {
+        value = llvm::ConstantInt::get(
+            llvmCtx, elt.getIntVal().zextOrTrunc(*indexBitWidth));
+      } else if (elt.getDType().isIndex() && indexBitWidth) {
+        value = llvm::ConstantInt::get(
+            llvmCtx, elt.getIntVal().sextOrTrunc(*indexBitWidth));
+      }
 
       if (!value)
         return {};
