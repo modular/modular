@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.graph import DeviceRef
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
@@ -184,40 +183,6 @@ class DiffusionPipeline(ABC):
         if not absolute_paths:
             raise ValueError(f"Component weights not found: {relative_paths}")
         return absolute_paths
-
-    def _execution_device(self) -> DeviceRef:
-        r"""Returns the device on which the pipeline's models will be executed.
-
-        This property checks pipeline components to determine the execution device.
-        It supports MAX models (with DeviceRef device attribute).
-        Similar structure to diffusers' _execution_device but returns DeviceRef instead of DeviceRef.
-
-        Returns:
-            DeviceRef: The execution device (GPU if available, otherwise CPU).
-        """
-        # Check MAX models - prioritize GPU
-        # Similar to diffusers' _execution_device but for MAX models (not torch.nn.Module)
-        assert self.components is not None
-        sub_models = {k: getattr(self, k) for k in self.components}
-        for name, model in sub_models.items():
-            exclude_from_cpu_offload: set[str] = getattr(
-                self, "_exclude_from_cpu_offload", set()
-            )
-            if name in exclude_from_cpu_offload:
-                continue
-
-            if hasattr(model, "device") and isinstance(model.device, DeviceRef):
-                return model.device
-
-        if hasattr(self, "device"):
-            try:
-                device = self.device
-                if isinstance(device, DeviceRef):
-                    return device
-            except Exception:
-                pass
-
-        return DeviceRef.CPU()
 
 
 @dataclass(kw_only=True)

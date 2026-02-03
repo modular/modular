@@ -211,27 +211,6 @@ class FluxPipeline(DiffusionPipeline):
             text_ids.to(device).cast(dtype),
         )
 
-    def _denoise_latents(
-        self,
-        latents: Tensor,
-        prompt_embeds: Tensor,
-        pooled_prompt_embeds: Tensor,
-        text_ids: Tensor,
-        guidance: Tensor,
-        timestep: Tensor,
-        latent_image_ids: Tensor,
-    ) -> Tensor:
-        noise_pred = self.transformer(
-            latents,
-            prompt_embeds,
-            pooled_prompt_embeds,
-            timestep,
-            latent_image_ids,
-            text_ids,
-            guidance,
-        )[0]
-        return noise_pred
-
     def _decode_latents(
         self,
         latents: Tensor,
@@ -347,29 +326,29 @@ class FluxPipeline(DiffusionPipeline):
             self._current_timestep = i
             timestep = timesteps_batched[i]
 
-            noise_pred = self._denoise_latents(
+            noise_pred = self.transformer(
                 latents,
                 prompt_embeds,
                 pooled_prompt_embeds,
-                text_ids,
-                guidance,
                 timestep,
                 latent_image_ids,
-            )
+                text_ids,
+                guidance,
+            )[0]
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
                 assert negative_pooled_prompt_embeds is not None
                 assert negative_text_ids is not None
-                neg_noise_pred = self._denoise_latents(
+                neg_noise_pred = self.transformer(
                     latents,
                     negative_prompt_embeds,
                     negative_pooled_prompt_embeds,
-                    negative_text_ids,
-                    guidance,
                     timestep,
                     latent_image_ids,
-                )
+                    negative_text_ids,
+                    guidance,
+                )[0]
 
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred
