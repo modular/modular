@@ -1,0 +1,464 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file contains evaluation/folding implementations for KGEN attributes.
+// These methods implement
+// ContextuallyEvaluatedAttrInterface::evaluateWithContext.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "Support/MDialect/MTypeInterfaces.h"
+#include "mlir/IR/Builders.h"
+
+using namespace M;
+using namespace KGEN;
+
+//===----------------------------------------------------------------------===//
+// VariadicReduceAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  auto va = sugarDynCast<VariadicAttr>(getVariadic());
+  auto reducer = sugarDynCast<GeneratorAttr>(getGenerator());
+
+  if (!va || !reducer)
+    return failure();
+
+  // We have a concrete value for both the generator/variadic, then fold
+  unsigned eltCnt = va.getValues().size();
+  TypedAttr reducedVal = sugarCast<TypedAttr>(getBase());
+  for (unsigned i = 0; i < eltCnt; ++i) {
+    IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
+    GeneratorAttr spGen =
+        reducer.getSpecializedGenerator({reducedVal, va, vaIdx}, &context);
+    // This should never happen, we should have verified VariadicMapAttr.
+    assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
+    reducedVal = spGen.getInstantiatedValue();
+  }
+
+  return {reducedVal};
+}
+
+//===----------------------------------------------------------------------===//
+// GetWitnessAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr>
+GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr))
+    return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
+  Operation *conformanceOp =
+      context.resolveConformanceForStruct(resolved, getTraitName());
+  if (!conformanceOp) {
+    context.emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' does not have witness table for trait '" +
+        getTraitName().getValue() + "'");
+    return failure();
+  }
+
+  auto conformance = cast<ConformanceOp>(conformanceOp);
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                        [&](ParameterEvaluator &evaluator) {
+                          result = simplify(conformance, &evaluator);
+                        });
+  if (failed(result)) {
+    context.emitEvaluationError("failed to locate witness entry '" +
+                                getWitnessName().getValue() + "' for trait '" +
+                                getTraitName().getValue() + "'");
+  }
+  return result;
+}
+
+//===----------------------------------------------------------------------===//
+// Struct Field Attr evaluateWithContext implementations
+//===----------------------------------------------------------------------===//
+
+/// Compute the byte offset of a field within a struct given its field types.
+/// Returns failure if the field index is out of bounds or if size/alignment
+/// cannot be determined for any field type.
+static FailureOr<int64_t>
+computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
+                         TargetInfoAttr target,
+                         llvm::function_ref<void(const Twine &)> emitError) {
+  if (fieldIndex < 0 || fieldIndex >= static_cast<int64_t>(fieldTypes.size())) {
+    emitError("field index " + std::to_string(fieldIndex) +
+              " is out of bounds for struct with " +
+              std::to_string(fieldTypes.size()) + " fields");
+    return failure();
+  }
+
+  int64_t offset = 0;
+  for (int64_t i = 0; i < fieldIndex; ++i) {
+    std::optional<int64_t> curFieldAlign =
+        DataLayoutInterface::getTypeABIAlign(target, fieldTypes[i]);
+    std::optional<int64_t> curFieldSize =
+        DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
+    if (!curFieldAlign || !curFieldSize) {
+      emitError("could not determine size or alignment for field type");
+      return failure();
+    }
+    offset = llvm::alignTo(offset, *curFieldAlign) + *curFieldSize;
+  }
+
+  // Align to the target field's alignment.
+  std::optional<int64_t> fieldAlign =
+      DataLayoutInterface::getTypeABIAlign(target, fieldTypes[fieldIndex]);
+  if (!fieldAlign) {
+    emitError("could not determine alignment for field type");
+    return failure();
+  }
+  return llvm::alignTo(offset, *fieldAlign);
+}
+
+/// Extract field types from a struct, wrapping each in ParamType.
+static SmallVector<Type>
+getFieldTypesFromStruct(StructInstanceType structType) {
+  SmallVector<Type> fieldTypes;
+  for (StructDefFieldAttr field : structType.getFields())
+    fieldTypes.push_back(ParamType::get(field.getTypeValue()));
+  return fieldTypes;
+}
+
+/// Extract and rebind field types from a struct declaration using an evaluator.
+/// Returns std::nullopt on rebinding failure, or an empty vector for empty
+/// structs. If emitError is provided, it will be called with a diagnostic
+/// message when rebinding fails.
+static std::optional<SmallVector<Type>>
+rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator,
+                 llvm::function_ref<void(const Twine &)> emitError = nullptr) {
+  SmallVector<TypedAttr> fieldTypeAttrs;
+  decl.getFieldTypes(fieldTypeAttrs);
+
+  SmallVector<Type> fieldTypes;
+  for (auto [idx, typeAttr] : llvm::enumerate(fieldTypeAttrs)) {
+    TypedAttr rebound = evaluator.getReboundAttribute(typeAttr);
+    if (!rebound) {
+      if (emitError)
+        emitError("failed to rebind type for field at index " +
+                  std::to_string(idx) + " during offset calculation");
+      return std::nullopt;
+    }
+    fieldTypes.push_back(ParamType::get(rebound));
+  }
+  return fieldTypes;
+}
+
+FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError("struct_field_types requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+
+  // If concrete instance is available, use its already-substituted field types.
+  if (resolved.instance) {
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    SmallVector<TypedAttr> resultAttrs;
+    for (StructDefFieldAttr field : structType.getFields())
+      resultAttrs.push_back(field.getTypeValue());
+    return cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator types and rebind with param values.
+  SmallVector<TypedAttr> fieldTypes;
+  resolved.decl.getFieldTypes(fieldTypes);
+
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolved.decl.getInputParams(), resolved.paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        SmallVector<TypedAttr> resultAttrs;
+        for (TypedAttr fieldType : fieldTypes)
+          resultAttrs.push_back(evaluator.getReboundAttribute(fieldType));
+
+        result = cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+      });
+  return result;
+}
+
+FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError("struct_field_names requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  SmallVector<StringAttr> fieldNames;
+  resolved.decl.getFieldNames(fieldNames);
+
+  SmallVector<TypedAttr> resultAttrs;
+  MLIRContext *ctx = getContext();
+  for (StringAttr name : fieldNames)
+    resultAttrs.push_back(
+        StringAttr::get(name.getValue(), StringType::get(ctx)));
+
+  return cast<TypedAttr>(VariadicAttr::get(resultAttrs, getType()));
+}
+
+FailureOr<TypedAttr> StructFieldIndexByNameAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  auto fieldNameAttr = dyn_cast<StringAttr>(getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError(
+        "struct_field_index_by_name requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  auto index = resolved.decl.findFieldIndex(fieldNameAttr.getValue());
+  if (!index) {
+    context.emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldNameAttr.getValue() + "'");
+    return failure();
+  }
+  return cast<TypedAttr>(Builder(getType().getContext()).getIndexAttr(*index));
+}
+
+FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  auto fieldNameAttr = dyn_cast<StringAttr>(getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError(
+        "struct_field_type_by_name requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  StringRef fieldName = fieldNameAttr.getValue();
+
+  // If concrete instance is available, search its fields directly.
+  if (resolved.instance) {
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    for (StructDefFieldAttr field : structType.getFields())
+      if (field.getName().getValue() == fieldName)
+        return field.getTypeValue();
+    context.emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
+    return failure();
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator's field type and rebind.
+  TypedAttr fieldType = resolved.decl.getFieldType(fieldName);
+  if (!fieldType) {
+    context.emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
+    return failure();
+  }
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                        [&](ParameterEvaluator &evaluator) {
+                          result = evaluator.getReboundAttribute(fieldType);
+                        });
+  return result;
+}
+
+FailureOr<TypedAttr> StructFieldOffsetByIndexAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  // Return failure() without an error if parameters aren't resolved to
+  // constants yet. The evaluation framework will retry later when more
+  // information is available.
+  auto fieldIndexAttr = dyn_cast<IntegerAttr>(getFieldIndex());
+  if (!fieldIndexAttr)
+    return failure();
+
+  auto targetAttr = sugarDynCast<TargetParamAttr>(getTarget());
+  if (!targetAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError(
+        "struct_field_offset_by_index requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  int64_t fieldIndex = fieldIndexAttr.getInt();
+  TargetInfoAttr target = targetAttr.getTarget();
+  MLIRContext *ctx = getType().getContext();
+
+  auto emitError = [&context](const Twine &msg) {
+    context.emitEvaluationError(msg);
+  };
+
+  // If concrete instance is available, use its field types directly.
+  if (resolved.instance) {
+    assert(resolved.decl && "instance requires valid decl");
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    SmallVector<Type> fieldTypes = getFieldTypesFromStruct(structType);
+
+    FailureOr<int64_t> offsetOr =
+        computeStructFieldOffset(fieldTypes, fieldIndex, target, emitError);
+    if (failed(offsetOr))
+      return failure();
+    return cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Otherwise, use generator's field types with rebinding.
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolved.decl.getInputParams(), resolved.paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        std::optional<SmallVector<Type>> fieldTypesOpt =
+            rebindFieldTypes(resolved.decl, evaluator, emitError);
+        if (!fieldTypesOpt)
+          return;
+
+        FailureOr<int64_t> offsetOr = computeStructFieldOffset(
+            *fieldTypesOpt, fieldIndex, target, emitError);
+        if (failed(offsetOr))
+          return;
+        result = cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+      });
+  return result;
+}
+
+FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  // Return failure() without an error if parameters aren't resolved to
+  // constants yet.
+  auto fieldNameAttr = dyn_cast<StringAttr>(getFieldName());
+  if (!fieldNameAttr)
+    return failure();
+
+  auto targetAttr = sugarDynCast<TargetParamAttr>(getTarget());
+  if (!targetAttr)
+    return failure();
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
+  if (failed(resolvedOr)) {
+    context.emitEvaluationError(
+        "struct_field_offset_by_name requires a struct type");
+    return failure();
+  }
+  ResolvedStructHandle resolved = *resolvedOr;
+  StringRef fieldName = fieldNameAttr.getValue();
+  TargetInfoAttr target = targetAttr.getTarget();
+  MLIRContext *ctx = getType().getContext();
+
+  auto emitError = [&context](const Twine &msg) {
+    context.emitEvaluationError(msg);
+  };
+
+  // Helper to find field index by name and emit error if not found.
+  auto findFieldIndexOrError =
+      [&](auto fields, StringRef structName) -> std::optional<int64_t> {
+    int64_t idx = 0;
+    for (auto field : fields) {
+      if (field.getName().getValue() == fieldName)
+        return idx;
+      ++idx;
+    }
+    context.emitEvaluationError("struct '" + structName +
+                                "' has no field named '" + fieldName + "'");
+    return std::nullopt;
+  };
+
+  // If concrete instance is available, use its fields directly.
+  if (resolved.instance) {
+    assert(resolved.decl && "instance requires valid decl");
+    auto structType =
+        cast<StructInstanceType>(resolved.instance.getValueDomainType());
+    auto fields = structType.getFields();
+    StringRef structName =
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue();
+
+    std::optional<int64_t> fieldIndexOpt =
+        findFieldIndexOrError(fields, structName);
+    if (!fieldIndexOpt)
+      return failure();
+
+    SmallVector<Type> fieldTypes = getFieldTypesFromStruct(structType);
+    FailureOr<int64_t> offsetOr =
+        computeStructFieldOffset(fieldTypes, *fieldIndexOpt, target, emitError);
+    if (failed(offsetOr))
+      return failure();
+    return cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+  }
+
+  // If the decl is null, we are in an async context and the struct instance is
+  // not yet ready.
+  if (!resolved.decl)
+    return TypedAttr();
+
+  // Find field index using the decl.
+  std::optional<uint64_t> fieldIndexOpt =
+      resolved.decl.findFieldIndex(fieldName);
+  if (!fieldIndexOpt) {
+    context.emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' has no field named '" + fieldName + "'");
+    return failure();
+  }
+  int64_t fieldIndex = static_cast<int64_t>(*fieldIndexOpt);
+
+  // Use generator's field types with rebinding.
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolved.decl.getInputParams(), resolved.paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        std::optional<SmallVector<Type>> fieldTypesOpt =
+            rebindFieldTypes(resolved.decl, evaluator, emitError);
+        if (!fieldTypesOpt)
+          return;
+
+        FailureOr<int64_t> offsetOr = computeStructFieldOffset(
+            *fieldTypesOpt, fieldIndex, target, emitError);
+        if (failed(offsetOr))
+          return;
+        result = cast<TypedAttr>(Builder(ctx).getIndexAttr(*offsetOr));
+      });
+  return result;
+}

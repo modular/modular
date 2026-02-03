@@ -93,7 +93,31 @@ def ContextuallyEvaluatedAttrInterface :
     This interface describes parameter attributes whose evaluation may require
     additional context. This is in contrast to "simple" parameter attributes
     that can be simplified context-free at construction time.
+
+    Attributes implementing this interface can provide an `evaluateWithContext`
+    method that performs context-dependent evaluation using the provided
+    `ParameterEvaluationContext`. The context provides hooks for struct
+    resolution, conformance lookup, and error reporting.
   }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Evaluate this attribute using the provided context. Returns the evaluated
+      result on success, or failure() if evaluation cannot proceed (e.g., if
+      required information is not yet available). A null TypedAttr result with
+      success indicates async evaluation was triggered and the caller should
+      retry later.
+
+      The default implementation returns failure(), indicating the attribute
+      does not support generalized contextual evaluation.
+    }],
+    "FailureOr<TypedAttr>", "evaluateWithContext",
+    (ins "ParameterEvaluationContext &":$context), [{}], [{
+      return failure();
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

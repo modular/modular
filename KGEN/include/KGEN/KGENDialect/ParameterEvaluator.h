@@ -95,19 +95,18 @@ struct ResolvedStructHandle {
 ///   - evaluateContextSpecific(): handle context-specific attributes
 class ParameterEvaluationContext {
 public:
-  virtual ~ParameterEvaluationContext() = default;
+  virtual ~ParameterEvaluationContext();
 
-  /// Evaluate the provided attribute. The base implementation handles common
-  /// attribute types (struct reflection, GetWitness, etc.) and falls back to
-  /// evaluateContextSpecific() for context-specific handling.
+  /// Evaluate the provided attribute. First tries context-specific evaluation
+  /// via evaluateContextSpecific(), then falls back to the attribute's
+  /// evaluateWithContext() interface method.
   ///
   /// If the attribute is not evaluatable, returns failure(). This does not
   /// indicate an unexpected situation, but rather no further evaluation was
   /// possible.
-  virtual FailureOr<TypedAttr>
+  FailureOr<TypedAttr>
   evaluateExpression(ContextuallyEvaluatedAttrInterface attr);
 
-protected:
   /// Resolve a type value to its struct declaration interface.
   ///
   /// The `acceptAsync` argument controls behavior when a concrete instance
@@ -123,19 +122,21 @@ protected:
   /// - success() with valid `decl`: Generator available. Check `instance`
   ///   to see if concrete info can be used directly.
   virtual FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
-                                                          bool acceptAsync);
+                                                          bool acceptAsync) = 0;
 
   /// Resolve the conformance op for a struct and trait name in this context.
   /// For now, this conformance op is always parametric (non-concrete).
   virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                                 StringAttr traitName);
+                                                 StringAttr traitName) = 0;
 
   /// Create an evaluator configured with the provided parameters.
-  /// The evaluator type can depend on the context.
+  /// This callback style is necessary because we have derived evaluators that
+  /// carry their own state. Eventually we should move all state to the context
+  /// so that evaluator creation can be simplified.
   virtual void
   withEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
                 ArrayRef<TypedAttr> paramValues,
-                llvm::function_ref<void(ParameterEvaluator &)> callback);
+                llvm::function_ref<void(ParameterEvaluator &)> callback) = 0;
 
   /// Handle context-specific attributes that aren't covered by the base class.
   /// Returns failure() if the attribute cannot be evaluated, which is the
@@ -146,20 +147,6 @@ protected:
   /// Emit an evaluation error message. The base implementation does nothing.
   /// Derived classes can override to emit diagnostics.
   virtual void emitEvaluationError(const Twine &message);
-
-private:
-  // Common evaluation methods that use the virtual hooks.
-  FailureOr<TypedAttr> evaluateGetWitness(GetWitnessAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldTypes(StructFieldTypesAttr attr);
-  FailureOr<TypedAttr> evaluateStructFieldNames(StructFieldNamesAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldIndexByName(StructFieldIndexByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldTypeByName(StructFieldTypeByNameAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldOffsetByIndex(StructFieldOffsetByIndexAttr attr);
-  FailureOr<TypedAttr>
-  evaluateStructFieldOffsetByName(StructFieldOffsetByNameAttr attr);
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
