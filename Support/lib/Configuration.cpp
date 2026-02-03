@@ -24,6 +24,7 @@
 #include <cassert>
 #include <cstddef>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -48,65 +49,93 @@ static ErrorOrSuccess createPath(const std::filesystem::path &path) {
 }
 
 ErrorOr<Config> Config::open() {
-  auto configFilePathOr = getConfigFilePath(/*create=*/false);
+  // Cache the parsed config data to avoid repeated disk I/O.
+  // We use std::call_once to ensure thread-safe one-time initialization.
+  static std::once_flag initFlag;
+  static llvm::StringMap<std::string> cachedKV;
+  static std::optional<Error> initError;
 
-  // If we don't have a config, then that's not an error! Simply return an empty
-  // config. An error is returned above only if the directory cannot be created.
-  if (configFilePathOr.isError())
-    return Config();
-  std::error_code ec;
-  if (!std::filesystem::exists(*configFilePathOr, ec)) {
-    if (ec)
-      return Error(ec.message());
-    return Config();
-  }
+  std::call_once(initFlag, [] {
+    auto configFilePathOr = getConfigFilePath(/*create=*/false);
 
-  // Set up variables we'll need to get this read.
-  Config cfg;
-  llvm::SourceMgr sourceMgr;
-  unsigned bufferIdx = 0;
+    // If we don't have a config, then that's not an error! Simply return an
+    // empty config. An error is returned above only if the directory cannot be
+    // created.
+    if (configFilePathOr.isError())
+      return; // Empty cachedKV is fine
 
-  // Check the permissions for the directory containing the configuration. If
-  // it's not writeable, then we avoid acquiring the lock.
-  if (llvm::sys::fs::access(configFilePathOr->parent_path().string(),
-                            llvm::sys::fs::AccessMode::Write)) {
-    // We don't have write permission here, so we can just read it without a
-    // lock.
-    auto mBufOr = llvm::MemoryBuffer::getFile(configFilePathOr->string(),
-                                              /*IsText=*/true);
-    if (!mBufOr)
-      return Error(mBufOr.getError().message());
+    std::error_code ec;
+    if (!std::filesystem::exists(*configFilePathOr, ec)) {
+      if (ec) {
+        initError = Error(ec.message());
+        return;
+      }
+      return; // No file means empty config
+    }
 
-    bufferIdx = sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
-  } else {
-    std::optional<Error> error = std::nullopt;
-    // Read the file atomically - we may have multiple processes writing.
-    ErrorOrSuccess err = readFileUnderLock(
-        *configFilePathOr, [&](const std::filesystem::path &filePath) {
-          auto mBufOr =
-              llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
-          if (!mBufOr) {
-            error = Error(mBufOr.getError().message());
-            return;
-          }
+    // Set up variables we'll need to get this read.
+    Config cfg;
+    llvm::SourceMgr sourceMgr;
+    unsigned bufferIdx = 0;
 
-          bufferIdx =
-              sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
-        });
-    // Check for errors.
-    if (err.isError())
-      return err.takeError();
-    if (error.has_value())
-      return std::move(*error);
-  }
+    // Check the permissions for the directory containing the configuration. If
+    // it's not writeable, then we avoid acquiring the lock.
+    if (llvm::sys::fs::access(configFilePathOr->parent_path().string(),
+                              llvm::sys::fs::AccessMode::Write)) {
+      // We don't have write permission here, so we can just read it without a
+      // lock.
+      auto mBufOr = llvm::MemoryBuffer::getFile(configFilePathOr->string(),
+                                                /*IsText=*/true);
+      if (!mBufOr) {
+        initError = Error(mBufOr.getError().message());
+        return;
+      }
 
-  // Grab the memory buffer and parse from it.
-  const llvm::MemoryBuffer *mbuf = sourceMgr.getMemoryBuffer(bufferIdx);
-  if (ErrorOrSuccess err = cfg.parseFrom(mbuf->getBuffer(), &sourceMgr))
-    return err.takeError();
+      bufferIdx =
+          sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
+    } else {
+      std::optional<Error> error = std::nullopt;
+      // Read the file atomically - we may have multiple processes writing.
+      ErrorOrSuccess err = readFileUnderLock(
+          *configFilePathOr, [&](const std::filesystem::path &filePath) {
+            auto mBufOr =
+                llvm::MemoryBuffer::getFile(filePath.string(), /*IsText=*/true);
+            if (!mBufOr) {
+              error = Error(mBufOr.getError().message());
+              return;
+            }
 
-  // Return the initialized configuration.
-  return std::move(cfg);
+            bufferIdx =
+                sourceMgr.AddNewSourceBuffer(std::move(*mBufOr), llvm::SMLoc());
+          });
+      // Check for errors.
+      if (err.isError()) {
+        initError = err.takeError();
+        return;
+      }
+      if (error.has_value()) {
+        initError = std::move(*error);
+        return;
+      }
+    }
+
+    // Grab the memory buffer and parse from it.
+    const llvm::MemoryBuffer *mbuf = sourceMgr.getMemoryBuffer(bufferIdx);
+    if (ErrorOrSuccess err = cfg.parseFrom(mbuf->getBuffer(), &sourceMgr)) {
+      initError = err.takeError();
+      return;
+    }
+
+    // Cache the parsed key-value map for future calls.
+    cachedKV = std::move(cfg.kv);
+  });
+
+  // If initialization failed, return the error.
+  if (initError.has_value())
+    return initError->copy();
+
+  // Return a fresh Config initialized from the cached data.
+  return Config(cachedKV);
 }
 
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
