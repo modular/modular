@@ -374,6 +374,29 @@ def _handle_broadcast_to(
     return [output_buffer]
 
 
+# Helper for device validation
+
+
+def _check_buffers_on_device(
+    buffers: Sequence[Buffer | None], target_device: Device
+) -> None:
+    """Check that all non-None buffers are on the target device.
+
+    Args:
+        buffers: Sequence of buffers to check (None entries are skipped).
+        target_device: The expected device for all buffers.
+
+    Raises:
+        ValueError: If any buffer is not on the target device.
+    """
+    for i, buf in enumerate(buffers):
+        if buf is not None and buf.device != target_device:
+            raise ValueError(
+                f"Input buffer {i} is on {buf.device}, "
+                f"but expected {target_device}."
+            )
+
+
 # Binary elementwise operations
 
 
@@ -387,13 +410,20 @@ def binary_elementwise_handler(op_type: type) -> OpHandler:
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
-        input_dtype: DType = inputs[0].dtype
+
+        target_device = _get_output_device(op, devices)
+        _check_buffers_on_device(inputs, target_device)
+
         output = Buffer(
             shape=inputs[0].shape,
-            dtype=input_dtype,
-            device=_get_host_output_device(op, devices),
+            dtype=inputs[0].dtype,
+            device=target_device,
         )
-        op_binding(output, inputs[0], inputs[1])
+
+        op_binding(
+            output, inputs[0], inputs[1], target_device._device_context_ptr()
+        )
+
         return [output]
 
     return handler
@@ -413,12 +443,20 @@ def binary_comparison_handler(op_type: type) -> OpHandler:
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
+
+        target_device = _get_output_device(op, devices)
+        _check_buffers_on_device(inputs, target_device)
+
         output = Buffer(
             shape=inputs[0].shape,
             dtype=DType.bool,
-            device=_get_host_output_device(op, devices),
+            device=target_device,
         )
-        op_binding(output, inputs[0], inputs[1])
+
+        op_binding(
+            output, inputs[0], inputs[1], target_device._device_context_ptr()
+        )
+
         return [output]
 
     return handler
@@ -440,13 +478,18 @@ def unary_elementwise_handler(op_type: type) -> OpHandler:
         inputs: Sequence[Buffer | None],
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
-        input_dtype: DType = inputs[0].dtype
+
+        target_device = _get_output_device(op, devices)
+        _check_buffers_on_device(inputs, target_device)
+
         output = Buffer(
             shape=inputs[0].shape,
-            dtype=input_dtype,
-            device=_get_host_output_device(op, devices),
+            dtype=inputs[0].dtype,
+            device=target_device,
         )
-        op_binding(output, inputs[0])
+
+        op_binding(output, inputs[0], target_device._device_context_ptr())
+
         return [output]
 
     return handler

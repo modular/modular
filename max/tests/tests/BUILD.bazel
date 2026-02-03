@@ -14,8 +14,8 @@ modular_py_test(
         exclude = [
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
-            "test_interpreter_gpu.py",
             "test_interpreter_ops.py",
+            "test_interpreter_ops_gpu.py",
         ],
     ),
     args = [
@@ -84,8 +84,8 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_interpreter_gpu",
-    srcs = ["test_interpreter_gpu.py"],
+    name = "test_interpreter_ops_gpu",
+    srcs = ["test_interpreter_ops_gpu.py"],
     ignore_extra_deps = [
         "//max/python/max/engine",
     ],
@@ -97,7 +97,6 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        requirement("numpy"),
         requirement("torch"),
     ],
 )

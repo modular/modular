@@ -32,7 +32,7 @@ from . import mojo_ops  # type: ignore[attr-defined]
 
 
 BINARY_ELEMENTWISE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer], None]
+    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
     mo.AddOp: mojo_ops.Add,
     mo.SubOp: mojo_ops.Sub,
@@ -48,7 +48,7 @@ BINARY_ELEMENTWISE: dict[
 
 # Comparison binary ops: output dtype is always bool
 BINARY_ELEMENTWISE_COMPARISON: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, Buffer], None]
+    type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
     mo.EqualOp: mojo_ops.Equal,
     mo.GreaterOp: mojo_ops.Greater,
@@ -58,7 +58,7 @@ BINARY_ELEMENTWISE_COMPARISON: dict[
 
 # Unary elementwise ops: output dtype matches input dtype
 UNARY_ELEMENTWISE: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer], None]
+    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
     mo.NegativeOp: mojo_ops.Negative,
     mo.AbsOp: mojo_ops.Abs,
@@ -82,11 +82,7 @@ UNARY_ELEMENTWISE: dict[
 
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
-from .handlers import (
-    _MO_OP_HANDLERS,
-    lookup_handler,
-    register_op_handler,
-)
+from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
 __all__ = [
     "BINARY_ELEMENTWISE",
