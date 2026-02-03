@@ -155,6 +155,8 @@ public:
   static ErrorOr<std::filesystem::path> getConfigFilePath(bool create = false);
 
 private:
+  Config(const llvm::StringMap<std::string> &kv) : kv(kv) {}
+
   /// Nested sections are just delimited with a `.`. Access is done with dot
   /// notation. This is a map of property -> value, with each property prefixed
   /// by its section.
