@@ -587,3 +587,15 @@ struct House[T:DoIt]:
 # CHECK-NEXT: lit.alias.decl TT: !DoIt
 fn useIt[TT: DoIt, C:fn(x:TT) unified](impl: C):
   pass
+
+# // -----
+
+# Verify the trait alias includes TrivialRegisterType conformance.
+# CHECK-DAG: [[TRAIT:!passable[^=]*TrivialRegisterType]] = !lit.trait<@"fn() -> Int register_passable",{{.*}}@std::@builtin::@stubs::@TrivialRegisterType>
+
+
+# CHECK: lit.struct.decl @"fn() -> Int_Mova_Impl_Copy_Impl_Devi"<impl: [[TRAIT]]
+
+fn addTrivialRegisterType(x:Int):
+    fn closure() unified register_passable {var} -> Int:
+        return x
