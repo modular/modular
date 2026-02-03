@@ -566,11 +566,11 @@ fn test_case_batched[
                             out_idx_type = DType.int64,
                             largest=largest,
                         ](
-                            in_host_tensor.to_layout_tensor(),
+                            in_host_tensor,
                             K,
                             1,  # rank - 1
-                            topk_vals_cpu_tensor.to_layout_tensor(),
-                            topk_idxs_cpu_tensor.to_layout_tensor(),
+                            topk_vals_cpu_tensor,
+                            topk_idxs_cpu_tensor,
                             1,
                             True,
                         )
@@ -580,11 +580,11 @@ fn test_case_batched[
                 _top_k_cpu[
                     dtype=dtype, out_idx_type = DType.int64, largest=largest
                 ](
-                    in_host_tensor.to_layout_tensor(),
+                    in_host_tensor,
                     K,
                     1,  # rank - 1
-                    topk_vals_cpu_tensor.to_layout_tensor(),
-                    topk_idxs_cpu_tensor.to_layout_tensor(),
+                    topk_vals_cpu_tensor,
+                    topk_idxs_cpu_tensor,
                     1,
                     True,
                 )

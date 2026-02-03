@@ -3653,11 +3653,11 @@ struct BottomK:
         ctx: DeviceContextPtr,
     ) raises:
         top_k[largest=False, target=target](
-            input.to_layout_tensor(),
+            input.to_tile_tensor[DType.int64](),
             Int(k),
             Int(axis),
-            values.to_layout_tensor(),
-            indices.to_layout_tensor(),
+            values.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
             sorted,
             ctx,
         )
@@ -3671,7 +3671,7 @@ struct BottomK:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             top_k_shape_impl[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
                 Int(k),
                 Int(axis),
             )
@@ -3699,11 +3699,11 @@ struct TopK:
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
             top_k[largest=True, target=target](
-                input.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
                 Int(k),
                 Int(axis),
-                values.to_layout_tensor(),
-                indices.to_layout_tensor(),
+                values.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
                 sorted,
                 ctx,
             )
@@ -3717,7 +3717,7 @@ struct TopK:
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             top_k_shape_impl[single_thread_blocking_override=True](
-                input.to_layout_tensor(),
+                input.to_tile_tensor[DType.int64](),
                 Int(k),
                 Int(axis),
             )
@@ -8695,49 +8695,6 @@ struct Struct_fused_token_sampling:
     ) raises:
         __comptime_assert is_valid_target[target](), "not a valid target"
 
-        var input_buf = input.to_layout_tensor()
-        var out_idxs_buf = out_idxs.to_layout_tensor()
-        var k_lt = K.to_layout_tensor()
-        comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
-        var K_buf = Optional(
-            LayoutTensor[DType.int64, layout_1d](
-                k_lt.ptr,
-                RuntimeLayout[layout_1d](
-                    k_lt.runtime_layout.shape.value.canonicalize(),
-                    k_lt.runtime_layout.stride.value.canonicalize(),
-                ),
-            )
-        )
-        var temp_lt = temperature.to_layout_tensor()
-        var temperature_buf = Optional(
-            LayoutTensor[DType.float32, layout_1d](
-                temp_lt.ptr,
-                RuntimeLayout[layout_1d](
-                    temp_lt.runtime_layout.shape.value.canonicalize(),
-                    temp_lt.runtime_layout.stride.value.canonicalize(),
-                ),
-            )
-        )
-        var top_p_lt = top_p.to_layout_tensor()
-        var top_p_buf = Optional(
-            LayoutTensor[DType.float32, layout_1d](
-                top_p_lt.ptr,
-                RuntimeLayout[layout_1d](
-                    top_p_lt.runtime_layout.shape.value.canonicalize(),
-                    top_p_lt.runtime_layout.stride.value.canonicalize(),
-                ),
-            )
-        )
-        var seed_lt = seed.to_layout_tensor()
-        var seed_buf = Optional(
-            LayoutTensor[DType.uint64, layout_1d](
-                seed_lt.ptr,
-                RuntimeLayout[layout_1d](
-                    seed_lt.runtime_layout.shape.value.canonicalize(),
-                    seed_lt.runtime_layout.stride.value.canonicalize(),
-                ),
-            )
-        )
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
         ):
@@ -8756,12 +8713,20 @@ struct Struct_fused_token_sampling:
                     return
                 _fused_token_sampling_cpu(
                     Int(max_k),
-                    input_buf,
-                    out_idxs_buf,
-                    k=K_buf,
-                    temperature=temperature_buf,
-                    top_p=top_p_buf,
-                    seed=seed_buf,
+                    input.to_tile_tensor[DType.int64](),
+                    out_idxs.to_tile_tensor[DType.int64](),
+                    k=K.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    temperature=temperature.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    top_p=top_p.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    seed=seed.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
@@ -8769,12 +8734,22 @@ struct Struct_fused_token_sampling:
                     cuda_ctx,
                     Int(max_k),
                     min_top_p,
-                    input_buf,
-                    out_idxs_buf,
-                    k=K_buf,
-                    temperature=temperature_buf,
-                    top_p=top_p_buf,
-                    seed=seed_buf,
+                    input.to_tile_tensor[DType.int64](),
+                    out_idxs.to_tile_tensor[DType.int64](),
+                    k=K.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    temperature=temperature.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    top_p=top_p.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
+                    seed=Optional(
+                        seed.to_tile_tensor[DType.int64]()
+                        .as_any_origin()
+                        .as_immut()
+                    ),
                 )
 
 
