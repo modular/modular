@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any, TypedDict, TypeVar
 
 import numpy as np
@@ -34,6 +36,7 @@ from max.graph import (
 from max.interfaces import (
     LogitsProcessor,
     PipelineTokenizer,
+    PixelGenerationInputs,
     ProcessorInputs,
     RequestID,
     SamplingParams,
@@ -43,7 +46,7 @@ from transformers import PreTrainedTokenizerBase
 from typing_extensions import NotRequired
 
 from .numerics import log_softmax
-from .test_data import MockTextGenerationRequest
+from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
 
 
 class TokenInfo(TypedDict, total=False):
@@ -70,6 +73,8 @@ class ModelOutput(TypedDict):
     """Outputs from a text generation model."""
     embeddings: NotRequired[np.ndarray]
     """Outputs from a text embedding model."""
+    images: NotRequired[np.ndarray]
+    """Outputs from an image generation model. Shape: (H, W, C) or (B, H, W, C)"""
 
 
 NUM_STEPS = 10
@@ -296,10 +301,14 @@ def compare_values(
         compare_embeddings(
             actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
         )
+    elif keys == {"prompt", "images"}:
+        compare_images(
+            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
+        )
     else:
         raise ValueError(
             f"Unable to compare dictionaries with keys {keys}, does not match "
-            "the expected keys of a text generation or embedding pipeline."
+            "the expected keys of a text generation, embedding, or image generation pipeline."
         )
 
 
@@ -441,3 +450,140 @@ def compare_embeddings(
                 err_msg=f"Got different {description}.",
                 verbose=True,
             )
+
+
+def compare_images(
+    actual: Sequence[Mapping[str, Any]],
+    expected: Sequence[Mapping[str, Any]],
+    *,
+    rtol: float = 1e-2,
+    atol: float = 1e-5,
+    compare_fn: Callable[[Any, Any, str], None] | None = None,
+) -> None:
+    """Compares generated images between two runs.
+
+    The data structure of the actual/expected dictionaries should be:
+    [
+        {"prompt": "prompt 1", "images": images,
+        {"prompt": "prompt 2", "images": images,
+        ...
+    ]
+
+    Args:
+        actual: Data structure containing computed images.
+        expected: Data structure containing reference images.
+        rtol: The relative tolerance (used if `compare_fn` is not provided).
+        atol: The absolute tolerance (used if `compare_fn` is not provided).
+        compare_fn: A callable that takes the arguments
+            (actual, expected, description) and raises an assertion error
+            if the check fails.
+    """
+    expected_prompts = {x["prompt"]: x["images"] for x in expected}
+    actual_prompts = {x["prompt"]: x["images"] for x in actual}
+
+    if expected_prompts.keys() < actual_prompts.keys():
+        diff = actual_prompts.keys() - expected_prompts.keys()
+        raise ValueError(
+            f"Golden values for prompts {diff} not found. Please re-run"
+            " `gen_golden_values`."
+        )
+
+    for prompt, images in actual_prompts.items():
+        expected_images = expected_prompts[prompt]
+        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
+        description = f"images for prompt '{short}'"
+
+        if compare_fn:
+            compare_fn(images, expected_images, description)
+        else:
+            np.testing.assert_allclose(
+                images,
+                expected_images,
+                rtol=rtol,
+                atol=atol,
+                err_msg=f"Got different {description}.",
+                verbose=True,
+            )
+
+
+def run_pixel_generation(
+    pipeline: pipelines.PixelGenerationPipeline,
+    tokenizer: PipelineTokenizer,
+    requests: list[MockPixelGenerationRequest],
+    num_steps: int,
+    print_outputs: bool = False,
+) -> list[dict[str, Any]]:
+    """Run pixel generation using MAX PixelGenerationPipeline.
+
+    Args:
+        pipeline: MAX PixelGenerationPipeline instance
+        tokenizer: MAX PixelGenerationTokenizer instance
+        requests: List of MockPixelGenerationRequest objects
+        num_steps: Number of inference steps (denoising steps)
+        print_outputs: Whether to print outputs
+
+    Returns:
+        List of dicts with prompt and generated images
+    """
+
+    results = []
+
+    for mock_request in requests:
+        prompt = mock_request.prompt
+        if print_outputs:
+            print(f"Generating image for prompt: {prompt}")
+
+        # Convert MockPixelGenerationRequest to PixelGenerationRequest
+        request_id = RequestID()
+        request = mock_request.to_pixel_generation_request(
+            request_id=request_id,
+            model_name=tokenizer.model_path,
+        )
+
+        # Override num_steps if explicitly provided (for verification with different step counts)
+        if num_steps != mock_request.num_inference_steps:
+            request = replace(request, num_inference_steps=num_steps)
+
+        # Create context from request using tokenizer
+        context = asyncio.run(tokenizer.new_context(request))
+
+        if print_outputs:
+            print(
+                f"Context created: {context.height}x{context.width}, "
+                f"{context.num_inference_steps} steps, guidance={context.guidance_scale}"
+            )
+
+        # Prepare inputs for the pipeline
+        inputs = PixelGenerationInputs(batch={context.request_id: context})
+
+        # Execute the pipeline
+        outputs = pipeline.execute(inputs)
+
+        # Get the output for our request
+        output = outputs[context.request_id]
+
+        # Check if generation completed successfully
+        if not output.is_done:
+            print(f"WARNING: Generation status: {output.final_status}")
+            continue
+
+        if print_outputs:
+            print(f"Generated image shape (raw): {output.pixel_data.shape}")
+
+        # Post-process the pixel data to convert from model format (NCHW, [-1, 1])
+        # to display format (NHWC, [0, 1]) - same as torch output
+        pixel_data = asyncio.run(tokenizer.postprocess(output.pixel_data))
+
+        if print_outputs:
+            print(f"Generated image shape (postprocessed): {pixel_data.shape}")
+
+        # Take first image from batch dimension if present
+        if pixel_data.shape[0] > 0:
+            image_np = pixel_data[0]  # Shape: (H, W, C)
+        else:
+            print("ERROR: No pixel data generated")
+            continue
+
+        results.append({"prompt": prompt, "images": image_np})
+
+    return results
