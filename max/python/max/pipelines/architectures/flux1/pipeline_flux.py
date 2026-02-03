@@ -209,27 +209,6 @@ class FluxPipeline(DiffusionPipeline):
             text_ids.to(device).cast(dtype),
         )
 
-    def _denoise_latents(
-        self,
-        latents: Tensor,
-        prompt_embeds: Tensor,
-        pooled_prompt_embeds: Tensor,
-        text_ids: Tensor,
-        guidance: Tensor,
-        timestep: Tensor,
-        latent_image_ids: Tensor,
-    ) -> Tensor:
-        noise_pred = self.transformer(
-            latents,
-            prompt_embeds,
-            pooled_prompt_embeds,
-            timestep,
-            latent_image_ids,
-            text_ids,
-            guidance,
-        )[0]
-        return noise_pred
-
     def _decode_latents(
         self,
         latents: Tensor,
