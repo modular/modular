@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar
 
 from max.driver import Device
-from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
-from pydantic import Field
 
 
 class LTX2ConfigBase(MAXModelConfigBase):

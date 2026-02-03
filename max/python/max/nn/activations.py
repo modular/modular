@@ -15,8 +15,8 @@
 from max import functional as F
 from max.tensor import Tensor
 
-from .module import Module
 from .linear import Linear
+from .module import Module
 
 
 class SiLU(Module[[Tensor], Tensor]):

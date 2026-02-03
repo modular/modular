@@ -14,13 +14,12 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask, PixelContext
 from max.pipelines.lib import (
+    PixelGenerationTokenizer,
     SupportedArchitecture,
     SupportedEncoding,
-    PixelGenerationTokenizer,
 )
 
 from .pipeline_ltx2 import LTX2Pipeline
-
 
 ltx2_arch = SupportedArchitecture(
     name="LTX2Pipeline",

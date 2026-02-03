@@ -12,19 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """LTX2 Video Autoencoder Architecture."""
 
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
-from max import nn
 from max import functional as F
 from max.driver import Device
-from max.dtype import DType
 from max.graph.weights import Weights
-from max.nn import Module, Identity, LayerNorm
+from max.nn import Conv3d, Dropout, Identity, LayerNorm, Module, ModuleList
 from max.pipelines.lib import SupportedEncoding
 from max.tensor import Tensor
 
 from ..embeddings import PixArtAlphaCombinedTimestepSizeEmbeddings
-from .distributions import DiagonalGaussianDistribution
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLLTX2VideoConfig
 
@@ -66,7 +63,9 @@ class LTX2VideoCausalConv3d(Module[[Tensor, bool], Tensor]):
         )
 
         dilation = dilation if isinstance(dilation, tuple) else (dilation, 1, 1)
-        stride = stride if isinstance(stride, tuple) else (stride, stride, stride)
+        stride = (
+            stride if isinstance(stride, tuple) else (stride, stride, stride)
+        )
 
         # Spatial padding (height and width)
         height_pad = self.kernel_size[1] // 2
@@ -74,7 +73,7 @@ class LTX2VideoCausalConv3d(Module[[Tensor, bool], Tensor]):
         # Padding for [depth, height, width]
         padding = (0, height_pad, width_pad)
 
-        self.conv = nn.Conv3d(
+        self.conv = Conv3d(
             kernel_size=self.kernel_size,
             in_channels=in_channels,
             out_channels=out_channels,
@@ -82,7 +81,7 @@ class LTX2VideoCausalConv3d(Module[[Tensor, bool], Tensor]):
             dilation=dilation,
             num_groups=groups,
             padding=padding,
-            permute=True, # LTX2 uses PyTorch format internally but we refactoring to MAX
+            permute=True,  # LTX2 uses PyTorch format internally but we refactoring to MAX
         )
 
     def forward(self, x: Tensor, causal: bool = True) -> Tensor:
@@ -127,7 +126,7 @@ class LTX2VideoResnetBlock3d(Module[[Tensor, Tensor | None, bool], Tensor]):
         )
 
         self.norm2 = PerChannelRMSNorm(eps=eps)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = Dropout(dropout)
         self.conv2 = LTX2VideoCausalConv3d(
             out_channels,
             out_channels,
@@ -141,8 +140,8 @@ class LTX2VideoResnetBlock3d(Module[[Tensor, Tensor | None, bool], Tensor]):
             self.norm3 = LayerNorm(
                 in_channels, eps=eps, elementwise_affine=True, use_bias=True
             )
-            # LTX 2.0 uses a normal nn.Conv3d here rather than LTXVideoCausalConv3d
-            self.conv_shortcut = nn.Conv3d(
+            # LTX 2.0 uses a normal Conv3d here rather than LTXVideoCausalConv3d
+            self.conv_shortcut = Conv3d(
                 kernel_size=1,
                 in_channels=in_channels,
                 out_channels=out_channels,
@@ -161,18 +160,15 @@ class LTX2VideoResnetBlock3d(Module[[Tensor, Tensor | None, bool], Tensor]):
         self.scale_shift_table: Tensor | None = None
 
     def forward(
-        self,
-        x: Tensor,
-        temb: Tensor | None = None,
-        causal: bool = True
+        self, x: Tensor, temb: Tensor | None = None, causal: bool = True
     ) -> Tensor:
         residual = x
         if self.norm3 is not None:
             # norm3 is applied to [B, C, D, H, W] but LayerNorm expects C as last dim
             # x shape: [B, C, D, H, W]
-            x_norm = x.permute(0, 2, 3, 4, 1) # [B, D, H, W, C]
+            x_norm = x.permute(0, 2, 3, 4, 1)  # [B, D, H, W, C]
             x_norm = self.norm3(x_norm)
-            residual = x_norm.permute(0, 4, 1, 2, 3) # [B, C, D, H, W]
+            residual = x_norm.permute(0, 4, 1, 2, 3)  # [B, C, D, H, W]
 
         if self.conv_shortcut is not None:
             residual = self.conv_shortcut(residual)
@@ -221,7 +217,7 @@ class LTX2VideoUpsample3d(Module[[Tensor], Tensor]):
         self.spatio_temporal = spatio_temporal
         self.residual = residual
 
-        self.conv = nn.Conv3d(
+        self.conv = Conv3d(
             kernel_size=3,
             in_channels=in_channels,
             out_channels=out_channels,
@@ -238,12 +234,18 @@ class LTX2VideoUpsample3d(Module[[Tensor], Tensor]):
 
         if self.spatio_temporal:
             # 3D interpolation
-            x = F.interpolate(x, scale_factor=float(self.factor), mode="nearest")
+            x = F.interpolate(
+                x, scale_factor=float(self.factor), mode="nearest"
+            )
         else:
             # Spatial-only interpolation (keep depth dimension)
             # Need to handle specific logic if one dimension is kept
             # For now, simplest nearest interpolation
-            x = F.interpolate(x, scale_factor=(1.0, float(self.factor), float(self.factor)), mode="nearest")
+            x = F.interpolate(
+                x,
+                scale_factor=(1.0, float(self.factor), float(self.factor)),
+                mode="nearest",
+            )
 
         return self.conv(x)
 
@@ -277,7 +279,7 @@ class LTX2VideoDecoderBlock3D(Module[[Tensor, Tensor | None, bool], Tensor]):
                     spatial_padding_mode=spatial_padding_mode,
                 )
             )
-        self.resnets = nn.Sequential(*resnets)
+        self.resnets = Sequential(*resnets)
 
         self.upsampler: LTX2VideoUpsample3d | None = None
         if spatio_temporal_scaling:
@@ -290,10 +292,7 @@ class LTX2VideoDecoderBlock3D(Module[[Tensor, Tensor | None, bool], Tensor]):
             )
 
     def forward(
-        self,
-        x: Tensor,
-        temb: Tensor | None = None,
-        causal: bool = True
+        self, x: Tensor, temb: Tensor | None = None, causal: bool = True
     ) -> Tensor:
         for resnet in self.resnets:
             x = resnet(x, temb, causal=causal)
@@ -312,7 +311,7 @@ class LTX2VideoDecoder3d(Module[[Tensor, Tensor | None, bool], Tensor]):
         self.config = config
 
         # Initial projection
-        self.conv_in = nn.Conv3d(
+        self.conv_in = Conv3d(
             kernel_size=3,
             in_channels=config.latent_channels,
             out_channels=config.decoder_block_out_channels[0],
@@ -360,20 +359,30 @@ class LTX2VideoDecoder3d(Module[[Tensor, Tensor | None, bool], Tensor]):
                     in_channels=curr_channels,
                     out_channels=out_mult,
                     num_layers=config.decoder_layers_per_block[i],
-                    spatio_temporal_scaling=config.decoder_spatio_temporal_scaling[i] if i < len(config.decoder_spatio_temporal_scaling) else False,
-                    inject_noise=config.decoder_inject_noise[i] if i < len(config.decoder_inject_noise) else False,
-                    upsample_factor=config.upsample_factor[i] if i < len(config.upsample_factor) else 2,
-                    upsample_residual=config.upsample_residual[i] if i < len(config.upsample_residual) else True,
+                    spatio_temporal_scaling=config.decoder_spatio_temporal_scaling[
+                        i
+                    ]
+                    if i < len(config.decoder_spatio_temporal_scaling)
+                    else False,
+                    inject_noise=config.decoder_inject_noise[i]
+                    if i < len(config.decoder_inject_noise)
+                    else False,
+                    upsample_factor=config.upsample_factor[i]
+                    if i < len(config.upsample_factor)
+                    else 2,
+                    upsample_residual=config.upsample_residual[i]
+                    if i < len(config.upsample_residual)
+                    else True,
                     timestep_conditioning=config.timestep_conditioning,
                     spatial_padding_mode=config.decoder_spatial_padding_mode,
                 )
             )
             curr_channels = out_mult
-        self.up_blocks = nn.ModuleList(up_blocks)
+        self.up_blocks = ModuleList(up_blocks)
 
         # Final output projection
         self.norm_out = PerChannelRMSNorm(eps=config.resnet_norm_eps)
-        self.conv_out = nn.Conv3d(
+        self.conv_out = Conv3d(
             kernel_size=3,
             in_channels=curr_channels,
             out_channels=config.out_channels,
@@ -382,10 +391,7 @@ class LTX2VideoDecoder3d(Module[[Tensor, Tensor | None, bool], Tensor]):
         )
 
     def forward(
-        self,
-        z: Tensor,
-        timestep: Tensor | None = None,
-        causal: bool = True
+        self, z: Tensor, timestep: Tensor | None = None, causal: bool = True
     ) -> Tensor:
         x = self.conv_in(z)
 
@@ -394,7 +400,9 @@ class LTX2VideoDecoder3d(Module[[Tensor, Tensor | None, bool], Tensor]):
             # Simplified conditioning for autoencoder
             # In LTX2, conditioning is often just zeros or based on fake resolution
             fake_res = Tensor.constant(0.0, (z.shape[0],))
-            temb = self.time_embed(timestep, fake_res, fake_res, z.shape[0], z.dtype)
+            temb = self.time_embed(
+                timestep, fake_res, fake_res, z.shape[0], z.dtype
+            )
 
         x = self.mid.block_1(x, temb, causal=causal)
         x = self.mid.attn_1(x)
@@ -422,7 +430,7 @@ class AutoencoderKLLTX2Video(Module[[Tensor, Tensor | None, bool], Tensor]):
         self,
         z: Tensor,
         timestep: Tensor | None = None,
-        causal: bool | None = None
+        causal: bool | None = None,
     ) -> Tensor:
         if causal is None:
             causal = self.config.decoder_causal

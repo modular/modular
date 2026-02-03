@@ -12,23 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
-import math
 
 import max.functional as F
-from max import nn, random
+from max import random
 from max.driver import Device
 from max.dtype import DType
+from max.nn import FeedForward, Linear, Module, ModuleList, RMSNorm, SiLU
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.tensor import Tensor
-from max.nn import Module
 
-from ..attention import AttentionMixin, AttentionModuleMixin, FeedForward
 from ..embeddings import (
     PixArtAlphaCombinedTimestepSizeEmbeddings,
     PixArtAlphaTextProjection,
 )
-from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 logger = logging.getLogger(__name__)
@@ -37,8 +36,8 @@ logger = logging.getLogger(__name__)
 # Simple BaseOutput class for structured return values
 class BaseOutput:
     """Base class for structured model outputs."""
-    pass
 
+    pass
 
 
 def apply_interleaved_rotary_emb(
@@ -115,7 +114,12 @@ class AudioVisualModelOutput(BaseOutput):
     audio_sample: "Tensor"
 
 
-class LTX2AdaLayerNormSingle(Module[[Tensor, dict[str, Tensor] | None, int | None, DType | None], tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]):
+class LTX2AdaLayerNormSingle(
+    Module[
+        [Tensor, dict[str, Tensor] | None, int | None, DType | None],
+        tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
+    ]
+):
     r"""
     Norm layer adaptive layer norm single (adaLN-single).
 
@@ -147,7 +151,7 @@ class LTX2AdaLayerNormSingle(Module[[Tensor, dict[str, Tensor] | None, int | Non
         )
 
         self.silu = SiLU()
-        self.linear = nn.Linear(
+        self.linear = Linear(
             embedding_dim, self.num_mod_params * embedding_dim, bias=True
         )
 
@@ -178,6 +182,7 @@ class LTX2Attention(Module[[Tensor, Tensor | None, Tensor | None], Tensor]):
     Compared to the LTX-1.0 model, we allow the RoPE embeddings for the queries and keys to be separate so that we can
     support audio-to-video (a2v) and video-to-audio (v2a) cross attention.
     """
+
     def __init__(
         self,
         query_dim: int,
@@ -215,27 +220,25 @@ class LTX2Attention(Module[[Tensor, Tensor | None, Tensor | None], Tensor]):
         self.heads = heads
         self.rope_type = rope_type
 
-        self.norm_q = nn.RMSNorm(
+        self.norm_q = RMSNorm(
             dim_head * heads,
             eps=norm_eps,
             elementwise_affine=norm_elementwise_affine,
         )
-        self.norm_k = nn.RMSNorm(
+        self.norm_k = RMSNorm(
             dim_head * kv_heads,
             eps=norm_eps,
             elementwise_affine=norm_elementwise_affine,
         )
-        self.to_q = nn.Linear(query_dim, self.inner_dim, bias=bias)
-        self.to_k = nn.Linear(
+        self.to_q = Linear(query_dim, self.inner_dim, bias=bias)
+        self.to_k = Linear(
             self.cross_attention_dim, self.inner_kv_dim, bias=bias
         )
-        self.to_v = nn.Linear(
+        self.to_v = Linear(
             self.cross_attention_dim, self.inner_kv_dim, bias=bias
         )
-        self.to_out = nn.ModuleList([])
-        self.to_out.append(
-            nn.Linear(self.inner_dim, self.out_dim, bias=out_bias)
-        )
+        self.to_out = ModuleList([])
+        self.to_out.append(Linear(self.inner_dim, self.out_dim, bias=out_bias))
         self.to_out.append(Dropout(dropout))
 
     def forward(
@@ -307,7 +310,31 @@ class LTX2Attention(Module[[Tensor, Tensor | None, Tensor | None], Tensor]):
         return hidden_states
 
 
-class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, tuple[Tensor, Tensor] | None, tuple[Tensor, Tensor] | None, tuple[Tensor, Tensor] | None, tuple[Tensor, Tensor] | None, Tensor | None, Tensor | None, Tensor | None, Tensor | None], Tensor]):
+class LTX2VideoTransformerBlock(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            tuple[Tensor, Tensor] | None,
+            tuple[Tensor, Tensor] | None,
+            tuple[Tensor, Tensor] | None,
+            tuple[Tensor, Tensor] | None,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+        ],
+        Tensor,
+    ]
+):
     r"""
     Transformer block used in [LTX-2.0](https://huggingface.co/Lightricks/LTX-Video).
 
@@ -345,7 +372,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         rope_type: str = "interleaved",
     ):
         # 1. Self-Attention (video and audio)
-        self.norm1 = nn.RMSNorm(
+        self.norm1 = RMSNorm(
             dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.attn1 = LTX2Attention(
@@ -360,7 +387,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
             rope_type=rope_type,
         )
 
-        self.audio_norm1 = nn.RMSNorm(
+        self.audio_norm1 = RMSNorm(
             audio_dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.audio_attn1 = LTX2Attention(
@@ -376,7 +403,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         )
 
         # 2. Prompt Cross-Attention
-        self.norm2 = nn.RMSNorm(
+        self.norm2 = RMSNorm(
             dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.attn2 = LTX2Attention(
@@ -391,7 +418,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
             rope_type=rope_type,
         )
 
-        self.audio_norm2 = nn.RMSNorm(
+        self.audio_norm2 = RMSNorm(
             audio_dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.audio_attn2 = LTX2Attention(
@@ -408,7 +435,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
 
         # 3. Audio-to-Video (a2v) and Video-to-Audio (v2a) Cross-Attention
         # Audio-to-Video (a2v) Attention --> Q: Video; K,V: Audio
-        self.audio_to_video_norm = nn.RMSNorm(
+        self.audio_to_video_norm = RMSNorm(
             dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.audio_to_video_attn = LTX2Attention(
@@ -424,7 +451,7 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         )
 
         # Video-to-Audio (v2a) Attention --> Q: Audio; K,V: Video
-        self.video_to_audio_norm = nn.RMSNorm(
+        self.video_to_audio_norm = RMSNorm(
             audio_dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.video_to_audio_attn = LTX2Attention(
@@ -440,12 +467,12 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         )
 
         # 4. Feedforward layers
-        self.norm3 = nn.RMSNorm(
+        self.norm3 = RMSNorm(
             dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.ff = FeedForward(dim, activation_fn=activation_fn)
 
-        self.audio_norm3 = nn.RMSNorm(
+        self.audio_norm3 = RMSNorm(
             audio_dim, eps=eps, elementwise_affine=elementwise_affine
         )
         self.audio_ff = FeedForward(audio_dim, activation_fn=activation_fn)
@@ -453,11 +480,15 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         # 5. Per-Layer Modulation Parameters
         # Self-Attention / Feedforward AdaLayerNorm-Zero mod params
         self.scale_shift_table = random.gaussian((6, dim)) / dim**0.5
-        self.audio_scale_shift_table = random.gaussian((6, audio_dim)) / audio_dim**0.5
+        self.audio_scale_shift_table = (
+            random.gaussian((6, audio_dim)) / audio_dim**0.5
+        )
 
         # Per-layer a2v, v2a Cross-Attention mod params
         self.video_a2v_cross_attn_scale_shift_table = random.gaussian((5, dim))
-        self.audio_a2v_cross_attn_scale_shift_table = random.gaussian((5, audio_dim))
+        self.audio_a2v_cross_attn_scale_shift_table = random.gaussian(
+            (5, audio_dim)
+        )
 
     def forward(
         self,
@@ -671,7 +702,9 @@ class LTX2VideoTransformerBlock(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, 
         return hidden_states, audio_hidden_states
 
 
-class LTX2AudioVideoRotaryPosEmbed(Module[[Tensor, Device | None], tuple[Tensor, Tensor]]):
+class LTX2AudioVideoRotaryPosEmbed(
+    Module[[Tensor, Device | None], tuple[Tensor, Tensor]]
+):
     """
     Video and audio rotary positional embeddings (RoPE) for the LTX-2.0 model.
 
@@ -791,9 +824,15 @@ class LTX2AudioVideoRotaryPosEmbed(Module[[Tensor, Device | None], tuple[Tensor,
             device=device,
         )
         # indexing='ij' ensures that the dimensions are kept in order as (frames, height, width)
-        grid_f_3d = grid_f.reshape(-1, 1, 1).expand(-1, grid_h.shape[0], grid_w.shape[0])
-        grid_h_3d = grid_h.reshape(1, -1, 1).expand(grid_f.shape[0], -1, grid_w.shape[0])
-        grid_w_3d = grid_w.reshape(1, 1, -1).expand(grid_f.shape[0], grid_h.shape[0], -1)
+        grid_f_3d = grid_f.reshape(-1, 1, 1).expand(
+            -1, grid_h.shape[0], grid_w.shape[0]
+        )
+        grid_h_3d = grid_h.reshape(1, -1, 1).expand(
+            grid_f.shape[0], -1, grid_w.shape[0]
+        )
+        grid_w_3d = grid_w.reshape(1, 1, -1).expand(
+            grid_f.shape[0], grid_h.shape[0], -1
+        )
         grid = F.stack(
             [grid_f_3d, grid_h_3d, grid_w_3d], axis=0
         )  # [3, N_F, N_H, N_W], where e.g. N_F is the number of temporal patches
@@ -1010,7 +1049,29 @@ class LTX2AudioVideoRotaryPosEmbed(Module[[Tensor, Device | None], tuple[Tensor,
         return cos_freqs, sin_freqs
 
 
-class LTX2VideoTransformer3DModel(Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor | None, Tensor | None, Tensor | None, int | None, int | None, int | None, float, int | None, Tensor | None, Tensor | None, dict[str, Any] | None], AudioVisualModelOutput]):
+class LTX2VideoTransformer3DModel(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor | None,
+            Tensor | None,
+            Tensor | None,
+            int | None,
+            int | None,
+            int | None,
+            float,
+            int | None,
+            Tensor | None,
+            Tensor | None,
+            dict[str, Any] | None,
+        ],
+        AudioVisualModelOutput,
+    ]
+):
     r"""
     A Transformer model for video-like data used in [LTX](https://huggingface.co/Lightricks/LTX-Video).
 
@@ -1082,8 +1143,8 @@ class LTX2VideoTransformer3DModel(Module[[Tensor, Tensor, Tensor, Tensor, Tensor
         audio_inner_dim = audio_num_attention_heads * audio_attention_head_dim
 
         # 1. Patchification input projections
-        self.proj_in = nn.Linear(in_channels, inner_dim)
-        self.audio_proj_in = nn.Linear(audio_in_channels, audio_inner_dim)
+        self.proj_in = Linear(in_channels, inner_dim)
+        self.audio_proj_in = Linear(audio_in_channels, audio_inner_dim)
 
         # 2. Prompt embeddings
         self.caption_projection = PixArtAlphaTextProjection(
@@ -1126,8 +1187,12 @@ class LTX2VideoTransformer3DModel(Module[[Tensor, Tensor, Tensor, Tensor, Tensor
         )
 
         # 3.3. Output Layer Scale/Shift Modulation parameters
-        self.scale_shift_table = random.gaussian((2, inner_dim)) / inner_dim**0.5
-        self.audio_scale_shift_table = random.gaussian((2, audio_inner_dim)) / audio_inner_dim**0.5
+        self.scale_shift_table = (
+            random.gaussian((2, inner_dim)) / inner_dim**0.5
+        )
+        self.audio_scale_shift_table = (
+            random.gaussian((2, audio_inner_dim)) / audio_inner_dim**0.5
+        )
 
         # 4. Rotary Positional Embeddings (RoPE)
         # Self-Attention
@@ -1196,7 +1261,7 @@ class LTX2VideoTransformer3DModel(Module[[Tensor, Tensor, Tensor, Tensor, Tensor
         )
 
         # 5. Transformer Blocks
-        self.transformer_blocks = nn.ModuleList(
+        self.transformer_blocks = ModuleList(
             [
                 LTX2VideoTransformerBlock(
                     dim=inner_dim,
@@ -1220,13 +1285,13 @@ class LTX2VideoTransformer3DModel(Module[[Tensor, Tensor, Tensor, Tensor, Tensor
         )
 
         # 6. Output layers
-        self.norm_out = nn.LayerNorm(inner_dim, eps=1e-6, elementwise_affine=False)
-        self.proj_out = nn.Linear(inner_dim, out_channels)
+        self.norm_out = LayerNorm(inner_dim, eps=1e-6, elementwise_affine=False)
+        self.proj_out = Linear(inner_dim, out_channels)
 
-        self.audio_norm_out = nn.LayerNorm(
+        self.audio_norm_out = LayerNorm(
             audio_inner_dim, eps=1e-6, elementwise_affine=False
         )
-        self.audio_proj_out = nn.Linear(audio_inner_dim, audio_out_channels)
+        self.audio_proj_out = Linear(audio_inner_dim, audio_out_channels)
 
     def forward(
         self,

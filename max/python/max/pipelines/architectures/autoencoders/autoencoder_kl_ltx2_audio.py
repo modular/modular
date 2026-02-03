@@ -14,18 +14,24 @@
 
 from typing import Any, ClassVar
 
-from max import nn
 from max import functional as F
 from max.driver import Device
-from max.dtype import DType
 from max.graph.weights import Weights
-from max.nn import Module, Conv2d, Linear, SiLU, GroupNorm, Identity, Dropout
+from max.nn import (
+    Conv2d,
+    Dropout,
+    GroupNorm,
+    Identity,
+    Linear,
+    Module,
+    ModuleList,
+    SiLU,
+)
 from max.pipelines.lib import SupportedEncoding
 from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLLTX2AudioConfig
-
 
 LATENT_DOWNSAMPLE_FACTOR = 4
 
@@ -135,16 +141,18 @@ class LTX2AudioAttnBlock(Module[[Tensor], Tensor]):
 
         batch, channels, height, width = q.shape
         # Use F.bmm for attention computation
-        q = F.reshape(q, [batch, channels, height * width]).permute(0, 2, 1) # [B, HW, C]
-        k = F.reshape(k, [batch, channels, height * width]) # [B, C, HW]
+        q = F.reshape(q, [batch, channels, height * width]).permute(
+            0, 2, 1
+        )  # [B, HW, C]
+        k = F.reshape(k, [batch, channels, height * width])  # [B, C, HW]
 
-        attn = F.bmm(q, k) * (float(channels) ** (-0.5)) # [B, HW, HW]
+        attn = F.bmm(q, k) * (float(channels) ** (-0.5))  # [B, HW, HW]
         attn = F.softmax(attn, axis=2)
 
-        v = F.reshape(v, [batch, channels, height * width]) # [B, C, HW]
-        attn = attn.permute(0, 2, 1) # [B, HW, HW]
+        v = F.reshape(v, [batch, channels, height * width])  # [B, C, HW]
+        attn = attn.permute(0, 2, 1)  # [B, HW, HW]
 
-        h = F.bmm(v, attn) # [B, C, HW]
+        h = F.bmm(v, attn)  # [B, C, HW]
         h = F.reshape(h, [batch, channels, height, width])
 
         return x + self.proj_out(h)
@@ -183,10 +191,15 @@ class LTX2AudioResnetBlock(Module[[Tensor, Tensor | None], Tensor]):
 
         if causality_axis is not None and causality_axis != "none":
             self.conv1 = LTX2AudioCausalConv2d(
-                in_channels, out_channels, kernel_size=3, causality_axis=causality_axis
+                in_channels,
+                out_channels,
+                kernel_size=3,
+                causality_axis=causality_axis,
             )
         else:
-            self.conv1 = Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+            self.conv1 = Conv2d(
+                in_channels, out_channels, kernel_size=3, padding=1
+            )
 
         self.temb_proj: Linear | None = None
         if temb_channels > 0:
@@ -203,10 +216,15 @@ class LTX2AudioResnetBlock(Module[[Tensor, Tensor | None], Tensor]):
 
         if causality_axis is not None and causality_axis != "none":
             self.conv2 = LTX2AudioCausalConv2d(
-                out_channels, out_channels, kernel_size=3, causality_axis=causality_axis
+                out_channels,
+                out_channels,
+                kernel_size=3,
+                causality_axis=causality_axis,
             )
         else:
-            self.conv2 = Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+            self.conv2 = Conv2d(
+                out_channels, out_channels, kernel_size=3, padding=1
+            )
 
         self.nin_shortcut: Module[[Tensor], Tensor] | None = None
         self.conv_shortcut: Module[[Tensor], Tensor] | None = None
@@ -276,10 +294,15 @@ class LTX2AudioUpsample(Module[[Tensor], Tensor]):
         if self.with_conv:
             if causality_axis is not None and causality_axis != "none":
                 self.conv = LTX2AudioCausalConv2d(
-                    in_channels, in_channels, kernel_size=3, causality_axis=causality_axis
+                    in_channels,
+                    in_channels,
+                    kernel_size=3,
+                    causality_axis=causality_axis,
                 )
             else:
-                self.conv = Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
+                self.conv = Conv2d(
+                    in_channels, in_channels, kernel_size=3, padding=1
+                )
 
     def forward(self, x: Tensor) -> Tensor:
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
@@ -311,13 +334,17 @@ class LTX2AudioAudioPatchifier:
 
     def patchify(self, audio_latents: Tensor) -> Tensor:
         batch, channels, time, freq = audio_latents.shape
-        return F.reshape(audio_latents.permute(0, 2, 1, 3), [batch, time, channels * freq])
+        return F.reshape(
+            audio_latents.permute(0, 2, 1, 3), [batch, time, channels * freq]
+        )
 
     def unpatchify(
         self, audio_latents: Tensor, channels: int, mel_bins: int
     ) -> Tensor:
         batch, time, _ = audio_latents.shape
-        return F.reshape(audio_latents, [batch, time, channels, mel_bins]).permute(0, 2, 1, 3)
+        return F.reshape(
+            audio_latents, [batch, time, channels, mel_bins]
+        ).permute(0, 2, 1, 3)
 
 
 class LTX2AudioDecoder(Module[[Tensor], Tensor]):
@@ -337,12 +364,20 @@ class LTX2AudioDecoder(Module[[Tensor], Tensor]):
 
         curr_channels = config.base_channels * config.ch_mult[-1]
 
-        if config.causality_axis is not None and config.causality_axis != "none":
+        if (
+            config.causality_axis is not None
+            and config.causality_axis != "none"
+        ):
             self.conv_in = LTX2AudioCausalConv2d(
-                config.latent_channels, curr_channels, kernel_size=3, causality_axis=config.causality_axis
+                config.latent_channels,
+                curr_channels,
+                kernel_size=3,
+                causality_axis=config.causality_axis,
             )
         else:
-            self.conv_in = Conv2d(config.latent_channels, curr_channels, kernel_size=3, padding=1)
+            self.conv_in = Conv2d(
+                config.latent_channels, curr_channels, kernel_size=3, padding=1
+            )
 
         self.mid = Module()
         self.mid.block_1 = LTX2AudioResnetBlock(
@@ -355,7 +390,9 @@ class LTX2AudioDecoder(Module[[Tensor], Tensor]):
         )
 
         if config.mid_block_add_attention:
-            self.mid.attn_1 = LTX2AudioAttnBlock(curr_channels, norm_type=config.norm_type)
+            self.mid.attn_1 = LTX2AudioAttnBlock(
+                curr_channels, norm_type=config.norm_type
+            )
         else:
             self.mid.attn_1 = Identity()
 
@@ -368,13 +405,13 @@ class LTX2AudioDecoder(Module[[Tensor], Tensor]):
             causality_axis=config.causality_axis,
         )
 
-        self.up_blocks = nn.ModuleList()
+        self.up_blocks = ModuleList()
         for level in reversed(range(len(config.ch_mult))):
             block_out = config.base_channels * config.ch_mult[level]
 
-            stage = nn.Module()
-            stage.resnets = nn.ModuleList()
-            stage.attns = nn.ModuleList()
+            stage = Module()
+            stage.resnets = ModuleList()
+            stage.attns = ModuleList()
 
             for _ in range(config.num_res_blocks + 1):
                 stage.resnets.append(
@@ -407,12 +444,20 @@ class LTX2AudioDecoder(Module[[Tensor], Tensor]):
         else:
             raise ValueError(f"Invalid normalization type: {config.norm_type}")
 
-        if config.causality_axis is not None and config.causality_axis != "none":
+        if (
+            config.causality_axis is not None
+            and config.causality_axis != "none"
+        ):
             self.conv_out = LTX2AudioCausalConv2d(
-                curr_channels, config.output_channels, kernel_size=3, causality_axis=config.causality_axis
+                curr_channels,
+                config.output_channels,
+                kernel_size=3,
+                causality_axis=config.causality_axis,
             )
         else:
-            self.conv_out = Conv2d(curr_channels, config.output_channels, kernel_size=3, padding=1)
+            self.conv_out = Conv2d(
+                curr_channels, config.output_channels, kernel_size=3, padding=1
+            )
 
     def forward(self, sample: Tensor) -> Tensor:
         h = self.conv_in(sample)

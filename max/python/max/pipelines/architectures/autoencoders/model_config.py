@@ -65,6 +65,7 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
         )
         return AutoencoderKLConfig(**init_dict)
 
+
 class AutoencoderKLLTX2VideoConfigBase(MAXModelConfigBase):
     in_channels: int = 3
     out_channels: int = 3

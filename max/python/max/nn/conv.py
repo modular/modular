@@ -22,7 +22,7 @@ from max.driver import Accelerator, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.type import ConvInputLayout, FilterLayout
-from max.nn.module import Module
+from max.nn import Module
 from max.tensor import Tensor
 
 
@@ -318,7 +318,9 @@ class Conv1d(Module[[Tensor], Tensor]):
             self.bias = random.normal(
                 [out_channels],
                 dtype=self.dtype,
-                device=self.device.to_device() if self.device is not None else None,
+                device=self.device.to_device()
+                if self.device is not None
+                else None,
             )
         else:
             self.bias = 0
@@ -496,7 +498,9 @@ class ConvTranspose1d(Module[[Tensor], Tensor]):
             self.bias = random.normal(
                 [out_channels],
                 dtype=self.dtype,
-                device=self.device.to_device() if self.device is not None else None,
+                device=self.device.to_device()
+                if self.device is not None
+                else None,
             )
         else:
             self.bias = None
@@ -541,8 +545,12 @@ class ConvTranspose1d(Module[[Tensor], Tensor]):
             padding=padding_2d,
             output_paddings=(0, self.output_padding),
             bias=self.bias,
-            input_layout=ConvInputLayout.NCHW if self.permute else ConvInputLayout.NHWC,
-            filter_layout=FilterLayout.CFRS if self.permute else FilterLayout.RSCF,
+            input_layout=ConvInputLayout.NCHW
+            if self.permute
+            else ConvInputLayout.NHWC,
+            filter_layout=FilterLayout.CFRS
+            if self.permute
+            else FilterLayout.RSCF,
         )
 
         if self.permute:
@@ -553,6 +561,7 @@ class ConvTranspose1d(Module[[Tensor], Tensor]):
             output = output.squeeze(1)
 
         return output
+
 
 class Conv3d(Module[[Tensor], Tensor]):
     """A 3D convolution layer.
@@ -588,7 +597,9 @@ class Conv3d(Module[[Tensor], Tensor]):
         out_channels: int,
         dtype: DType | None = None,
         stride: int | tuple[int, int, int] = 1,
-        padding: int | tuple[int, int, int] | tuple[int, int, int, int, int, int] = 0,
+        padding: int
+        | tuple[int, int, int]
+        | tuple[int, int, int, int, int, int] = 0,
         dilation: int | tuple[int, int, int] = 1,
         num_groups: int = 1,
         device: DeviceRef | None = None,
@@ -641,7 +652,9 @@ class Conv3d(Module[[Tensor], Tensor]):
             self.bias = random.normal(
                 [out_channels],
                 dtype=self.dtype,
-                device=self.device.to_device() if self.device is not None else None,
+                device=self.device.to_device()
+                if self.device is not None
+                else None,
             )
         else:
             self.bias = 0
@@ -651,7 +664,14 @@ class Conv3d(Module[[Tensor], Tensor]):
         )
 
         if isinstance(padding, int):
-            self.padding = (padding, padding, padding, padding, padding, padding)
+            self.padding = (
+                padding,
+                padding,
+                padding,
+                padding,
+                padding,
+                padding,
+            )
         elif len(padding) == 3:
             pd, ph, pw = padding
             self.padding = (pd, pd, ph, ph, pw, pw)

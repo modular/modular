@@ -42,11 +42,13 @@ from max.pipelines.lib.interfaces import (
 from max.tensor import Tensor
 from tqdm.auto import tqdm
 
+from ..autoencoders import (
+    AutoencoderKLLTX2AudioModel,
+    AutoencoderKLLTX2VideoModel,
+)
+from .ltx2 import LTX2
 from .model_config import LTX2Config
 from .nn.transformer_ltx2 import LTX2Transformer2DModel
-from ..autoencoders import AutoencoderKLLTX2VideoModel, AutoencoderKLLTX2AudioModel
-from ..gemma3multimodal import Gemma3TextEncoderModel
-from .ltx2 import LTX2
 
 logger = logging.getLogger("max.pipelines")
 
@@ -156,7 +158,12 @@ class LTX2Pipeline(DiffusionPipeline):
 
     def load_model(
         self, session: InferenceSession
-    ) -> tuple[AutoencoderKLLTX2Video, AutoencoderKLLTX2Audio, Model, LTX2Transformer2DModel]:
+    ) -> tuple[
+        AutoencoderKLLTX2Video,
+        AutoencoderKLLTX2Audio,
+        Model,
+        LTX2Transformer2DModel,
+    ]:
         """Loads the compiled LTX2 model into the MAX Engine session.
 
         Args:
@@ -178,9 +185,7 @@ class LTX2Pipeline(DiffusionPipeline):
         before = time.perf_counter()
 
         if not isinstance(self.weights, SafetensorWeights):
-            raise ValueError(
-                "LTX2 currently only supports safetensors weights"
-            )
+            raise ValueError("LTX2 currently only supports safetensors weights")
 
         # Partition raw safetensor weights by their originating file path.
         # This lets us treat diffusers-style folders (vae/, text_encoder/, transformer/)

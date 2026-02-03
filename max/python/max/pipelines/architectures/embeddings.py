@@ -13,7 +13,6 @@
 """Common embedding modules for diffusion pipelines."""
 
 import math
-from typing import Any
 
 from max import functional as F
 from max.dtype import DType
@@ -51,7 +50,9 @@ def get_timestep_embedding(
 
     timesteps_dim = timesteps_f32.shape[0]
     emb_dim = emb.shape[0]
-    emb = F.reshape(timesteps_f32, (timesteps_dim, 1)) * F.reshape(emb, (1, emb_dim))
+    emb = F.reshape(timesteps_f32, (timesteps_dim, 1)) * F.reshape(
+        emb, (1, emb_dim)
+    )
 
     # scale embeddings
     emb = emb * scale
@@ -112,7 +113,9 @@ class TimestepEmbedding(Module[..., Tensor]):
     ) -> None:
         super().__init__()
 
-        self.linear_1 = Linear(in_channels, time_embed_dim, bias=sample_proj_bias)
+        self.linear_1 = Linear(
+            in_channels, time_embed_dim, bias=sample_proj_bias
+        )
 
         if act_fn == "silu" or act_fn == "swish":
             self.act_fn = F.silu
@@ -138,23 +141,42 @@ class PixArtAlphaCombinedTimestepSizeEmbeddings(Module):
         self,
         embedding_dim: int,
         size_emb_dim: int,
-        use_additional_conditions: bool = False
+        use_additional_conditions: bool = False,
     ) -> None:
         super().__init__()
 
         self.outdim = size_emb_dim
-        self.time_proj = Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0)
-        self.timestep_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=embedding_dim)
+        self.time_proj = Timesteps(
+            num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0
+        )
+        self.timestep_embedder = TimestepEmbedding(
+            in_channels=256, time_embed_dim=embedding_dim
+        )
 
         self.use_additional_conditions = use_additional_conditions
         if use_additional_conditions:
-            self.additional_condition_proj = Timesteps(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0)
-            self.resolution_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=size_emb_dim)
-            self.aspect_ratio_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=size_emb_dim)
+            self.additional_condition_proj = Timesteps(
+                num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0
+            )
+            self.resolution_embedder = TimestepEmbedding(
+                in_channels=256, time_embed_dim=size_emb_dim
+            )
+            self.aspect_ratio_embedder = TimestepEmbedding(
+                in_channels=256, time_embed_dim=size_emb_dim
+            )
 
-    def forward(self, timestep: Tensor, resolution: Tensor, aspect_ratio: Tensor, batch_size: int, hidden_dtype: DType) -> Tensor:
+    def forward(
+        self,
+        timestep: Tensor,
+        resolution: Tensor,
+        aspect_ratio: Tensor,
+        batch_size: int,
+        hidden_dtype: DType,
+    ) -> Tensor:
         timesteps_proj = self.time_proj(timestep)
-        timesteps_emb = self.timestep_embedder(F.cast(timesteps_proj, hidden_dtype))
+        timesteps_emb = self.timestep_embedder(
+            F.cast(timesteps_proj, hidden_dtype)
+        )
 
         if self.use_additional_conditions:
             res_emb = self.additional_condition_proj(F.flatten(resolution))

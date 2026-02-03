@@ -651,7 +651,9 @@ def interpolate(
             tiled = ops.tile(unsqueezed, tile_reps)
             # Flatten the repeated dimension back
             tiled_shape = list(tiled.shape)
-            merged_size = tiled_shape[spatial_axis] * tiled_shape[spatial_axis + 1]
+            merged_size = (
+                tiled_shape[spatial_axis] * tiled_shape[spatial_axis + 1]
+            )
             new_shape = (
                 tiled_shape[:spatial_axis]
                 + [merged_size]
@@ -864,9 +866,7 @@ relu = functional(ops.relu)
 
 
 @functional
-def leaky_relu(
-    x: TensorValueLike, negative_slope: float = 0.01
-) -> TensorValue:
+def leaky_relu(x: TensorValueLike, negative_slope: float = 0.01) -> TensorValue:
     """Applies the Leaky ReLU activation function element-wise.
 
     The Leaky ReLU function is defined as:

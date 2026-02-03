@@ -14,15 +14,16 @@
 import math
 
 import max.functional as F
-from max import nn, random
-from max.dtype import DType
-from max.tensor import Tensor
+from max import random
 from max.driver import Device
+from max.dtype import DType
+from max.nn import FeedForward, Linear, Module, ModuleList, RMSNorm
+from max.tensor import Tensor
 
 from .transformer_ltx2 import LTX2Attention
 
 
-class LTX2RotaryPosEmbed1d(nn.Module[[int, int, Device], tuple[Tensor, Tensor]]):
+class LTX2RotaryPosEmbed1d(Module[[int, int, Device], tuple[Tensor, Tensor]]):
     """
     1D rotary positional embeddings (RoPE) for the LTX 2.0 text encoder connectors.
     """
@@ -125,7 +126,9 @@ class LTX2RotaryPosEmbed1d(nn.Module[[int, int, Device], tuple[Tensor, Tensor]])
         return cos_freqs, sin_freqs
 
 
-class LTX2TransformerBlock1d(nn.Module[[Tensor, Tensor | None, Tensor | None], Tensor]):
+class LTX2TransformerBlock1d(
+    Module[[Tensor, Tensor | None, Tensor | None], Tensor]
+):
     def __init__(
         self,
         dim: int,
@@ -135,9 +138,7 @@ class LTX2TransformerBlock1d(nn.Module[[Tensor, Tensor | None, Tensor | None], T
         eps: float = 1e-6,
         rope_type: str = "interleaved",
     ):
-        self.norm1 = nn.RMSNorm(
-            dim, eps=eps, elementwise_affine=False
-        )
+        self.norm1 = RMSNorm(dim, eps=eps, elementwise_affine=False)
         self.attn1 = LTX2Attention(
             query_dim=dim,
             heads=num_attention_heads,
@@ -146,10 +147,8 @@ class LTX2TransformerBlock1d(nn.Module[[Tensor, Tensor | None, Tensor | None], T
             rope_type=rope_type,
         )
 
-        self.norm2 = nn.RMSNorm(
-            dim, eps=eps, elementwise_affine=False
-        )
-        self.ff = nn.FeedForward(dim, activation_fn=activation_fn)
+        self.norm2 = RMSNorm(dim, eps=eps, elementwise_affine=False)
+        self.ff = FeedForward(dim, activation_fn=activation_fn)
 
     def forward(
         self,
@@ -172,7 +171,9 @@ class LTX2TransformerBlock1d(nn.Module[[Tensor, Tensor | None, Tensor | None], T
         return hidden_states
 
 
-class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple[Tensor, Tensor]]):
+class LTX2ConnectorTransformer1d(
+    Module[[Tensor, Tensor | None, float], tuple[Tensor, Tensor]]
+):
     """
     A 1D sequence transformer for modalities such as text.
 
@@ -200,7 +201,8 @@ class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple
         self.learnable_registers = None
         if num_learnable_registers is not None:
             init_registers = (
-                random.uniform((num_learnable_registers, self.inner_dim)) * 2.0 - 1.0
+                random.uniform((num_learnable_registers, self.inner_dim)) * 2.0
+                - 1.0
             )
             self.learnable_registers = Tensor.constant(init_registers)
 
@@ -213,7 +215,7 @@ class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple
             num_attention_heads=num_attention_heads,
         )
 
-        self.transformer_blocks = nn.ModuleList(
+        self.transformer_blocks = ModuleList(
             [
                 LTX2TransformerBlock1d(
                     dim=self.inner_dim,
@@ -225,7 +227,7 @@ class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple
             ]
         )
 
-        self.norm_out = nn.RMSNorm(
+        self.norm_out = RMSNorm(
             self.inner_dim, eps=eps, elementwise_affine=False
         )
 
@@ -278,9 +280,7 @@ class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple
                 [x.unsqueeze(0) for x in padded_hidden_states], dim=0
             )  # [B, L, D]
 
-            flipped_mask = binary_attn_mask[:, ::-1].unsqueeze(
-                -1
-            )  # [B, L, 1]
+            flipped_mask = binary_attn_mask[:, ::-1].unsqueeze(-1)  # [B, L, 1]
             hidden_states = (
                 flipped_mask * padded_hidden_states
                 + (1 - flipped_mask) * registers
@@ -305,7 +305,9 @@ class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple
         return hidden_states, attention_mask
 
 
-class LTX2TextConnectors(nn.Module[[Tensor, Tensor, bool], tuple[Tensor, Tensor, Tensor]]):
+class LTX2TextConnectors(
+    Module[[Tensor, Tensor, bool], tuple[Tensor, Tensor, Tensor]]
+):
     """
     Text connector stack used by LTX 2.0 to process the packed text encoder hidden states for both the video and audio
     streams.
@@ -329,7 +331,7 @@ class LTX2TextConnectors(nn.Module[[Tensor, Tensor, bool], tuple[Tensor, Tensor,
         causal_temporal_positioning: bool,
         rope_type: str = "interleaved",
     ):
-        self.text_proj_in = nn.Linear(
+        self.text_proj_in = Linear(
             caption_channels * text_proj_in_factor, caption_channels, bias=False
         )
         self.video_connector = LTX2ConnectorTransformer1d(

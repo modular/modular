@@ -42,8 +42,8 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
-from .vision_model.gemma3multimodal import Gemma3LanguageModel
 from .model_config import Gemma3ForConditionalGenerationConfig
+from .vision_model.gemma3multimodal import Gemma3LanguageModel
 from .weight_adapters import convert_safetensor_state_dict
 
 logger = logging.getLogger(__name__)
