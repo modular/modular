@@ -434,7 +434,7 @@ def _handle_matmul(
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     lhs = inputs[0]
     rhs = inputs[1]
@@ -447,7 +447,7 @@ def _handle_matmul(
 
     output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
 
-    ops.mojo_ops.Matmul(output, lhs, rhs)
+    ops.mojo_ops.Matmul(output, lhs, rhs, target_device._device_context_ptr())
     return [output]
 
 

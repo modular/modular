@@ -28,6 +28,8 @@ DTYPE_TO_TORCH = {
     DType.bfloat16: torch.bfloat16,
     DType.int32: torch.int32,
     DType.int64: torch.int64,
+    DType.uint32: torch.uint32,
+    DType.uint64: torch.uint64,
 }
 
 
@@ -344,3 +346,91 @@ class TestElementwiseGPU:
         result_torch = torch.from_dlpack(result)
         # Use relaxed tolerance for lower precision dtypes
         torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+
+class TestMatmulGPU:
+    """Tests for GPU matmul operations in the interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_matmul_gpu(self, dtype: DType) -> None:
+        """Test matmul on GPU with various dtypes."""
+        gpu = Accelerator()
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        # Test (3, 4) @ (4, 5) -> (3, 5)
+        m, k, n = 3, 4, 5
+        lhs_shape = [m, k]
+        rhs_shape = [k, n]
+        lhs_type = TensorType(dtype, lhs_shape, gpu)
+        rhs_type = TensorType(dtype, rhs_shape, gpu)
+
+        with Graph(
+            f"gpu_matmul_{dtype}", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            lhs, rhs = graph.inputs
+            c = ops.matmul(lhs, rhs)  # type: ignore[arg-type]
+            graph.output(c)
+
+        # Create test data - use randint for int types, randn for float types
+        if dtype in (DType.int32, DType.int64, DType.uint32, DType.uint64):
+            lhs_torch = torch.randint(
+                0, 10, (m, k), dtype=torch_dtype, device="cuda"
+            )
+            rhs_torch = torch.randint(
+                0, 10, (k, n), dtype=torch_dtype, device="cuda"
+            )
+        else:
+            lhs_torch = torch.randn(m, k, dtype=torch_dtype, device="cuda")
+            rhs_torch = torch.randn(k, n, dtype=torch_dtype, device="cuda")
+
+        lhs_gpu = Buffer.from_dlpack(lhs_torch)
+        rhs_gpu = Buffer.from_dlpack(rhs_torch)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [lhs_gpu, rhs_gpu])[0]
+
+        assert isinstance(result, Buffer)
+        assert not result.device.is_host
+        assert result.dtype == dtype
+        assert result.shape == (m, n)
+
+        # perform the reference matmul using torch
+        expected = torch.matmul(lhs_torch, rhs_torch)
+        result_torch = torch.from_dlpack(result)
+        # Use relaxed tolerance for lower precision dtypes
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_matmul_gpu_mixed_device_raises_error(self) -> None:
+        """Test that mixed CPU/GPU inputs raise an error for matmul."""
+        gpu = Accelerator()
+        cpu = CPU()
+
+        m, k, n = 3, 4, 5
+        lhs_type = TensorType(DType.float32, [m, k], gpu)
+        rhs_type = TensorType(DType.float32, [k, n], gpu)
+
+        with Graph(
+            "gpu_matmul_mixed_device", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            lhs, rhs = graph.inputs
+            c = ops.matmul(lhs, rhs)  # type: ignore[arg-type]
+            graph.output(c)
+
+        # Create one CPU and one GPU tensor
+        lhs_torch_cpu = torch.randn(m, k, dtype=torch.float32, device="cpu")
+        rhs_torch_gpu = torch.randn(k, n, dtype=torch.float32, device="cuda")
+
+        lhs_cpu = Buffer.from_dlpack(lhs_torch_cpu)
+        rhs_gpu = Buffer.from_dlpack(rhs_torch_gpu)
+
+        interp = MOInterpreter()
+
+        with pytest.raises(Exception):
+            interp.execute(graph, [lhs_cpu, rhs_gpu])

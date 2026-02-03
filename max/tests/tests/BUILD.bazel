@@ -86,6 +86,9 @@ modular_py_test(
 modular_py_test(
     name = "test_interpreter_ops_gpu",
     srcs = ["test_interpreter_ops_gpu.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
+    },
     ignore_extra_deps = [
         "//max/python/max/engine",
     ],
