@@ -108,6 +108,7 @@ ClosureEmitter::ClosureEmitter(SharedState &shared)
       moveParent("Movable", "__moveinit__", ClosureMethod::MOVE),
       implicitlyDestructibleParent("ImplicitlyDestructible", "__del__",
                                    ClosureMethod::DEL),
+      trivialRegisterTypeParent("TrivialRegisterType", "", ClosureMethod::NONE),
       copyParent("Copyable", "__copyinit__", ClosureMethod::COPY),
       implicitlyCopyableParent("ImplicitlyCopyable", "", ClosureMethod::NONE) {}
 
@@ -750,6 +751,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
+  if (typeConvention == TypeConvention::RegisterPassableTrivial)
+    closureParents.push_back(trivialRegisterTypeParent);
 
   TraitType traitType = getTraitType(closureParents, moduleDecl);
 
@@ -1013,7 +1016,8 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                      moveParent,
                                      copyParent,
                                      implicitlyCopyableParent,
-                                     implicitlyDestructibleParent};
+                                     implicitlyDestructibleParent,
+                                     trivialRegisterTypeParent};
   TraitType traitType = getTraitType(parents, moduleDecl);
   declOp.setCanonicalTrait(traitType);
 
@@ -2264,6 +2268,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
   SmallVector<TypedAttr> origins;
+  bool allCapturesAreTrivial = true;
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
@@ -2307,6 +2312,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                   " by copy or move because it is not register passable and "
                   "your closure is marked as register passable.");
         }
+        if (!structDeclOp.isRegisterPassableTrivial())
+          allCapturesAreTrivial = false;
         if (structDeclOp.getDestructor().has_value())
           del = *structDeclOp.getDestructor();
         if (!del) {
@@ -2388,6 +2395,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     closureParents.push_back(copyParent);
     closureParents.push_back(implicitlyCopyableParent);
   }
+  if (isRegPassable && allCapturesAreTrivial)
+    closureParents.push_back(trivialRegisterTypeParent);
 
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
