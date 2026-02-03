@@ -655,7 +655,9 @@ def test_blackwell_kernel_4[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
 

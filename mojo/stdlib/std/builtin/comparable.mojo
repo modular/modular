@@ -21,7 +21,7 @@ comptime EqualityComparable = Equatable
 """Deprecated alias for `Equatable`."""
 
 
-trait Equatable:
+trait Equatable(ImplicitlyDestructible):
     """A type which can be compared for equality with other instances of itself.
 
     The `Equatable` trait has a default implementation of `__eq__()` that uses

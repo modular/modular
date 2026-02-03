@@ -105,9 +105,12 @@ def update_context_and_prepare_responses(
                         log_probs = log_probs_for_step[batch_index]
 
             if overwrite_future:
-                context.realize_future_token(
-                    new_token=next_token, log_probabilities=log_probs
-                )
+                # If generated_length is still 0, then there is no placeholder
+                # future token. This is possible due to chunked prefill.
+                if context.tokens.generated_length:
+                    context.realize_future_token(
+                        new_token=next_token, log_probabilities=log_probs
+                    )
             else:
                 context.update(
                     new_token=next_token, log_probabilities=log_probs
@@ -116,7 +119,11 @@ def update_context_and_prepare_responses(
             if context.is_done:
                 break
 
-        res[context.request_id] = context.to_generation_output()
+        # Only add the output if there are tokens to return.
+        # It is possible that there are no generated tokens due to chunked prefill.
+        output = context.to_generation_output()
+        if output.tokens:
+            res[context.request_id] = output
 
     return res
 

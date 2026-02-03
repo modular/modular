@@ -34,7 +34,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Boolable:
+trait Boolable(ImplicitlyDestructible):
     """The `Boolable` trait describes a type that can be explicitly converted to
     a `Bool` or evaluated as a boolean expression in `if` or `while` conditions.
 

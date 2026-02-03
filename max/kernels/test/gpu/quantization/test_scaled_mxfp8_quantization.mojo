@@ -210,7 +210,8 @@ fn test_dynamic_mxfp8_quant[
                         if left > right:
                             mismatch_count += 1
 
-                if (1 - (mismatch_count / (m * n))) < 0.999:
+                mismatch_rate = Float64(mismatch_count) / Float64(m * n)
+                if (1 - mismatch_rate) < 0.999:
                     raise Error("Too many mismatches!")
                 print(
                     "M = ",
@@ -224,7 +225,7 @@ fn test_dynamic_mxfp8_quant[
                     "scales_dtype = ",
                     scales_dtype,
                     "mismatch percentage = ",
-                    mismatch_count / (m * n) * 100.0,
+                    mismatch_rate * 100.0,
                     "%",
                 )
 

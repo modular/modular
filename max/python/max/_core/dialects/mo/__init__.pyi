@@ -1061,10 +1061,11 @@ class DistributedAllgatherOp(max._core.Operation):
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
-    Allreduce takes in inputs each coming from a different device with
-    the same shape as the final output and performs a sum reduction
-    across the devices. This op instance executes on a specific device
-    (specified by the device attribute) and produces the output for that device.
+    Allreduce takes a single input tensor from this device and performs a sum
+    reduction across all devices. Peer input addresses are obtained via signal
+    buffer payloads at runtime (P2P access required). This op instance executes
+    on a specific device (specified by the device attribute) and produces the
+    output for that device.
 
     Multiple instances of this op are created (one per device) to enable
     multi-threaded execution.
@@ -1076,13 +1077,13 @@ class DistributedAllreduceSumOp(max._core.Operation):
         location: Location,
         output: TensorType,
         out_chain: ChainType,
-        inputs: Sequence[max._core.Value[max._core.Type]],
+        input: max._core.Value[TensorType],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    def input(self) -> max._core.Value[TensorType]: ...
     @property
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -1999,52 +2000,6 @@ class ChainCreateOp(max._core.Operation):
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class ConcatFromListOp(max._core.Operation):
-    """
-    Concatenates tensors in the input list along a given dimension.
-
-    This op concatenates tensors in the `input` list into an output tensor. The
-    input tensors and output tensors all have the same shape except along the
-    concatenation dimension `axis`. The size of the concatenation dimension in
-    output tensor would have be the sum of sizes of the concatenation dimension
-    in input tensors.
-
-    The value of `axis` follows numpy semantics, e.g., -1 represents the last
-    axis.
-
-    Example:
-
-    ```mlir
-      %list: !mo.list<!mo.tensor<[2, 3], f32>>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.concat_from_list[%axis: !mo.tensor<[], si64>](%list) :
-        !mo.list<!mo.tensor<[2, 3], f32>> -> !mo.tensor<[2, ?], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[ListType],
-        axis: max._core.Value[TensorType],
-        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[ListType]: ...
-    @property
-    def axis(self) -> max._core.Value[TensorType]: ...
-    @property
-    def output_param_decls(
-        self,
-    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
-    @output_param_decls.setter
-    def output_param_decls(
-        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
 
 class ConcatOp(max._core.Operation):
     """
@@ -3462,212 +3417,6 @@ class LayoutTransformOp(max._core.Operation):
     def kgen_params(
         self, arg: max._core.dialects.builtin.DictionaryAttr, /
     ) -> None: ...
-
-class ListAppendOp(max._core.Operation):
-    """
-    Creates a new list that's the result of appending an element to the end of a
-    copy of the input list (i.e., the op is value semantics and doesn't affect
-    the input list).
-
-    Example:
-
-    ```mlir
-      %list:   !mo.list<!mo.tensor<[2, 2], f32>>
-      %tensor: !mo.tensor<[2, 3], f32>
-
-      %tensor = mo.list.append(%list, %tensor) : (
-        !mo.list<!mo.tensor<[2, 2], f32>>, !mo.tensor<[2, 3], f32>
-      ) -> !mo.list<!mo.tensor<[2, ?], f32>>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: ListType,
-        input: max._core.Value[ListType],
-        element: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[ListType]: ...
-    @property
-    def element(self) -> max._core.Value[TensorType]: ...
-
-class ListConcatOp(max._core.Operation):
-    """
-    Creates a new list that's the result of concatenating the two input lists
-    together.
-
-    Example:
-
-    ```mlir
-      %lhs:   !mo.list<!mo.tensor<[2, 2], f32>>
-      %rhs:   !mo.list<!mo.tensor<[2, 2], f32>>
-
-      %tensor = mo.list.concat(%lhs, %rhs) : (
-        !mo.list<!mo.tensor<[2, 2], f32>>, !mo.list<!mo.tensor<[2, 2], f32>>
-      ) -> !mo.list<!mo.tensor<[2, 2], f32>>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: ListType,
-        lhs: max._core.Value[ListType],
-        rhs: max._core.Value[ListType],
-    ) -> None: ...
-    @property
-    def lhs(self) -> max._core.Value[ListType]: ...
-    @property
-    def rhs(self) -> max._core.Value[ListType]: ...
-
-class ListCreateOp(max._core.Operation):
-    """
-    Creates a new list which contains the given inputs (currently limited to
-    tensors).
-
-    Example:
-
-    ```mlir
-      %arg0: !mo.tensor<[2, 3], f32>
-      %arg1: !mo.tensor<[2, 5], f32>
-
-      %list = mo.list.create(%arg0, %arg1) : (
-        !mo.tensor<[2, 3], f32>, !mo.tensor<[2, 5], f32>
-      ) -> !mo.list<!mo.tensor<[2, ?], f32>>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: ListType,
-        inputs: Sequence[max._core.Value[max._core.Type]],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class ListGetOp(max._core.Operation):
-    """
-    Retrieves the element at given (base zero) index of the list. The index can be
-    negative, with numpy indexing semantics, i.e., `-1` means the last element,
-    `-2` means the second to last element, etc.
-
-    Example:
-
-    ```mlir
-      %list: !mo.list<!mo.tensor<[2, 2], f32>>
-      %idx:  !mo.tensor<[], si32>
-
-      %tensor = mo.list.get(%list, %idx) : (
-        !mo.list<!mo.tensor<[2, 2], f32>>, !mo.tensor<[], si32>
-      ) -> !mo.tensor<[2, 2], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: TensorType,
-        input: max._core.Value[ListType],
-        index: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[ListType]: ...
-    @property
-    def index(self) -> max._core.Value[TensorType]: ...
-
-class ListInsertOp(max._core.Operation):
-    """
-    Creates a new list that's the result of inserting an element at given (base
-    zero) index of a copy of the list (i.e., the op is value semantics and
-    doesn't affect the input list).
-
-    The index can be negative, with numpy indexing semantics, i.e., `-1` means
-    the last element, `-2` means the second to last element, etc.
-
-    It will push any existing element at the index to after the inserted element
-    (which will now be at the index). If the index equals the length of the
-    list, the op effectively appends the element to the list.
-
-    Example:
-
-    ```mlir
-      %list:   !mo.list<!mo.tensor<[2, 2], f32>>
-      %tensor: !mo.tensor<[2, 3], f32>
-      %index:  !mo.tensor<[], si32>
-
-      %tensor = mo.list.insert(%list, %tensor, %index) : (
-        !mo.list<!mo.tensor<[2, 2], f32>>, !mo.tensor<[2, 3], f32>, !mo.tensor<[], si32>
-      ) -> !mo.list<!mo.tensor<[2, ?], f32>>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: ListType,
-        input: max._core.Value[ListType],
-        element: max._core.Value[TensorType],
-        index: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[ListType]: ...
-    @property
-    def element(self) -> max._core.Value[TensorType]: ...
-    @property
-    def index(self) -> max._core.Value[TensorType]: ...
-
-class ListSliceOp(max._core.Operation):
-    """
-    Creates a new list that's the result of applying the equivalent of Python's
-    slice operation: list[start:end:step]
-
-    The start/end can be negative, with numpy indexing semantics, i.e., `-1` means
-    the last element, `-2` means the second to last element, etc.
-
-    Steps can be negative as well in which case start to end
-    are walked in reverse order.
-
-    Example:
-
-    ```mlir
-      %list:   !mo.list<!mo.tensor<[2, 2], f32>>
-      %index:  !mo.tensor<[], si32>
-      %start:  !mo.tensor<[], si32>
-      %step:  !mo.tensor<[], si32>
-
-      %tensor = mo.list.slice(%list, %tensor, %index) : (
-        !mo.list<!mo.tensor<[2, 2], f32>>,
-        !mo.tensor<[], si32>,  !mo.tensor<[], si32>, !mo.tensor<[], si32>
-      ) -> !mo.list<!mo.tensor<[2, ?], f32>>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: ListType,
-        input: max._core.Value[ListType],
-        start: max._core.Value[TensorType],
-        end: max._core.Value[TensorType],
-        step: max._core.Value[TensorType],
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[ListType]: ...
-    @property
-    def start(self) -> max._core.Value[TensorType]: ...
-    @property
-    def end(self) -> max._core.Value[TensorType]: ...
-    @property
-    def step(self) -> max._core.Value[TensorType]: ...
 
 class Log1pOp(max._core.Operation):
     """

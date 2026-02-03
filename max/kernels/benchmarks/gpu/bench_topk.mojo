@@ -373,7 +373,7 @@ fn bench_topk_multi_rank[
         batch_size = input_shape[0]
     else:  # rank > 2
         var last_dim = input_shape[rank - 1]
-        batch_size = Int(input_shape.flattened_length() / last_dim)
+        batch_size = input_shape.flattened_length() // last_dim
 
     var K_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(batch_size)
     var K_host_buffer = NDBuffer[DType.int64, 1](K_host_ptr, batch_size)

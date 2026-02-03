@@ -283,7 +283,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
