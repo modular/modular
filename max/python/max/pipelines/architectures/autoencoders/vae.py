@@ -74,8 +74,6 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
         for i in range(num_layers):
             input_channels = in_channels if i == 0 else out_channels
 
-            # Note: Encoder uses temb=None, so resnet_time_scale_shift is not used
-            # We only support ResnetBlock2D (not ResnetBlockCondNorm2D) for encoder
             if resnet_time_scale_shift == "spatial":
                 raise NotImplementedError(
                     "resnet_time_scale_shift='spatial' is not supported in Max encoder. "
@@ -85,7 +83,7 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
             resnet = ResnetBlock2D(
                 in_channels=input_channels,
                 out_channels=out_channels,
-                temb_channels=None,  # Encoder doesn't use time embeddings
+                temb_channels=None,
                 groups=resnet_groups,
                 groups_out=resnet_groups,
                 eps=resnet_eps,
@@ -99,6 +97,7 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
 
         self.resnets = ModuleList(resnets_list)
 
+        self.downsamplers: ModuleList[Downsample2D] | None = None
         if add_downsample:
             downsampler = Downsample2D(
                 channels=out_channels,
@@ -113,8 +112,6 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
                 dtype=dtype,
             )
             self.downsamplers = ModuleList([downsampler])
-        else:
-            self.downsamplers = None
 
     def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
         """Apply DownEncoderBlock2D forward pass.
@@ -128,11 +125,9 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
             Output tensor of shape [N, C_out, H//2, W//2] (if downsampling) or
             [N, C_out, H, W] (if no downsampling).
         """
-        # Process through all resnet blocks
         for resnet in self.resnets:
-            hidden_states = resnet(hidden_states, temb=None)
+            hidden_states = resnet(hidden_states, None)
 
-        # Apply downsampling if configured
         if self.downsamplers is not None:
             hidden_states = self.downsamplers[0](hidden_states)
 
@@ -455,7 +450,6 @@ class Encoder(Module[[Tensor], Tensor]):
         self.device = device
         self.dtype = dtype
 
-        # Input convolution
         self.conv_in = Conv2d(
             kernel_size=3,
             in_channels=in_channels,
@@ -470,7 +464,6 @@ class Encoder(Module[[Tensor], Tensor]):
             permute=True,
         )
 
-        # Down blocks
         self.down_blocks = ModuleList([])
 
         output_channel = block_out_channels[0]
@@ -503,10 +496,9 @@ class Encoder(Module[[Tensor], Tensor]):
             )
             self.down_blocks.append(down_block)
 
-        # Middle block
         self.mid_block = MidBlock2D(
             in_channels=block_out_channels[-1],
-            temb_channels=None,  # Encoder doesn't use time embeddings
+            temb_channels=None,
             dropout=0.0,
             num_layers=1,
             resnet_eps=1e-6,
@@ -521,7 +513,6 @@ class Encoder(Module[[Tensor], Tensor]):
             dtype=dtype,
         )
 
-        # Output layers
         self.conv_norm_out = GroupNorm(
             num_groups=norm_num_groups,
             num_channels=block_out_channels[-1],
@@ -553,17 +544,13 @@ class Encoder(Module[[Tensor], Tensor]):
         Returns:
             Output tensor of shape [N, C_out, H_latent, W_latent] (downsampled).
         """
-        # Input convolution
         sample = self.conv_in(sample)
 
-        # Down blocks
         for down_block in self.down_blocks:
             sample = down_block(sample)
 
-        # Middle block
-        sample = self.mid_block(sample, temb=None)
+        sample = self.mid_block(sample, None)
 
-        # Post-process
         sample = self.conv_norm_out(sample)
         sample = F.silu(sample)
         sample = self.conv_out(sample)
@@ -822,25 +809,18 @@ class DiagonalGaussianDistribution:
         """
         self.parameters = parameters
 
-        # Split parameters into mean and logvar along channel dimension
-        # F.chunk(parameters, 2, axis=1) equivalent: split along channel dim
-        # [N, 2*C, H, W] -> [N, C, H, W] (mean) and [N, C, H, W] (logvar)
         chunks = F.chunk(parameters, 2, axis=1)
         self.mean = chunks[0]
         self.logvar = chunks[1]
 
-        # Clamp logvar to prevent numerical instability
-        # torch.clamp(logvar, -30.0, 20.0) -> F.min(F.max(logvar, -30.0), 20.0)
         self.logvar = F.min(F.max(self.logvar, -30.0), 20.0)
 
         self.deterministic = deterministic
 
-        # Compute std and var from logvar
         self.std = F.exp(0.5 * self.logvar)
         self.var = F.exp(self.logvar)
 
         if self.deterministic:
-            # For deterministic case, set std and var to zero
             self.var = Tensor.zeros_like(self.mean)
             self.std = Tensor.zeros_like(self.mean)
 
@@ -858,15 +838,12 @@ class DiagonalGaussianDistribution:
         Returns:
             Sampled tensor of shape [N, C, H, W] with same shape as mean.
         """
-        # Generate random sample from standard normal distribution
-        # randn_tensor(...) -> random.normal(...)
         sample = random.normal(
             shape=self.mean.shape,
             device=self.parameters.device,
             dtype=self.parameters.dtype,
         )
 
-        # Reparameterization trick: x = mean + std * sample
         x = self.mean + F.mul(self.std, sample)
         return x
 
@@ -888,21 +865,15 @@ class DiagonalGaussianDistribution:
             Tensor containing KL divergence values.
         """
         if self.deterministic:
-            # For deterministic case, KL divergence is zero
-            # torch.Tensor([0.0]) -> Tensor.from_numpy(np.array([0.0]))
-            return Tensor.from_numpy(np.array([0.0], dtype=np.float32))
+            return Tensor.constant([0.0], dtype=DType.float32)
 
         if other is None:
-            # KL divergence with standard normal: 0.5 * sum(mean^2 + var - 1 - logvar)
-            # torch.sum(..., dim=[1,2,3]) -> multiple F.sum() calls
             kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
-            # Sum over spatial dimensions [1, 2, 3]
-            kl_term = F.sum(kl_term, axis=3)  # Sum over W
-            kl_term = F.sum(kl_term, axis=2)  # Sum over H
-            kl_term = F.sum(kl_term, axis=1)  # Sum over C
+            kl_term = F.sum(kl_term, axis=3)
+            kl_term = F.sum(kl_term, axis=2)
+            kl_term = F.sum(kl_term, axis=1)
             return 0.5 * kl_term
         else:
-            # KL divergence with another distribution
             kl_term = (
                 F.pow(self.mean - other.mean, 2) / other.var
                 + self.var / other.var
@@ -910,10 +881,9 @@ class DiagonalGaussianDistribution:
                 - self.logvar
                 + other.logvar
             )
-            # Sum over spatial dimensions [1, 2, 3]
-            kl_term = F.sum(kl_term, axis=3)  # Sum over W
-            kl_term = F.sum(kl_term, axis=2)  # Sum over H
-            kl_term = F.sum(kl_term, axis=1)  # Sum over C
+            kl_term = F.sum(kl_term, axis=3)
+            kl_term = F.sum(kl_term, axis=2)
+            kl_term = F.sum(kl_term, axis=1)
             return 0.5 * kl_term
 
     def nll(self, sample: Tensor, dims: tuple[int, ...] = (1, 2, 3)) -> Tensor:
@@ -930,15 +900,13 @@ class DiagonalGaussianDistribution:
             Tensor containing negative log-likelihood values.
         """
         if self.deterministic:
-            return Tensor.from_numpy(np.array([0.0], dtype=np.float32))
+            return Tensor.constant([0.0], dtype=DType.float32)
 
         logtwopi = np.log(2.0 * np.pi)
         nll_term = (
             logtwopi + self.logvar + F.pow(sample - self.mean, 2) / self.var
         )
 
-        # Sum over specified dimensions
-        # Note: dims are in descending order for sequential sum
         sorted_dims = sorted(dims, reverse=True)
         for dim in sorted_dims:
             nll_term = F.sum(nll_term, axis=dim)

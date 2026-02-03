@@ -59,8 +59,8 @@ class BaseAutoencoderModel(ComponentModel):
         super().__init__(config, encoding, devices, weights)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
-        self.encoder_model: object | None = None  # Compiled encoder model
-        self.quant_conv_model: object | None = None  # Compiled quant_conv model
+        self.encoder_model: Callable[[Tensor], Tensor] | None = None
+        self.quant_conv_model: Callable[[Tensor], Tensor] | None = None
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -73,37 +73,28 @@ class BaseAutoencoderModel(ComponentModel):
         Returns:
             Compiled decoder model callable.
         """
-        # Prepare decoder weights
         decoder_state_dict = {}
-
-        # Prepare encoder weights
         encoder_state_dict = {}
         quant_conv_state_dict = {}
 
         for key, value in self.weights.items():
             if key.startswith("decoder."):
-                # Remove "decoder." prefix for decoder weights
                 decoder_state_dict[key.removeprefix("decoder.")] = value.data()
             elif key.startswith("post_quant_conv."):
-                # Keep post_quant_conv prefix as-is (used by decoder)
                 decoder_state_dict[key] = value.data()
             elif key.startswith("encoder."):
-                # Remove "encoder." prefix for encoder weights
                 encoder_state_dict[key.removeprefix("encoder.")] = value.data()
             elif key.startswith("quant_conv."):
-                # Keep quant_conv prefix as-is (used by encoder)
                 quant_conv_state_dict[key] = value.data()
 
         with F.lazy():
             autoencoder = self.autoencoder_class(self.config)
 
-            # Compile decoder (always needed)
             autoencoder.decoder.to(self.devices[0])
             self.model = autoencoder.decoder.compile(
                 *autoencoder.decoder.input_types(), weights=decoder_state_dict
             )
 
-            # Compile encoder (optional, only if weights exist)
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(
@@ -111,17 +102,13 @@ class BaseAutoencoderModel(ComponentModel):
                     weights=encoder_state_dict,
                 )
 
-            # Compile quant_conv (optional, only if weights exist and encoder exists)
-            # Note: quant_conv is typically integrated into the encoder output,
-            # but we compile it separately for flexibility
             if (
                 quant_conv_state_dict
                 and hasattr(autoencoder, "quant_conv")
                 and autoencoder.quant_conv is not None
                 and self.encoder_model is not None
             ):
-                # quant_conv is a Conv2d layer, compile it separately
-                # Create a simple wrapper module for quant_conv
+
                 class QuantConvModule(Module[[Tensor], Tensor]):
                     def __init__(self, quant_conv: Conv2d) -> None:
                         super().__init__()
@@ -132,8 +119,6 @@ class BaseAutoencoderModel(ComponentModel):
 
                 quant_conv_module = QuantConvModule(autoencoder.quant_conv)
                 quant_conv_module.to(self.devices[0])
-                # quant_conv input: [B, 2*latent_channels, H_latent, W_latent]
-                # (same as encoder output)
                 quant_conv_input_type = TensorType(
                     self.config.dtype,
                     shape=[
@@ -173,18 +158,13 @@ class BaseAutoencoderModel(ComponentModel):
                 "Encoder not loaded. Check if encoder weights exist in the model."
             )
 
-        # 1. Encode image through encoder
-        h = self.encoder_model(
-            sample
-        )  # [B, 2*latent_channels, H_latent, W_latent]
+        h = self.encoder_model(sample)
 
-        # 2. Apply quant_conv if available
         if self.quant_conv_model is not None:
             moments = self.quant_conv_model(h)
         else:
             moments = h
 
-        # 3. Create DiagonalGaussianDistribution
         posterior = DiagonalGaussianDistribution(moments)
 
         if return_dict:
