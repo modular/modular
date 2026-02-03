@@ -1517,18 +1517,6 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@register_internal("mogg.async.pack.borrow")
-@no_inline
-fn mogg_async_pack_borrow(
-    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
-
-
 @no_inline
 fn mogg_async_pack_borrow_v2[
     buffer_rank: Int,
