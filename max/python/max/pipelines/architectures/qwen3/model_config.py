@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -29,12 +29,24 @@ from ..llama3.model_config import Llama3Config
 
 @dataclass(kw_only=True)
 class Qwen3Config(Llama3Config):
-    """Implementation of MAXModelConfig for Qwen3 models.
+    # MoE parameters - these are optional and only used for Qwen3-MOE models
+    num_experts: int = 0
+    """Number of experts in the MoE layer. 0 means dense model (no MoE)."""
 
-    Qwen3 models use a different approach for head_dim calculation compared to Llama3.
-    Llama3 calculates head_dim as hidden_size // num_attention_heads,
-    Qwen3 models have an explicit head_dim field in their configuration.
-    """
+    num_experts_per_tok: int = 1
+    """Number of experts per token in the MoE layer."""
+
+    moe_intermediate_size: int = 0
+    """Intermediate size in the MoE layer. If 0, uses intermediate_size."""
+
+    mlp_only_layers: list[int] = field(default_factory=list)
+    """List of layer indices that use MLP instead of MoE."""
+
+    norm_topk_prob: bool = False
+    """Whether to use top-k probability normalization in the MoE layer."""
+
+    decoder_sparse_step: int = 1
+    """Sparse step for the decoder. Controls which layers use MoE."""
 
     @staticmethod
     def construct_kv_params(
@@ -163,6 +175,23 @@ class Qwen3Config(Llama3Config):
             huggingface_config=huggingface_config,
         )
 
+        # Handle both MoE (e.g., Qwen3-30B-A3B) and dense (e.g., Qwen3-8B) variants.
+        # For dense models, num_experts=0 ensures the decoder always uses MLP layers
+        num_experts = getattr(huggingface_config, "num_experts", 0)
+        num_experts_per_tok = getattr(
+            huggingface_config, "num_experts_per_tok", 1
+        )
+        moe_intermediate_size = getattr(
+            huggingface_config,
+            "moe_intermediate_size",
+            base_config.intermediate_size,
+        )
+        mlp_only_layers = getattr(huggingface_config, "mlp_only_layers", [])
+        norm_topk_prob = getattr(huggingface_config, "norm_topk_prob", False)
+        decoder_sparse_step = getattr(
+            huggingface_config, "decoder_sparse_step", 1
+        )
+
         # Return a new Qwen3Config with the corrected parameters
         return cls(
             hidden_size=base_config.hidden_size,
@@ -187,4 +216,11 @@ class Qwen3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             dist_gemm_config=base_config.dist_gemm_config,
+            # MoE parameters
+            num_experts=num_experts,
+            num_experts_per_tok=num_experts_per_tok,
+            moe_intermediate_size=moe_intermediate_size,
+            mlp_only_layers=mlp_only_layers,
+            norm_topk_prob=norm_topk_prob,
+            decoder_sparse_step=decoder_sparse_step,
         )

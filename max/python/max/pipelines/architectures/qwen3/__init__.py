@@ -11,6 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import qwen3_arch
+from .arch import qwen3_arch, qwen3_moe_arch
 
-__all__ = ["qwen3_arch"]
+__all__ = ["qwen3_arch", "qwen3_moe_arch"]
