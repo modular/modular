@@ -508,7 +508,7 @@ class PixelGenerationTokenizer(
         )
 
         latents, latent_image_ids = self._prepare_latents(
-            request.num_images_per_prompt,
+            request.num_visuals_per_prompt,
             self._num_channels_latents,
             latent_height,
             latent_width,
@@ -536,7 +536,9 @@ class PixelGenerationTokenizer(
             num_inference_steps=num_inference_steps,
             guidance_scale=request.guidance_scale,
             guidance=guidance,
-            num_images_per_prompt=request.num_images_per_prompt,
+            num_visuals_per_prompt=request.num_visuals_per_prompt,
+            num_frames=request.num_frames,
+            frame_rate=request.frame_rate,
             true_cfg_scale=request.true_cfg_scale,
             num_warmup_steps=num_warmup_steps,
             model_name=request.model_name,

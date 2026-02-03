@@ -76,9 +76,17 @@ class PixelGenerationRequest(Request):
     """
     Number of denoising steps. More steps = higher quality but slower.
     """
-    num_images_per_prompt: int = 1
+    num_visuals_per_prompt: int = 1
     """
     Number of images/videos to generate per prompt.
+    """
+    num_frames: int | None = None
+    """
+    Number of frames to generate for video output. None uses model's native resolution.
+    """
+    frame_rate: int | None = None
+    """
+    Frame rate for generated video.
     """
     seed: int | None = None
     """
@@ -97,8 +105,14 @@ class PixelGenerationRequest(Request):
         if self.num_inference_steps <= 0:
             raise ValueError("Number of inference steps must be positive.")
 
-        if self.num_images_per_prompt <= 0:
+        if self.num_visuals_per_prompt <= 0:
             raise ValueError("Number of images per prompt must be positive.")
+
+        if self.num_frames is not None and self.num_frames <= 0:
+            raise ValueError("Number of frames must be positive.")
+
+        if self.frame_rate is not None and self.frame_rate <= 0:
+            raise ValueError("Frame rate must be positive.")
 
 
 @runtime_checkable
@@ -140,8 +154,18 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def num_images_per_prompt(self) -> int:
+    def num_visuals_per_prompt(self) -> int:
         """Number of images to generate."""
+        ...
+
+    @property
+    def num_frames(self) -> int | None:
+        """Number of frames to generate for video output."""
+        ...
+
+    @property
+    def frame_rate(self) -> int | None:
+        """Frame rate for generated video."""
         ...
 
 

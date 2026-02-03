@@ -1,0 +1,198 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+import math
+
+import max.functional as F
+from max import nn
+from max.tensor import Tensor
+
+
+class ResBlock(nn.Module[[Tensor], Tensor]):
+    def __init__(
+        self,
+        channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        dilations: tuple[int, ...] = (1, 3, 5),
+        leaky_relu_negative_slope: float = 0.1,
+        padding_mode: str = "same",
+    ):
+        super().__init__()
+        self.dilations = dilations
+        self.negative_slope = leaky_relu_negative_slope
+
+        self.convs1 = nn.ModuleList(
+            [
+                nn.Conv1d(
+                    channels,
+                    channels,
+                    kernel_size,
+                    stride=stride,
+                    dilation=dilation,
+                    padding=padding_mode,
+                )
+                for dilation in dilations
+            ]
+        )
+
+        self.convs2 = nn.ModuleList(
+            [
+                nn.Conv1d(
+                    channels,
+                    channels,
+                    kernel_size,
+                    stride=stride,
+                    dilation=1,
+                    padding=padding_mode,
+                )
+                for _ in range(len(dilations))
+            ]
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        for conv1, conv2 in zip(self.convs1, self.convs2, strict=False):
+            xt = F.leaky_relu(x, negative_slope=self.negative_slope)
+            xt = conv1(xt)
+            xt = F.leaky_relu(xt, negative_slope=self.negative_slope)
+            xt = conv2(xt)
+            x = x + xt
+        return x
+
+
+class LTX2Vocoder(nn.Module[[Tensor, bool], Tensor]):
+    r"""
+    LTX 2.0 vocoder for converting generated mel spectrograms back to audio waveforms.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 128,
+        hidden_channels: int = 1024,
+        out_channels: int = 2,
+        upsample_kernel_sizes: tuple[int, ...] = (16, 15, 8, 4, 4),
+        upsample_factors: tuple[int, ...] = (6, 5, 2, 2, 2),
+        resnet_kernel_sizes: tuple[int, ...] = (3, 7, 11),
+        resnet_dilations: tuple[tuple[int, ...], ...] = (
+            (1, 3, 5),
+            (1, 3, 5),
+            (1, 3, 5),
+        ),
+        leaky_relu_negative_slope: float = 0.1,
+        output_sampling_rate: int = 24000,
+    ):
+        super().__init__()
+        self.num_upsample_layers = len(upsample_kernel_sizes)
+        self.resnets_per_upsample = len(resnet_kernel_sizes)
+        self.out_channels = out_channels
+        self.total_upsample_factor = math.prod(upsample_factors)
+        self.negative_slope = leaky_relu_negative_slope
+
+        if self.num_upsample_layers != len(upsample_factors):
+            raise ValueError(
+                f"`upsample_kernel_sizes` and `upsample_factors` should be lists of the same length but are length"
+                f" {self.num_upsample_layers} and {len(upsample_factors)}, respectively."
+            )
+
+        if self.resnets_per_upsample != len(resnet_dilations):
+            raise ValueError(
+                f"`resnet_kernel_sizes` and `resnet_dilations` should be lists of the same length but are length"
+                f" {len(self.resnets_per_upsample)} and {len(resnet_dilations)}, respectively."
+            )
+
+        self.conv_in = nn.Conv1d(
+            in_channels, hidden_channels, kernel_size=7, stride=1, padding=3
+        )
+
+        self.upsamplers = nn.ModuleList()
+        self.resnets = nn.ModuleList()
+        input_channels = hidden_channels
+        for stride, kernel_size in zip(
+            upsample_factors, upsample_kernel_sizes, strict=False
+        ):
+            output_channels = input_channels // 2
+            self.upsamplers.append(
+                nn.ConvTranspose1d(
+                    input_channels,  # hidden_channels // (2 ** i)
+                    output_channels,  # hidden_channels // (2 ** (i + 1))
+                    kernel_size,
+                    stride=stride,
+                    padding=(kernel_size - stride) // 2,
+                )
+            )
+
+            for kernel_size, dilations in zip(
+                resnet_kernel_sizes, resnet_dilations, strict=False
+            ):
+                self.resnets.append(
+                    ResBlock(
+                        output_channels,
+                        kernel_size,
+                        dilations=dilations,
+                        leaky_relu_negative_slope=leaky_relu_negative_slope,
+                    )
+                )
+            input_channels = output_channels
+
+        self.conv_out = nn.Conv1d(
+            output_channels, out_channels, 7, stride=1, padding=3
+        )
+
+    def forward(self, hidden_states: Tensor, time_last: bool = False) -> Tensor:
+        r"""
+        Forward pass of the vocoder.
+
+        Args:
+            hidden_states (`Tensor`):
+                Input Mel spectrogram tensor of shape `(batch_size, num_channels, time, num_mel_bins)` if `time_last`
+                is `False` (the default) or shape `(batch_size, num_channels, num_mel_bins, time)` if `time_last` is
+                `True`.
+            time_last (`bool`, *optional*, defaults to `False`):
+                Whether the last dimension of the input is the time/frame dimension or the Mel bins dimension.
+
+        Returns:
+            `Tensor`:
+                Audio waveform tensor of shape (batch_size, out_channels, audio_length)
+        """
+
+        # Ensure that the time/frame dimension is last
+        if not time_last:
+            hidden_states = hidden_states.transpose(2, 3)
+        # Combine channels and frequency (mel bins) dimensions
+        hidden_states = hidden_states.flatten(1, 2)
+
+        hidden_states = self.conv_in(hidden_states)
+
+        for i in range(self.num_upsample_layers):
+            hidden_states = F.leaky_relu(
+                hidden_states, negative_slope=self.negative_slope
+            )
+            hidden_states = self.upsamplers[i](hidden_states)
+
+            # Run all resnets in parallel on hidden_states
+            start = i * self.resnets_per_upsample
+            end = (i + 1) * self.resnets_per_upsample
+            resnet_outputs = F.stack(
+                [self.resnets[j](hidden_states) for j in range(start, end)],
+                axis=0,
+            )
+
+            hidden_states = F.mean(resnet_outputs, axis=0)
+
+        # NOTE: unlike the first leaky ReLU, this leaky ReLU is set to use the default F.leaky_relu negative slope of
+        # 0.01 (whereas the others usually use a slope of 0.1). Not sure if this is intended
+        hidden_states = F.leaky_relu(hidden_states, negative_slope=0.01)
+        hidden_states = self.conv_out(hidden_states)
+        hidden_states = F.tanh(hidden_states)
+
+        return hidden_states

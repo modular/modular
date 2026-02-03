@@ -20,7 +20,7 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -141,6 +141,9 @@ class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
 
     return_logits: ReturnLogits
     """Whether to return the last token, all logits, or a variable number of logits."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Whether to return hidden states from the model."""
 
     tie_word_embeddings: bool
     """Whether to tie weight embeddings. When true, the output linear layer
