@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -433,7 +433,7 @@ fn test_case_multi_rank[
         batch_size = input_shape[0]
     else:  # rank > 2
         var last_dim = input_shape[rank - 1]
-        batch_size = Int(input_shape.flattened_length() / last_dim)
+        batch_size = input_shape.flattened_length() // last_dim
 
     # Create K buffers
     var K_shape = IndexList[1](batch_size)

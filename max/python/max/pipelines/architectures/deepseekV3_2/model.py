@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -89,7 +89,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 ep_kwargs["fused_shared_expert"] = True
 
             if float8_config is not None:
-                ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
+                ep_kwargs["dispatch_fp8_config"] = float8_config
 
             ep_config = EPConfig(**ep_kwargs)
 

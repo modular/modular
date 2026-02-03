@@ -36,6 +36,24 @@ can see working code to study and use. Reflection code is intentionally
 parameterized and compile-time heavy. The examples below show the patterns you
 can use in real reflection-based code.
 
+## Static vs. dynamic reflection
+
+Mojo’s reflection is static, meaning it runs at compile time. Mojo
+generates reflection information during compilation. It uses the
+type information in your code, including types, fields, and methods.
+This contrasts with dynamic reflection, which inspects program
+state at runtime.
+
+Static reflection's timing affects what you can and cannot do. Reflection
+can only operate on types known to the compiler. If a variable's type
+depends on runtime conditions, reflection can't access it. However,
+since all reflection runs during compilation, there’s no runtime overhead.
+
+Mojo reflection operates on program structure, not live program state.
+Use it to serialize types, implement generic operations over struct
+fields (comparison, copying, arithmetic), and validate structural constraints
+at compile time.
+
 ## Example: Present a type
 
 This example demonstrates how to use reflection to inspect a type at compile time.

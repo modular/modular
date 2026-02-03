@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -133,7 +133,7 @@ trait Copyable(Movable):
     """
 
 
-trait ImplicitlyCopyable(Copyable):
+trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
     """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
     in order to make a copy of the object when needed.
 
@@ -204,7 +204,7 @@ fn materialize[T: AnyType, //, value: T](out result: T):
     )
 
 
-trait Defaultable:
+trait Defaultable(ImplicitlyDestructible):
     """The `Defaultable` trait describes a type with a default constructor.
 
     Implementing the `Defaultable` trait requires the type to define

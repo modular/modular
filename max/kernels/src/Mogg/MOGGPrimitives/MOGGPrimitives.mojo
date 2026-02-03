@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -591,7 +591,7 @@ fn mgp_buffer_set_with_index[
         "buffer size not divisible by number of index args",
     )
 
-    var elSize = bufSize / numArgs
+    var elSize = bufSize // numArgs
     if elSize == 4:
         fill_buffer[DType.int32](buffer, vals)
     elif elSize == 8:
@@ -1039,20 +1039,6 @@ fn ManagedTensorSliceDef[
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
     return ty
-
-
-@register_internal("list_of_tensor")
-fn ListOfTensorDef[
-    dtype: DType,
-    rank: Int,
-](
-    ty: List[
-        InputTensor[
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-        ]
-    ]
-) -> type_of(ty):
-    return ty.copy()
 
 
 # ===-----------------------------------------------------------------------===#

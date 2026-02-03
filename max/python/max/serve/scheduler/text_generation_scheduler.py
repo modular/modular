@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -194,14 +194,7 @@ class TokenGenerationScheduler(Scheduler):
         }
 
         # Advance the requests and collect the invalid request IDs
-        for (
-            request_id
-        ) in self.batch_constructor.advance_requests_and_collect_invalid_ids(
-            inputs.batches
-        ):
-            # The only scenario where the request ID should not be in the responses dictionary, is if the pipeline
-            # errored out, this should not happen.
-            del responses[request_id]
+        self.batch_constructor.advance_requests(inputs)
 
         # Release terminated requests from the batch
         num_terminated_requests = 0

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -841,10 +841,6 @@ class PipelineConfig(ConfigFileModel):
             if self.model.kv_cache.enable_prefix_caching:
                 raise ValueError(
                     "Prefix caching is not supported with the Overlap scheduler."
-                )
-            if self.enable_chunked_prefill:
-                raise ValueError(
-                    "Chunked prefill is not supported with the Overlap scheduler."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
