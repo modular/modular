@@ -753,10 +753,10 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
 /// passing-kind parameters if `append` is set (this is used for unbound
 /// arguments), or added to the beginning of the parameter list as `Inferred`
 /// passing-kind parameters (this is used for unbound parameters).
-static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
-                                     ASTType type,
+static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append, SMLoc loc) {
+  auto &shared = paramList.shared;
   SmallVector<ParamDeclAttr> paramDeclAttrs;
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
@@ -798,13 +798,10 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
     insertFn(insertPt, paramList.allParamConstraints, constraints);
   });
 
-  ParameterCollector::Analysis collectorCache;
-  ParameterCollector collector(collectorCache);
-
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
   SmallVector<TypedAttr> paramValues;
-  ParserParameterEvaluator evaluator(paramList.shared);
+  ParserParameterEvaluator evaluator(shared);
 
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name,
@@ -818,9 +815,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, StringAttr argName,
     //   struct T2[IMP: TakesBool[m], //, m: Bool, n: T1[m, _]]:
     // because IMP would use m before it is declared.
     if (!append) {
-      bool unused = false;
       SmallVector<ParamDeclRefAttr> paramUses;
-      collector.collectUsesFromType(boundParamType, paramUses, unused);
+      shared.collectParamRefsInType(boundParamType, paramUses);
       // This is O(n^2) but the N's are small.
       for (ParamDeclRefAttr paramUse : paramUses) {
         // Check to see if it is an earlier part of the type for this argument.
@@ -952,7 +948,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         type = TraitType::get(getFullyResolvedSymbolRef(
             cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
       }
-      type = addImplicitTypeParams(result.shared, arg.name, type, result,
+      type = addImplicitTypeParams(arg.name, type, result,
                                    /*append=*/false, arg.loc);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
@@ -1576,7 +1572,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.variadicKind =
           VariadicKind::None; // Don't break invariants on errors.
     }
-    type = addImplicitTypeParams(shared, arg.name, type, tcSignature.paramList,
+    type = addImplicitTypeParams(arg.name, type, tcSignature.paramList,
                                  /*append=*/true, arg.loc);
   } else if (idx == 0 && tcSignature.selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
@@ -2448,15 +2444,11 @@ void TypeCheckedFnSignature::checkSelfArgument(ASTDecl &decl,
   if (disabledParams.empty())
     return;
 
-  ParameterCollector::Analysis collectorCache;
-  ParameterCollector collector(collectorCache);
-
   bool hadError = false;
   SmallVector<ParamDeclRefAttr> paramUses;
   auto checkDecl = [&](Type argType, SMLoc loc, const ExprNode *expr) {
-    bool unused = false;
     paramUses.clear();
-    collector.collectUsesFromType(argType, paramUses, unused);
+    shared.collectParamRefsInType(argType, paramUses);
     for (ParamDeclRefAttr use : paramUses) {
       if (!disabledParams.count(use))
         continue;

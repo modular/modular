@@ -24,6 +24,7 @@ namespace M::KGEN {
 class CompilationOptions;
 class NoneAttr;
 class ParamDeclAttr;
+class ParamDeclRefAttr;
 class FuncTypeGeneratorType;
 } // namespace M::KGEN
 
@@ -116,6 +117,10 @@ public:
 
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
+
+  /// Find all ParamDeclRefAttr's in side the type at the current scope.
+  void collectParamRefsInType(Type type,
+                              SmallVectorImpl<ParamDeclRefAttr> &uses);
 
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
