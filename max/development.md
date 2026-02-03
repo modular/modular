@@ -71,7 +71,7 @@ To find all the test targets, you can run:
 ./bazelw query 'tests(//max/tests/...)'
 ```
 
-### Running MAX pipelines
+## Running MAX pipelines
 
 When developing a new model architecture, or testing MAX API changes against
 existing models, you can use Bazel commands like the following:
@@ -93,13 +93,45 @@ existing models, you can use Bazel commands like the following:
   --temperature 0.7
 ```
 
-> [!NOTE]
-> If you need to make changes to the core kernels library or Mojo standard
-> library to support your model, currently the graph compiler does not use
-> local changes to Mojo libraries. To see these reflected in your model, place
-> the new Mojo code for these kernels in
-> [custom operations](https://docs.modular.com/max/develop/build-custom-ops)
-> and use these within your model.
+## Logit verification testing
+
+While we generally recommend validating the end-to-end correctness of a model
+using an evaluation harness (see below for more on this), it can be handy to
+verify portions of the model against a reference implementation during
+development. To compare against a PyTorch reference, you can use the following
+logit verification workflow:
+
+```bash
+# 1. Generate logits with MAX pipeline
+./bazelw run //max/tests/integration/pipelines/python:generate_llm_logits -- \
+  --device gpu \
+  --framework max \
+  --pipeline gemma3-1b \
+  --encoding bfloat16 \
+  --output /tmp/max-logits.json
+
+# 2. Generate logits with PyTorch reference
+./bazelw run //max/tests/integration/pipelines/python:generate_llm_logits -- \
+  --device gpu \
+  --framework torch \
+  --pipeline gemma3-1b \
+  --encoding bfloat16 \
+  --output /tmp/torch-logits.json
+
+# 3. Compare the logits
+./bazelw run //max/tests/integration/pipelines/python:verify -- \
+  --eval-metric cos,kl,tol \
+  --relative-tolerance 1e-2 \
+  --absolute-tolerance 1e-5 \
+  --cos-dist-threshold 0.001 \
+  --kl-div-threshold 0.01 \
+  /tmp/max-logits.json /tmp/torch-logits.json
+
+# Run verification pipeline directly (combines all steps)
+./bazelw run //max/tests/integration/pipelines/python:verify_pipelines -- \
+  --pipeline Gemma-3-1B-bfloat16 \
+  --devices='gpu'
+```
 
 ## Contributing a new model architecture
 
