@@ -211,7 +211,7 @@ fn _unpack_weights[
     var b_scale_ptr = _b_scale_ptr
     var b_correction_ptr = _b_correction_ptr
 
-    for ko in range(0, batch_k, group_size):
+    for _ in range(0, batch_k, group_size):
 
         @parameter
         for col in range(tile_n):
@@ -229,7 +229,7 @@ fn _unpack_weights[
             fill=0
         )
 
-        for k in range(0, group_size, 8):
+        for _ in range(0, group_size, 8):
 
             @parameter
             for col in range(tile_n):
@@ -1056,7 +1056,7 @@ fn _matmul_qint4_m_1[
             var ak_scale_ptr = a_scale.ptr
             var bk_ptr = b_ptr + n * k_groups * bytes_per_group_int4
 
-            for k in range(0, K, group_size):
+            for _ in range(0, K, group_size):
                 kernel.process_group_packed[group_size](
                     ak_ptr, ak_scale_ptr, bk_ptr, c_float
                 )
@@ -1198,7 +1198,7 @@ fn _matmul_qint4_m_any[
                     var bk_scale_ptr = b_scale_buf
                     var bk_correction_ptr = b_correction_buf
 
-                    for ki in range(0, ko_count, group_size):
+                    for _ in range(0, ko_count, group_size):
                         kernel.process_group_unpacked[group_size](
                             ak_ptr.bitcast[Int8](),
                             ak_scale_ptr,
