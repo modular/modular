@@ -51,7 +51,7 @@ fn run_rms_norm_cpu[
         input_ptr[i] = Scalar[dtype](i)
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_ptr[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var param_shape = Index(cols)
 

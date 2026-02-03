@@ -41,8 +41,8 @@ fn bench_layer_norm_gpu[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
-        beta_h[i] = (i / cols).cast[dtype]()
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+        beta_h[i] = (Float64(i) / Float64(cols)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
@@ -133,7 +133,7 @@ fn bench_rms_norm_gpu[
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)

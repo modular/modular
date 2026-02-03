@@ -460,6 +460,7 @@ struct Int(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
+    @deprecated("Explicitly cast the operands to Float64 before dividing")
     fn __truediv__(self, rhs: Int) -> Float64:
         """Return the floating point division of `self` and `rhs`.
 

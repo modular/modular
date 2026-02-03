@@ -64,10 +64,9 @@ fn epilogue_test_fn[
     for i in range(width):
         bias[i] = (
             0.5
-            + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                dtype
-            ]()
-        )
+            + Float64(idx[0] + idx[1] + i)
+            / Float64(dim_space[0] + dim_space[1])
+        ).cast[dtype]()
 
     return val + bias
 

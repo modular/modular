@@ -24,7 +24,7 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota
+from math import iota, ceildiv
 from sys import llvm_intrinsic
 
 from memory import Span, bitcast, memcpy
@@ -209,9 +209,7 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
-    result.resize(
-        unsafe_uninit_length=Int(4 * ((len(input_bytes) + 3 - 1) / 3))
-    )
+    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
     var res_ptr = result.unsafe_ptr_mut()

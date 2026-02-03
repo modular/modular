@@ -742,7 +742,9 @@ struct ManagedTensorSlice[
 
         var adjusted_shape = IndexList[Self.rank]()
         for i in range(Self.rank):
-            adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
+            adjusted_shape[i] = Int(
+                ceil(Float64(stop[i] - start[i]) / Float64(step[i]))
+            )
         var slice_spec = RuntimeTensorSpec[Self.dtype](adjusted_shape)
 
         var slicer_strides = _row_major_strides(adjusted_shape)

@@ -172,6 +172,11 @@ what we publish.
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.
 
+- The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
+  casting the operands to Float64 before dividing. This deprecation is to help
+  prepare to migrate `Int.__truediv__` to return `Int`, which could be a quietly
+  breaking change.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the

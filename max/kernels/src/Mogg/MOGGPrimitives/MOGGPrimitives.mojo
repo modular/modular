@@ -591,7 +591,7 @@ fn mgp_buffer_set_with_index[
         "buffer size not divisible by number of index args",
     )
 
-    var elSize = bufSize / numArgs
+    var elSize = bufSize // numArgs
     if elSize == 4:
         fill_buffer[DType.int32](buffer, vals)
     elif elSize == 8:

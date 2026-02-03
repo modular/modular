@@ -38,7 +38,7 @@ from utils import IndexList
 def flops(
     batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
 ) -> Int:
-    var avg_seqlen = (max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
+    var avg_seqlen = Float64(max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
     return Int(batch * nheads * 2 * seqlen_q * avg_seqlen * (headdim + headdim))
 
 

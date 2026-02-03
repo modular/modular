@@ -355,14 +355,14 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     comptime K10_TN = 4
     comptime K10_TM = 8
 
-    comptime NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    comptime NUM_WARPS = K10_NUM_THREADS // WARP_SIZE
     comptime K10_WMITER = (K10_WM * K10_WN) // (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     )
 
     # Warptile in threadblocktile.
     __comptime_assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
-    __comptime_assert (K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS
+    __comptime_assert (K10_BN // K10_WN) * (K10_BM // K10_WM) == NUM_WARPS
 
     # Threads in the warp sub-tile.
     __comptime_assert (K10_WM * K10_WN) % (

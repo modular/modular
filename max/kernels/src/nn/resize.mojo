@@ -67,7 +67,8 @@ fn coord_transform[
             return 0
         # note: resized image will have same corners as original image
         return (
-            out_coord_f32 * ((in_dim - 1) / (out_dim - 1)).cast[DType.float32]()
+            out_coord_f32
+            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[DType.float32]()
         )
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
@@ -146,7 +147,7 @@ fn resize_nearest_neighbor[
     ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
-        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
             DType.float32
         ]()
 
@@ -332,7 +333,7 @@ fn _resize[
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
-        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
             DType.float32
         ]()
         if Int(input.dim(i)) != Int(output.dim(i)):

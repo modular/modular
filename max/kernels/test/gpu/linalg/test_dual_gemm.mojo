@@ -377,7 +377,7 @@ fn test_dual_matmul[
     _ = mat_a^
     _ = mat_b01^
 
-    comptime cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
+    comptime cbrt_eps = exp2(Float64(FPUtils[dst_type].mantissa_width()) / -3)
     comptime dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):

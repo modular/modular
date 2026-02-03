@@ -552,7 +552,9 @@ fn _top_k_sampling[
         internal_bs = orig_in_shape[0]
         internal_in_shape = rebind[IndexList[internal_rank]](orig_in_shape)
     elif input.rank > internal_rank:
-        internal_bs = Int(orig_in_shape.flattened_length() / last_dim)
+        internal_bs = Int(
+            Float64(orig_in_shape.flattened_length()) / Float64(last_dim)
+        )
         internal_in_shape = IndexList[internal_rank](internal_bs, last_dim)
     else:
         raise Error("Unsupported input rank. Must be >= 1.")
@@ -1768,7 +1770,9 @@ fn topk_gpu[
     else:  # rank > 2
         # Handle higher dimensional inputs by flattening all but the last dimension
         var _last_dim = orig_in_shape[input.rank - 1]
-        internal_bs = Int(orig_in_shape.flattened_length() / _last_dim)
+        internal_bs = Int(
+            Float64(orig_in_shape.flattened_length()) / Float64(_last_dim)
+        )
 
         var internal_in_shape = IndexList[internal_rank](internal_bs, _last_dim)
         var internal_out_idxs_shape = IndexList[internal_rank](

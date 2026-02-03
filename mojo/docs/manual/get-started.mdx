@@ -822,7 +822,7 @@ Because the Mojo compiler performs static type checking, a `String` constructor
 can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
-To enforce this, the `String()` constructors require a type to conform to the 
+To enforce this, the `String()` constructors require a type to conform to the
 [`Stringable`] trait. (This type of function is sometimes referred to as a
 [*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
 trait requires a conforming type to implement a `__str__()` method that returns
@@ -1223,7 +1223,7 @@ Python and the `pygame-ce` package. In the project directory, execute the
 following commands from the terminal:
 
 ```bash
-pixi add "python>=3.11,<3.15" 
+pixi add "python>=3.11,<3.15"
 pixi add --pypi "pygame-ce>=2.5.6,<3"
 ```
 
@@ -1298,8 +1298,8 @@ def run_display(
     window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
-    cell_height = window_height / grid.rows
-    cell_width = window_width / grid.cols
+    cell_height = Float64(window_height) / Float64(grid.rows)
+    cell_width = Float64(window_width) / Float64(grid.cols)
     border_size = 1
     cell_fill_color = pygame.Color(cell_color)
     background_fill_color = pygame.Color(background_color)

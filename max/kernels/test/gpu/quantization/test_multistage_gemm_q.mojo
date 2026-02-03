@@ -796,7 +796,7 @@ fn test_quantized[
                 ctx,
             )
 
-        var nstime = ctx.execution_time[run_func](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(
