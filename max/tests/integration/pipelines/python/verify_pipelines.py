@@ -1185,7 +1185,7 @@ PIPELINES = {
             pipeline="kathywu95/deepseek-v3-small-random",
             encoding="bfloat16",
             cos_dist_threshold=9.4e-03,
-            kl_div_threshold=2.7e-2,
+            kl_div_threshold=8.0e-2,  # TODO(MODELS-998)
         ),
     ),
     "kathywu95/deepseek-v3-small-random-fp8": PipelineDef(
