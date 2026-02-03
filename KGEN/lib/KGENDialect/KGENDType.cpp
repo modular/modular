@@ -69,9 +69,9 @@ static std::string getAsLongString(uint8_t dtype) {
 std::string KGENDType::getAsString(bool libForm) const {
   switch (uint8_t dtype = getValue()) {
   case ExtraCases::index:
-    return "index";
+    return libForm ? "int" : "index";
   case ExtraCases::uindex:
-    return "uindex";
+    return libForm ? "uint" : "uindex";
   case ExtraCases::address:
     return "address";
   default:
