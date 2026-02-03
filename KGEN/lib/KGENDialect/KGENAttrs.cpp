@@ -238,29 +238,6 @@ VariadicReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-FailureOr<TypedAttr> VariadicReduceAttr::evaluateWith(
-    ParameterEvaluationContext *evaluationContext) {
-  auto va = sugarDynCast<VariadicAttr>(getVariadic());
-  auto reducer = sugarDynCast<GeneratorAttr>(getGenerator());
-
-  if (!va || !reducer)
-    return failure();
-
-  // We have a concrete value for both the generator/variadic, then fold
-  unsigned eltCnt = va.getValues().size();
-  TypedAttr reducedVal = sugarCast<TypedAttr>(getBase());
-  for (unsigned i = 0; i < eltCnt; ++i) {
-    IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
-    GeneratorAttr spGen = reducer.getSpecializedGenerator(
-        {reducedVal, va, vaIdx}, evaluationContext);
-    // This should never happen, we should have verified VariadicMapAttr.
-    assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
-    reducedVal = spGen.getInstantiatedValue();
-  }
-
-  return {reducedVal};
-}
-
 LogicalResult
 VariadicZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                         VariadicType type, TypedAttr variadics) {
@@ -685,8 +662,9 @@ TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
   return getTypeRefForTypeValueIfResolved(getTypeValue());
 }
 
-FailureOr<TypedAttr> GetWitnessAttr::simplify(ConformanceOp witnessTable,
-                                              ParameterEvaluator *evaluator) {
+FailureOr<TypedAttr>
+GetWitnessAttr::simplify(ConformanceOp witnessTable,
+                         ParameterEvaluator *evaluator) const {
   for (WitnessOp entry : witnessTable.getOps<WitnessOp>()) {
     if (entry.getName() != getWitnessName().getValue())
       continue;

@@ -13,6 +13,7 @@
 #include "mlir/IR/Location.h"
 
 namespace M::KGEN {
+class ParameterEvaluationContext;
 class ParameterEvaluator;
 class SymTabEvaluationContext;
 } // namespace M::KGEN

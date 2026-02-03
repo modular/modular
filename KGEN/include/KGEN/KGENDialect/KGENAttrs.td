@@ -133,7 +133,8 @@ def KGEN_VariadicAttr : KGEN_ExprAttr<"Variadic", "variadic", [
 }
 
 def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "variadic.reduce",
-  [ContextuallyEvaluatedAttrInterface]> {
+  [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                               ["evaluateWithContext"]>]> {
   let summary = "Map a variadic of (type) values to a new variadic of (type) values";
   let description = [{
     The `#kgen.variadic.reduce` attribute is used to reduce a variadic of
@@ -147,11 +148,6 @@ def KGEN_VariadicReduceAttr : KGEN_ExprAttr<"VariadicReduce", "variadic.reduce",
     "TypedAttr":$variadic,
     "TypedAttr":$generator
   );
-
-  let extraClassDeclaration = [{
-    // Evaluates the variadic with the provided evaluation context.
-    FailureOr<TypedAttr> evaluateWith(ParameterEvaluationContext *ctx);
-  }];
 
   let assemblyFormat = "`<` $base `,` $variadic `,` $generator `>`";
   let genVerifyDecl = 1;
@@ -688,7 +684,8 @@ def KGEN_DowncastAttr : KGEN_ExprAttr<"Downcast", "downcast",
 //===----------------------------------------------------------------------===//
 
 def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
-    [ContextuallyEvaluatedAttrInterface]> {
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get a witness entry from a witness table.";
   let description = [{
     The `#kgen.get_witness` attribute is used to lookup a witness entry
@@ -737,7 +734,7 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
     /// Returns an empty attribute if the evaluator failed to evaluate an
     /// expression.
     FailureOr<TypedAttr> simplify(ConformanceOp witnessTable,
-                                  ParameterEvaluator *evaluator = nullptr);
+                                  ParameterEvaluator *evaluator = nullptr) const;
   }];
 }
 
@@ -913,7 +910,9 @@ def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
-    "struct_field_types", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_types",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the field types of a struct as a variadic.";
   let description = [{
     The `#kgen.struct_field_types` attribute returns the types of all fields
@@ -939,7 +938,9 @@ def KGEN_StructFieldTypesAttr : KGEN_ExprAttr<"StructFieldTypes",
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
-    "struct_field_names", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_names",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the field names of a struct as a variadic of strings.";
   let description = [{
     The `#kgen.struct_field_names` attribute returns the names of all fields
@@ -965,7 +966,9 @@ def KGEN_StructFieldNamesAttr : KGEN_ExprAttr<"StructFieldNames",
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldIndexByNameAttr : KGEN_ExprAttr<"StructFieldIndexByName",
-    "struct_field_index_by_name", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_index_by_name",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the index of a struct field by name.";
   let description = [{
     The `#kgen.struct_field_index_by_name` attribute returns the index of a field
@@ -996,7 +999,9 @@ def KGEN_StructFieldIndexByNameAttr : KGEN_ExprAttr<"StructFieldIndexByName",
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
-    "struct_field_type_by_name", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_type_by_name",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the type of a struct field by name.";
   let description = [{
     The `#kgen.struct_field_type_by_name` attribute returns the type of a field
@@ -1027,7 +1032,9 @@ def KGEN_StructFieldTypeByNameAttr : KGEN_ExprAttr<"StructFieldTypeByName",
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldOffsetByIndexAttr : KGEN_ExprAttr<"StructFieldOffsetByIndex",
-    "struct_field_offset_by_index", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_offset_by_index",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the byte offset of a struct field by index.";
   let description = [{
     The `#kgen.struct_field_offset_by_index` attribute returns the byte offset
@@ -1060,7 +1067,9 @@ def KGEN_StructFieldOffsetByIndexAttr : KGEN_ExprAttr<"StructFieldOffsetByIndex"
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructFieldOffsetByNameAttr : KGEN_ExprAttr<"StructFieldOffsetByName",
-    "struct_field_offset_by_name", [ContextuallyEvaluatedAttrInterface]> {
+    "struct_field_offset_by_name",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
   let summary = "Get the byte offset of a struct field by name.";
   let description = [{
     The `#kgen.struct_field_offset_by_name` attribute returns the byte offset
