@@ -179,8 +179,9 @@ def _handle_constant(
     - AlignedBytesAttr (#M.aligned_bytes)
 
     This implementation always copies data from the MLIR attribute into a new
-    Buffer. For splat constants (1 element in source, many in output), the
-    single value is replicated.
+    Buffer on CPU first, then transfers to the target device if needed.
+    For splat constants (1 element in source, many in output), the single
+    value is replicated on CPU before transfer.
 
     Args:
         devices: List of available devices.
@@ -200,18 +201,19 @@ def _handle_constant(
         raise ValueError("Dynamic shapes not supported for constants")
 
     target_device = result_type.device.to_device()
-    if not target_device.is_host:
-        raise NotImplementedError(
-            f"Constant handling for device {target_device} not yet implemented. "
-            "Only CPU constants are currently supported."
-        )
 
-    # Use C++ binding to create buffer directly from attribute
-    return [
-        _core.graph._buffer_from_constant_attr(
-            op.value, dtype, graph.Shape(shape).static_dims, target_device
-        )
-    ]
+    # Always create buffer on CPU first (C++ binding uses memcpy which
+    # requires host memory). Splatting also happens on CPU.
+    cpu_device = _find_device(devices, "cpu", 0)
+    cpu_buffer = _core.graph._buffer_from_constant_attr(
+        op.value, dtype, graph.Shape(shape).static_dims, cpu_device
+    )
+
+    # Transfer to target device if not CPU
+    if not target_device.is_host:
+        return [cpu_buffer.to(target_device)]
+
+    return [cpu_buffer]
 
 
 # Mutable load operations

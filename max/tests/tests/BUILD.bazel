@@ -14,6 +14,7 @@ modular_py_test(
         exclude = [
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
+            "test_interpreter_gpu.py",
             "test_interpreter_ops.py",
         ],
     ),
@@ -79,5 +80,24 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_interpreter_gpu",
+    srcs = ["test_interpreter_gpu.py"],
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = [
+        "//max/python/max:interpreter",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
