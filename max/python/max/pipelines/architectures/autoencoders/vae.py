@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
-
 from max import functional as F
 from max import random
 from max.dtype import DType
@@ -117,9 +116,7 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
         else:
             self.downsamplers = None
 
-    def forward(
-        self, hidden_states: Tensor, *args, **kwargs
-    ) -> Tensor:
+    def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
         """Apply DownEncoderBlock2D forward pass.
 
         Args:
@@ -831,7 +828,7 @@ class DiagonalGaussianDistribution:
         chunks = F.chunk(parameters, 2, axis=1)
         self.mean = chunks[0]
         self.logvar = chunks[1]
-        
+
         # Clamp logvar to prevent numerical instability
         # torch.clamp(logvar, -30.0, 20.0) -> F.min(F.max(logvar, -30.0), 20.0)
         self.logvar = F.min(F.max(self.logvar, -30.0), 20.0)
@@ -847,7 +844,7 @@ class DiagonalGaussianDistribution:
             self.var = Tensor.zeros_like(self.mean)
             self.std = Tensor.zeros_like(self.mean)
 
-    def sample(self, generator: Optional[object] = None) -> Tensor:
+    def sample(self, generator: object | None = None) -> Tensor:
         """Sample from the distribution using reparameterization trick.
 
         Generates a random sample from the distribution by sampling from a
@@ -898,9 +895,7 @@ class DiagonalGaussianDistribution:
         if other is None:
             # KL divergence with standard normal: 0.5 * sum(mean^2 + var - 1 - logvar)
             # torch.sum(..., dim=[1,2,3]) -> multiple F.sum() calls
-            kl_term = (
-                F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
-            )
+            kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
             # Sum over spatial dimensions [1, 2, 3]
             kl_term = F.sum(kl_term, axis=3)  # Sum over W
             kl_term = F.sum(kl_term, axis=2)  # Sum over H
@@ -921,7 +916,7 @@ class DiagonalGaussianDistribution:
             kl_term = F.sum(kl_term, axis=1)  # Sum over C
             return 0.5 * kl_term
 
-    def nll(self, sample: Tensor, dims: Tuple[int, ...] = (1, 2, 3)) -> Tensor:
+    def nll(self, sample: Tensor, dims: tuple[int, ...] = (1, 2, 3)) -> Tensor:
         """Compute negative log-likelihood of a sample.
 
         Computes the negative log-likelihood of a given sample under this

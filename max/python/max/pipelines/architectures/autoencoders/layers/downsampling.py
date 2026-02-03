@@ -20,6 +20,7 @@ from max.nn import Conv2d, Module
 from max.nn.norm import LayerNorm, RMSNorm  # type: ignore[attr-defined]
 from max.tensor import Tensor
 
+
 class Downsample2D(Module[[Tensor], Tensor]):
     """A 2D downsampling layer with an optional convolution.
 
@@ -90,7 +91,9 @@ class Downsample2D(Module[[Tensor], Tensor]):
             self.norm = LayerNorm(
                 dim=channels,
                 eps=eps or 1e-5,
-                elementwise_affine=elementwise_affine if elementwise_affine is not None else True,
+                elementwise_affine=elementwise_affine
+                if elementwise_affine is not None
+                else True,
             )
         elif norm_type == "rms_norm":
             self.norm = RMSNorm(dim=channels, eps=eps or 1e-6)
@@ -153,7 +156,9 @@ class Downsample2D(Module[[Tensor], Tensor]):
             # Max format: [0, 0, 0, 0, 0, 1, 0, 1]
             # (no padding on N and C, pad_after_H=1, pad_after_W=1)
             paddings = [0, 0, 0, 0, 0, 1, 0, 1]
-            hidden_states = F.pad(hidden_states, paddings=paddings, mode="constant", value=0)
+            hidden_states = F.pad(
+                hidden_states, paddings=paddings, mode="constant", value=0
+            )
 
         # Apply downsampling
         if self.use_conv:

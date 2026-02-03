@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from max import functional as F
 from max.driver import Device
@@ -152,8 +152,8 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         """
         # Initialize BatchNorm statistics attributes BEFORE super().__init__()
         # because super().__init__() calls load_model() which may set these values
-        self.bn_running_mean: Optional[Tensor] = None
-        self.bn_running_var: Optional[Tensor] = None
+        self.bn_running_mean: Tensor | None = None
+        self.bn_running_var: Tensor | None = None
 
         super().__init__(
             config=config,
@@ -250,7 +250,8 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(
-                    *autoencoder.encoder.input_types(), weights=encoder_state_dict
+                    *autoencoder.encoder.input_types(),
+                    weights=encoder_state_dict,
                 )
 
             # Compile quant_conv (optional, only if weights exist and encoder exists)
@@ -262,7 +263,7 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
                 # quant_conv is a Conv2d layer, compile it separately
                 # Create a simple wrapper module for quant_conv
                 class QuantConvModule(Module[[Tensor], Tensor]):
-                    def __init__(self, quant_conv):
+                    def __init__(self, quant_conv: Conv2d):
                         super().__init__()
                         self.quant_conv = quant_conv
 

@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.abc import Callable
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 from max import functional as F
 from max.driver import Device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn import Module
+from max.nn import Conv2d, Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.tensor import Tensor
@@ -59,8 +59,8 @@ class BaseAutoencoderModel(ComponentModel):
         super().__init__(config, encoding, devices, weights)
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
-        self.encoder_model: Optional[object] = None  # Compiled encoder model
-        self.quant_conv_model: Optional[object] = None  # Compiled quant_conv model
+        self.encoder_model: object | None = None  # Compiled encoder model
+        self.quant_conv_model: object | None = None  # Compiled quant_conv model
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -107,7 +107,8 @@ class BaseAutoencoderModel(ComponentModel):
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(
-                    *autoencoder.encoder.input_types(), weights=encoder_state_dict
+                    *autoencoder.encoder.input_types(),
+                    weights=encoder_state_dict,
                 )
 
             # Compile quant_conv (optional, only if weights exist and encoder exists)
@@ -122,7 +123,7 @@ class BaseAutoencoderModel(ComponentModel):
                 # quant_conv is a Conv2d layer, compile it separately
                 # Create a simple wrapper module for quant_conv
                 class QuantConvModule(Module[[Tensor], Tensor]):
-                    def __init__(self, quant_conv):
+                    def __init__(self, quant_conv: Conv2d) -> None:
                         super().__init__()
                         self.quant_conv = quant_conv
 
@@ -173,7 +174,9 @@ class BaseAutoencoderModel(ComponentModel):
             )
 
         # 1. Encode image through encoder
-        h = self.encoder_model(sample)  # [B, 2*latent_channels, H_latent, W_latent]
+        h = self.encoder_model(
+            sample
+        )  # [B, 2*latent_channels, H_latent, W_latent]
 
         # 2. Apply quant_conv if available
         if self.quant_conv_model is not None:
