@@ -163,6 +163,33 @@ def _get_output_device(op: _core.Operation, devices: list[Device]) -> Device:
     return _find_device(devices, "cpu", 0)
 
 
+def _get_host_output_device(
+    op: _core.Operation, devices: list[Device]
+) -> Device:
+    """Get the target device for an operation's output, requiring it to be host.
+
+    This function validates that the target device is a host (CPU) device
+    and raises an exception if not. Use this for operations that cannot
+    fall back to CPU execution when targeting GPU.
+
+    Args:
+        op: The operation to get the output device for.
+        devices: List of available devices to match against.
+
+    Returns:
+        The target device for the operation's output.
+
+    Raises:
+        NotImplementedError: If the target device is not a host device.
+    """
+    target_device = _get_output_device(op, devices)
+    if not target_device.is_host:
+        raise NotImplementedError(
+            f"GPU execution not supported for {type(op).__name__} in MO interpreter"
+        )
+    return target_device
+
+
 # Constant operations
 
 
@@ -300,10 +327,7 @@ def _handle_static_broadcast_to(
     # broadcast_to returns a view, make a copy
     output_np = broadcast_np.copy()
     output_buffer = Buffer.from_numpy(output_np)
-    # Move to target device specified by result type
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output_buffer = output_buffer.to(target_device)
+    _get_host_output_device(op, devices)
     return [output_buffer]
 
 
@@ -346,10 +370,7 @@ def _handle_broadcast_to(
     # broadcast_to returns a view, make a copy
     output_np = broadcast_np.copy()
     output_buffer = Buffer.from_numpy(output_np)
-    # Move to target device specified by result type
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output_buffer = output_buffer.to(target_device)
+    _get_host_output_device(op, devices)
     return [output_buffer]
 
 
@@ -370,7 +391,7 @@ def binary_elementwise_handler(op_type: type) -> OpHandler:
         output = Buffer(
             shape=inputs[0].shape,
             dtype=input_dtype,
-            device=_get_output_device(op, devices),
+            device=_get_host_output_device(op, devices),
         )
         op_binding(output, inputs[0], inputs[1])
         return [output]
@@ -395,7 +416,7 @@ def binary_comparison_handler(op_type: type) -> OpHandler:
         output = Buffer(
             shape=inputs[0].shape,
             dtype=DType.bool,
-            device=_get_output_device(op, devices),
+            device=_get_host_output_device(op, devices),
         )
         op_binding(output, inputs[0], inputs[1])
         return [output]
@@ -423,7 +444,7 @@ def unary_elementwise_handler(op_type: type) -> OpHandler:
         output = Buffer(
             shape=inputs[0].shape,
             dtype=input_dtype,
-            device=_get_output_device(op, devices),
+            device=_get_host_output_device(op, devices),
         )
         op_binding(output, inputs[0])
         return [output]
@@ -444,13 +465,11 @@ def _handle_matmul(
     """Handle mo.matmul by dispatching to matmul kernel."""
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
+    _get_host_output_device(op, devices)
     lhs_np = inputs[0].to_numpy()
     rhs_np = inputs[1].to_numpy()
     result_np = np.matmul(lhs_np, rhs_np)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
     return [output]
 
 
@@ -465,6 +484,7 @@ def _reshape_common(
 ) -> Sequence[Buffer]:
     """Common implementation for reshape operations."""
     assert isinstance(inputs[0], Buffer)
+    _get_host_output_device(op, devices)
     input_np = inputs[0].to_numpy()
     # Get target shape from result type
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
@@ -476,9 +496,6 @@ def _reshape_common(
 
     result_np = input_np.reshape(target_shape)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
     return [output]
 
 
@@ -506,6 +523,7 @@ def _handle_transpose(
 ) -> Sequence[Buffer]:
     """Handle mo.transpose."""
     assert isinstance(inputs[0], Buffer)
+    _get_host_output_device(op, devices)
     input_np = inputs[0].to_numpy()
     # TransposeOp should have a permutation attribute
     # For now, use default transpose (reverse axes)
@@ -515,9 +533,6 @@ def _handle_transpose(
     else:
         result_np = np.transpose(input_np)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
     return [output]
 
 
@@ -551,9 +566,7 @@ def _handle_slice(
     # Ensure we have a contiguous array
     result_np = np.ascontiguousarray(result_np)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
+    _get_host_output_device(op, devices)
     return [output]
 
 
@@ -566,12 +579,10 @@ def _handle_shape_of(
 ) -> Sequence[Buffer]:
     """Handle mo.shape_of - returns the shape of a tensor as a 1D si64 tensor."""
     assert isinstance(inputs[0], Buffer)
+    _get_host_output_device(op, devices)
     shape = inputs[0].shape
     result_np = np.array(shape, dtype=np.int64)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
     return [output]
 
 
@@ -584,14 +595,12 @@ def _handle_broadcast_shape(
     """Handle mo.broadcast_shape - compute broadcast shape of two shapes."""
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
+    _get_host_output_device(op, devices)
     shape_x = tuple(inputs[0].to_numpy().tolist())
     shape_y = tuple(inputs[1].to_numpy().tolist())
     result_shape = np.broadcast_shapes(shape_x, shape_y)
     result_np = np.array(result_shape, dtype=np.int64)
     output = Buffer.from_numpy(result_np)
-    target_device = _get_output_device(op, devices)
-    if not target_device.is_host:
-        output = output.to(target_device)
     return [output]
 
 
