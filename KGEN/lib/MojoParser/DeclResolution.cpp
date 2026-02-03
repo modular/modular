@@ -3299,6 +3299,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (synthesizedDtor && !hasNonTrivialDestructor)
     structOp.setDestructorAttr({});
 
+  if (conformsToTrait("TrivialRegisterType"))
+    structOp.setConvention(TypeConvention::RegisterPassableTrivial);
+
   // If the struct is @register_passable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
   // register_passable types before processing them.
@@ -3635,6 +3638,14 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
       // has an empty requirements table.
     }
   }
+
+  bool isTrivialRegisterType =
+      traitOp.getSymName() == "TrivialRegisterType" ||
+      llvm::any_of(parentTraits, [](SymbolRefAttr symbol) {
+        return symbol.getLeafReference().getValue() == "TrivialRegisterType";
+      });
+  if (isTrivialRegisterType)
+    traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   // Check if the trait conforms to ImplicitlyDestructible by checking the
   // parent traits list. We can't use doesNominalTypeConformTo or
