@@ -108,7 +108,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 
 @fieldwise_init
-struct Signal(TrivialRegisterType):
+struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
 
     This struct provides counter-based synchronization between thread blocks on different GPUs.
