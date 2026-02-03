@@ -456,6 +456,18 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(other: LayoutTensor, out self: type_of(other.get_immutable())):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The `LayoutTensor` to cast.
+        """
+        self = other.get_immutable()
+
     @always_inline
     fn __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,

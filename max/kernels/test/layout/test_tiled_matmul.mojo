@@ -39,9 +39,9 @@ struct Dim(ImplicitlyCopyable, Stringable):
 trait TiledOp:
     @staticmethod
     fn op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        mut dst: LayoutTensor[mut=True, ...],
+        lhs: LayoutTensor[mut=False, ...],
+        rhs: LayoutTensor[mut=False, ...],
     ):
         pass
 
@@ -50,9 +50,9 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        mut dst: LayoutTensor[mut=True, ...],
+        lhs: LayoutTensor[mut=False, ...],
+        rhs: LayoutTensor[mut=False, ...],
     ):
         comptime dtype = dst.dtype
 
@@ -72,9 +72,9 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        mut dst: LayoutTensor[mut=True, ...],
+        lhs: LayoutTensor[mut=False, ...],
+        rhs: LayoutTensor[mut=False, ...],
     ):
         comptime M = dst.shape[0]()
         comptime N = dst.shape[1]()
@@ -102,7 +102,9 @@ struct MMA_Vec(TiledOp):
 fn gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
 ](
-    dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor
+    dst: LayoutTensor[mut=True, ...],
+    lhs: LayoutTensor[mut=False, ...],
+    rhs: LayoutTensor[mut=False, ...],
 ) raises:
     comptime M = dst.shape[0]()
     comptime N = dst.shape[1]()
@@ -149,14 +151,20 @@ fn gemm_l2_cache[
 
                             # Execute mma.op - rhs_l2_tile is already transposed
                             mma.op(
-                                dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor()
+                                dst_l2_tile,
+                                lhs_l2_tile.get_immutable(),
+                                l2_rhs_cache.tensor().get_immutable(),
                             )
     _ = l2_rhs_cache^
 
 
 fn gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor):
+](
+    dst: LayoutTensor[mut=True, ...],
+    lhs: LayoutTensor[mut=False, ...],
+    rhs: LayoutTensor[mut=False, ...],
+):
     comptime M = dst.shape[0]()
     comptime N = dst.shape[1]()
     comptime K = lhs.shape[1]()
@@ -217,7 +225,11 @@ fn gemm_l1_cache[
                             )
 
                             # Execute mma.op - rhs_l2_tile is already transposed
-                            mma.op(dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
+                            mma.op(
+                                dst_l2_tile,
+                                lhs_l2_tile.get_immutable(),
+                                rhs_l2_tile.get_immutable(),
+                            )
 
     sync_parallelize[process_raw](l1_size.m)
 
@@ -241,17 +253,17 @@ fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     arange(lhs.tensor())
 
     if use_l1_cache:
-        gemm_l1_cache[
-            MMA_Vec,
-            Dim(4, 4, 2),
-            Dim(2, 2, 1),
-        ](dst.tensor(), lhs.tensor(), rhs.tensor())
+        gemm_l1_cache[MMA_Vec, Dim(4, 4, 2), Dim(2, 2, 1),](
+            dst.tensor(),
+            lhs.tensor().get_immutable(),
+            rhs.tensor().get_immutable(),
+        )
     else:
-        gemm_l2_cache[
-            MMA_Vec,
-            Dim(4, 4, 2),
-            Dim(2, 2, 1),
-        ](dst.tensor(), lhs.tensor(), rhs.tensor())
+        gemm_l2_cache[MMA_Vec, Dim(4, 4, 2), Dim(2, 2, 1),](
+            dst.tensor(),
+            lhs.tensor().get_immutable(),
+            rhs.tensor().get_immutable(),
+        )
     print(dst.tensor())
 
     _ = rhs^
