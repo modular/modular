@@ -21,7 +21,7 @@ from max import functional as F
 from max import random
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import PixelGenerationOutput, TokenBuffer
+from max.interfaces import TokenBuffer
 from max.pipelines import PixelContext
 from max.pipelines.lib.diffusion_schedulers import (
     FlowMatchEulerDiscreteScheduler,
@@ -78,9 +78,9 @@ def format_input(
             for prompt in cleaned_txt
         ]
     else:
-        assert len(images) == len(
-            prompts
-        ), "Number of images must match number of prompts"
+        assert len(images) == len(prompts), (
+            "Number of images must match number of prompts"
+        )
         messages = [
             [
                 {
@@ -91,7 +91,7 @@ def format_input(
             for _ in cleaned_txt
         ]
 
-        for i, (el, img_list) in enumerate(zip(messages, images)):
+        for i, (el, img_list) in enumerate(zip(messages, images, strict=False)):
             if img_list is not None:
                 el.append(
                     {
@@ -189,12 +189,15 @@ class Flux2Pipeline(DiffusionPipeline):
         self,
         image: PIL.Image.Image,
     ) -> Tensor:
-
         img_array = (np.array(image, dtype=np.float32) / 127.5) - 1.0
         img_array = np.transpose(img_array, (2, 0, 1))
         img_array = np.expand_dims(img_array, axis=0)
         img_array = np.ascontiguousarray(img_array)
-        img_tensor = Tensor.from_dlpack(img_array).to(self.vae.devices[0]).cast(self.vae.config.dtype)
+        img_tensor = (
+            Tensor.from_dlpack(img_array)
+            .to(self.vae.devices[0])
+            .cast(self.vae.config.dtype)
+        )
 
         return img_tensor
 
@@ -204,24 +207,23 @@ class Flux2Pipeline(DiffusionPipeline):
         hidden_states_layers: list[int] | None = None,
         max_sequence_length: int | None = None,
     ) -> Tensor:
-
         if hidden_states_layers is None:
             hidden_states_layers = [10, 20, 30]
-        
+
         if max_sequence_length is None:
             max_sequence_length = text_input_ids.shape[-1]
-        
+
         if text_input_ids.ndim == 1:
             text_input_ids = np.expand_dims(text_input_ids, axis=0)
-        
+
         text_input_ids = text_input_ids.astype(np.int64)
         hidden_states_tuple = self.text_encoder(text_input_ids)
-        
+
         if not isinstance(hidden_states_tuple, tuple):
             raise ValueError(
                 f"Expected tuple of hidden states, got {type(hidden_states_tuple)}"
             )
-        
+
         layer_tensors = []
         for k in hidden_states_layers:
             layer_idx = k - 1
@@ -278,7 +280,7 @@ class Flux2Pipeline(DiffusionPipeline):
         prompt_embeds = F.reshape(
             stacked, [batch_size, seq_len, num_layers * hidden_dim]
         )
-        
+
         return prompt_embeds
 
     def _prepare_prompt_embeddings(
@@ -361,9 +363,8 @@ class Flux2Pipeline(DiffusionPipeline):
         compiled_model: Any,
         random_latents_seq_len: int,
     ) -> Tensor:
-
         latent_model_input = latents.cast(prompt_embeds.dtype)
-        
+
         hidden_states_drv = latent_model_input.driver_tensor
         encoder_hidden_states_drv = prompt_embeds.driver_tensor
         timestep_drv = timestep.driver_tensor
@@ -393,7 +394,6 @@ class Flux2Pipeline(DiffusionPipeline):
         width: int,
         output_type: Literal["np", "latent", "pil"] = "np",
     ) -> Tensor | np.ndarray:
-
         if output_type == "latent":
             return latents
 
@@ -421,7 +421,9 @@ class Flux2Pipeline(DiffusionPipeline):
             image = Tensor.from_dlpack(image)
 
         if output_type in ["np", "pil"]:
-            image = self.image_processor.postprocess(image, output_type=output_type)
+            image = self.image_processor.postprocess(
+                image, output_type=output_type
+            )
 
         return image
 
@@ -527,7 +529,10 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @staticmethod
     def _unpack_latents_with_ids(
-        x: Tensor, x_ids: Tensor, height: int | None = None, width: int | None = None
+        x: Tensor,
+        x_ids: Tensor,
+        height: int | None = None,
+        width: int | None = None,
     ) -> Tensor:
         batch_size = x.shape[0].dim
         seq_len = x.shape[1].dim
@@ -760,36 +765,42 @@ class Flux2Pipeline(DiffusionPipeline):
 
         timesteps: np.ndarray = model_inputs.timesteps
         sigmas_array: np.ndarray = model_inputs.sigmas
-        
-        latents, latent_image_ids, guidance = self._prepare_latents_for_denoising(
-            model_inputs=model_inputs,
-            dtype=dtype,
+
+        latents, latent_image_ids, guidance = (
+            self._prepare_latents_for_denoising(
+                model_inputs=model_inputs,
+                dtype=dtype,
+            )
         )
-        
+
         if len(sigmas_array) == len(timesteps):
             sigmas_array = np.append(sigmas_array, np.float32(0.0))
-        
+
         sigmas = Tensor.from_dlpack(sigmas_array).to(
             self.transformer.devices[0]
         )
-        
+
         num_timesteps = timesteps.shape[0]
         timesteps_batched = np.broadcast_to(
             timesteps[:, None], (num_timesteps, batch_size)
         )
-        timesteps_batched = Tensor.from_dlpack(timesteps_batched).to(
-            self.transformer.devices[0]
-        ).cast(dtype)
+        timesteps_batched = (
+            Tensor.from_dlpack(timesteps_batched)
+            .to(self.transformer.devices[0])
+            .cast(dtype)
+        )
 
         random_latents_seq_len = latents.shape[1].dim
         random_latent_ids = latent_image_ids
-        
+
         if image_latents is not None:
             latents = F.concat([latents, image_latents], axis=1)
-            latent_image_ids = F.concat([latent_image_ids, image_latent_ids], axis=1)
-        
+            latent_image_ids = F.concat(
+                [latent_image_ids, image_latent_ids], axis=1
+            )
+
         image_seq_len = latents.shape[1].dim
-        
+
         text_seq_len = prompt_embeds.shape[1].dim
         compiled_model = self.transformer._ensure_compiled(
             batch_size=batch_size,
@@ -817,7 +828,9 @@ class Flux2Pipeline(DiffusionPipeline):
             else:
                 random_latents = latents
 
-            random_latents = self._scheduler_step(random_latents, noise_pred, sigmas, i)
+            random_latents = self._scheduler_step(
+                random_latents, noise_pred, sigmas, i
+            )
 
             if image_latents is not None:
                 latents = F.concat([random_latents, image_latents], axis=1)
@@ -843,7 +856,7 @@ class Flux2Pipeline(DiffusionPipeline):
         else:
             decode_latents = latents
             decode_latent_ids = latent_image_ids
-        
+
         outputs = self._decode_latents(
             decode_latents,
             decode_latent_ids,
