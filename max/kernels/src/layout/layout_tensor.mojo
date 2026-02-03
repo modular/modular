@@ -6280,8 +6280,9 @@ fn copy_dram_to_sram[
         swizzle: Optional swizzling function to rearrange the destination
             indices, which can improve memory access patterns and reduce bank
             conflicts.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of `src_thread_layout`.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Scope at which thread operations are performed (`BLOCK` or
             `WARP`). Defaults to `ThreadScope.BLOCK`, where all threads in a
             block participate.
@@ -6425,8 +6426,9 @@ fn copy_dram_to_sram[
         swizzle: Optional swizzling pattern to apply when distributing the
             destination tensor. This can improve memory access patterns and
             reduce bank conflicts. Defaults to None (no swizzling).
-        num_threads: The total number of threads participating in the copy
-            operation. Defaults to the size of `src_thread_layout`.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -6627,8 +6629,9 @@ fn copy_dram_to_sram[
         swizzle: Optional swizzling function to rearrange the destination
             indices, which can improve memory access patterns and reduce bank
             conflicts.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Scope at which thread operations are performed (`BLOCK` or
             `WARP`). Defaults to `BLOCK`, where all threads in a block
             participate.
@@ -6688,8 +6691,9 @@ fn copy_dram_to_sram[
         swizzle: Optional swizzling function to rearrange the destination
             indices, which can improve memory access patterns and reduce bank
             conflicts.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of `thread_layout`.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Scope at which thread operations are performed
                 (`BLOCK` or `WARP`). Defaults to `ThreadScope.BLOCK`, where all
                 threads in a block participate.
@@ -6771,8 +6775,9 @@ fn copy_dram_to_sram_async[
             - `CacheEviction.EVICT_NORMAL`: Normal eviction (default).
             - `CacheEviction.EVICT_FIRST`: Evict data after first use.
             - `CacheEviction.EVICT_LAST`: Keep data in cache until last use.
-        num_threads: Total number of threads participating in the copy operation.
-                    Defaults to the size of src_thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         block_dim_count: The number of dimensions in the thread block.
 
     Args:
@@ -6925,8 +6930,9 @@ fn copy_dram_to_sram_async[
         masked: Whether the copy operation should use masking.
         fill: Fill policy for uninitialized memory regions.
         eviction_policy: Cache eviction policy to use during the transfer.
-        num_threads: Number of threads to use for the operation, defaults to
-            the size of `thread_layout`.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         block_dim_count: The number of dimensions in the thread block.
 
     Args:
@@ -6999,8 +7005,9 @@ fn copy_sram_to_dram[
             among threads.
         swizzle: Optional swizzling function to rearrange the source indices,
             which can improve memory access patterns and reduce bank conflicts.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         block_dim_count: The number of dimensions in the thread block.
         binary_op: Optional binary operation to apply during the copy, combining
             source data with existing destination data.
@@ -7279,8 +7286,9 @@ fn copy_local_to_dram[
         dst_thread_layout: The layout used to distribute the destination tensor
             across threads. This determines how the workload is divided among
             participating threads.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `dst_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -7496,8 +7504,9 @@ fn copy_local_to_dram[
         dst_thread_layout: The layout used to distribute the destination tensor
             across threads. This determines how the workload is divided among
             participating threads.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `dst_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -7633,8 +7642,9 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -7724,8 +7734,9 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -7785,8 +7796,9 @@ fn copy_dram_to_local[
         src_thread_layout: The layout used to distribute the source tensor
             across threads. This determines how the workload is divided among
             participating threads.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `src_thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same
@@ -7895,8 +7907,9 @@ fn copy_local_to_shared[
         swizzle: Optional swizzling function to rearrange the destination
             indices, which can improve memory access patterns and reduce bank
             conflicts.
-        num_threads: Total number of threads participating in the copy
-            operation. Defaults to the size of thread_layout.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` will be disabled and not
+            participate in the copy operation.
         thread_scope: Defines whether operations are performed at `BLOCK` or
             `WARP` level. `BLOCK` scope involves all threads in a thread block,
             while `WARP` scope restricts operations to threads within the same

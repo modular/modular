@@ -1487,16 +1487,17 @@ fn blocked_product(
 ) -> Layout:
     """Creates a blocked layout by combining two layouts.
 
-    This function creates a hierarchical blocked layout by combining a base layout
-    with a block layout. The result is a layout where each element of the base
-    layout is replaced by a block defined by the second layout.
+    This function creates a hierarchical blocked layout by combining an inner
+    (block) and an outer (base) layout. The result is a layout where each
+    element of the outer layout is replaced by a block defined by the
+    inner layout.
 
     This is particularly useful for creating tiled layouts for efficient
     cache utilization in tensor operations like matrix multiplication.
 
     Args:
-        layout_a: The base layout to be blocked.
-        layout_b: The block layout defining the structure within each block.
+        layout_a: Inner layout. The layout for an individual block, or tile.
+        layout_b: Outer layout. The layout of the tiles in the output layout.
         coalesce_output: Whether to coalesce the output layout. Default is False.
 
     Returns:
