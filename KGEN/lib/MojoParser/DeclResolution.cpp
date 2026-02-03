@@ -1806,6 +1806,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return failure();
 
   // Find all parameter captures in the function body.
+  // TODO: Use the SharedState cache?
   ParameterCollector::Analysis collectorCache;
   ParameterUseDefGraph graph(funcOp.getBodyRegion());
   graph.calculate(collectorCache);

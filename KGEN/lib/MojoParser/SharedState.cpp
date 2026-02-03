@@ -26,6 +26,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -235,7 +236,8 @@ struct SharedState::Impl {
   Impl(SharedState &shared)
       : sourceNames(shared),
         bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false),
-        bytecodeRefResolutionWalker(shared), evaluationContext(shared) {}
+        bytecodeRefResolutionWalker(shared), evaluationContext(shared),
+        collector(collectorCache) {}
   virtual ~Impl() = default;
 
   /// This MLIR block is owned by SharedState, and vended to clients that have a
@@ -348,6 +350,10 @@ struct SharedState::Impl {
 
   /// An evaluation context used to simplify attributes during parsing.
   ParserEvaluationContext evaluationContext;
+
+  // Cache for looking up information about parameter references in types.
+  ParameterCollector::Analysis collectorCache;
+  ParameterCollector collector;
 };
 
 /// Ensure `stripFilePrefix` is an absolute path ending in a separator.
@@ -454,6 +460,12 @@ void SharedState::initialize(ASTDecl &topLevelDecl) {
 /// not get used in the future.
 Block &SharedState::getArgumentOwningBlock() {
   return impl->argumentOwningBlock;
+}
+
+void SharedState::collectParamRefsInType(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &uses) {
+  bool hasConstExpr = false; // ignored
+  impl->collector.collectUsesFromType(type, uses, hasConstExpr);
 }
 
 void SharedState::deleteDecl(ASTDecl &decl) {
