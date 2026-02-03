@@ -123,6 +123,7 @@ class Flux2ModelInputs(PixelModelInputs):
     - guidance_scale: 4.0
     - num_inference_steps: 50
     - num_images_per_prompt: 1
+    - input_image: None (optional input image for image-to-image generation)
 
     """
 
@@ -131,6 +132,12 @@ class Flux2ModelInputs(PixelModelInputs):
     guidance_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
+    input_image: Any | None = None
+    """Optional input image for image-to-image generation (PIL.Image.Image).
+    
+    This field is used for Flux2 image-to-image generation where an input image
+    is provided as a condition for the generation process.
+    """
 
 
 @dataclass
@@ -177,6 +184,19 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:
         return Flux2ModelInputs.from_context(context)
+
+    def _pil_image_to_tensor(
+        self,
+        image: PIL.Image.Image,
+    ) -> Tensor:
+
+        img_array = (np.array(image, dtype=np.float32) / 127.5) - 1.0
+        img_array = np.transpose(img_array, (2, 0, 1))
+        img_array = np.expand_dims(img_array, axis=0)
+        img_array = np.ascontiguousarray(img_array)
+        img_tensor = Tensor.from_dlpack(img_array).to(self.vae.devices[0]).cast(self.vae.config.dtype)
+
+        return img_tensor
 
     def _get_mistral_3_small_prompt_embeds(
         self,
@@ -339,8 +359,12 @@ class Flux2Pipeline(DiffusionPipeline):
         timestep: Tensor,
         latent_image_ids: Tensor,
         compiled_model: Any,
+        random_latents_seq_len: int,
     ) -> Tensor:
-        hidden_states_drv = latents.driver_tensor
+
+        latent_model_input = latents.cast(prompt_embeds.dtype)
+        
+        hidden_states_drv = latent_model_input.driver_tensor
         encoder_hidden_states_drv = prompt_embeds.driver_tensor
         timestep_drv = timestep.driver_tensor
         img_ids_drv = latent_image_ids.driver_tensor
@@ -357,6 +381,7 @@ class Flux2Pipeline(DiffusionPipeline):
         )[0]
 
         noise_pred = Tensor.from_dlpack(noise_pred_drv)
+        noise_pred = noise_pred[:, :random_latents_seq_len, :]
 
         return noise_pred
 
@@ -511,8 +536,12 @@ class Flux2Pipeline(DiffusionPipeline):
         h_ids = x_ids[:, :, 1].cast(DType.int64)
         w_ids = x_ids[:, :, 2].cast(DType.int64)
 
-        h = height
-        w = width
+        if height is None or width is None:
+            h = int(h_ids.max().item()) + 1
+            w = int(w_ids.max().item()) + 1
+        else:
+            h = height
+            w = width
 
         flat_ids = h_ids * w + w_ids
 
@@ -714,19 +743,36 @@ class Flux2Pipeline(DiffusionPipeline):
             num_images_per_prompt=model_inputs.num_images_per_prompt,
         )
 
-        # 2. Denoise
+        image_latents = None
+        image_latent_ids = None
+        if model_inputs.input_image is not None:
+            image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
+            image_latents, image_latent_ids = self.prepare_image_latents(
+                images=[image_tensor],
+                batch_size=prompt_embeds.shape[0].dim,
+                device=self.vae.devices[0],
+                dtype=self.vae.config.dtype,
+            )
+
+        # 2. Prepare latents for denoising
         dtype = prompt_embeds.dtype
+        batch_size = prompt_embeds.shape[0].dim
+
+        timesteps: np.ndarray = model_inputs.timesteps
+        sigmas_array: np.ndarray = model_inputs.sigmas
+        
         latents, latent_image_ids, guidance = self._prepare_latents_for_denoising(
             model_inputs=model_inputs,
             dtype=dtype,
         )
-
-        sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(
+        
+        if len(sigmas_array) == len(timesteps):
+            sigmas_array = np.append(sigmas_array, np.float32(0.0))
+        
+        sigmas = Tensor.from_dlpack(sigmas_array).to(
             self.transformer.devices[0]
         )
-        batch_size = prompt_embeds.shape[0].dim
-
-        timesteps: np.ndarray = model_inputs.timesteps
+        
         num_timesteps = timesteps.shape[0]
         timesteps_batched = np.broadcast_to(
             timesteps[:, None], (num_timesteps, batch_size)
@@ -735,14 +781,22 @@ class Flux2Pipeline(DiffusionPipeline):
             self.transformer.devices[0]
         ).cast(dtype)
 
+        random_latents_seq_len = latents.shape[1].dim
+        random_latent_ids = latent_image_ids
+        
+        if image_latents is not None:
+            latents = F.concat([latents, image_latents], axis=1)
+            latent_image_ids = F.concat([latent_image_ids, image_latent_ids], axis=1)
+        
         image_seq_len = latents.shape[1].dim
+        
         text_seq_len = prompt_embeds.shape[1].dim
         compiled_model = self.transformer._ensure_compiled(
             batch_size=batch_size,
             image_seq_len=image_seq_len,
             text_seq_len=text_seq_len,
         )
-
+        # 3. Denoising
         for i in tqdm(range(num_timesteps), desc="Denoising"):
             self._current_timestep = i
             timestep = timesteps_batched[i]
@@ -755,24 +809,44 @@ class Flux2Pipeline(DiffusionPipeline):
                 timestep=timestep,
                 latent_image_ids=latent_image_ids,
                 compiled_model=compiled_model,
+                random_latents_seq_len=random_latents_seq_len,
             )
 
-            latents = self._scheduler_step(latents, noise_pred, sigmas, i)
+            if image_latents is not None:
+                random_latents = latents[:, :random_latents_seq_len, :]
+            else:
+                random_latents = latents
+
+            random_latents = self._scheduler_step(random_latents, noise_pred, sigmas, i)
+
+            if image_latents is not None:
+                latents = F.concat([random_latents, image_latents], axis=1)
+            else:
+                latents = random_latents
 
             if callback_queue is not None:
+                callback_latents = random_latents
+                callback_latent_ids = random_latent_ids
                 image = self._decode_latents(
-                    latents,
-                    latent_image_ids,
+                    callback_latents,
+                    callback_latent_ids,
                     model_inputs.height,
                     model_inputs.width,
                     output_type=output_type,
                 )
                 callback_queue.put_nowait(image)
 
-        # 3. Decode
+        # 4. Decode
+        if image_latents is not None:
+            decode_latents = latents[:, :random_latents_seq_len, :]
+            decode_latent_ids = random_latent_ids
+        else:
+            decode_latents = latents
+            decode_latent_ids = latent_image_ids
+        
         outputs = self._decode_latents(
-            latents,
-            latent_image_ids,
+            decode_latents,
+            decode_latent_ids,
             model_inputs.height,
             model_inputs.width,
             output_type=output_type,
