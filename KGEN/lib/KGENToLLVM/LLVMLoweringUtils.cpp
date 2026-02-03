@@ -366,6 +366,10 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   // Convert union types to an array with enough space to contain the largest
   // union element type.
   addConversion([this](POP::UnionType unionType) -> std::optional<Type> {
+    // Unresolved (parameterized) unions must be specialized before lowering.
+    // They are resolved during monomorphization in the KGEN elaboration pass.
+    assert(unionType.isResolved() &&
+           "cannot lower unresolved union type to LLVM");
     // TODO: The generated assembly is sensitive to the content type of the
     // union type. This needs to be optimized. For now, use an array of
     // word-size integers.

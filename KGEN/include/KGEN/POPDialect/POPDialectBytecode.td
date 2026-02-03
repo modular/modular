@@ -19,7 +19,7 @@ def ArrayType : DialectType<(type
 )>;
 
 def UnionType : DialectType<(type
-  ConcreteTypeArray<"Type">:$types
+  TypedAttr:$variadic
 )>;
 
 def SIMDType : DialectType<(type

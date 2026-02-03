@@ -79,3 +79,13 @@ kgen.generator @variadic<ty: type>(
 kgen.func @union(%arg0: !pop.union<>, %arg1: !pop.union<i32>, %arg2: !pop.union<i32, i64>) {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @variadic_union
+// CHECK-SAME: !pop.union<[Ts]>
+// CHECK-SAME: !pop.union<T0, T1>
+kgen.generator @variadic_union<Ts: variadic<type>, T0: type, T1: type>(
+  %arg0: !pop.union<[Ts]>,
+  %arg1: !pop.union<[[T0, T1]]>
+) {
+  kgen.return
+}

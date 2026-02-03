@@ -89,17 +89,65 @@ def POP_UnionType : POPType<"Union", "union", [
     its alignment meets the strictest of its elements' alignment requirements.
     Unlike `!kgen.variant`, this union is not discriminated.
 
+    Unions can be parameterized with a variadic type parameter, allowing the
+    union element types to be determined at monomorphization time. Unresolved
+    (parameterized) unions are resolved during the KGEN elaboration pass when
+    the enclosing generator is specialized with concrete type arguments.
+
+    **Lifecycle of variadic unions:**
+    1. **Creation**: Variadic unions are created with a parameterized variadic
+       reference (e.g., `!pop.union<[Ts]>`). Inline variadic expansion is also
+       supported (e.g., `!pop.union<[[T0, T1]]>` which prints as `!pop.union<T0, T1>`).
+    2. **Elaboration**: During KGEN elaboration/monomorphization, the variadic
+       is substituted with concrete types, producing a resolved union.
+    3. **Lowering**: Only resolved unions (where `getVariadic()` returns a
+       `VariadicAttr`) can be lowered to LLVM IR or have debug info generated.
+
+    Use `isResolved()` to check if a union is resolved.
+
     Example:
 
     ```mlir
-    !pop.union<>
-    !pop.union<i32>
-    !pop.union<i32, i64>
+    !pop.union<>                                   // empty union
+    !pop.union<i32>                                // single-element union
+    !pop.union<i32, i64>                           // multi-element union
+    !pop.union<[Ts]>                               // variadic reference
+    !pop.union<[rebind(:!kgen.variadic<type> Ts)]> // rebound variadic
     ```
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"Type">:$types);
-  let assemblyFormat = "`<` (`>`) : (custom<ParamTypes>($types)^ `>`)?";
+  let parameters = (ins "TypedAttr":$variadic);
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    TypeBuilder<(ins "ArrayRef<Type>":$types)>,
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Returns whether this union type is resolved (element types are concrete).
+    /// An unresolved union has a parameterized variadic that hasn't been
+    /// specialized yet.
+    bool isResolved() const;
+
+    /// Get an element type as a parameterized type.
+    /// Returns an empty Type if the union is unresolved (variadic not yet
+    /// specialized). Callers should check `isResolved()` before calling this
+    /// method if the union may be unresolved.
+    Type getType(unsigned index) const;
+
+    /// Return the number of types in the union.
+    /// Returns 0 if the union is unresolved (variadic not yet specialized).
+    size_t getNumTypes() const;
+
+    /// Get the concrete union types. Returns an empty range if the types
+    /// are not yet resolved (e.g., still parameterized). Callers should check
+    /// `isResolved()` to distinguish between an empty union and an unresolved
+    /// union.
+    llvm::iterator_range<llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator,
+                                               Type (*)(TypedAttr)>>
+    getTypes() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
