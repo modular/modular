@@ -564,6 +564,104 @@ hann_window = functional(ops.hann_window)
 #: Computes the inverse real FFT.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft)
+
+
+@functional
+def interpolate(
+    x: TensorValueLike,
+    scale_factor: float | tuple[float, ...],
+    mode: str = "nearest",
+) -> TensorValue:
+    """Upsamples a tensor using nearest-neighbor interpolation.
+
+    Only 'nearest' mode is currently supported.
+
+    Args:
+        x: The input tensor. Shape must be 3D [B, C, L], 4D [B, C, H, W],
+           or 5D [B, C, D, H, W].
+        scale_factor: A float or tuple of floats specifying the scale factor
+            for each spatial dimension. If a float, the same scale is applied
+            to all spatial dimensions.
+        mode: Interpolation mode. Only 'nearest' is supported.
+
+    Returns:
+        Upsampled tensor with scaled spatial dimensions.
+    """
+    if mode != "nearest":
+        raise NotImplementedError(
+            f"interpolate mode '{mode}' not implemented. Only 'nearest' is supported."
+        )
+
+    x_val = TensorValue(x)
+    shape = x_val.shape
+    rank = len(shape)
+
+    if rank < 3 or rank > 5:
+        raise ValueError(
+            f"interpolate expects 3D, 4D, or 5D input, got {rank}D"
+        )
+
+    # Number of spatial dimensions (exclude batch and channel)
+    num_spatial_dims = rank - 2
+
+    # Normalize scale_factor to a tuple
+    if isinstance(scale_factor, (int, float)):
+        scales = tuple(float(scale_factor) for _ in range(num_spatial_dims))
+    else:
+        scales = tuple(float(s) for s in scale_factor)
+        if len(scales) != num_spatial_dims:
+            raise ValueError(
+                f"scale_factor tuple length {len(scales)} doesn't match "
+                f"number of spatial dimensions {num_spatial_dims}"
+            )
+
+    # Compute new spatial dimensions
+    new_spatial_sizes = []
+    for i, scale in enumerate(scales):
+        spatial_idx = 2 + i  # Skip batch and channel dims
+        old_size = shape[spatial_idx]
+        if isinstance(old_size, int):
+            new_spatial_sizes.append(int(old_size * scale))
+        else:
+            # Symbolic dimension - try to compute
+            new_spatial_sizes.append(int(old_size * scale))
+
+    # Build target shape: [batch, channels, new_spatial...]
+    batch_size = shape[0]
+    num_channels = shape[1]
+    target_shape = [batch_size, num_channels] + new_spatial_sizes
+
+    # For nearest-neighbor, we use repeat_interleave on each spatial axis
+    # by computing integer repeat factors for each dimension
+    result = x_val
+    for i, scale in enumerate(scales):
+        spatial_axis = 2 + i
+        repeat_factor = int(scale)
+        if repeat_factor > 1:
+            # Repeat along this axis using tile-like behavior
+            # For nearest neighbor: repeat each element 'repeat_factor' times
+            # Use reshape + tile + reshape pattern
+            current_shape = list(result.shape)
+            # Insert a new axis after spatial_axis, then tile it
+            # [B, C, D, H, W] -> [B, C, D, 1, H, W] -> tile [1,1,1,r,1,1] -> reshape
+            unsqueezed = ops.unsqueeze(result, spatial_axis + 1)
+            # Create tile pattern
+            tile_reps = [1] * (len(current_shape) + 1)
+            tile_reps[spatial_axis + 1] = repeat_factor
+            tiled = ops.tile(unsqueezed, tile_reps)
+            # Flatten the repeated dimension back
+            tiled_shape = list(tiled.shape)
+            merged_size = tiled_shape[spatial_axis] * tiled_shape[spatial_axis + 1]
+            new_shape = (
+                tiled_shape[:spatial_axis]
+                + [merged_size]
+                + tiled_shape[spatial_axis + 2 :]
+            )
+            result = tiled.reshape(new_shape)
+
+    return result
+
+
 #: Checks for infinite values element-wise.
 #: See :func:`max.graph.ops.is_inf` for details.
 is_inf = functional(ops.is_inf)
@@ -597,6 +695,8 @@ logsoftmax = functional(ops.logsoftmax)
 #: Scatters values according to a mask.
 #: See :func:`max.graph.ops.masked_scatter` for details.
 masked_scatter = functional(ops.masked_scatter)
+#: Performs batch matrix multiplication. Alias for :func:`matmul`.
+bmm = functional(ops.matmul)
 #: Performs matrix multiplication.
 #: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul)
@@ -711,9 +811,79 @@ pow = functional(ops.pow)
 #: Creates a tensor with evenly spaced values.
 #: See :func:`max.graph.ops.range` for details.
 arange = functional(ops.range)
+
+
+@functional
+def linspace(
+    start: float,
+    end: float,
+    steps: int,
+    *,
+    dtype: DType | None = None,
+    device: Device | graph.DeviceRef | None = None,
+) -> TensorValue:
+    """Creates a tensor with evenly spaced values between start and end.
+
+    Returns a 1D tensor containing ``steps`` evenly spaced values
+    starting from ``start`` (inclusive) and ending at ``end`` (inclusive).
+
+    Args:
+        start: The starting value of the sequence.
+        end: The ending value of the sequence (inclusive).
+        steps: The number of values to generate. Must be >= 1.
+        dtype: The data type for the tensor elements. Defaults to float32.
+        device: The device where the tensor will be allocated.
+
+    Returns:
+        A 1D tensor containing evenly spaced values.
+    """
+    if steps < 1:
+        raise ValueError(f"linspace requires steps >= 1, got {steps}")
+
+    if dtype is None:
+        dtype = DType.float32
+
+    if device is None:
+        device = graph.DeviceRef.CPU()
+    elif isinstance(device, Device):
+        device = graph.DeviceRef.from_device(device)
+
+    if steps == 1:
+        return ops.constant(start, dtype, device).reshape([1])
+
+    # Create indices [0, 1, 2, ..., steps-1]
+    indices = ops.range(0, steps, 1, dtype=dtype, device=device)
+    # Scale and shift: start + (end - start) * i / (steps - 1)
+    scale = (end - start) / (steps - 1)
+    return indices * scale + start
+
+
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)
+
+
+@functional
+def leaky_relu(
+    x: TensorValueLike, negative_slope: float = 0.01
+) -> TensorValue:
+    """Applies the Leaky ReLU activation function element-wise.
+
+    The Leaky ReLU function is defined as:
+        leaky_relu(x) = x if x > 0, else negative_slope * x
+
+    Args:
+        x: The input tensor.
+        negative_slope: The slope for negative values. Default: 0.01
+
+    Returns:
+        A tensor containing the leaky ReLU of the input values.
+    """
+    x = TensorValue(x)
+    zero = ops.constant(0, dtype=x.dtype)
+    return ops.where(x > zero, x, x * negative_slope)
+
+
 #: Repeats elements of a tensor.
 #: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(ops.repeat_interleave)

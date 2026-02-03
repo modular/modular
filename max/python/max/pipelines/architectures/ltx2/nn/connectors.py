@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import math
 
-import max.experimental.functional as F
-import max.nn.module_v3 as nn
+import max.functional as F
+from max import nn, random
 from max.dtype import DType
+from max.tensor import Tensor
+from max.driver import Device
 
-from ...configuration_utils import ConfigMixin
-from ...models.attention import FeedForward
-from ...models.modeling_utils import ModelMixin
-from ...models.transformers.transformer_ltx2 import (
-    LTX2Attention,
-    LTX2AudioVideoAttnProcessor,
-)
+from .transformer_ltx2 import LTX2Attention
 
 
-class LTX2RotaryPosEmbed1d(nn.Module):
+class LTX2RotaryPosEmbed1d(nn.Module[[int, int, Device], tuple[Tensor, Tensor]]):
     """
     1D rotary positional embeddings (RoPE) for the LTX 2.0 text encoder connectors.
     """
@@ -39,7 +36,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
         rope_type: str = "interleaved",
         num_attention_heads: int = 32,
     ):
-        if rope_type not in ["interleaved", "split"]:
+        if rope_type not in ("interleaved", "split"):
             raise ValueError(
                 f"{rope_type=} not supported. Choose between 'interleaved' and 'split'."
             )
@@ -55,7 +52,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
         self,
         batch_size: int,
         pos: int,
-        device: str | torch.device,
+        device: Device,
     ) -> tuple[Tensor, Tensor]:
         # 1. Get 1D position ids
         grid_1d = Tensor.arange(pos, dtype=DType.float32, device=device)
@@ -70,7 +67,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
         freqs_dtype = DType.float64 if self.double_precision else DType.float32
         pow_indices = F.pow(
             self.theta,
-            torch.linspace(
+            Tensor.linspace(
                 start=0.0,
                 end=1.0,
                 steps=self.dim // num_rope_elems,
@@ -78,7 +75,7 @@ class LTX2RotaryPosEmbed1d(nn.Module):
                 device=device,
             ),
         )
-        freqs = (pow_indices * torch.pi / 2.0).cast(DType.float32)
+        freqs = (pow_indices * math.pi / 2.0).cast(DType.float32)
 
         # 3. Matrix-vector outer product between pos ids of shape (batch_size, seq_len) and freqs vector of shape
         # (self.dim // 2,).
@@ -88,8 +85,8 @@ class LTX2RotaryPosEmbed1d(nn.Module):
 
         # 4. Get real, interleaved (cos, sin) frequencies, padded to self.dim
         if self.rope_type == "interleaved":
-            cos_freqs = freqs.cos().repeat_interleave(2, dim=-1)
-            sin_freqs = freqs.sin().repeat_interleave(2, dim=-1)
+            cos_freqs = freqs.cos().repeat_interleave(2, axis=-1)
+            sin_freqs = freqs.sin().repeat_interleave(2, axis=-1)
 
             if self.dim % num_rope_elems != 0:
                 cos_padding = Tensor.ones_like(
@@ -98,8 +95,8 @@ class LTX2RotaryPosEmbed1d(nn.Module):
                 sin_padding = Tensor.zeros_like(
                     sin_freqs[:, :, : self.dim % num_rope_elems]
                 )
-                cos_freqs = F.concat([cos_padding, cos_freqs], dim=-1)
-                sin_freqs = F.concat([sin_padding, sin_freqs], dim=-1)
+                cos_freqs = F.concat([cos_padding, cos_freqs], axis=-1)
+                sin_freqs = F.concat([sin_padding, sin_freqs], axis=-1)
 
         elif self.rope_type == "split":
             expected_freqs = self.dim // 2
@@ -122,13 +119,13 @@ class LTX2RotaryPosEmbed1d(nn.Module):
             cos_freq = cos_freq.reshape(b, t, self.num_attention_heads, -1)
             sin_freq = sin_freq.reshape(b, t, self.num_attention_heads, -1)
 
-            cos_freqs = torch.swapaxes(cos_freq, 1, 2)  # (B,H,T,D//2)
-            sin_freqs = torch.swapaxes(sin_freq, 1, 2)  # (B,H,T,D//2)
+            cos_freqs = cos_freq.transpose(1, 2)  # (B,H,T,D//2)
+            sin_freqs = sin_freq.transpose(1, 2)  # (B,H,T,D//2)
 
         return cos_freqs, sin_freqs
 
 
-class LTX2TransformerBlock1d(nn.Module):
+class LTX2TransformerBlock1d(nn.Module[[Tensor, Tensor | None, Tensor | None], Tensor]):
     def __init__(
         self,
         dim: int,
@@ -138,7 +135,7 @@ class LTX2TransformerBlock1d(nn.Module):
         eps: float = 1e-6,
         rope_type: str = "interleaved",
     ):
-        self.norm1 = nn.norm.nn.norm.RMSNorm(
+        self.norm1 = nn.RMSNorm(
             dim, eps=eps, elementwise_affine=False
         )
         self.attn1 = LTX2Attention(
@@ -146,14 +143,13 @@ class LTX2TransformerBlock1d(nn.Module):
             heads=num_attention_heads,
             kv_heads=num_attention_heads,
             dim_head=attention_head_dim,
-            processor=LTX2AudioVideoAttnProcessor(),
             rope_type=rope_type,
         )
 
-        self.norm2 = nn.norm.nn.norm.RMSNorm(
+        self.norm2 = nn.RMSNorm(
             dim, eps=eps, elementwise_affine=False
         )
-        self.ff = FeedForward(dim, activation_fn=activation_fn)
+        self.ff = nn.FeedForward(dim, activation_fn=activation_fn)
 
     def forward(
         self,
@@ -176,7 +172,7 @@ class LTX2TransformerBlock1d(nn.Module):
         return hidden_states
 
 
-class LTX2ConnectorTransformer1d(nn.Module):
+class LTX2ConnectorTransformer1d(nn.Module[[Tensor, Tensor | None, float], tuple[Tensor, Tensor]]):
     """
     A 1D sequence transformer for modalities such as text.
 
@@ -204,7 +200,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
         self.learnable_registers = None
         if num_learnable_registers is not None:
             init_registers = (
-                torch.rand(num_learnable_registers, self.inner_dim) * 2.0 - 1.0
+                random.uniform((num_learnable_registers, self.inner_dim)) * 2.0 - 1.0
             )
             self.learnable_registers = Tensor.constant(init_registers)
 
@@ -217,7 +213,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
             num_attention_heads=num_attention_heads,
         )
 
-        self.transformer_blocks = nn.sequential.ModuleList(
+        self.transformer_blocks = nn.ModuleList(
             [
                 LTX2TransformerBlock1d(
                     dim=self.inner_dim,
@@ -229,7 +225,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
             ]
         )
 
-        self.norm_out = nn.norm.RMSNorm(
+        self.norm_out = nn.RMSNorm(
             self.inner_dim, eps=eps, elementwise_affine=False
         )
 
@@ -252,7 +248,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
                 )
 
             num_register_repeats = seq_len // self.num_learnable_registers
-            registers = torch.tile(
+            registers = F.tile(
                 self.learnable_registers, (num_register_repeats, 1)
             )  # [seq_len, inner_dim]
 
@@ -282,7 +278,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
                 [x.unsqueeze(0) for x in padded_hidden_states], dim=0
             )  # [B, L, D]
 
-            flipped_mask = torch.flip(binary_attn_mask, dims=[1]).unsqueeze(
+            flipped_mask = binary_attn_mask[:, ::-1].unsqueeze(
                 -1
             )  # [B, L, 1]
             hidden_states = (
@@ -309,7 +305,7 @@ class LTX2ConnectorTransformer1d(nn.Module):
         return hidden_states, attention_mask
 
 
-class LTX2TextConnectors(ModelMixin, ConfigMixin):
+class LTX2TextConnectors(nn.Module[[Tensor, Tensor, bool], tuple[Tensor, Tensor, Tensor]]):
     """
     Text connector stack used by LTX 2.0 to process the packed text encoder hidden states for both the video and audio
     streams.
@@ -372,7 +368,7 @@ class LTX2TextConnectors(ModelMixin, ConfigMixin):
                 attention_mask.shape[0], 1, -1, attention_mask.shape[-1]
             )
             attention_mask = (
-                attention_mask.to(text_dtype) * torch.finfo(text_dtype).max
+                attention_mask.cast(text_dtype) * DType.finfo(text_dtype).max
             )
 
         text_encoder_hidden_states = self.text_proj_in(

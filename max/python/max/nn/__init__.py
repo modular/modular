@@ -34,25 +34,38 @@ Example:
 # New Module-based API (primary)
 # Legacy submodule is available for backward compatibility
 from . import legacy
-from .conv import Conv2d
+from .activations import ApproximateGELU, Dropout, FeedForward, GEGLU, GELU, Identity, SiLU, SwiGLU
+from .conv import Conv1d, Conv2d, Conv3d, ConvTranspose1d
 from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
-from .norm import GemmaRMSNorm, GroupNorm, RMSNorm
+from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
 from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
 
 __all__ = [
+    "ApproximateGELU",
+    "Conv1d",
     "Conv2d",
+    "Conv3d",
+    "ConvTranspose1d",
+    "Dropout",
     "Embedding",
+    "FeedForward",
+    "GEGLU",
+    "GELU",
     "GemmaRMSNorm",
     "GroupNorm",
+    "Identity",
+    "LayerNorm",
     "Linear",
     "Module",
     "ModuleList",
     "RMSNorm",
     "RotaryEmbedding",
     "Sequential",
+    "SiLU",
+    "SwiGLU",
     "TransposedRotaryEmbedding",
     "legacy",
     "module_dataclass",

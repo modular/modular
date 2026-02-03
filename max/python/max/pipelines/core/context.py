@@ -648,7 +648,9 @@ class PixelContext:
         width: Width of the generated image/video in pixels.
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
-        num_images_per_prompt: Number of images/videos to generate per prompt.
+        num_visuals_per_prompt: Number of images/videos to generate per prompt.
+        num_frames: Number of frames for video generation.
+        frame_rate: Frame rate for video generation.
         model_name: Name of the model being used.
     """
 
@@ -704,7 +706,9 @@ class PixelContext:
     guidance: npt.NDArray[np.float32] | None = None
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
-    num_images_per_prompt: int = field(default=1)
+    num_visuals_per_prompt: int = field(default=1)
+    num_frames: int | None = field(default=None)
+    frame_rate: int | None = field(default=None)
 
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 

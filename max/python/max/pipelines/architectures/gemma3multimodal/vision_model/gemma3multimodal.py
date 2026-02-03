@@ -176,6 +176,7 @@ class Gemma3LanguageModel(Module):
         self.embed_tokens = self.embed_tokens
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
+        self.return_hidden_states = config.return_hidden_states
 
     def __call__(
         self,

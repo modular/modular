@@ -64,3 +64,91 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
             }
         )
         return AutoencoderKLConfig(**init_dict)
+
+class AutoencoderKLLTX2VideoConfigBase(MAXModelConfigBase):
+    in_channels: int = 3
+    out_channels: int = 3
+    latent_channels: int = 128
+    decoder_block_out_channels: tuple[int, ...] = (256, 512, 1024)
+    decoder_layers_per_block: tuple[int, ...] = (5, 5, 5, 5)
+    decoder_spatio_temporal_scaling: tuple[bool, ...] = (True, True, True)
+    decoder_inject_noise: tuple[bool, ...] = (False, False, False, False)
+    upsample_residual: tuple[bool, ...] = (True, True, True)
+    upsample_factor: tuple[int, ...] = (2, 2, 2)
+    timestep_conditioning: bool = False
+    patch_size: int = 4
+    patch_size_t: int = 1
+    resnet_norm_eps: float = 1e-6
+    scaling_factor: float = 1.0
+    decoder_causal: bool = True
+    decoder_spatial_padding_mode: str = "reflect"
+    device: DeviceRef = Field(default_factory=DeviceRef.CPU)
+    dtype: DType = DType.bfloat16
+
+
+class AutoencoderKLLTX2VideoConfig(AutoencoderKLLTX2VideoConfigBase):
+    config_name: ClassVar[str] = "config.json"
+
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderKLLTX2VideoConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderKLLTX2VideoConfigBase.__annotations__
+        }
+        init_dict.update(
+            {
+                "dtype": encoding.dtype,
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+        return AutoencoderKLLTX2VideoConfig(**init_dict)
+
+
+class AutoencoderKLLTX2AudioConfigBase(MAXModelConfigBase):
+    base_channels: int = 128
+    output_channels: int = 2
+    ch_mult: tuple[int, ...] = (1, 2, 4)
+    num_res_blocks: int = 2
+    attn_resolutions: list[int] | None = None
+    in_channels: int = 2
+    resolution: int = 256
+    latent_channels: int = 8
+    norm_type: str = "pixel"
+    causality_axis: str | None = "height"
+    dropout: float = 0.0
+    mid_block_add_attention: bool = False
+    sample_rate: int = 16000
+    mel_hop_length: int = 160
+    is_causal: bool = True
+    mel_bins: int | None = 64
+    double_z: bool = True
+    device: DeviceRef = Field(default_factory=DeviceRef.CPU)
+    dtype: DType = DType.bfloat16
+
+
+class AutoencoderKLLTX2AudioConfig(AutoencoderKLLTX2AudioConfigBase):
+    config_name: ClassVar[str] = "config.json"
+
+    @staticmethod
+    def generate(
+        config_dict: dict[str, Any],
+        encoding: SupportedEncoding,
+        devices: list[Device],
+    ) -> "AutoencoderKLLTX2AudioConfig":
+        init_dict = {
+            key: value
+            for key, value in config_dict.items()
+            if key in AutoencoderKLLTX2AudioConfigBase.__annotations__
+        }
+        init_dict.update(
+            {
+                "dtype": encoding.dtype,
+                "device": DeviceRef.from_device(devices[0]),
+            }
+        )
+        return AutoencoderKLLTX2AudioConfig(**init_dict)
