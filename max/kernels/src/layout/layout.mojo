@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -91,7 +91,7 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait(Copyable):
+trait LayoutTrait(Copyable, ImplicitlyDestructible):
     """Defines the interface for mapping between logical coordinates and memory indices.
 
     The `LayoutTrait` provides a common interface for all layout types, including

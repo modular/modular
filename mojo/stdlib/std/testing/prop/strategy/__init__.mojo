@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ from .list_strategy import *
 from .string_strategy import *
 
 
-trait Strategy(Movable):
+trait Strategy(ImplicitlyDestructible, Movable):
     """A type used to produce random inputs for property tests.
 
     Strategies are a core building block of property testing. They are used to

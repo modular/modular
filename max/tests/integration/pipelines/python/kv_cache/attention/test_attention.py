@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -177,5 +177,4 @@ def test_kv_cache_ragged_attention(
     ) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
-        assert np.any(result != np.nan)
-        assert np.any(result != np.inf)
+        assert np.all(np.isfinite(result))

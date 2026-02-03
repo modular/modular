@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,6 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max.interfaces import (
-    GenerationStatus,
     MAXPullQueue,
     MAXPushQueue,
     Pipeline,
@@ -46,15 +45,13 @@ def create_mock_pipeline() -> Mock:
 
         for request in inputs.flat_batch:
             request_id = request.request_id
-            request.update(0)
+
+            request.update(42)
 
             # Return a valid response.
-            responses[request_id] = TextGenerationOutput(
-                request_id=request_id,
-                tokens=[0, 0],  # Two tokens with ID 0
-                final_status=GenerationStatus.ACTIVE,
-                log_probabilities=None,
-            )
+            output = request.to_generation_output()
+            if output.tokens:
+                responses[request_id] = output
 
         return responses
 
@@ -71,6 +68,7 @@ def create_scheduler(
     max_forward_steps_tg: int = 8,
     target_tokens_per_batch_ce: int = 32,
     kvcache_ce_watermark: float = 0.95,
+    enable_chunked_prefill: bool = False,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext | TextAndVisionContext],
@@ -83,6 +81,7 @@ def create_scheduler(
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
         kvcache_ce_watermark=kvcache_ce_watermark,
+        enable_chunked_prefill=enable_chunked_prefill,
     )
 
     request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
@@ -144,11 +143,9 @@ def test_try_create_ce_batch() -> None:
 
 
 def test_try_create_chunked_ce_batch() -> None:
-    scheduler, request_push_socket, _, _ = create_scheduler()
-    # Configure scheduler for chunked prefill
-    scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
-
+    scheduler, request_push_socket, _, _ = create_scheduler(
+        enable_chunked_prefill=True, target_tokens_per_batch_ce=20
+    )
     mock_data = create_mock_request(seq_len=30)
     request_push_socket.put_nowait(mock_data)
     scheduler._retrieve_pending_requests()
@@ -181,11 +178,9 @@ def test_scheduler_handle_terminated_responses() -> None:
         mock_2.request_id: resp_2,
     }
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        batch_executed
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[mock_1, mock_2]], num_steps=1)
     )
-    for request_id in chunked_ids:
-        del batch_responses[request_id]
 
     # Release terminated requests
     num_terminated_reqs = 0
@@ -207,17 +202,13 @@ def test_scheduler_handle_chunked_requests() -> None:
     # this is a partially encoded request
     req_2 = create_mock_request(seq_len=30, start_idx=20)
 
-    batch_executed = [req_1, req_2]
     mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
-    batch_responses = {req_1.request_id: mock_1, req_2.request_id: mock_2}
+    batch_responses = {req_1.request_id: mock_1}
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        [batch_executed]
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
     )
-    for request_id in chunked_ids:
-        del batch_responses[request_id]
-
     assert req_2.request_id not in batch_responses
     assert batch_constructor.all_ce_reqs
 
@@ -256,13 +247,11 @@ def test_schedule_ce() -> None:
 
 
 def test_schedule_ce_with_chunked_prefill() -> None:
-    scheduler, request_push_socket, response_pull_socket, _ = create_scheduler()
+    scheduler, request_push_socket, response_pull_socket, _ = create_scheduler(
+        enable_chunked_prefill=True,
+        target_tokens_per_batch_ce=20,
+    )
     batch_constructor = scheduler.batch_constructor
-
-    # Setup scheduler with chunked prefill enabled
-    scheduler.scheduler_config.enable_chunked_prefill = True
-    scheduler.scheduler_config.target_tokens_per_batch_ce = 20
-
     mock_request = create_mock_request(seq_len=30)
 
     request_push_socket.put_nowait(mock_request)
@@ -366,17 +355,8 @@ def test_scheduler_dp(dp: int) -> None:
     for batch in inputs.batches:
         for req in batch:
             req.update(ARBITRARY_TOKEN_ID)
-    response: TextGenerationOutput = Mock(
-        is_done=False, tokens=[ARBITRARY_TOKEN_ID]
-    )
-    responses = {req.request_id: response for req in inputs.flat_batch}
 
-    chunked_ids = batch_constructor.advance_requests_and_collect_invalid_ids(
-        inputs.batches
-    )
-    for request_id in chunked_ids:
-        del responses[request_id]
-
+    batch_constructor.advance_requests(inputs)
     assert len(batch_constructor.all_ce_reqs) == 0
     assert len(batch_constructor.all_tg_reqs) == num_reqs
 

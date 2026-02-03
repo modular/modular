@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -276,7 +276,11 @@ class EPBatchManager:
         start_idx = end_idx
 
     def ep_dispatch_async(
-        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+        self,
+        input_tokens: TensorValue,
+        topk_ids: TensorValue,
+        device_id: int,
+        input_scales: TensorValue | None = None,
     ) -> None:
         """Initiate Expert Parallelism token dispatch phase (async).
 
@@ -289,6 +293,8 @@ class EPBatchManager:
             topk_ids: Top-k expert IDs for the current device. A TensorValue with
                 shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            input_scales: Optional input scales tensor. Required for NVFP4
+                dispatch.
         """
         DISPATCH_GROUP = 0
         # Store the symbolic token numbers of each device for the combine phase
@@ -301,6 +307,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
+            input_scales=input_scales,
         )
 
         if self.config.fused_shared_expert:
@@ -323,8 +330,7 @@ class EPBatchManager:
             - output_tokens: Aggregated tokens ready for grouped matmul computation.
                 Shape: (max_recv_tokens, hidden_size).
             - output_scales: Aggregated scales ready for grouped matmul computation.
-                Only returned when we use FP8 quantization.
-                Shape: (hidden_size // block_size, max_recv_tokens).
+                Only returned for quantized dispatch. Shape depends on format.
             - expert_start_indices: Row offsets for grouped matmul computation.
                 Shape: (n_local_experts + 1,).
             - expert_ids: Local expert IDs for the grouped computation.
@@ -433,7 +439,11 @@ class EPBatchManager:
     # ===-------------------------------------------------------------------===#
 
     def ep_dispatch(
-        self, input_tokens: TensorValue, topk_ids: TensorValue, device_id: int
+        self,
+        input_tokens: TensorValue,
+        topk_ids: TensorValue,
+        device_id: int,
+        input_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Execute fused Expert Parallelism token dispatch (async + wait).
 
@@ -451,6 +461,8 @@ class EPBatchManager:
             topk_ids: Top-k expert IDs for the current device. A TensorValue
                 with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            input_scales: Optional input scales tensor. Needed for NVFP4
+                dispatch.
 
         Returns:
             A tuple containing:
@@ -479,6 +491,7 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
+            input_scales=input_scales,
         )
 
         # The last element is the src_info, we need to store it for the
