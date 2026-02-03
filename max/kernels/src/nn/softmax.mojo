@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, exp, exp2, log
-from memory import LegacyUnsafePointer
 from collections import OptionalReg
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
 import gpu.primitives.warp as warp
@@ -1133,8 +1131,8 @@ fn _online_softmax_iter_for_mma_output[
     output_reg_tile: LayoutTensor[mut=True, dtype, ...],
     score_reg_tile: LayoutTensor[mut=True, dtype, ...],
     warp_scratch: LayoutTensor[mut=True, dtype, ...],
-    rowmax: UnsafePointer[Scalar[dtype], ...],
-    rowsum: UnsafePointer[Scalar[dtype], ...],
+    rowmax: UnsafePointer[mut=True, Scalar[dtype]],
+    rowsum: UnsafePointer[mut=True, Scalar[dtype]],
 ):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1555,10 +1553,12 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         mut=True, dtype, address_space = AddressSpace.SHARED, ...
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[dtype], address_space = AddressSpace.SHARED, ...
+        mut=True,
+        Scalar[dtype],
+        address_space = AddressSpace.SHARED,
     ],
-    rowmax: UnsafePointer[Scalar[dtype], ...],
-    rowsum: UnsafePointer[Scalar[dtype], ...],
+    rowmax: UnsafePointer[mut=True, Scalar[dtype]],
+    rowsum: UnsafePointer[mut=True, Scalar[dtype]],
 ):
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()

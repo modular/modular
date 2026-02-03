@@ -12,9 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv, exp, iota
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from memory import alloc
 from sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.primitives.warp as warp
@@ -144,10 +142,11 @@ fn top_k_shape_impl[
 
 @always_inline
 fn _adjust_top_p[
-    T: DType
+    T: DType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
 ](
     top_p: Scalar[T],
-    values: UnsafePointer[Scalar[T], ...],
+    values: UnsafePointer[Scalar[T], address_space=address_space],
     k: Int,
     total_sum: Scalar[T],
 ) -> Scalar[T]:
@@ -450,7 +449,7 @@ fn fused_token_sampling_cpu[
     var out_vals_shape = input.runtime_layout.shape.value.canonicalize()
     out_vals_shape[input.rank - 1] = bound_max_k
     var out_vals = LayoutTensor[dtype, Layout.row_major[input.rank]()](
-        UnsafePointer[Scalar[dtype]].alloc(out_vals_shape.flattened_length()),
+        alloc[Scalar[dtype]](out_vals_shape.flattened_length()),
         RuntimeLayout[Layout.row_major[input.rank]()].row_major(out_vals_shape),
     )
 
@@ -595,7 +594,7 @@ fn _top_k_sampling[
     var out_idxs_tmp = LayoutTensor[
         DType.int64, Layout.row_major[internal_rank]()
     ](
-        UnsafePointer[Int64].alloc(out_vals.size()),
+        alloc[Int64](out_vals.size()),
         RuntimeLayout[Layout.row_major[internal_rank]()].row_major(
             internal_out_shape
         ),  # topk returns K as last dim
@@ -646,7 +645,7 @@ fn _top_k_sampling[
         # Calculate softmax normalization
         var max_val = internal_out_vals[batch, 0][0]
         var sum_exp = Scalar[dtype](0)
-        var exp_vals = UnsafePointer[Scalar[dtype]].alloc(k_val)
+        var exp_vals = alloc[Scalar[dtype]](k_val)
         var temp_val = temperature_val.cast[dtype]()
         for i in range(k_val):
             var val = internal_out_vals[batch, i][0]
@@ -887,16 +886,16 @@ fn _topk_stage1_old[
     out_idx_type: DType,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Int64],
+    K: UnsafePointer[Int64, ImmutAnyOrigin],
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T]],
+    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[T]
+        Scalar[T], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * max_k
     local_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        Scalar[out_idx_type], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * max_k
 ):
     """
@@ -993,17 +992,17 @@ fn _topk_stage1[
     out_idx_type: DType,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Int64],
+    K: UnsafePointer[Int64, ImmutAnyOrigin],
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T]],
-    in_buffer_tmp: UnsafePointer[Scalar[T]],
+    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
+    in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
-        Scalar[T]
+        Scalar[T], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * max_k
     local_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        Scalar[out_idx_type], MutAnyOrigin
     ],  # Output buffer of size num_blocks_per_input * max_k
 ):
     """
@@ -1120,24 +1119,24 @@ fn _topk_stage2[
     sampling: Bool = True,
     largest: Bool = True,
 ](
-    K: UnsafePointer[Int64],
+    K: UnsafePointer[Int64, ImmutAnyOrigin],
     max_k: Int,
     num_blocks_per_input: Int,
     local_topk_vals: UnsafePointer[
-        Scalar[T]
+        Scalar[T], ImmutAnyOrigin
     ],  # Input array of size n_batch * num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        Scalar[out_idx_type], ImmutAnyOrigin
     ],  # Input array of size n_batch * num_blocks_per_input * K
     global_topk_vals: UnsafePointer[
-        Scalar[T]
+        Scalar[T], MutAnyOrigin
     ],  # sampling ? undefined : output array of size K
     global_topk_idxs: UnsafePointer[
-        Scalar[out_idx_type]
+        Scalar[out_idx_type], MutAnyOrigin
     ],  # sampling ? sampled token : Output array of size K
-    temperature: UnsafePointer[Float32],
-    top_p: UnsafePointer[Float32],
-    seed: UnsafePointer[UInt64],
+    temperature: UnsafePointer[Float32, ImmutAnyOrigin],
+    top_p: UnsafePointer[Float32, ImmutAnyOrigin],
+    seed: UnsafePointer[UInt64, ImmutAnyOrigin],
 ):
     """
     Computes the global Top-K elements from the local Top-K results produced by stage 1.
@@ -1191,8 +1190,8 @@ fn _topk_stage2[
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
     # These values are only read from in the sampling case.
-    var s_val2 = UnsafePointer[Scalar[T], address_space = AddressSpace.SHARED]()
-    var s_id = UnsafePointer[Int, address_space = AddressSpace.SHARED]()
+    var s_val2 = type_of(vals_sram)()
+    var s_id = type_of(idxs_sram)()
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
@@ -1452,11 +1451,11 @@ fn _topk_gpu[
     var block_dim_stage1 = Dim(block_size)
 
     # Handle optional k parameter
-    var k_ptr: UnsafePointer[Int64]
+    var k_ptr: UnsafePointer[Int64, ImmutAnyOrigin]
     if k:
-        k_ptr = rebind[UnsafePointer[Int64]](k.value().ptr)
+        k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](k.value().ptr)
     else:
-        k_ptr = UnsafePointer[Int64]()  # null pointer
+        k_ptr = UnsafePointer[Int64, ImmutAnyOrigin]()  # null pointer
 
     var k_size = k.value().size() if k else 0
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
@@ -1517,44 +1516,48 @@ fn _topk_gpu[
     var block_dim_stage2 = Dim(block_size)
 
     # Handle optional temperature parameter
-    var temp_ptr: UnsafePointer[Float32]
+    var temp_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
     if temperature:
-        temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
+        temp_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+            temperature.value().ptr
+        )
     else:
-        temp_ptr = UnsafePointer[Float32]()  # null pointer
+        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
     var temp_size = temperature.value().size() if temperature else 0
 
     # Handle optional top_p parameter
-    var top_p_ptr: UnsafePointer[Float32]
+    var top_p_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
     if top_p:
-        top_p_ptr = rebind[UnsafePointer[Float32]](top_p.value().ptr)
+        top_p_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+            top_p.value().ptr
+        )
     else:
-        top_p_ptr = UnsafePointer[Float32]()  # null pointer
+        top_p_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
     var top_p_size = top_p.value().size() if top_p else 0
 
     # Handle optional seed parameter
-    var seed_ptr: UnsafePointer[UInt64]
+    var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
     if seed:
-        seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
+        seed_ptr = seed.value().ptr
     else:
-        seed_ptr = UnsafePointer[UInt64]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
     var seed_size = seed.value().size() if seed else 0
 
     var temp_device = DeviceBuffer[DType.float32](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32]]](temp_ptr),
+        temp_ptr,
         temp_size,
         owning=False,
     )
     var top_p_device = DeviceBuffer[DType.float32](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32]]](top_p_ptr),
+        top_p_ptr,
         top_p_size,
         owning=False,
     )
     var seed_device = DeviceBuffer[DType.uint64](
         ctx,
-        rebind[UnsafePointer[Scalar[DType.uint64]]](seed_ptr),
+        seed_ptr,
         seed_size,
         owning=False,
     )
@@ -1961,9 +1964,9 @@ fn apply_gumbel_noise_kernel[
     num_threads: Int,
 ](
     output: LayoutTensor[dtype, input_layout, MutAnyOrigin],
-    input: LayoutTensor[dtype, input_layout, MutAnyOrigin],
-    temperature: UnsafePointer[Float32],
-    seed: UnsafePointer[UInt64],
+    input: LayoutTensor[dtype, input_layout, ImmutAnyOrigin],
+    temperature: UnsafePointer[Float32, ImmutAnyOrigin],
+    seed: UnsafePointer[UInt64, ImmutAnyOrigin],
 ):
     comptime EPS = Float32(1e-20)
     comptime LOG2 = Float32(0.6931471806)
@@ -2099,19 +2102,23 @@ fn gumbel_sampling_gpu[
     )
 
     # Handle optional temperature parameter
-    var temp_ptr: UnsafePointer[Float32]
+    var temp_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
     if temperature:
-        temp_ptr = rebind[UnsafePointer[Float32]](temperature.value().ptr)
+        temp_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+            temperature.value().ptr
+        )
     else:
-        temp_ptr = UnsafePointer[Float32]()  # null pointer
+        temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin]()  # null pointer
     var temp_size = temperature.value().size() if temperature else 0
 
     # Handle optional seed parameter
-    var seed_ptr: UnsafePointer[UInt64]
+    var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
     if seed:
-        seed_ptr = rebind[UnsafePointer[UInt64]](seed.value().ptr)
+        seed_ptr = rebind[UnsafePointer[UInt64, ImmutAnyOrigin]](
+            seed.value().ptr
+        )
     else:
-        seed_ptr = UnsafePointer[UInt64]()  # null pointer
+        seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin]()  # null pointer
     var seed_size = seed.value().size() if seed else 0
 
     comptime hw_info = ctx.default_device_info

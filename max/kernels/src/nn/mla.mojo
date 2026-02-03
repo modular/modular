@@ -16,9 +16,6 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from nn.mha_utils import DynamicInt
 from math.constants import log2e
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -277,7 +274,7 @@ fn flare_mla_decoding[
     var valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutExternalOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -483,7 +480,9 @@ fn flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[Scalar[accum_type]]()
+        comptime nullptr = UnsafePointer[
+            Scalar[accum_type], MutExternalOrigin
+        ]()
 
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
@@ -545,11 +544,11 @@ fn mla_decoding[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     num_partitions: Int,
@@ -709,11 +708,11 @@ fn mla_decoding_single_batch[
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: UInt,
     num_partitions: UInt,
@@ -1789,11 +1788,11 @@ fn mla_prefill[
     use_score_mod: Bool = False,
     _ndbuffer_mha_operand: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
@@ -1918,11 +1917,11 @@ fn mla_prefill_single_batch[
     cache_depth: Int = 576,
     use_score_mod: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
