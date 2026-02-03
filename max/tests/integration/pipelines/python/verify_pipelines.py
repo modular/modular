@@ -1052,6 +1052,16 @@ PIPELINES = {
             kl_div_threshold=7.1e-3,
         ),
     ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
+            encoding="bfloat16",
+            cos_dist_threshold=7.0e-02,
+            kl_div_threshold=8.0e-01,
+        ),
+    ),
     "Qwen/Qwen3-Embedding-0.6B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
