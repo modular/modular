@@ -2519,17 +2519,33 @@ fn _qmatmul_gguf_quantized_common[
             output,
         )
     elif quantization_encoding == "q4_k":
-        matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
-        )
+        @parameter
+        if elementwise_lambda_fn:
+            matmul_Q4_K[elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value())](
+                hidden_state,
+                weight,
+                output,
+            )
+        else:
+            matmul_Q4_K[elementwise_lambda_fn=None](
+                hidden_state,
+                weight,
+                output,
+            )
     elif quantization_encoding == "q6_k":
-        matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
-        )
+        @parameter
+        if elementwise_lambda_fn:
+            matmul_Q6_K[elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value())](
+                hidden_state,
+                weight,
+                output,
+            )
+        else:
+            matmul_Q6_K[elementwise_lambda_fn=None](
+                hidden_state,
+                weight,
+                output,
+            )
     else:
         raise Error(
             "Unsupported quantization encoding: ", quantization_encoding
