@@ -43,8 +43,8 @@ fn run_layer_norm_cpu[
         input_ptr[i] = val
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
-        beta_ptr[i] = (i / cols).cast[dtype]()
+        gamma_ptr[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+        beta_ptr[i] = (Float64(i) / Float64(cols)).cast[dtype]()
 
     var param_shape = IndexList[1](cols)
 

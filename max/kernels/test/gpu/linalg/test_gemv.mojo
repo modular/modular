@@ -116,7 +116,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
         print("Incorrect input shape [MNK]")
         return
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -154,7 +154,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     ctx.synchronize()
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")
@@ -298,7 +298,7 @@ fn run_matvec_with_epilogue_fn(
         return
 
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / iterations / 1000000000
 
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
@@ -338,7 +338,7 @@ fn run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(c_host_naive, c_device)
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / iterations / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")

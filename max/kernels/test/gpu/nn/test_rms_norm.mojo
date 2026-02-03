@@ -54,7 +54,7 @@ fn run_rms_norm_gpu[
     rand[dtype](data_h, rows * cols)
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)

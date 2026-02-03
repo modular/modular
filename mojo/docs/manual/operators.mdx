@@ -127,8 +127,7 @@ The `Int` and `UInt` types support all arithmetic operators except matrix
 multiplication (`@`), as well as all bitwise and shift operators. If both
 operands to a binary operator are `Int` values the result is an `Int`, if both
 operands are `UInt` values the result is a `UInt`, and if one operand is `Int`
-and the other `UInt` the result is an `Int`. The one exception for these types
-is true division, `/`, which always returns a `Float64` type value.
+and the other `UInt` the result is an `Int`.
 
 ```mojo
 var a_int: Int = -7
@@ -144,9 +143,9 @@ print("UInt sum:", sum_uint)
 sum_mixed = a_int + Int(i_uint)  # Result is type Int
 print("Mixed sum:", sum_mixed)
 
-quotient_int = a_int / b_int  # Result is type Float64
+quotient_int = a_int // b_int
 print("Int quotient:", quotient_int)
-quotient_uint = i_uint / j_uint  # Result is type Float64
+quotient_uint = i_uint / j_uint
 print("UInt quotient:", quotient_uint)
 ```
 

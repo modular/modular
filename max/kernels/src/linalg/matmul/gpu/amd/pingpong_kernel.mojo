@@ -2221,13 +2221,13 @@ fn ping_pong_matmul[
         comptime BK = 128
         comptime config_32x32 = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(32, 32, 64),
         )
         # FP8 16×16×128 fallback for unaligned M
         comptime config_16x16 = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(16, 16, 128),
         )
 
@@ -2240,7 +2240,7 @@ fn ping_pong_matmul[
         comptime BK = 64
         comptime config = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(16, 16, 32),
         )
         run_kernel[config]()

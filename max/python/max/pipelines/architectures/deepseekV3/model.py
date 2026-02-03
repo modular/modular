@@ -171,8 +171,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             float8_config = None
 
-        nvfp4_enabled = float8_config is not None and float8_config.is_nvfp4
-
         # Check if EP should be configured
         if self.pipeline_config.ep_size == 1:
             ep_config = None
@@ -183,9 +181,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                     " be set to the total number of GPUs across nodes."
                 )
             n_nodes = self.pipeline_config.ep_size // len(self.devices)
-            dispatch_dtype = DType.bfloat16 if nvfp4_enabled else dtype
             ep_kwargs: dict[str, Any] = dict(
-                dispatch_dtype=dispatch_dtype,
+                dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
@@ -201,8 +198,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 # the same shape as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
-            if float8_config is not None and not nvfp4_enabled:
-                ep_kwargs["dispatch_fp8_config"] = float8_config.input_scale
+            if float8_config is not None:
+                ep_kwargs["dispatch_fp8_config"] = float8_config
 
             ep_config = EPConfig(**ep_kwargs)
             _validate_ep_kernel_limits(ep_config)

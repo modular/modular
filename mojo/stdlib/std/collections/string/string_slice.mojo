@@ -2807,7 +2807,7 @@ fn _memmem_impl[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            var offset = i + Int(count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 output = haystack + offset
                 return

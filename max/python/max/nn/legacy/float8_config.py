@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from max.dtype import DType
+from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
 
 
 class Float8ScaleGranularity(Enum):
@@ -240,6 +241,21 @@ class Float8Config:
         """Returns ``True`` if this config represents modelopt NVFP4."""
         return self.quant_method == "modelopt" and self.quant_algo == "NVFP4"
 
+    def quantized_scales_type(
+        self, quantized_shape: Shape, device_ref: DeviceRef
+    ) -> TensorType:
+        """Returns the TensorType of the scales tensor after dynamic quantization."""
+
+        if self.is_nvfp4:
+            return _nvfp4_scales_type(quantized_shape, device_ref)
+        elif (
+            self.input_scale.block_size is not None
+            and self.input_scale.block_size == (1, 128)
+        ):
+            return _blockwise_fp8_scales_type(quantized_shape, device_ref)
+        else:
+            raise ValueError("Can not determine the quantized scales type")
+
 
 def nvfp4_packed_k(in_dim: int, float8_config: Float8Config | None) -> int:
     """Returns packed K dimension for NVFP4 weights, else returns in_dim."""
@@ -247,4 +263,53 @@ def nvfp4_packed_k(in_dim: int, float8_config: Float8Config | None) -> int:
         in_dim // 2
         if float8_config is not None and float8_config.is_nvfp4
         else in_dim
+    )
+
+
+def ceildiv(n: DimLike, d: DimLike) -> Dim:
+    return (Dim(n) + Dim(d) - Dim(1)) // Dim(d)
+
+
+def _blockwise_fp8_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the blockwise FP8 scales tensor."""
+
+    # Blockwise FP8 quantization uses a transposed layout for the scales tensor.
+    return TensorType(
+        dtype=DType.float32,
+        shape=(ceildiv(quantized_shape[1], 128), quantized_shape[0]),
+        device=device_ref,
+    )
+
+
+def _nvfp4_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the NVFP4 scales tensor."""
+
+    # Nvidia NVFP4 format requires the scales tensor to be in a 128x4 tiled
+    # layout. The follow constant needs to be in sync with those defined in
+    # `max/kernels/src/linalg/fp4_utils.mojo`.
+    #
+    # References:
+    # - https://docs.nvidia.com/cuda/cublas/#d-block-scaling-factors-layout
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    NVFP4_SF_VECTOR_SIZE = 16
+
+    scales_dim_0 = ceildiv(quantized_shape[0], SF_MN_GROUP_SIZE)
+    scales_dim_1 = ceildiv(quantized_shape[1], NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+    return TensorType(
+        dtype=DType.float8_e4m3fn,
+        shape=(
+            scales_dim_0,
+            scales_dim_1,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1],
+            SF_ATOM_K,
+        ),
+        device=device_ref,
     )

@@ -22,7 +22,6 @@ from testing import assert_true
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
 from comm.sync import can_enable_p2p
-from internal_utils import human_readable_size
 
 
 @always_inline
@@ -40,10 +39,19 @@ fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
 # Shared test configurations - kept small to avoid CI timeouts on MI355
 comptime test_lengths = (
     0,  # No elements
+    1,  # Single element
+    2,  # Smaller than typical simd_width (e.g., float32 simd_width=4 or 8)
+    5,  # simd_width + 1 for float32 (simd_width=4)
+    7,  # Not a multiple of simd_width
+    9,  # simd_width + 1 for bfloat16 (simd_width=8)
+    100,  # Not a multiple of typical simd_width
+    1023,  # Not a multiple of simd_width
     8 * 1024,  # Small latency bound
+    8 * 1024 + 3,  # Not a multiple of simd_width
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
     16 * 1024 * 1024,  # Bandwidth bound
+    16 * 1024 * 1024 + 3,  # Large non-aligned: tests 2-stage tail handling
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
@@ -65,8 +73,8 @@ fn _get_test_str[
         root,
         "-inplace-",
         in_place,
-        "-",
-        human_readable_size(size_of[dtype]() * length),
+        "-nelems-",
+        length,
     )
 
 
