@@ -18,6 +18,7 @@ from .arch_config import (
     ArchConfigWithKVCache,
 )
 from .component_model import ComponentModel
+from .diffusion_pipeline import DiffusionPipeline, PixelModelInputs
 from .generate import GenerateMixin
 from .kv_cache import KVCacheMixin
 from .pipeline_model import (
@@ -34,10 +35,13 @@ __all__ = [
     "ArchConfigWithAttentionKVCache",
     "ArchConfigWithKVCache",
     "ComponentModel",
+    "DiffusionPipeline",
     "GenerateMixin",
     "InputKey",
     "KVCacheMixin",
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
+    "PixelModelInputs",
+    "get_paged_manager",
 ]

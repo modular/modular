@@ -15,6 +15,7 @@ modular_py_library(
         requirement("diffusers"),
     ],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",

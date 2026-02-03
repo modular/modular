@@ -19,6 +19,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("pydantic"),
         requirement("requests"),
+        requirement("tqdm"),
         # TODO: These are required for the llama3.1 model. Remove them if
         # possible.
         requirement("transformers"),
