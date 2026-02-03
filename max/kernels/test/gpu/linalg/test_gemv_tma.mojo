@@ -420,7 +420,9 @@ def test_gemv_tma[
             run_func(ctx)
         ctx.synchronize()
 
-        var nstime = ctx.execution_time[run_func](num_runs) / num_runs
+        var nstime = Float64(ctx.execution_time[run_func](num_runs)) / Float64(
+            num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         # Round TFLOPS to two decimal places for cleaner output.

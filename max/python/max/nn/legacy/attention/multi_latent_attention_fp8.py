@@ -33,13 +33,11 @@ from ..float8_config import Float8Config, nvfp4_packed_k
 from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
-    fused_qk_ragged_rope,
     fused_qkv_ragged_matmul_scaled_float8,
     mla_decode_branch_fp8,
     mla_prefill_branch_fp8,
     mla_prefill_decode_graph_fp8,
     quantize_dynamic_scaled_float8,
-    rms_norm_key_cache,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
@@ -570,21 +568,24 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
     def _mla_impl(
         self,
-        xq_nope: TensorValue,
-        xq_rope: TensorValue,
+        xq: TensorValue,
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
+        freqs_cis: TensorValue,
+        kv_a_proj_layernorm: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
         # Prepare the inputs and weights for the prefill and decode branches.
         attn_kwargs: dict[str, Any] = {
-            "q_nope": xq_nope,
-            "q_rope": xq_rope,
+            "q": xq,
             "input_row_offsets": input_row_offsets,
+            "freqs_cis": freqs_cis,
+            "kv_a_proj_layernorm": kv_a_proj_layernorm,
             "kv_params": self.kv_params,
             "kv_collection": kv_collection,
             "layer_idx": layer_idx,
+            "epsilon": 1e-6,
             "mask_variant": MHAMaskVariant.CAUSAL_MASK,
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
@@ -675,44 +676,18 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             group_size_or_per_token=self.scales_granularity_mnk[2],
         )
 
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.kv_a_proj_layernorm,
-            epsilon=1e-6,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            rms_norm_cols=self.kv_lora_rank,
-            weight_offset=0.0,
-            multiply_before_cast=False,
-        )
-
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
 
-        xq_nope, xq_rope = ops.split(
-            xq, [self.qk_nope_head_dim, self.qk_rope_head_dim], axis=2
-        )
-
-        # Apply rope.
+        # QK RoPE and RMSNorm of K cache are handled inside the MLA kernel.
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        xq_rope = fused_qk_ragged_rope(
-            self.kv_params,
-            xq_rope,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=True,
-        )
-
         attn_out = self._mla_impl(
-            xq_nope,
-            xq_rope,
+            xq,
             kv_collection,
             layer_idx,
             input_row_offsets,
+            freqs_cis,
+            self.kv_a_proj_layernorm,
             mla_prefill_metadata,
         )
 

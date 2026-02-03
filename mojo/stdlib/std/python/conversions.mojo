@@ -20,7 +20,7 @@ from python import ConvertibleToPython
 """
 
 
-trait ConvertibleToPython:
+trait ConvertibleToPython(ImplicitlyDestructible):
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
@@ -36,7 +36,7 @@ trait ConvertibleToPython:
         ...
 
 
-trait ConvertibleFromPython(Copyable):
+trait ConvertibleFromPython(Copyable, ImplicitlyDestructible):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """

@@ -89,7 +89,7 @@ from reflection.type_info import _unqualified_type_name
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer:
+trait Writer(ImplicitlyDestructible):
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -149,7 +149,7 @@ trait Writer:
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writable:
+trait Writable(ImplicitlyDestructible):
     """A trait for types that can format themselves as text.
 
     The `Writable` trait provides a simple, straightforward interface for types

@@ -4567,56 +4567,6 @@ fn concat_from_list_shape_impl[
     return output_shape
 
 
-@compiler.register("mo.concat_from_list")
-struct ConcatFromList:
-    @staticmethod
-    fn execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        inputs: List[
-            InputTensor[
-                static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-            ]
-        ],
-        axis: Scalar,
-        ctx: DeviceContextPtr,
-    ) raises:
-        __comptime_assert (
-            target == "cpu"
-        ), "only cpu is supported for concat_from_list"
-
-        comptime inputs_layout = Layout.row_major[rank]()
-
-        # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
-        var input_as_tile_tensors = [
-            i.to_tile_tensor[DType.int64]().as_any_origin().as_immut()
-            for i in inputs
-        ]
-
-        _concat_cpu[dtype, None, False](
-            output.to_tile_tensor[DType.int64](),
-            normalize_neg_index(Int(axis), rank),
-            input_as_tile_tensors,
-        )
-
-    @staticmethod
-    fn shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        inputs: List[
-            InputTensor[
-                static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-            ]
-        ],
-        axis: Scalar,
-    ) raises -> IndexList[rank]:
-        return concat_from_list_shape_impl(Int(axis), inputs)
-
-
 # ===-----------------------------------------------------------------------===#
 # Split kernels
 # ===-----------------------------------------------------------------------===#
@@ -6670,11 +6620,12 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
         //,
         mrope_section: StaticString,
         target: StaticString,
+        cache_dtype: DType = dtype,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q_proj: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -7276,6 +7227,8 @@ struct Struct_mla_prefill_graph_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7287,9 +7240,10 @@ struct Struct_mla_prefill_graph_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
@@ -7301,6 +7255,7 @@ struct Struct_mla_prefill_graph_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7326,12 +7281,14 @@ struct Struct_mla_prefill_graph_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
@@ -7347,6 +7304,8 @@ struct Struct_mla_decode_graph_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7358,9 +7317,10 @@ struct Struct_mla_decode_graph_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         w_uk: InputTensor[dtype=fp8_dtype, rank=3],
         w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3],
         w_uv: InputTensor[dtype=fp8_dtype, rank=3],
@@ -7371,6 +7331,7 @@ struct Struct_mla_decode_graph_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7396,12 +7357,14 @@ struct Struct_mla_decode_graph_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 w_uk.to_tile_tensor[DType.int64](),
                 w_uk_scale.to_tile_tensor[DType.int64](),
                 w_uv.to_tile_tensor[DType.int64](),
@@ -7416,6 +7379,8 @@ struct Struct_mla_prefill_graph_decode_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
         fp8_dtype: DType,
         fp8_scale_dtype: DType,
         //,
@@ -7427,9 +7392,10 @@ struct Struct_mla_prefill_graph_decode_paged:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q_nope: InputTensor[dtype=dtype, rank=3],
-        q_rope: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
         buffer_row_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         cache_offsets_1d: InputTensor[dtype = DType.uint32, rank=1],
         buffer_length: Int32,
@@ -7445,6 +7411,7 @@ struct Struct_mla_prefill_graph_decode_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        epsilon: Float32,
         context: DeviceContextPtr,
     ) raises:
         var kv_collection = generic_get_paged_cache(
@@ -7471,12 +7438,14 @@ struct Struct_mla_prefill_graph_decode_paged:
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
-                q_nope.to_tile_tensor[DType.int64](),
-                q_rope.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
                 kv_collection,
                 layer_idx,
                 scale,
+                epsilon,
                 buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
                 cache_offsets_1d.to_tile_tensor[DType.int64](),
                 Int(buffer_length),
@@ -7681,7 +7650,6 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         b_type: DType,
         scales_type: DType,
         //,
-        tokens_padded_per_expert: Bool,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2],
@@ -7708,7 +7676,6 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             b_type: The input B data type. Constraints: Must be `uint8`.
             scales_type: The scale factor data type.
                 Constraints: Must be `float8_e4m3fn`.
-            tokens_padded_per_expert: Whether tokens are padded per expert.
             target: The target GPU device.
 
         Args:
@@ -8910,7 +8877,7 @@ struct DistributedAllReduceSum:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
-        inputs: InputVariadicTensors[dtype, rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, ...
         ],
@@ -8924,13 +8891,15 @@ struct DistributedAllReduceSum:
 
         Args:
             output: Output tensor for this device to store reduced result.
-            inputs: Input tensors (one per GPU) containing values to reduce.
+            input: Input tensor for this device. Peer input addresses are obtained
+                via signal buffer payloads (P2P access required).
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+                Each GPU stores its input & output buffer addresses in its signal payload for peers.
             device_ctx: The device context for this specific op instance.
 
         Implementation Notes:
             1. Each op instance only launches kernels on its assigned device.
-            2. Still requires all inputs/signal_buffers for coordination.
+            2. Peer I/O addresses are exchanged via signal buffer payloads at runtime.
             3. The output is only for the assigned device.
 
         Limitations:
@@ -8938,23 +8907,13 @@ struct DistributedAllReduceSum:
             - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
             - Requires identical tensor shapes across all participating GPUs
         """
-        comptime num_devices = inputs.size
-        __comptime_assert signal_buffers.size == num_devices, (
-            "expected allreduce inputs and signal buffers to have"
-            " the same number of elements"
-        )
+        comptime num_devices = signal_buffers.size
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # TODO(jtodd): 2 64bit addresses, fix magic no
+        _check_signal_buffer_size(signal_buffers[0].size(), 2 * 8)
 
-        # Marshal input tensors into the expected format.
-        var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
-        ](fill={})
-
-        @parameter
-        for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+        # Marshal input tensor
+        var in_buf = managed_tensor_slice_to_ndbuffer(input)
 
         # Marshal output tensor
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -8984,7 +8943,7 @@ struct DistributedAllReduceSum:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf, rank_sigs, device_ctx[]
+                in_buf, out_buf, rank_sigs, device_ctx[]
             )
 
 

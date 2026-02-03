@@ -12,29 +12,364 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_up
+from math import align_up, ceildiv
 
 from sys import simd_width_of, size_of
 from utils.index import Index, IndexList
 
 from algorithm.functional import _elementwise_impl_gpu
+from gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    global_idx,
+    grid_dim,
+    thread_idx,
+)
+from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
 from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
+from utils.index import StaticTuple
+from utils.numerics import get_accum_type
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
-
-from nn.kv_cache import KVCollectionT
+from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
+from nn.fused_qk_rope import rope_k_cache, rope_q_proj
+from nn.kv_cache import KVCollectionT, KVCacheT
 from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.mla import _k_cache_to_buffer
+from nn.normalization import _rms_norm_warp_tiling_subkernel
+
+
+# ===-----------------------------------------------------------------------===#
+# Manually fused MLA RoPE and RMSNorm kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+fn fused_rope_rmsnorm_kernel[
+    dtype: DType,
+    freq_dtype: DType,
+    gamma_dtype: DType,
+    q_rope_output_shape_types: Variadic.TypesOfTrait[CoordLike],
+    q_rope_output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    q_rope_shape_types: Variadic.TypesOfTrait[CoordLike],
+    q_rope_stride_types: Variadic.TypesOfTrait[CoordLike],
+    input_row_offsets_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_row_offsets_stride_types: Variadic.TypesOfTrait[CoordLike],
+    freqs_cis_shape_types: Variadic.TypesOfTrait[CoordLike],
+    freqs_cis_stride_types: Variadic.TypesOfTrait[CoordLike],
+    gamma_shape_types: Variadic.TypesOfTrait[CoordLike],
+    gamma_stride_types: Variadic.TypesOfTrait[CoordLike],
+    cache_t: KVCacheT,
+    block_size: Int,
+    n_rope_blocks: Int,
+    n_rms_blocks: Int,
+](
+    q_rope_output: TileTensor[
+        mut=True,
+        shape_types=q_rope_output_shape_types,
+        stride_types=q_rope_output_stride_types,
+        dtype,
+        MutExternalOrigin,
+    ],
+    q_rope: TileTensor[
+        shape_types=q_rope_shape_types,
+        stride_types=q_rope_stride_types,
+        dtype,
+        ImmutExternalOrigin,
+    ],
+    input_row_offsets: TileTensor[
+        shape_types=input_row_offsets_shape_types,
+        stride_types=input_row_offsets_stride_types,
+        DType.uint32,
+        ImmutExternalOrigin,
+    ],
+    freqs_cis: TileTensor[
+        shape_types=freqs_cis_shape_types,
+        stride_types=freqs_cis_stride_types,
+        freq_dtype,
+        ImmutExternalOrigin,
+    ],
+    gamma: TileTensor[
+        shape_types=gamma_shape_types,
+        stride_types=gamma_stride_types,
+        gamma_dtype,
+        ImmutExternalOrigin,
+    ],
+    k_cache: cache_t,
+    epsilon: Float32,
+) -> None:
+    """Fused GPU kernel that applies RoPE to query projections and RMSNorm to KV
+    cache.
+
+    This kernel processes tokens in parallel across GPU blocks, with separate
+    block groups handling RoPE and RMSNorm operations. The RoPE blocks apply
+    rotary position embeddings to both the query rope part (in-place) and the
+    key cache rope part (in-place). The RMSNorm blocks normalize the first
+    `kv_norm_dim` elements of the key cache entries.
+
+    Parameters:
+        dtype: Data type of query tensors.
+        freq_dtype: Data type of frequency cosine/sine values.
+        gamma_dtype: Data type of RMSNorm gamma weights.
+        q_rope_output_shape_types: Shape types of the output query rope tensor.
+        q_rope_output_stride_types: Stride types of the output query rope tensor.
+        q_rope_shape_types: Shape types of the input query rope tensor.
+        q_rope_stride_types: Stride types of the input query rope tensor.
+        input_row_offsets_shape_types: Shape types of the row offset indices tensor.
+        input_row_offsets_stride_types: Stride types of the row offset indices tensor.
+        freqs_cis_shape_types: Shape types of the frequency tensor.
+        freqs_cis_stride_types: Stride types of the frequency tensor.
+        gamma_shape_types: Shape types of the gamma weights tensor.
+        gamma_stride_types: Stride types of the gamma weights tensor.
+        cache_t: Type of the KV cache.
+        block_size: Number of threads per block.
+        n_rope_blocks: Number of blocks allocated for RoPE computation.
+        n_rms_blocks: Number of blocks allocated for RMSNorm computation.
+
+    Args:
+        q_rope_output: Output tensor for RoPE-applied query projections.
+            Shape: [tot_seq_len, num_heads, rope_dim].
+        q_rope: Input query rope projections. Shape: [tot_seq_len, num_heads, rope_dim].
+        input_row_offsets: Row offsets indicating request boundaries.
+            Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values. Shape: [max_seq_len, rope_dim].
+        gamma: RMSNorm gamma weights. Shape: [kv_norm_dim].
+        k_cache: Key cache to apply RoPE and RMSNorm to.
+        epsilon: Small constant for numerical stability in RMSNorm.
+    """
+    __comptime_assert (
+        cache_t.kv_params.num_heads == 1
+    ), "num_heads should be 1 for MLA"
+    __comptime_assert q_rope_output.rank == 3
+    __comptime_assert q_rope.rank == 3
+    __comptime_assert input_row_offsets.rank == 1
+    __comptime_assert freqs_cis.rank == 2
+    __comptime_assert gamma.rank == 1
+
+    comptime num_q_heads = q_rope.static_shape[1]
+    comptime rope_dim = q_rope.static_shape[2]
+    comptime kv_norm_dim = gamma.static_shape[0]
+
+    var worker_idx = block_idx.y
+    var num_workers = grid_dim.y
+    var num_tokens = q_rope.dim(0)
+
+    with PDL():
+        for global_token_idx in range(worker_idx, num_tokens, num_workers):
+            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
+                input_row_offsets, global_token_idx
+            )
+            var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
+
+            # First n_rope_blocks blocks of this worker process RoPE.
+            if block_idx.x < UInt(n_rope_blocks):
+                comptime q_width = simd_width_of[dtype]()
+                __comptime_assert (
+                    rope_dim % q_width == 0
+                ), "rope_dim should be divisible by q_width"
+
+                var head_idx, head_dim_idx = divmod(
+                    Int(global_idx.x) * q_width, rope_dim
+                )
+                var f_c = freqs_cis.load[width=q_width](
+                    (Idx(post_seq_idx), Idx(head_dim_idx))
+                )
+
+                if head_idx < num_q_heads:
+                    rope_q_proj[interleaved=True](
+                        q_rope.to_layout_tensor(),
+                        q_rope_output.to_layout_tensor(),
+                        Index(global_token_idx, head_idx, head_dim_idx),
+                        f_c,
+                        rope_dim,
+                    )
+                elif head_idx == num_q_heads:
+                    rope_k_cache[interleaved=True](
+                        k_cache,
+                        batch_idx,
+                        0,  # num_k_heads is 1 for MLA
+                        post_seq_idx,
+                        head_dim_idx + kv_norm_dim,
+                        f_c,
+                        rope_dim,
+                    )
+
+            # The last block of this worker processes RMSNorm.
+            else:
+                comptime k_dtype = cache_t.dtype
+                comptime k_width = simd_width_of[k_dtype]()
+                comptime accum_type = get_accum_type[k_dtype]()
+                comptime warps_per_block = block_size // WARP_SIZE
+
+                __comptime_assert (
+                    kv_norm_dim % k_width == 0
+                ), "kv_norm_dim should be divisible by k_width"
+
+                var vec_data = SIMD[accum_type, k_width](0)
+
+                var idx = Int(thread_idx.x) * k_width
+                if idx < kv_norm_dim:
+                    vec_data = k_cache.load[width=k_width](
+                        batch_idx,
+                        0,  # num_k_heads is 1 for MLA
+                        post_seq_idx,
+                        idx,
+                    ).cast[accum_type]()
+
+                var norm_val = _rms_norm_warp_tiling_subkernel[
+                    warps_per_block,
+                    False,  # Do not multiply the gamma before casting.
+                ](
+                    global_token_idx,
+                    idx,
+                    vec_data,
+                    gamma,
+                    epsilon.cast[accum_type](),
+                    0.0,
+                    kv_norm_dim,
+                )
+
+                if idx < kv_norm_dim:
+                    k_cache.store(
+                        batch_idx,
+                        0,  # num_k_heads is 1 for MLA
+                        post_seq_idx,
+                        idx,
+                        norm_val.cast[k_dtype](),
+                    )
+
+
+@always_inline
+fn mla_fused_rope_rmsnorm[
+    dtype: DType,
+    freq_dtype: DType,
+    gamma_dtype: DType,
+    collection_t: KVCollectionT,
+    //,
+](
+    q_rope_output: TileTensor[mut=True, dtype, ...],
+    q_rope: TileTensor[dtype, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
+    freqs_cis: TileTensor[freq_dtype, ...],
+    gamma: TileTensor[gamma_dtype, ...],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    epsilon: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Launches the fused RoPE and RMSNorm kernel for MLA attention.
+
+    This function fuses two operations:
+    1. RoPE applied to query and key cache rope parts.
+    2. RMSNorm applied to the non-rope portion of the key cache.
+
+    Parameters:
+        dtype: Data type of query tensors.
+        freq_dtype: Data type of frequency cosine/sine values.
+        gamma_dtype: Data type of RMSNorm gamma weights.
+        collection_t: Type of the KV cache collection.
+
+    Args:
+        q_rope_output: Output tensor for RoPE-applied query projections.
+            Shape: [tot_seq_len, num_heads, rope_dim].
+        q_rope: Input query rope projections. Shape: [tot_seq_len, num_heads, rope_dim].
+        input_row_offsets: Row offsets indicating request boundaries.
+            Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values. Shape: [max_seq_len, rope_dim].
+        gamma: RMSNorm gamma weights. Shape: [kv_norm_dim].
+        kv_collection: Paged KV cache collection.
+        layer_idx: Index of the current transformer layer.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        ctx: Device context for kernel execution.
+    """
+    comptime hw_info = ctx.default_device_info
+    comptime sm_count = hw_info.sm_count
+    comptime num_q_heads = q_rope.static_shape[1]
+    comptime num_k_heads = 1  # Fixed to 1 for MLA.
+    comptime rope_dim = q_rope.static_shape[2]
+    comptime kv_norm_dim = gamma.static_shape[0]
+
+    __comptime_assert (
+        q_rope_output.static_shape[2] == rope_dim
+    ), "q_rope_output and q_rope must have the same head_size"
+    __comptime_assert (
+        q_rope_output.rank == 3 and q_rope.rank == 3
+    ), "q_rope_output and q_rope must be rank 3"
+    __comptime_assert rope_dim + kv_norm_dim == Int(
+        collection_t.kv_params.head_size
+    ), "rope_dim + kv_norm_dim must be equal to kvcache head_size"
+
+    # Default block size used by the `elementwise` function on Blackwell.
+    comptime block_size = 128
+    comptime kernel_simd_width = simd_width_of[
+        dtype, target = get_gpu_target()
+    ]()
+    comptime n_rope_elems = (num_q_heads + num_k_heads) * rope_dim
+
+    # Make sure that we can use one block to process the rmsnorm.
+    __comptime_assert kv_norm_dim <= block_size * kernel_simd_width, (
+        "kv_norm_dim must be less than or equal to block_size *"
+        " kernel_simd_width"
+    )
+    comptime n_rope_blocks = ceildiv(
+        ceildiv(n_rope_elems, kernel_simd_width), block_size
+    )
+    comptime n_rms_blocks = 1  # Fixed to 1 for MLA.
+
+    var max_workers = (
+        sm_count
+        * (hw_info.max_thread_block_size // block_size)
+        // (n_rope_blocks + n_rms_blocks)
+    )
+    var num_workers = min(max_workers, Int(q_rope.dim(0)))
+
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+    comptime kernel = fused_rope_rmsnorm_kernel[
+        dtype,
+        freq_dtype,
+        gamma_dtype,
+        q_rope_output.shape_types,
+        q_rope_output.stride_types,
+        q_rope.shape_types,
+        q_rope.stride_types,
+        input_row_offsets.shape_types,
+        input_row_offsets.stride_types,
+        freqs_cis.shape_types,
+        freqs_cis.stride_types,
+        gamma.shape_types,
+        gamma.stride_types,
+        type_of(k_cache),
+        block_size,
+        n_rope_blocks,
+        n_rms_blocks,
+    ]
+
+    ctx.enqueue_function[kernel, kernel](
+        q_rope_output,
+        q_rope.as_immut(),
+        input_row_offsets.as_immut(),
+        freqs_cis.as_immut(),
+        gamma.as_immut(),
+        k_cache,
+        epsilon,
+        grid_dim=(n_rope_blocks + n_rms_blocks, num_workers, 1),
+        block_dim=block_size,
+        attributes=pdl_launch_attributes(),
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -58,14 +393,16 @@ fn mla_prefill_branch_fp8[
     output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
+    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
+    epsilon: Float32,
     buffer_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -81,6 +418,8 @@ fn mla_prefill_branch_fp8[
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Copy the KV latent values from PagedKVCache to a contiguous buffer.
     - Quantize the KV latent values to fp8.
     - Up-project the latent KV values to full K and V through a matmul.
@@ -104,15 +443,18 @@ fn mla_prefill_branch_fp8[
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
-        q_nope: Query tensor of shape [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Query tensor of shape [tot_seq_len, num_heads,
-            qk_rope_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
         input_row_offsets: Indicates where each request starts and ends in
             `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
         scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
         buffer_row_offsets: Indicates where each request's KV latent values
             should be stored in the contiguous K buffer. This is a 1D tensor
             of shape [num_batches + 1].
@@ -133,10 +475,12 @@ fn mla_prefill_branch_fp8[
         kv_params.num_heads == 1
     ), "kv_params.num_heads should be 1"
 
-    comptime num_heads = q_nope.static_shape[1]
-    comptime qk_nope_head_dim = q_nope.static_shape[2]
-    comptime qk_rope_head_dim = q_rope.static_shape[2]
+    comptime num_heads = q.static_shape[1]
+    comptime q_head_dim = q.static_shape[2]
+    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = Int(kv_params.head_size)
 
     __comptime_assert (
         kv_b_proj.shape_known
@@ -160,60 +504,46 @@ fn mla_prefill_branch_fp8[
     if buffer_length == 0:
         return
 
-    # concatenate the q_nope and q_rope tensors
-    var seq_len = Int(q_nope.dim(0))
-    var q_buf = ctx.enqueue_create_buffer[dtype](
-        seq_len * num_heads * (qk_nope_head_dim + qk_rope_head_dim)
-    )
-    var q = TileTensor(
-        q_buf,
-        row_major(
-            (
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[qk_nope_head_dim + qk_rope_head_dim](),
-            )
+    var seq_len = Int(q.dim(0))
+
+    # =========================================================================#
+    # QK RoPE and K cache RMSNorm                                              #
+    # =========================================================================#
+
+    # Create a view of the `q` tensor that only contains the last
+    # qk_rope_head_dim columns of each Q head.
+    var q_rope = TileTensor(
+        q.ptr + qk_nope_head_dim,
+        Layout(
+            (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
         ),
     )
 
-    @always_inline
-    @parameter
-    @__copy_capture(q_nope, q_rope, q)
-    fn concat_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        __comptime_assert q_rope.rank == 3, "rank should be equal to 3"
-
-        var token_idx = idx[0]
-        var head_idx = idx[1]
-        var dim_idx = idx[2]
-
-        var store_coord = Coord(Idx(token_idx), Idx(head_idx), Idx(dim_idx))
-        __comptime_assert store_coord.rank == q.rank
-
-        if dim_idx < qk_nope_head_dim:
-            __comptime_assert store_coord.rank == q_nope.rank
-            q.store[width=width](
-                store_coord, q_nope.load[width=width](store_coord)
-            )
-        else:
-            var load_coord = Coord(
-                Idx(token_idx), Idx(head_idx), Idx(dim_idx - qk_nope_head_dim)
-            )
-            __comptime_assert load_coord.rank == q_rope.rank
-            q.store[width=width](
-                store_coord, q_rope.load[width=width](load_coord)
-            )
-
-    var concat_launch_shape = IndexList[3](
-        seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim
+    # In-place update of the rope part of the `q` tensor
+    var q_rope_mut = TileTensor(
+        q_rope.ptr.mut_cast[True](),
+        Layout(
+            (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+        ),
     )
-    comptime concat_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    _elementwise_impl_gpu[func=concat_fn, simd_width = UInt(concat_simd_width)](
-        concat_launch_shape, ctx
+
+    mla_fused_rope_rmsnorm(
+        q_rope_mut,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        kv_collection,
+        layer_idx,
+        epsilon,
+        ctx,
     )
+
+    # =========================================================================#
+    # Up-project the latent KV cache to full K and V                           #
+    # =========================================================================#
 
     # First, dump the k cache to a contiguous buffer
     # allocate a buffer for raw latent KV values
@@ -543,14 +873,16 @@ fn mla_decode_branch_fp8[
     output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
+    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
+    epsilon: Float32,
     w_uk: TileTensor[fp8_dtype, address_space = AddressSpace.GENERIC, ...],
     w_uk_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
@@ -563,6 +895,8 @@ fn mla_decode_branch_fp8[
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Project q_nope to kv_latent_dim through a fp8 batched matmul:
         q_nope_proj = q_nope_t @ w_uk.
     - Concatenate q_nope_proj and q_rope:
@@ -588,15 +922,18 @@ fn mla_decode_branch_fp8[
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
-        q_nope: Query tensor of shape [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Rope query tensor of shape [tot_seq_len, num_heads,
-            qk_rope_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
         input_row_offsets: Indicates where each request starts and ends in
             `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
         scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
         w_uk: Weight matrix for projecting the non-rope part of each query head to
             KV latent space. Shape: [num_heads, kv_latent_dim, qk_nope_head_dim].
         w_uk_scale: The scale for the w_uk weight matrix. Shape varies
@@ -614,10 +951,12 @@ fn mla_decode_branch_fp8[
         kv_params.num_heads == 1
     ), "kv_params.num_heads should be 1"
 
-    comptime num_heads = q_nope.static_shape[1]
-    comptime qk_nope_head_dim = q_nope.static_shape[2]
-    comptime qk_rope_head_dim = q_rope.static_shape[2]
+    comptime num_heads = q.static_shape[1]
+    comptime q_head_dim = q.static_shape[2]
+    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = Int(kv_params.head_size)
 
     __comptime_assert (
         w_uk.shape_known and w_uv.shape_known
@@ -629,92 +968,100 @@ fn mla_decode_branch_fp8[
         w_uv.static_shape[1] == v_head_dim
     ), "w_uv.static_shape[1] should be equal to v_head_dim"
     comptime kv_latent_dim = w_uk.static_shape[1]
-    __comptime_assert kv_latent_dim + qk_rope_head_dim == Int(
-        kv_params.head_size
+    __comptime_assert (
+        kv_latent_dim + qk_rope_head_dim == k_cache_dim
     ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
-    var seq_len = Int(q_nope.dim(0))
+    var seq_len = Int(q.dim(0))
 
     if seq_len == 0:
         return
 
-    # Proceed with the fp8 batched matmul
-    var q_nope_proj_buf = ctx.enqueue_create_buffer[dtype](
-        num_heads * seq_len * kv_latent_dim
+    # First, create a input buffer for the mla decode kernel
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
+        seq_len * num_heads * k_cache_dim
     )
-    var q_nope_proj = TileTensor(
-        q_nope_proj_buf,
-        row_major((Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]())),
+    var mla_decode_input = TileTensor(
+        mla_decode_input_buf,
+        row_major((Idx(seq_len), Idx[num_heads](), Idx[k_cache_dim]())),
     )
 
+    # =========================================================================#
+    # Project the non-rope part of each query head to kv_latent_dim            #
+    # =========================================================================#
+
+    # The first qk_nope_head_dim columns of each Q head will be up-projected to
+    # kv_latent_dim through a fp8 batched matmul.
+
+    # We start by create a view of the input tensor `q` that only contains the
+    # first qk_nope_head_dim columns of each Q head.
+    var q_nope = TileTensor(
+        q.ptr,
+        Layout(
+            (Idx(seq_len), Idx[num_heads](), Idx[qk_nope_head_dim]()),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+        ),
+    )
+
+    # Then create a view of the mla_decode_input tensor that only contains the
+    # first kv_latent_dim columns of each Q head.
+    var mla_decode_input_nope = TileTensor(
+        mla_decode_input.ptr,
+        Layout(
+            (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
+            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx(1)),
+        ),
+    )
+
+    # Proceed with the fp8 batched matmul
     # This helper function uses the transposed view of the input tensor `q_nope`.
     quantize_and_bmm_fp8_helper[
         m_scale_granularity=m_scale_granularity,
         n_scale_granularity=n_scale_granularity,
         k_scale_granularity=k_scale_granularity,
         target=target,
-    ](q_nope_proj, q_nope, w_uk, w_uk_scale, ctx)
+    ](mla_decode_input_nope, q_nope, w_uk, w_uk_scale, ctx)
 
-    # concatenate the transposed q_nope_proj and q_rope tensors
-    var q_full_buf = ctx.enqueue_create_buffer[dtype](
-        seq_len * num_heads * (kv_latent_dim + qk_rope_head_dim)
-    )
-    var q_full = TileTensor(
-        q_full_buf,
-        row_major(
-            (
-                Idx(seq_len),
-                Idx[num_heads](),
-                Idx[kv_latent_dim + qk_rope_head_dim](),
-            ),
+    # =========================================================================#
+    # QK RoPE and K cache RMSNorm                                              #
+    # =========================================================================#
+
+    # Create a view of the `q` tensor that only contains the last
+    # qk_rope_head_dim columns of each Q head.
+    var q_rope = TileTensor(
+        q.ptr + qk_nope_head_dim,
+        Layout(
+            (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
         ),
     )
 
-    @always_inline
-    @parameter
-    @__copy_capture(q_nope_proj, q_rope, q_full)
-    fn concat_fn[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
-        __comptime_assert rank == 3, "rank should be equal to 3"
-        var coord = Coord(idx)
-        __comptime_assert coord.rank == q_full.rank
-        __comptime_assert q_rope.rank == 3
-
-        var token_idx = idx[0]
-        var head_idx = idx[1]
-        var dim_idx = idx[2]
-
-        if dim_idx < kv_latent_dim:
-            q_full.store[width=width](
-                coord,
-                q_nope_proj.load[width=width](
-                    (Idx(head_idx), Idx(token_idx), Idx(dim_idx))
-                ),
-            )
-        else:
-            q_full.store[width=width](
-                coord,
-                q_rope.load[width=width](
-                    (
-                        Idx(token_idx),
-                        Idx(head_idx),
-                        Idx(dim_idx - kv_latent_dim),
-                    )
-                ),
-            )
-
-    var concat_launch_shape = IndexList[3](
-        seq_len, num_heads, kv_latent_dim + qk_rope_head_dim
-    )
-    comptime concat_simd_width = simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    _elementwise_impl_gpu[func=concat_fn, simd_width = UInt(concat_simd_width)](
-        concat_launch_shape, ctx
+    # Create a view of the `mla_decode_input` tensor that only contains the last
+    # qk_rope_head_dim columns of each Q head.
+    var mla_decode_input_rope = TileTensor(
+        mla_decode_input.ptr + kv_latent_dim,
+        Layout(
+            (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
+            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx(1)),
+        ),
     )
 
-    # Perform MLA decode
+    mla_fused_rope_rmsnorm(
+        mla_decode_input_rope,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        kv_collection,
+        layer_idx,
+        epsilon,
+        ctx,
+    )
+
+    # =========================================================================#
+    # MLA decode                                                               #
+    # =========================================================================#
+
     var raw_output_buf = ctx.enqueue_create_buffer[dtype](
         seq_len * num_heads * kv_latent_dim
     )
@@ -728,7 +1075,7 @@ fn mla_decode_branch_fp8[
         mask_str=mask_str,
         score_mod_str=score_mod_str,
     ](
-        q_full.to_layout_tensor(),
+        mla_decode_input.to_layout_tensor(),
         input_row_offsets.to_layout_tensor(),
         kv_collection,
         layer_idx,
@@ -783,14 +1130,16 @@ fn mla_prefill_decode_graph_fp8[
     output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    q_nope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
+    freqs_cis: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space = AddressSpace.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
+    epsilon: Float32,
     buffer_row_offsets: TileTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -818,7 +1167,7 @@ fn mla_prefill_decode_graph_fp8[
     - Perform MLA prefill or decode based on the maximum sequence length.
     """
 
-    var seq_len = q_nope.dim(0)
+    var seq_len = q.dim(0)
 
     if seq_len == 0:
         return
@@ -838,12 +1187,14 @@ fn mla_prefill_decode_graph_fp8[
             target=target,
         ](
             output,
-            q_nope,
-            q_rope,
+            q,
             input_row_offsets,
+            freqs_cis,
+            kv_norm_gamma,
             kv_collection,
             layer_idx,
             scale,
+            epsilon,
             w_uk,
             w_uk_scale,
             w_uv,
@@ -861,12 +1212,14 @@ fn mla_prefill_decode_graph_fp8[
             target=target,
         ](
             output,
-            q_nope,
-            q_rope,
+            q,
             input_row_offsets,
+            freqs_cis,
+            kv_norm_gamma,
             kv_collection,
             layer_idx,
             scale,
+            epsilon,
             buffer_row_offsets,
             cache_offsets,
             buffer_length,

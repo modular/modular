@@ -388,7 +388,7 @@ to name or invoke them unless the type is constrained:
 ```mojo
 fn generic_function_1[T: AnyType](var value: T):
     # ERROR: 'value' abandoned without being explicitly destroyed:
-    #        Unhandled explicit_destroy type AnyType
+    #        Unhandled explicitly destroyed type AnyType
     pass  # value abandoned here
 
 fn generic_function_2[T: ImplicitlyDestructible](var value: T):

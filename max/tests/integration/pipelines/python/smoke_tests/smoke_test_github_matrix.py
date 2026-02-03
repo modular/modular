@@ -62,10 +62,12 @@ MODELS = {
     ],
     "deepseek-ai/deepseek-r1-0528": [
         "sglang",
+        "max",  # 26.2 (weight loading issue in 26.1)
         "H100",
         "B200",
         "MI355",
         "2xH100",
+        "8xMI355",  # Currently needs nvshmem
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": [
@@ -133,6 +135,7 @@ MODELS = {
         "MI355",  # FP8 not supported
         "max-ci@H100",
         "max-ci@2xH100",
+        "sglang@B200",  # FlashInfer B200 build error
     ],
     "qwen/qwen3-vl-30b-a3b-thinking": [
         "8xB200",

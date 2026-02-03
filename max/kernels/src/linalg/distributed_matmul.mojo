@@ -72,9 +72,7 @@ fn _matmul_allreduce[
     @parameter
     for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
-            rebind[InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]](
-                c_temp_buffers
-            ),
+            c_temp_buffers[i],
             output_buffers[i],
             rank_sigs,
             ctxs[i],
@@ -205,9 +203,7 @@ fn _matmul_allreduce_split_m[
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
-                ](C_parts),
+                C_parts[i],
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],
@@ -337,9 +333,7 @@ fn _matmul_allreduce_split_n[
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
-                ](C_parts),
+                C_parts[i],
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],
