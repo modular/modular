@@ -193,7 +193,7 @@ fn test_micro_kernel[
 
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
-    assert_equal(Int(c_ptr[0]), 256)
+    assert_equal(Int(c_ptr[0]), k)
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
@@ -213,3 +213,7 @@ def main():
 
     test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
     test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)
+
+    # Test int8 x int8 -> int8 to ensure it doesn't dispatch to i8mm (which
+    # requires 32-bit output). Use smaller k to fit in int8 range.
+    test_micro_kernel[DType.int8, DType.int8, DType.int8](M, N, 100)
