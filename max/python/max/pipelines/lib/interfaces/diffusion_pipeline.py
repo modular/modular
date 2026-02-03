@@ -25,6 +25,7 @@ import numpy.typing as npt
 from max._core.driver import Device
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
+from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
@@ -32,7 +33,6 @@ from typing_extensions import Self
 
 if TYPE_CHECKING:
     from max.engine import InferenceSession
-    from max.pipelines.core.context import PixelContext
 
     from ..config import PipelineConfig
 
@@ -67,10 +67,27 @@ class DiffusionPipeline(ABC):
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
     @abstractmethod
-    def prepare_inputs(self, context: PixelContext) -> PixelModelInputs:
+    def prepare_inputs(
+        self, context: PixelGenerationContext
+    ) -> PixelModelInputs:
         """Prepare inputs for the pipeline."""
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
+        )
+
+    @abstractmethod
+    def execute(self, model_inputs: PixelModelInputs, **kwargs: Any) -> Any:
+        """Execute the pipeline with the given model inputs.
+
+        Args:
+            model_inputs: Prepared model inputs from prepare_inputs.
+            **kwargs: Additional pipeline-specific execution parameters.
+
+        Returns:
+            Pipeline-specific output (e.g., generated images).
+        """
+        raise NotImplementedError(
+            f"execute is not implemented for {self.__class__.__name__}"
         )
 
     @classmethod
@@ -426,7 +443,7 @@ class PixelModelInputs:
             )
 
     @classmethod
-    def from_context(cls, context: PixelContext) -> Self:
+    def from_context(cls, context: PixelGenerationContext) -> Self:
         """
         Build an instance from a context-like dict.
 

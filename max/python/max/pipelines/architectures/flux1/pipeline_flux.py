@@ -21,7 +21,7 @@ import numpy as np
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.interfaces import TokenBuffer
+from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
@@ -35,7 +35,7 @@ from ..t5 import T5Model
 from .model import Flux1Model
 
 if TYPE_CHECKING:
-    from max.pipelines.core.context import PixelContext
+    pass
 
 
 @dataclass(kw_only=True)
@@ -100,7 +100,9 @@ class FluxPipeline(DiffusionPipeline):
             else 8
         )
 
-    def prepare_inputs(self, context: PixelContext) -> FluxModelInputs:
+    def prepare_inputs(
+        self, context: PixelGenerationContext
+    ) -> FluxModelInputs:
         return FluxModelInputs.from_context(context)
 
     @staticmethod
@@ -268,7 +270,7 @@ class FluxPipeline(DiffusionPipeline):
         latents = latents.cast(latents_dtype)
         return latents
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         model_inputs: FluxModelInputs,
         callback_queue: Queue[np.ndarray | Tensor] | None = None,
