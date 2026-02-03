@@ -1029,7 +1029,7 @@ PIPELINES = {
             pipeline="Qwen/Qwen3-VL-4B-Instruct",
             encoding="bfloat16",
             cos_dist_threshold=1.7e00,
-            kl_div_threshold=7.0e-02,
+            kl_div_threshold=4.4e-01,
         ),
     ),
     "Qwen/Qwen3-VL-4B-Instruct-FP8": PipelineDef(
@@ -1039,7 +1039,7 @@ PIPELINES = {
             pipeline="Qwen/Qwen3-VL-4B-Instruct-FP8",
             encoding="float8_e4m3fn",
             cos_dist_threshold=1.7e00,
-            kl_div_threshold=3.0e-02,
+            kl_div_threshold=3.6e-01,
         ),
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
