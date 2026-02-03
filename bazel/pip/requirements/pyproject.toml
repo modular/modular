@@ -197,6 +197,7 @@ nvidia = [
   "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "peft>=0.17.0",
   "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "vllm==0.14.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 

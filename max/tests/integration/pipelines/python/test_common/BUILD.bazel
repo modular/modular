@@ -293,6 +293,8 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("scipy"),
+        requirement("torch"),
+        requirement("torchmetrics"),
     ],
 )
 
