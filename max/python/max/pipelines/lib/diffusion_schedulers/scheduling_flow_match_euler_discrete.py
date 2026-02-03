@@ -18,7 +18,9 @@ import numpy as np
 import numpy.typing as npt
 
 
-def _time_shift_exponential(mu: float, sigma_param: float, t: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+def _time_shift_exponential(
+    mu: float, sigma_param: float, t: npt.NDArray[np.float32]
+) -> npt.NDArray[np.float32]:
     """Resolution-dependent timestep shift (diffusers FlowMatchEulerDiscreteScheduler)."""
     t_safe = np.clip(t.astype(np.float64), 1e-7, 1.0)
     out = np.exp(mu) / (np.exp(mu) + (1.0 / t_safe - 1.0) ** sigma_param)
