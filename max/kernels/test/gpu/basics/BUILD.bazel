@@ -57,19 +57,14 @@ _EXTRA_CONSTRAINTS = {
     "test_launch_binary.mojo": _APPLE_GPU_INCOMPATIBLE,  # Requires metallib tool which may not be available on Mac
     "test_init_vector_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
     # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
-    "test_add_constant.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_barrier.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_cast_roundtrip.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_convert.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_function_mts.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_grid_dim.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_id.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_laneid.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_sum.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 [
