@@ -409,8 +409,9 @@ class PixelModelInputs:
 
     @classmethod
     def from_context(cls, context: PixelGenerationContext) -> Self:
-        """
-        Build an instance from a context-like dict.
+        """Build an instance from a context-like dict.
+
+        Policy:
 
         - If a key is missing: the dataclass default applies automatically.
         - If a key is present with value None: treat as missing and substitute the class default
