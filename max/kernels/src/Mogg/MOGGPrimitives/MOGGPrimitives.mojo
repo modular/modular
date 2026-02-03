@@ -1518,7 +1518,7 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1552,7 +1552,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](
