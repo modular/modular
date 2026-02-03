@@ -650,6 +650,7 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
+        input_image: Optional input image for image-to-image generation (PIL.Image.Image).
         model_name: Name of the model being used.
     """
 
@@ -706,7 +707,7 @@ class PixelContext:
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
-
+    input_image: Any | None = field(default=None)
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
