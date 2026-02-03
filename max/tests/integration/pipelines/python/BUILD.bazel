@@ -31,6 +31,11 @@ modular_py_test(
     tags = [
         "no-pydeps",  # TODO: Fix and re-enable
     ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/tests/integration/tools:debugging_utils",
         requirement("torch"),
@@ -61,6 +66,11 @@ modular_py_test(
     tags = [
         "no-pydeps",  # TODO: Fix and re-enable
     ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
@@ -72,6 +82,11 @@ modular_py_test(
     name = "test_hf_config_overrides",
     size = "small",
     srcs = ["test_hf_config_overrides.py"],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
@@ -84,11 +99,31 @@ modular_py_test(
     name = "test_hf_repo_lock",
     size = "small",
     srcs = ["test_hf_repo_lock.py"],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common:mocks",
         "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
         requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_device_graph_capture",
+    size = "small",
+    srcs = ["test_device_graph_capture.py"],
+    tags = ["no-pydeps"],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/tests/integration/pipelines/python/test_common:mocks",
     ],
 )
 
@@ -102,12 +137,13 @@ modular_py_binary(
         ),
     },
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:distance_metrics",
+        "//max/tests/integration/pipelines/python/test_common:evaluate",
+        "//max/tests/integration/pipelines/python/test_common:numpy_encoder",
+        "//max/tests/integration/pipelines/python/test_common:verify_utils",
         requirement("click"),
         requirement("numpy"),
-        requirement("rich"),
     ],
 )
 
@@ -116,7 +152,7 @@ modular_py_binary(
     testonly = True,
     srcs = ["verify_pipelines.py"],
     data = [
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/llama3/testdata",
         "@nvshmem_prebuilt//:host",
     ],
     env = {
@@ -127,11 +163,15 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":verify",
+        "//max/python/max/entrypoints",
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
+        "//max/tests/integration/pipelines/python/test_common:evaluate",
+        "//max/tests/integration/pipelines/python/test_common:numpy_encoder",
+        "//max/tests/integration/pipelines/python/test_common:process_isolation",
+        "//max/tests/integration/pipelines/python/test_common:storage",
         "@rules_python//python/runfiles",
     ],
 )
@@ -160,8 +200,14 @@ modular_py_binary(
     testonly = True,
     srcs = ["smoke_tests/smoke_test.py"],
     data = glob([
-        "smoke_tests/chartqa_modular/**",
-    ]),
+        "smoke_tests/tasks/**",
+    ]) + [
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         requirement("click"),
@@ -176,6 +222,32 @@ modular_py_binary(
     srcs = ["smoke_tests/smoke_test_github_matrix.py"],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "bisect_smoke_test",
+    testonly = True,
+    srcs = ["smoke_tests/bisect_smoke_test.py"],
+    imports = ["."],
+)
+
+modular_py_test(
+    name = "test_bisect_smoke_test",
+    size = "small",
+    srcs = ["test_bisect_smoke_test.py"],
+    args = [
+        "--ignore=max/tests/integration/pipelines/python/smoke_tests",
+    ],
+    imports = ["."],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":bisect_smoke_test",
+        ":smoke_test",
     ],
 )
 
@@ -272,6 +344,11 @@ modular_py_test(
 modular_py_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/entrypoints:pipelines",
         requirement("click"),
@@ -304,7 +381,7 @@ modular_py_test(
     gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
-        "manual",  # TODO(AITLIB-293, AITLIB-345)
+        "manual",  # TODO(AITLIB-293)
         "no-sandbox",
         "requires-network",
         "run-in-hf-workflow",

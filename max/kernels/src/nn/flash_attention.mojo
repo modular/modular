@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,9 +13,7 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp
-from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 from sys import align_of, simd_width_of
 from sys.info import CompilationTarget
@@ -28,7 +26,6 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import to_index_list
@@ -95,7 +92,7 @@ struct _MatmulConfig:
 struct _Matmul[dtype: DType, simd_width: Int]:
     comptime _matmul_config = _MatmulConfig._get_config()
 
-    comptime _input_fn_type = fn[simd_width: Int] (
+    comptime _input_fn_type = fn[simd_width: Int](
         x: Int, y: Int
     ) capturing -> SIMD[Self.dtype, simd_width]
 
@@ -203,7 +200,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         a_ptr: UnsafePointer[Scalar[Self.dtype]],
         a_stride: Int,
         b_ptr: UnsafePointer[Scalar[Self.dtype]],
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -248,6 +245,10 @@ struct _Matmul[dtype: DType, simd_width: Int]:
             am_ptr += tile_m * a_stride
             cm_ptr += tile_m * c_stride
 
+            # TODO(MOCO-2074): Suppress false positive unused var warning.
+            _ = bn_ptr
+            _ = cn_ptr
+
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
@@ -257,7 +258,11 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     @staticmethod
     fn _pack_buffer_transposed[
         input_b_fn: Self._input_fn_type, static_k: Int
-    ](packed_ptr: UnsafePointer[Scalar[Self.dtype]], N: Int, dynamic_k: Int):
+    ](
+        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        N: Int,
+        dynamic_k: Int,
+    ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
 
         var aligned_n = align_up(N, Self.simd_width)
@@ -324,7 +329,11 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     @staticmethod
     fn _pack_buffer[
         input_b_fn: Self._input_fn_type
-    ](packed_ptr: UnsafePointer[Scalar[Self.dtype]], N: Int, K: Int):
+    ](
+        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        N: Int,
+        K: Int,
+    ):
         var output_ptr = packed_ptr
         var aligned_n = align_up(N, Self.simd_width)
 
@@ -351,7 +360,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         N: Int,
         dynamic_k: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype]],
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
     ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
         var cn_ptr = c_ptr
@@ -427,7 +436,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         N: Int,
         K: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype]],
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         accumulate: Bool = False,
     ):
         var cn_ptr = c_ptr
@@ -464,8 +473,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         K: Int,
         a_ptr: UnsafePointer[Scalar[Self.dtype]],
         a_stride: Int,
-        packed_ptr: UnsafePointer[Scalar[Self.dtype]],
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         c_stride: Int,
         accumulate: Bool = False,
     ) raises:
@@ -494,17 +503,17 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         @parameter
         if use_apple_accelerate_lib[Self.dtype, Self.dtype, Self.dtype]():
             return _cblas_f32(
-                M,
-                N,
-                K,
-                a_stride,
-                align_up(N, Self.simd_width),
-                c_stride,
+                Int32(M),
+                Int32(N),
+                Int32(K),
+                Int32(a_stride),
+                Int32(align_up(N, Self.simd_width)),
+                Int32(c_stride),
                 Float32(1.0),
                 Float32(1.0) if accumulate else Float32(0.0),
-                rebind[UnsafePointer[Float32]](c_ptr),
-                rebind[UnsafePointer[Float32]](a_ptr),
-                rebind[UnsafePointer[Float32]](packed_ptr),
+                rebind[UnsafePointer[Float32, MutAnyOrigin]](c_ptr),
+                rebind[UnsafePointer[Float32, ImmutAnyOrigin]](a_ptr),
+                rebind[UnsafePointer[Float32, MutAnyOrigin]](packed_ptr),
             )
 
         Self._matmul_packed(
@@ -561,27 +570,27 @@ struct _FlashAttention[
     dtype: DType,
     rank: Int,
     //,
-    input_q_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[dtype]
+    input_q_ptr_fn: fn(IndexList[rank]) capturing -> UnsafePointer[
+        Scalar[dtype], ImmutAnyOrigin
     ],
-    input_k_fn: fn[simd_width: Int, rank: Int] (
+    input_k_fn: fn[simd_width: Int, rank: Int](
         idx: IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_v_fn: fn[simd_width: Int, rank: Int] (
+    input_v_fn: fn[simd_width: Int, rank: Int](
         idx: IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    mask_fn: fn[simd_width: Int, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
-    output_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[dtype]
+    output_ptr_fn: fn(IndexList[rank]) capturing -> UnsafePointer[
+        Scalar[dtype], MutAnyOrigin
     ],
-    q_length_fn: fn (batch: Int) capturing -> Int,
-    kv_length_fn: fn (batch: Int) capturing -> Int,
-    kv_cache_length_fn: fn (batch: Int) capturing -> Int,
+    q_length_fn: fn(batch: Int) capturing -> Int,
+    kv_length_fn: fn(batch: Int) capturing -> Int,
+    kv_cache_length_fn: fn(batch: Int) capturing -> Int,
     padded_output_shape: IndexList[rank],
     *,
     simd_width: Int = simd_width_of[dtype](),
@@ -594,20 +603,23 @@ struct _FlashAttention[
 
     @staticmethod
     fn _online_softmax[
-        _mask_fn: fn[simd_width: Int] (
+        _mask_fn: fn[simd_width: Int](
             m: Int, n: Int, score_vec: SIMD[Self.dtype, simd_width]
         ) capturing -> SIMD[Self.dtype, simd_width],
     ](
-        qk_block_ptr: UnsafePointer[Scalar[Self.dtype]],
-        o_block_ptr: UnsafePointer[Scalar[Self.dtype]],
-        max_vals: UnsafePointer[Scalar[Self.dtype]],
-        sum_vals: UnsafePointer[Scalar[Self.dtype]],
+        qk_block_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        o_block_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        max_vals: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        sum_vals: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         count_m: Int,
         count_n: Int,
         kv_seq_cnt: Int,
         scale: Float32,
         sink_weight: Optional[Scalar[Self.dtype]] = None,
     ):
+        __comptime_assert (
+            Self.dtype.is_floating_point()
+        ), "dtype must be floating point"
         var qk_row_ptr = qk_block_ptr
         var o_row_ptr = o_block_ptr
 
@@ -763,9 +775,11 @@ struct _FlashAttention[
             ](uninitialized=True)
             var sum_vals = LayoutTensor[Self.dtype, layout](sum_vals_stack)
 
-            var packed_ptr = UnsafePointer[Scalar[Self.dtype]]()
+            var packed_ptr = UnsafePointer[
+                Scalar[Self.dtype], MutExternalOrigin
+            ]()
             if max_seq_len != 1:
-                packed_ptr = packed_ptr.alloc(
+                packed_ptr = alloc[Scalar[Self.dtype]](
                     packed_size,
                     alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                 )
@@ -887,8 +901,8 @@ struct _FlashAttention[
                     Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
                         o_block_ptr,
-                        max_vals.ptr,
-                        sum_vals.ptr,
+                        max_vals.ptr.as_unsafe_pointer(),
+                        sum_vals.ptr.as_unsafe_pointer(),
                         count_m,
                         count_n,
                         kv_seq_cnt,
@@ -952,13 +966,13 @@ fn _flash_attention[
     rank: Int,
     mask_rank: Int,
     //,
-    input_k_fn: fn[simd_width: Int, rank: Int] (
+    input_k_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_v_fn: fn[simd_width: Int, rank: Int] (
+    input_v_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int](
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
@@ -983,15 +997,19 @@ fn _flash_attention[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(coords: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
+    fn input_q_ptr_fn(
+        coords: IndexList[rank],
+    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
         var idx = q._offset(coords)
-        return q.ptr + idx
+        return (q.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
-    fn output_ptr_fn(coords: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
+    fn output_ptr_fn(
+        coords: IndexList[rank],
+    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         var idx = output._offset(coords)
-        return output.ptr + idx
+        return (output.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
@@ -1048,13 +1066,13 @@ fn flash_attention[
     rank: Int,
     mask_rank: Int,
     //,
-    input_k_fn: fn[simd_width: Int, rank: Int] (
+    input_k_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_v_fn: fn[simd_width: Int, rank: Int] (
+    input_v_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int](
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
@@ -1086,19 +1104,19 @@ fn flash_attention_split_kv[
     rank: Int,
     mask_rank: Int,
     //,
-    input_k_fn: fn[simd_width: Int, rank: Int] (
+    input_k_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_v_fn: fn[simd_width: Int, rank: Int] (
+    input_v_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_k_cache_fn: fn[simd_width: Int, rank: Int] (
+    input_k_cache_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_v_cache_fn: fn[simd_width: Int, rank: Int] (
+    input_v_cache_fn: fn[simd_width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, simd_width],
-    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    input_mask_fn: fn[simd_width: Int, mask_rank: Int](
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
@@ -1165,10 +1183,10 @@ fn flash_attention_split_kv[
         @__copy_capture(kv_cache_len)
         @parameter
         fn load_from_split_cache[
-            curr_fn: fn[simd_width: Int, rank: Int] (
+            curr_fn: fn[simd_width: Int, rank: Int](
                 IndexList[rank]
             ) capturing -> SIMD[dtype, simd_width],
-            cache_fn: fn[simd_width: Int, rank: Int] (
+            cache_fn: fn[simd_width: Int, rank: Int](
                 IndexList[rank]
             ) capturing -> SIMD[dtype, simd_width],
             rank: Int,
@@ -1234,7 +1252,7 @@ fn _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     //,
-    mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    mask_fn: fn[simd_width: Int, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1264,15 +1282,19 @@ fn _flash_attention_kv_cache[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(coords: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+    fn input_q_ptr_fn(
+        coords: IndexList[4],
+    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
         var idx = q._offset(coords)
-        return q.ptr + idx
+        return (q.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
-    fn output_ptr_fn(coords: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+    fn output_ptr_fn(
+        coords: IndexList[4],
+    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         var idx = output._offset(coords)
-        return output.ptr + idx
+        return (output.ptr + idx).as_unsafe_pointer()
 
     @always_inline
     @__copy_capture(max_seq_len)
@@ -1297,11 +1319,15 @@ fn _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     //,
-    input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
-    output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
-    q_length_fn: fn (batch: Int) capturing -> Int,
-    kv_length_fn: fn (batch: Int) capturing -> Int,
-    mask_fn: fn[simd_width: Int, mask_rank: Int] (
+    input_q_ptr_fn: fn(IndexList[4]) capturing -> UnsafePointer[
+        Scalar[dtype], ImmutAnyOrigin
+    ],
+    output_ptr_fn: fn(IndexList[4]) capturing -> UnsafePointer[
+        Scalar[dtype], MutAnyOrigin
+    ],
+    q_length_fn: fn(batch: Int) capturing -> Int,
+    kv_length_fn: fn(batch: Int) capturing -> Int,
+    mask_fn: fn[simd_width: Int, mask_rank: Int](
         idx: IndexList[mask_rank],
         score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
@@ -1498,23 +1524,27 @@ fn flash_attention_kv_cache[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+    fn input_q_ptr_fn(
+        idx: IndexList[4],
+    ) -> UnsafePointer[Scalar[dtype], ImmutAnyOrigin]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = q._offset(flat_idx)
-        return q.ptr + out_idx
+        return (q.ptr + out_idx).as_unsafe_pointer()
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
+    fn output_ptr_fn(
+        idx: IndexList[4],
+    ) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         var out_idx = output._offset(flat_idx)
-        return output.ptr + out_idx
+        return (output.ptr + out_idx).as_unsafe_pointer()
 
     comptime mask_rank = 4
     var num_batches = q_input_row_offsets.dim[0]() - 1

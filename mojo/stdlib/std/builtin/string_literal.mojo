@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,6 @@ from python import ConvertibleToPython, PythonObject
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 @nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
@@ -44,6 +43,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Representable,
     Sized,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """This type represents a string literal.
@@ -271,15 +271,14 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[StaticConstantOrigin, False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator over the string.
         """
-        return CodepointSliceIter[StaticConstantOrigin, False](
-            StringSlice(self)
-        )
+        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, idx: I) -> StaticString:
         """Gets the character at the specified position.
@@ -509,7 +508,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The number of occurrences of `substr`.
         """
-        return String(self).count(substr)
+        return StringSlice(self).count(substr)
 
     fn lower(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -519,7 +518,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to lowercase.
         """
 
-        return String(self).lower()
+        return StringSlice(self).lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -529,7 +528,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to uppercase.
         """
 
-        return String(self).upper()
+        return StringSlice(self).upper()
 
     fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal right justified in a string of specified width.
@@ -560,7 +559,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_rjust(width, fillchar)
+        return StringSlice(self).ascii_rjust(width, fillchar)
 
     fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal left justified in a string of specified width.
@@ -591,9 +590,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_ljust(width, fillchar)
+        return StringSlice(self).ascii_ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.
 
         Pads the string literal on both sides with the specified fill character so
@@ -623,7 +622,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return String(self).center(width, fillchar)
+        return StringSlice(self).ascii_center(width, fillchar)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -665,7 +664,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if all characters are digits else False.
         """
-        return String(self).is_ascii_digit()
+        return StringSlice(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
@@ -677,7 +676,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are uppercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).isupper()
+        return StringSlice(self).isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string literal
@@ -689,7 +688,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are lowercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).islower()
+        return StringSlice(self).islower()
 
     fn strip(self) -> StaticString:
         """Return a copy of the string literal with leading and trailing
@@ -764,6 +763,22 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoint_slices()
 
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[StaticConstantOrigin, False]:
+        """Iterates backwards over the string literal, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string literal, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string literal elements.
+        """
+        return CodepointSliceIter[StaticConstantOrigin, False](
+            StringSlice(self)
+        )
+
     fn codepoints(self) -> CodepointsIter[StaticConstantOrigin]:
         """Iterate over the `Codepoint`s in this string constant.
 
@@ -772,7 +787,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoints()
 
-    fn format[*Ts: AnyType](self, *args: *Ts) -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -784,8 +799,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         [`format` module](/mojo/std/collections/string/format/).
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Args:
             args: The substitution values.
@@ -809,20 +823,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             __comptime_assert not result.isa[Error](), String(result[Error])
             return {}
         else:
-            comptime PackType = type_of(args)
-            comptime AnyTypePack = VariadicPack[
-                elt_is_mutable = PackType.elt_is_mutable,
-                origin = PackType.origin,
-                PackType.is_owned,
-                AnyType,
-                *PackType.element_types,
-            ]
-
             var buffer = String()
             _FormatUtils.format_precompiled[*Ts](
                 buffer,
                 result[type_of(result).Ts[0]],
-                rebind[AnyTypePack](args),
+                args,
             )
             return buffer^
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,8 +32,9 @@ fn _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
 
-@register_passable("trivial")
-struct CompilationTarget[value: _TargetType = _current_target()]:
+struct CompilationTarget[value: _TargetType = _current_target()](
+    TrivialRegisterType
+):
     """A struct that provides information about a target architecture.
 
     This struct encapsulates various methods to query target-specific
@@ -996,7 +997,7 @@ fn align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn bit_width_of[
-    type: __TypeOfAllTypes, target: _TargetType = _current_target()
+    type: TrivialRegisterType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1027,7 +1028,7 @@ fn bit_width_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 fn simd_width_of[
-    type: __TypeOfAllTypes, target: _TargetType = _current_target()
+    type: TrivialRegisterType, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 

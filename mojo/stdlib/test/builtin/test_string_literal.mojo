@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -347,9 +347,9 @@ def test_ascii_ljust():
 
 
 def test_center():
-    assert_equal("hello".center(4), "hello")
-    assert_equal("hello".center(8), " hello  ")
-    assert_equal("hello".center(8, "*"), "*hello**")
+    assert_equal("hello".ascii_center(4), "hello")
+    assert_equal("hello".ascii_center(8), " hello  ")
+    assert_equal("hello".ascii_center(8, "*"), "*hello**")
 
 
 def test_float_conversion():
@@ -362,6 +362,32 @@ def test_float_conversion():
 # If this compiles, then the format method does not raise.
 fn _test_format_does_not_raise():
     var _hello = "Hello, {}! I am {} years old.".format("world", 42)
+
+
+def test_string_literal_codepoint_slices_reversed():
+    # Test ASCII
+    var iter = "abc".codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "c")
+    assert_equal(iter.__next__(), "b")
+    assert_equal(iter.__next__(), "a")
+
+    # Test concatenation
+    var concat = String()
+    for v in "abc".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    concat = String()
+    for v in "test✅".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "✅tset")
+
+    # Test empty string
+    concat = String()
+    for v in "".codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
 
 
 def main():

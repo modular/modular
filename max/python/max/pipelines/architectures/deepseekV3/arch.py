@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import DeepseekV3Model
+from .model_config import DeepseekV3Config
 
 deepseekV3_arch = SupportedArchitecture(
     name="DeepseekV3ForCausalLM_Legacy",
@@ -34,6 +35,7 @@ deepseekV3_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
         SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
@@ -45,4 +47,5 @@ deepseekV3_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    config=DeepseekV3Config,
 )

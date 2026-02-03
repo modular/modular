@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -424,7 +424,7 @@ def test_issue_30237():
     comptime dtype = DType.float32
     comptime simd_width = 1
     comptime coefficients_len = 7
-    var coefficients = InlineArray[SIMD[dtype, simd_width], coefficients_len](
+    var coefficients: InlineArray[SIMD[dtype, simd_width], coefficients_len] = [
         4.89352455891786e-03,
         6.37261928875436e-04,
         1.48572235717979e-05,
@@ -432,7 +432,7 @@ def test_issue_30237():
         -8.60467152213735e-11,
         2.00018790482477e-13,
         -2.76076847742355e-16,
-    )
+    ]
 
     @parameter
     @always_inline
@@ -1304,16 +1304,15 @@ def test_interleave():
 
 def test_deinterleave():
     var tup2 = SIMD[DType.float32, 2](1, 2).deinterleave()
-    assert_equal(tup2[0], Float32(1))
-    assert_equal(tup2[1], Float32(2))
+    assert_equal(tup2, (Float32(1), Float32(2)))
 
     var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
-    assert_equal(tup4[0], type_of(tup4[0])(0, -2))
-    assert_equal(tup4[1], type_of(tup4[0])(1, -3))
+    assert_equal(tup4, (type_of(tup4[0])(0, -2), type_of(tup4[0])(1, -3)))
 
     var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
-    assert_equal(tup8[0], type_of(tup8[0])(0, 2, 4, 6))
-    assert_equal(tup8[1], type_of(tup8[0])(1, 3, 5, 7))
+    assert_equal(
+        tup8, (type_of(tup8[0])(0, 2, 4, 6), type_of(tup8[0])(1, 3, 5, 7))
+    )
 
 
 def test_extract():
@@ -2161,34 +2160,31 @@ def test_float_conversion():
 
 def test_from_bytes_as_bytes():
     # Test scalar types with specific byte patterns
-    comptime TwoBytes = InlineArray[Byte, size_of[Int16]()]
-    comptime TwoUBytes = InlineArray[Byte, size_of[UInt16]()]
-    comptime FourBytes = InlineArray[Byte, size_of[Int32]()]
 
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(0, 16)), 16)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(0, 16)), 4096)
-    assert_equal(Int16.from_bytes[big_endian=True](TwoBytes(252, 0)), -1024)
-    assert_equal(UInt16.from_bytes[big_endian=True](TwoUBytes(252, 0)), 64512)
-    assert_equal(Int16.from_bytes[big_endian=False](TwoBytes(252, 0)), 252)
-    assert_equal(Int32.from_bytes[big_endian=True](FourBytes(0, 0, 0, 1)), 1)
+    assert_equal(Int16.from_bytes[big_endian=True]([0, 16]), 16)
+    assert_equal(Int16.from_bytes[big_endian=False]([0, 16]), 4096)
+    assert_equal(Int16.from_bytes[big_endian=True]([252, 0]), -1024)
+    assert_equal(UInt16.from_bytes[big_endian=True]([252, 0]), 64512)
+    assert_equal(Int16.from_bytes[big_endian=False]([252, 0]), 252)
+    assert_equal(Int32.from_bytes[big_endian=True]([0, 0, 0, 1]), 1)
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(0, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([0, 0, 0, 1]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 0]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=True]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=False](FourBytes(1, 0, 0, 1)),
+        Int32.from_bytes[big_endian=False]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True](FourBytes(255, 0, 0, 0)),
+        Int32.from_bytes[big_endian=True]([255, 0, 0, 0]),
         -16777216,
     )
 

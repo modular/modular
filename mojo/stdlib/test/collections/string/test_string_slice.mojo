@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string.string_slice import _to_string_list, get_static_string
-from sys.info import size_of
+from sys.info import size_of, simd_width_of
 
 from testing import assert_equal, assert_false, assert_true, assert_raises
 from testing import TestSuite
@@ -493,6 +493,25 @@ def test_find_compile_time():
     assert_equal(c15, -1)
 
 
+def test_find_mstdl_2258():
+    # Bug - when searching for a needle with the following conditions:
+    # - needle length is longer than the SIMD width
+    # - the haystack prefix is larger than UInt16.MAX
+    # - the haystack postfix is at least as long as the SIMD width
+    # then the search would fail due to integer overflow in offset calculation.
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    var needle = "z" * (simd_width + 1)
+    var prefix = "a" * (Int(UInt16.MAX) + 1)
+    var postfix = "a" * simd_width
+    var haystack = prefix + needle + postfix
+
+    var expected_pos = len(prefix)
+    var found = haystack.find(needle)
+    assert_equal(found, expected_pos)
+    assert_true(needle in haystack)
+
+
 def test_is_codepoint_boundary():
     var abc = StringSlice("abc")
     assert_equal(len(abc), 3)
@@ -929,10 +948,10 @@ def test_ascii_ljust():
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
-def test_center():
-    assert_equal(StringSlice("hello").center(4), "hello")
-    assert_equal(StringSlice("hello").center(8), " hello  ")
-    assert_equal(StringSlice("hello").center(8, "*"), "*hello**")
+def test_ascii_center():
+    assert_equal(StringSlice("hello").ascii_center(4), "hello")
+    assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
+    assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
 def test_count():
@@ -1034,11 +1053,11 @@ def test_string_slice_from_pointer():
     assert_equal(4, len(c))
     assert_equal(4, len(d))
     assert_equal(4, len(e))
-    assert_true("A", d[byte=0])
-    assert_true("B", d[byte=1])
-    assert_true("C", d[byte=2])
-    assert_true("D", d[byte=3])
-    assert_true("D", d[byte= -1])
+    assert_equal("A", d[byte=0])
+    assert_equal("B", d[byte=1])
+    assert_equal("C", d[byte=2])
+    assert_equal("D", d[byte=3])
+    assert_equal("D", d[byte= -1])
 
 
 def test_replace():
@@ -1127,6 +1146,36 @@ def test_merge():
         return a if pred else b
 
     _ = cond(True, a, b)
+
+
+def test_string_slice_codepoint_slices_reversed():
+    # Test ASCII
+    var s: StaticString = "xyz"
+    var iter = s.codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "z")
+    assert_equal(iter.__next__(), "y")
+    assert_equal(iter.__next__(), "x")
+
+    # Test concatenation
+    s = "abc"
+    var concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    s = "hello🌍"
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "🌍olleh")
+
+    # Test empty string
+    s = ""
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
 
 
 def main():

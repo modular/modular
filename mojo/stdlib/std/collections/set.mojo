@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,6 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
+from format._utils import (
+    write_sequence_to,
+    FormatStruct,
+    Named,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
@@ -317,34 +324,59 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             The string representation of the set.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output
 
+    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        constrained_conforms_to_writable[Self.T, Parent=Self]()
+
+        var iterator = self.__iter__()
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            ref element = iterator.__next__()
+
+            @parameter
+            if is_repr:
+                trait_downcast[Writable](element).write_repr_to(w)
+            else:
+                trait_downcast[Writable](element).write_to(w)
+
+        write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
+        _ = iterator^
+
+    @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """Write Set string representation to a `Writer`.
+        """Write this set to a `Writer`.
 
         Constraints:
-            T must conform to `Representable`.
+            `T` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[is_repr=False](writer)
 
-        writer.write("{")
-        var written = 0
-        for item in self:
-            ref representable_item = trait_downcast[Representable](item)
-            writer.write(repr(representable_item))
-            if written < len(self) - 1:
-                writer.write(", ")
-            written += 1
-        writer.write("}")
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this set to a `Writer`.
+
+        Constraints:
+            `T` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[is_repr=True](w)
+
+        FormatStruct(writer, "Set").params(
+            TypeNames[Self.T](),
+            Named("Hasher", TypeNames[Self.H]()),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods

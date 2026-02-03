@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -336,6 +336,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
+        assert config is not None
 
         # Extract vision config parameters
         vision_config = config.vision_config

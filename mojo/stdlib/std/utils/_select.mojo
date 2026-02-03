@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 @always_inline("builtin")
 fn _select_register_value[
-    T: __TypeOfAllTypes
+    T: TrivialRegisterType
 ](condition: Bool, lhs: T, rhs: T) -> T:
     """Choose one value based on a condition, without IR-level branching.
     Use this over normal `if` branches to reduce the size of the generated IR.

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -74,8 +74,8 @@ fn test_kl_div() raises:
     var a = InlineArray[Scalar[dtype], len](uninitialized=True)
     var b = InlineArray[Scalar[dtype], len](uninitialized=True)
     for i in range(len):
-        a[i] = Scalar[dtype](1 / len)
-        b[i] = Scalar[dtype](2 * (i + 1) / (len * (len + 1)))
+        a[i] = Scalar[dtype](1 / Float64(len))
+        b[i] = Scalar[dtype](2 * Float64(i + 1) / (len * (len + 1)))
 
     var aa = kl_div[out_type=out_dtype](a.unsafe_ptr(), a.unsafe_ptr(), len)
     var ab = kl_div[out_type=out_dtype](a.unsafe_ptr(), b.unsafe_ptr(), len)

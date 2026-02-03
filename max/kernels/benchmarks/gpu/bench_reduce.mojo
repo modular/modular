@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,9 +42,9 @@ fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
 
 
 fn run_reduce[
-    reduce_fn: fn[dtype: DType, width: Int] (
+    reduce_fn: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,

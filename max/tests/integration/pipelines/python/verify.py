@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -451,7 +451,7 @@ def compute_discrepancy_report(
         mae_per_prompt=mae_per_prompt,
         rmse_per_prompt=rmse_per_prompt,
         kl_div_per_prompt=kl_div_per_prompt if kl_div_per_prompt else None,
-        max_kl_div=max_kl_div,
+        max_kl_div=model_max_kl_div,
         model_modality=model_modality,
     )
 

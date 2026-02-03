@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,7 @@ from .linear import (
     Linear,
 )
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
-from .moe import MoE, MoEFp8, MoEGate
+from .moe import MoE, MoEGate, MoEQuantized
 from .norm import (
     ConstantLayerNorm,
     GroupNorm,
@@ -138,8 +138,8 @@ __all__ = [
     "LongRoPEScalingParams",
     "MinPSampler",
     "MoE",
-    "MoEFp8",
     "MoEGate",
+    "MoEQuantized",
     "Module",
     "MultiheadAttention",
     "PagedCacheValues",

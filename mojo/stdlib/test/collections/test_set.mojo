@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,14 +13,14 @@
 
 from collections import Set
 
-from testing import assert_equal as AE
-from testing import assert_false, assert_raises, assert_true
-from testing import TestSuite
-
-
-fn assert_equal[T: Equatable](lhs: T, rhs: T) raises:
-    if not lhs == rhs:
-        raise Error("AssertionError: values not equal, can't stringify :(")
+from test_utils import check_write_to
+from testing import (
+    assert_false,
+    assert_equal,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 
 
 def test_set_construction():
@@ -507,15 +507,6 @@ def test_clear():
     assert_true(len(set5) == 0)
 
 
-def test_set_str():
-    var a = {1, 2, 3}
-    AE(a.__str__(), "{1, 2, 3}")
-    AE(a.__repr__(), "{1, 2, 3}")
-    var b = {"a", "b"}
-    AE(b.__str__(), "{'a', 'b'}")
-    AE(Set[Int]().__str__(), "{}")
-
-
 def test_set_comprehension():
     var s1 = {x * x for x in range(10) if x & 1}
     assert_equal(s1, {1, 9, 25, 49, 81})
@@ -524,38 +515,30 @@ def test_set_comprehension():
     assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
 
 
-def test_set_repr_wrap():
-    var tmp_set = Set[Float64]()
-    tmp_set.add(1.0)
-    tmp_set.add(8.0)
-
-    assert_equal(
-        repr(tmp_set),
-        "{SIMD[DType.float64, 1](1.0), SIMD[DType.float64, 1](8.0)}",
+def test_set_write_to():
+    check_write_to(Set[Int](10, 20, 30), expected="{10, 20, 30}", is_repr=False)
+    check_write_to(
+        Set[String]("hello", "world"), expected="{hello, world}", is_repr=False
     )
+    check_write_to(Set[Int](), expected="{}", is_repr=False)
+    check_write_to(Set[Int](1), expected="{1}", is_repr=False)
+    check_write_to({1, 2, 3}, expected="{1, 2, 3}", is_repr=False)
 
 
-def test_write_to():
-    """Test Writable trait implementation."""
-    var set = Set[Int](10, 20, 30)
+def test_set_write_repr_to():
+    # Test set with elements
+    var s = {1, 2, 3}
     var output = String()
-    set.write_to(output)
-
-    assert_equal(output, "{10, 20, 30}")
-
-    # Test with different types
-    var string_set = Set[String]("hello", "world")
-    var string_output = String()
-    string_set.write_to(string_output)
-
-    assert_equal(string_output, "{'hello', 'world'}")
+    s.write_repr_to(output)
+    assert_true(output.startswith("Set[Int, Hasher="))
+    assert_true(output.endswith("]({Int(1), Int(2), Int(3)})"))
 
     # Test empty set
-    var empty_set = Set[Int]()
+    var empty = Set[Int]()
     var empty_output = String()
-    empty_set.write_to(empty_output)
-
-    assert_equal(empty_output, "{}")
+    empty.write_repr_to(empty_output)
+    assert_true(empty_output.startswith("Set[Int, Hasher="))
+    assert_true(empty_output.endswith("]({})"), empty_output)
 
 
 def main():

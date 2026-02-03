@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from math import exp2
 from os import abort
 from random import rand, randn
@@ -53,7 +53,7 @@ fn multistage_gemm_simple[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -106,7 +106,7 @@ fn naive_dual_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c01: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -377,7 +377,7 @@ fn test_dual_matmul[
     _ = mat_a^
     _ = mat_b01^
 
-    comptime cbrt_eps = exp2(FPUtils[dst_type].mantissa_width() / -3)
+    comptime cbrt_eps = exp2(Float64(FPUtils[dst_type].mantissa_width()) / -3)
     comptime dst_simd_width = simd_width_of[dst_type]()
     # elementwise
     for m in range(M):

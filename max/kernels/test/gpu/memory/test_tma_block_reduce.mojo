@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -86,7 +86,7 @@ fn global_reduction_kernel[
     accum_type: DType,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int, _rank: Int] (
+    input_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
 ](d_out: UnsafePointer[Scalar[accum_type]], num_cols: Int):

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -496,7 +496,7 @@ fn block_reduce(val: Float32) -> Float32:
 
     return warp_sum_reduce(
         shared.load(lane) if thread_idx.x
-        < UInt(block_dim.x // UInt(WARP_SIZE)) else 0
+        < block_dim.x // UInt(WARP_SIZE) else 0
     )
 
 

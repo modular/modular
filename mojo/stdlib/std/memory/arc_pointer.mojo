@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,8 +21,12 @@ from memory import ArcPointer
 
 from os.atomic import Atomic, Consistency, fence
 from sys.info import size_of
-from format._utils import Repr, FormatStruct
-from reflection.type_info import _unqualified_type_name
+from format._utils import (
+    Repr,
+    FormatStruct,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from builtin.constrained import _constrained_conforms_to
 
 
@@ -189,7 +193,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     # correctly.
     fn __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [unsafe_origin_mutcast[self_life]] Self.T:
+    ](ref[self_life] self) -> ref[unsafe_origin_mutcast[self_life]] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -204,7 +208,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.
 
         Parameters:
@@ -287,12 +291,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
+        constrained_conforms_to_writable[Self.T, Parent=Self]()
         FormatStruct(writer, "ArcPointer").params(
-            _unqualified_type_name[Self.T]()
+            TypeNames[Self.T](),
         ).fields(Repr(trait_downcast[Writable](self[])))

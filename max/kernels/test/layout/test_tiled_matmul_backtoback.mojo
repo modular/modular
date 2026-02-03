@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -385,7 +385,7 @@ fn vectorize_flat[
     elt_a: DType,
     elt_b: DType,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int] (
+    f: fn[width: Int, stride_a: Int, stride_b: Int](
         UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
     ) capturing -> None,
     simd_width: Int,
@@ -445,7 +445,7 @@ fn vectorize_layout_tensor[
     elt_b: DType,
     layout_b: Layout,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int] (
+    f: fn[width: Int, stride_a: Int, stride_b: Int](
         UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
     ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,3 +22,4 @@ def install_pip_package(package: str) -> None:
 
 if __name__ == "__main__":
     install_pip_package("sgl-kernel")
+    install_pip_package("sglang[all]")

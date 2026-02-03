@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,10 +32,11 @@ from __future__ import annotations
 
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
-from . import allreduce, random
+from . import allreduce, random, reducescatter
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
+from .broadcast import distributed_broadcast
 from .broadcast_to import broadcast_to
 from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
 from .call import call

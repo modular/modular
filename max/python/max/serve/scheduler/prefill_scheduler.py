@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,15 +32,15 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.queue.zmq_queue import ClientIdentity
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
     PrefillResponse,
 )
+from max.serve.worker_interface.zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -65,12 +65,12 @@ class PrefillScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         dispatcher: PrefillDispatcherServerV2,
     ) -> None:
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
-        self.paged_cache = paged_cache
+        self.kv_cache = kv_cache
 
         # Initialize Scheduler state.
 
@@ -86,11 +86,11 @@ class PrefillScheduler(Scheduler):
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
             tensors=[
-                paged_cache.get_device_tensors(replica_idx)
-                for replica_idx in range(paged_cache.num_replicas)
+                kv_cache.get_device_tensors(replica_idx)
+                for replica_idx in range(kv_cache.num_replicas)
             ],
             # Assume all replicas have the same number of pages.
-            total_num_pages=paged_cache.get_num_pages(replica_idx=0),
+            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
         )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
@@ -98,7 +98,7 @@ class PrefillScheduler(Scheduler):
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_cache,
+            kv_cache=kv_cache,
         )
         self.scheduler_logger = SchedulerLogger()
         self.dispatcher = dispatcher
@@ -159,7 +159,7 @@ class PrefillScheduler(Scheduler):
             if self.transfer_engine.is_complete(transfer):
                 self.transfer_engine.cleanup_transfer(transfer)
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.paged_cache.release(
+                self.kv_cache.release(
                     context.request_id, replica_idx=replica_idx
                 )
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
@@ -194,7 +194,7 @@ class PrefillScheduler(Scheduler):
 
         # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.paged_cache.get_req_blocks(
+        src_idxs = self.kv_cache.get_req_blocks(
             req_id, replica_idx=src_replica_idx
         )
         dst_idxs = transfer_dest.dst_block_ids
@@ -247,13 +247,7 @@ class PrefillScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        pruned_ids = (
-            self.batch_constructor.advance_requests_and_collect_invalid_ids(
-                inputs.batches
-            )
-        )
-        for request_id in pruned_ids:
-            del responses[request_id]
+        self.batch_constructor.advance_requests(inputs)
 
         # Send fully encoded requests to decode queue.
         for replica_idx, replica in enumerate(self.batch_constructor.replicas):
@@ -315,7 +309,7 @@ class PrefillScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.paged_cache,
+            kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
@@ -327,7 +321,7 @@ class PrefillScheduler(Scheduler):
 
 
 def load_prefill_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
 ) -> PrefillScheduler:
@@ -336,18 +330,16 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
-    # Get Paged Manager
-    paged_cache = get_paged_manager(pipeline)
-
-    if paged_cache is None:
-        raise RuntimeError(
-            "A paged KV cache manager must be present to use the PrefillScheduler"
+    if len(pipeline.kv_managers) != 1:
+        raise ValueError(
+            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
+            f"{len(pipeline.kv_managers)}"
         )
 
     return PrefillScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        paged_cache=paged_cache,
+        kv_cache=pipeline.kv_managers[0],
         dispatcher=PrefillDispatcherServerV2(
             bind_addr=settings.di_bind_address
         ),

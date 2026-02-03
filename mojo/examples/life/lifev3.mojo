@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,8 +35,8 @@ def run_display(
     window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
-    cell_height = window_height / grid.rows
-    cell_width = window_width / grid.cols
+    cell_height = Float64(window_height) / Float64(grid.rows)
+    cell_width = Float64(window_width) / Float64(grid.cols)
     border_size = 1
     cell_fill_color = pygame.Color(cell_color)
     background_fill_color = pygame.Color(background_color)

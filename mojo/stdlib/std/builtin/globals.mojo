@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,9 @@ compile-time constants without materializing entire data structures in memory.
 """
 
 
-fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
+fn global_constant[
+    T: Copyable & ImplicitlyDestructible, //, value: T
+]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
 
     This function stores the compile-time constant in the binary's read-only data
@@ -26,14 +28,16 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     without copying the entire structure onto the stack.
 
     Constraints:
-        The type `T` must be trivially register-passable. Self-contained types
-        like `Int`, `SIMD`, and `InlineArray` work. Types with heap allocations
-        like `Dict`, `List`, or `String` do not work because their internal
-        pointers would be invalid at runtime. Using unsupported types will
-        result in a compilation error.
+        The type `T` must have trivial copy and destroy semantics. Self-contained
+        types like `Int`, `SIMD`, and `InlineArray` (with trivial element types)
+        work. Types with heap allocations like `Dict`, `List`, or `String` do not
+        work because their internal pointers would be invalid at runtime and they
+        have non-trivial copy/destroy operations.
 
     Parameters:
-        T: The type of the constant value. Must be trivially register-passable.
+        T: The type of the constant value. Must have trivial copy and destroy
+            semantics (`__copyinit__is_trivial` and `__del__is_trivial` must be
+            `True`).
         value: The compile-time constant value.
 
     Returns:
@@ -44,7 +48,7 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     from builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
-    comptime lookup_table = InlineArray[Int, 4](1, 2, 3, 4)
+    comptime lookup_table: InlineArray[Int, 4] = [1, 2, 3, 4]
     var element = global_constant[lookup_table]()[2]  # Access without materializing entire array
     print(element)  # Prints: 3
 
@@ -52,11 +56,17 @@ fn global_constant[T: AnyType, //, value: T]() -> ref [StaticConstantOrigin] T:
     fn compute(x: Int) -> Int:
         return x * 2 + 1
 
-    comptime data = InlineArray[Int, 3](1, compute(5), 100)
+    comptime data: InlineArray[Int, 3] = [1, compute(5), 100]
     ref data_ref = global_constant[data]()
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
+    __comptime_assert T.__copyinit__is_trivial and T.__del__is_trivial, (
+        "global_constant requires a type with trivial copy and destroy"
+        " semantics. Types with heap allocations like Dict, List, or String"
+        " are not supported because their internal pointers would be"
+        " invalid at runtime."
+    )
     return UnsafePointer[mut=False, origin=StaticConstantOrigin](
         __mlir_op.`pop.global_constant`[value=value]()
     )[]

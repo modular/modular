@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,8 +21,6 @@ from max.interfaces import (
     PipelineInputsType,
     PipelineOutputType,
     Scheduler,
-    TextGenerationInputs,
-    TextGenerationOutput,
 )
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
@@ -30,12 +28,13 @@ from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
     PipelineRole,
+    TextGenerationPipeline,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
 from max.serve.config import Settings
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.worker_interface.worker_interface import ModelWorkerInterface
 
 from .audio_generation_scheduler import (
     AudioGenerationScheduler,
@@ -45,9 +44,6 @@ from .base import CancelRequest, PrefillRequest, PrefillResponse
 from .config import TokenGenerationSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
-from .overlap_text_generation_scheduler import (
-    load_overlap_text_generation_scheduler,
-)
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
@@ -68,10 +64,10 @@ def load_scheduler(
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
-    scheduler_zmq_configs: SchedulerZmqConfigs,
+    model_worker_interface: ModelWorkerInterface,
 ) -> Scheduler:
     request_queue, response_queue, cancel_queue = (
-        scheduler_zmq_configs.model_worker_queues()
+        model_worker_interface.model_worker_queues()
     )
 
     if pipeline.__class__.__name__ == "EmbeddingsPipeline":
@@ -93,8 +89,8 @@ def load_scheduler(
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
-        paged_manager = pipeline.kv_manager
-        assert isinstance(paged_manager, PagedKVCacheManager)
+        kv_cache = pipeline.kv_manager
+        assert isinstance(kv_cache, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None
@@ -123,28 +119,10 @@ def load_scheduler(
             request_queue=request_queue,
             response_queue=response_queue,
             cancel_queue=cancel_queue,
-            paged_manager=paged_manager,
-        )
-    elif pipeline_config.enable_overlap_scheduler:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
-        assert pipeline.__class__.__name__ == "OverlapTextGenerationPipeline"
-        return load_overlap_text_generation_scheduler(
-            text_pipeline,
-            pipeline_config,
-            request_queue=request_queue,
-            response_queue=response_queue,
-            cancel_queue=cancel_queue,
+            kv_cache=kv_cache,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
             pipeline_config,
@@ -153,11 +131,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
             pipeline_config,
@@ -167,11 +141,7 @@ def load_scheduler(
             settings=settings,
         )
     elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
-        assert isinstance(pipeline, Pipeline)
-        text_pipeline = cast(
-            Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
-            pipeline,
-        )
+        text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(

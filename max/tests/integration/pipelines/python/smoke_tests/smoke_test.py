@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,10 +20,10 @@ It does two things:
 
 Currently there is a hard dependency that two virtualenvs are already created:
     - .venv-serve (not needed for max-ci, which uses bazel)
-    - .venv-lm-eval
+    - .venv-eval
 
 Where the serve environment should already have either MAX/VLLM/SGLang installed.
-The lm-eval environment should already have lm-eval installed.
+The eval environment should already have lm-eval installed.
 These dependencies are to be removed once this script
 has been integrated into bazel.
 
@@ -63,11 +63,19 @@ IMAGE_PROMPT = {
 TEXT_PROMPT = {"role": "user", "content": "Say: 'hello world'"}
 URL = "http://127.0.0.1:8000/v1/chat/completions"
 
+TEXT_TASK = "gsm8k_cot_llama"
+VISION_TASK = "chartqa"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-LmEvalResults = dict[str, Any]
-LmEvalSamples = list[dict[str, Any]]
+EvalResults = dict[str, Any]
+EvalSamples = list[dict[str, Any]]
+
+
+def is_deepseek(model: str) -> bool:
+    """Temporary workaround for large DeepSeek models."""
+    return "deepseek" in model and "lite" not in model
 
 
 def validate_hf_token() -> None:
@@ -83,13 +91,13 @@ def _inside_bazel() -> bool:
 
 
 def test_single_request(model: str, task: str) -> None:
-    is_vision = task == "chartqa"
+    is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(10, 60),
+        timeout=(30, 180),  # Initial req can be slow for huge models
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -130,7 +138,12 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    if gpu_count > 1:
+    is_huge_model = is_deepseek(model)
+    if is_huge_model and framework != "sglang":
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        # Have not been successful in getting SGLang to work with R1 yet
+    elif gpu_count > 1:
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
         VLLM += f" --tensor-parallel-size={gpu_count}"
         SGLANG += f" --tp-size={gpu_count}"
@@ -162,9 +175,9 @@ def safe_model_name(model: str) -> str:
     return model.replace("/", "__")
 
 
-def call_lm_eval(
+def call_eval(
     model: str, task: str, *, max_concurrent: int, num_questions: int
-) -> tuple[LmEvalResults, LmEvalSamples]:
+) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
         kw in model
@@ -185,13 +198,11 @@ def call_lm_eval(
     if "gpt-oss" in model:
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
-    interpreter = (
-        sys.executable if _inside_bazel() else ".venv-lm-eval/bin/python"
-    )
+    interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
-    include_path = str(Path(__file__).parent.resolve() / "chartqa_modular")
+    include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
-        lm_eval_cmd = [
+        eval_cmd = [
             "lm_eval",
             f"--tasks={task}",
             "--model=local-chat-completions",
@@ -206,14 +217,14 @@ def call_lm_eval(
             "--fewshot_as_multiturn",
         ]
 
-        args = [interpreter, "-m", *lm_eval_cmd]
-        logger.info(f"Running lm-eval with:\n {' '.join(args)}")
+        args = [interpreter, "-m", *eval_cmd]
+        logger.info(f"Running eval with:\n {' '.join(args)}")
         check_call(args, timeout=600)
 
-        return parse_lm_eval_results(Path(tempdir))
+        return parse_eval_results(Path(tempdir))
 
 
-def parse_lm_eval_results(loc: Path) -> tuple[LmEvalResults, LmEvalSamples]:
+def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
     samples = []
     for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
         samples.append(json.loads(line))
@@ -256,6 +267,7 @@ class EvalSummary:
     gpu_count: int
     startup_time_seconds: float
     eval_task: str
+    task_type: str
     accuracy: float
     accuracy_stderr: float
     total_evaluation_time_seconds: float
@@ -267,7 +279,7 @@ def build_eval_summary(
     startup_time_seconds: float,
 ) -> list[EvalSummary]:
     """
-    Extract the metrics from the lm-eval results and build a summary for each task.
+    Extract the metrics from the eval results and build a summary for each task.
     """
     summaries = []
 
@@ -276,12 +288,14 @@ def build_eval_summary(
         metrics = result["results"][task]
         total_secs = float(result["total_evaluation_time_seconds"])
 
-        if "chartqa" in task:
+        if VISION_TASK in task:
             accuracy = metrics["relaxed_accuracy,none"]
             accuracy_stderr = metrics["relaxed_accuracy_stderr,none"]
-        elif task == "gsm8k_cot_llama":
+            task_type = "vision"
+        elif task == TEXT_TASK:
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
+            task_type = "text"
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -292,6 +306,7 @@ def build_eval_summary(
                 gpu_count=gpu_count,
                 startup_time_seconds=round(startup_time_seconds, 2),
                 eval_task=task,
+                task_type=task_type,
                 accuracy=accuracy,
                 accuracy_stderr=accuracy_stderr,
                 total_evaluation_time_seconds=total_secs,
@@ -302,7 +317,7 @@ def build_eval_summary(
     return summaries
 
 
-def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
+def print_samples(samples: EvalSamples, print_cot: bool) -> None:
     """
     Print question and the model's responses to each sample
     Assumes 'resps' is [[str]] (one decode) and GSM8K uses 'question',
@@ -325,7 +340,7 @@ def print_samples(samples: LmEvalSamples, print_cot: bool) -> None:
 
 
 def start_server(
-    cmd: list[str], extra_env: dict[str, str]
+    cmd: list[str], extra_env: dict[str, str], timeout: int
 ) -> tuple[Popen[bytes], float]:
     env = os.environ.copy()
     env.update(extra_env)
@@ -340,7 +355,7 @@ def start_server(
     start = time.monotonic()
     proc = Popen(cmd, start_new_session=True, env=env)
     try:
-        deadline = start + 900
+        deadline = start + timeout
         while time.monotonic() < deadline:
             if server_is_ready():
                 break
@@ -348,7 +363,7 @@ def start_server(
                 raise RuntimeError("Server process terminated unexpectedly")
             time.sleep(0.5)
         else:
-            raise TimeoutError("Server did not start in 900 seconds")
+            raise TimeoutError(f"Server did not start in {timeout} seconds")
         return proc, time.monotonic() - start
     except:
         gracefully_stop_process(proc)
@@ -358,8 +373,8 @@ def start_server(
 def write_results(
     path: Path,
     summary: list[EvalSummary],
-    results: list[LmEvalResults],
-    all_samples: list[LmEvalSamples],
+    results: list[EvalResults],
+    all_samples: list[EvalSamples],
     tasks: list[str],
 ) -> None:
     summary_file = path / "eval_metrics.json"
@@ -393,13 +408,13 @@ def write_results(
     "--output-path",
     type=click.Path(file_okay=False, writable=True, path_type=Path),
     default=None,
-    help="If provided, a summary json file and the lm-eval result are written here",
+    help="If provided, a summary json file and the eval result are written here",
 )
 @click.option(
     "--print-responses",
     is_flag=True,
     default=False,
-    help="Print question/response pairs from lm-eval samples after the run finishes",
+    help="Print question/response pairs from eval samples after the run finishes",
 )
 @click.option(
     "--print-cot",
@@ -470,25 +485,28 @@ def smoke_test(
     if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
         is_vision_model = False
 
-    tasks = ["gsm8k_cot_llama"]
+    tasks = [TEXT_TASK]
     if is_vision_model:
-        tasks = ["chartqa"] + tasks
+        tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
     extra_env = {}
+    timeout = 900
     if model == "tbmod/gemma-3-4b-it":
         extra_env = {"MODULAR_MAX_DISABLE_GEMMA3_VISION": "1"}
+    elif is_deepseek(model):
+        timeout = 1800
 
-    server_process, startup_time = start_server(cmd, extra_env)
+    server_process, startup_time = start_server(cmd, extra_env, timeout)
     try:
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         for task in tasks:
             test_single_request(model, task)
-            result, samples = call_lm_eval(
+            result, samples = call_eval(
                 model,
                 task,
                 max_concurrent=max_concurrent,
@@ -500,6 +518,12 @@ def smoke_test(
             results.append(result)
             all_samples.append(samples)
     finally:
+        try:
+            gracefully_stop_process(server_process)
+        except Exception:
+            logger.exception(f"Failed to shutdown {framework.upper()}")
+
+    if results:
         summary = build_eval_summary(results, startup_time_seconds=startup_time)
 
         if output_path is not None:
@@ -507,9 +531,7 @@ def smoke_test(
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-        logger.info(pformat(summary, indent=2))
-
-        gracefully_stop_process(server_process)
+            logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

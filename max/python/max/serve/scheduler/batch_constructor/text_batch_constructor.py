@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -344,11 +344,11 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        paged_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-        self.paged_cache = paged_cache
+        self.kv_cache = kv_cache
 
         self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
             pipeline
@@ -448,29 +448,21 @@ class TextBatchConstructor:
         else:
             replica.tg_reqs[ctx.request_id] = ctx
 
-    def advance_requests_and_collect_invalid_ids(
-        self, executed_batches: list[list[TextContext]]
-    ) -> list[RequestID]:
-        """Advances request state based on executed CE batches and returns invalid IDs.
+    def advance_requests(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> None:
+        """Advances request state based on executed CE batches.
 
         This method updates per-replica queues by moving executed context encoding (CE)
         requests into the text generation (TG) queues. If the last request in a batch
         is chunked and still requires additional CE work, it is moved back to the CE
-        queue for that replica, and its request ID is returned so upstream callers can
-        remove any partial responses for that request.
+        queue for that replica.
 
         Args:
-            executed_batches: A list of per-replica context batches that have just
-                been executed by CE.
-
-        Returns:
-            A list of request IDs that should be treated as invalid by upstream
-            consumers (for example, to be removed from the responses queue) because
-            they represent chunked requests that must be re-processed by CE.
+            inputs: the inputs for the batch.
         """
-        chunked_request_ids: list[RequestID] = []
         for per_replica_batch, replica in zip(
-            executed_batches, self.replicas, strict=True
+            inputs.batches, self.replicas, strict=True
         ):
             # It is possible that the batch is empty for a replica.
             if len(per_replica_batch) == 0:
@@ -486,10 +478,6 @@ class TextBatchConstructor:
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
                 replica.ce_reqs.move_to_end(last_request.request_id, last=False)
-
-                chunked_request_ids.append(last_request.request_id)
-
-        return chunked_request_ids
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""
@@ -539,8 +527,8 @@ class TextBatchConstructor:
                 replica.active_loras.discard(lora_name)
 
         # Release from paged cache (scheduler manages primary KV cache lifecycle)
-        if self.paged_cache is not None:
-            self.paged_cache.release(request_id, replica_idx=replica_idx)
+        if self.kv_cache is not None:
+            self.kv_cache.release(request_id, replica_idx=replica_idx)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op
@@ -584,10 +572,10 @@ class TextBatchConstructor:
         """Resets a request and returns it to the request queue"""
 
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
-        if self.paged_cache is not None:
+        if self.kv_cache is not None:
             for replica_idx in range(self.num_replicas):
-                if self.paged_cache.contains(context.request_id, replica_idx):
-                    self.paged_cache.release(context.request_id, replica_idx)
+                if self.kv_cache.contains(context.request_id, replica_idx):
+                    self.kv_cache.release(context.request_id, replica_idx)
                     break
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
@@ -672,18 +660,16 @@ class TextBatchConstructor:
                 return
 
             # Check if the request fits in memory
-            if self.paged_cache is not None:
+            if self.kv_cache is not None:
                 # Claim the request if needed.
-                if not self.paged_cache.contains(
-                    req_id, replica_idx=replica_idx
-                ):
-                    self.paged_cache.claim(req_id, replica_idx=replica_idx)
+                if not self.kv_cache.contains(req_id, replica_idx=replica_idx):
+                    self.kv_cache.claim(req_id, replica_idx=replica_idx)
 
                 # Check that the CE request does not go above the watermark
                 pct_blocks_used_after_ce_request = max(
                     0.0,
                     min(
-                        self.paged_cache.get_pct_used_blocks_after_allocation(
+                        self.kv_cache.get_pct_used_blocks_after_allocation(
                             ctx, replica_idx=replica_idx
                         ),
                         1.0,
@@ -698,7 +684,7 @@ class TextBatchConstructor:
 
                 # Try to allocate kv cache blocks
                 try:
-                    self.paged_cache.alloc(
+                    self.kv_cache.alloc(
                         ctx, replica_idx=replica_idx, num_steps=1
                     )
                 except InsufficientBlocksError:
@@ -740,18 +726,9 @@ class TextBatchConstructor:
     def _add_tg_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         replica_requests = self.replicas[replica_idx]
 
-        # If we do not have a paged cache, assume we can add all items
-        max_batch_size = self.scheduler_config.max_batch_size
-        if self.paged_cache is None:
-            tg_request_ids = tuple(replica_requests.tg_reqs.keys())
-            for request_id in tg_request_ids[:max_batch_size]:
-                ctx = replica_requests.tg_reqs[request_id]
-                batch.batch[request_id] = ctx
-
-            return
-
         # Add based on the oldest request, respecting KV cache limits and token budgets.
         candidate_ids = deque(replica_requests.tg_reqs.keys())
+        max_batch_size = self.scheduler_config.max_batch_size
         max_seq_len = self.scheduler_config.max_seq_len
         while len(batch) < max_batch_size and len(candidate_ids) > 0:
             # Pop the oldest request
@@ -794,7 +771,7 @@ class TextBatchConstructor:
             # At this point, we can assume that the paged cache is active.
             while True:
                 try:
-                    self.paged_cache.alloc(
+                    self.kv_cache.alloc(
                         candidate_context,
                         replica_idx=replica_idx,
                         num_steps=batch.num_steps,

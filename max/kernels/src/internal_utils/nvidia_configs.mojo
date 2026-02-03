@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,8 +15,7 @@ from internal_utils import Table, TuningConfig
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TuningConfigNvidia(TuningConfig):
+struct TuningConfigNvidia(TrivialRegisterType, TuningConfig):
     var M: Int
     var N: Int
     var K: Int

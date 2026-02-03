@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota
+from math import iota, ceildiv
 from sys import llvm_intrinsic
 
 from memory import Span, bitcast, memcpy
@@ -141,7 +141,7 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         if i % 3 != 0:
             group_of_3_bytes += 1
 
-        result[i] = group_of_3_bytes * 4
+        result[i] = UInt8(group_of_3_bytes * 4)
     return result
 
 
@@ -176,7 +176,9 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
         else:
             incomplete_groups_of_6_bits = 1
 
-        result[i] = complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        result[i] = UInt8(
+            complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        )
     return result
 
 
@@ -207,9 +209,7 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
-    result.resize(
-        unsafe_uninit_length=Int(4 * ((len(input_bytes) + 3 - 1) / 3))
-    )
+    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
     var res_ptr = result.unsafe_ptr_mut()

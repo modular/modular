@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,8 +28,7 @@ from utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TopKElement[T: DType](ImplicitlyCopyable & Comparable):
+struct TopKElement[T: DType](Comparable, TrivialRegisterType):
     """Stores the value with it's index."""
 
     var idx: Int32

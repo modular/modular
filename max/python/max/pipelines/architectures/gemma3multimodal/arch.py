@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,7 +34,9 @@ ENABLE_NEW_IMPL = os.environ.get(
 
 if ENABLE_NEW_IMPL:
     from .model import Gemma3_MultiModalModel
+    from .model_config import Gemma3ForConditionalGenerationConfig
 else:
+    from ..gemma3.model_config import Gemma3Config
     from . import weight_adapters_legacy as weight_adapters
     from .model_legacy import Gemma3_MultiModalModelLegacy
 
@@ -72,6 +74,7 @@ if ENABLE_NEW_IMPL:
             "enable_chunked_prefill": False,
         },
         context_type=TextAndVisionContext,
+        config=Gemma3ForConditionalGenerationConfig,
     )
 else:
     gemma3_multimodal_arch = SupportedArchitecture(
@@ -92,4 +95,5 @@ else:
             WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         },
         context_type=TextContext,
+        config=Gemma3Config,
     )

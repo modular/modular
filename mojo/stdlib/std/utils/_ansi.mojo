@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -56,7 +56,7 @@ struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
 
     var writable: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [Self.origin]w: Self.W):
+    fn __init__(out self, ref[Self.origin] w: Self.W):
         self.writable = Pointer(to=w)
 
     fn write_to(self, mut writer: Some[Writer]):

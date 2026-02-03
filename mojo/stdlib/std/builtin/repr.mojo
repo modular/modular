@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ The functions and traits provided here are built-ins, so you don't need to impor
 from collections import Deque, LinkedList, Set
 
 
-trait Representable:
+trait Representable(ImplicitlyDestructible):
     """A trait that describes a type that has a String representation.
 
     Any type that conforms to the `Representable` trait can be used with the

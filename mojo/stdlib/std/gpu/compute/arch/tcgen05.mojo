@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,8 +34,7 @@ comptime check_blackwell_constraint = constrained[
 """Compile-time constraint ensuring Blackwell hardware is targeted."""
 
 
-@register_passable("trivial")
-struct TensorMemory:
+struct TensorMemory(TrivialRegisterType):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
     var ptr: UnsafePointer[
@@ -218,7 +217,9 @@ fn tcgen05_ld[
 
     @parameter
     @always_inline("nodebug")
-    fn call_ld_intrinsic[pack_type: __TypeOfAllTypes]() -> SIMD[dtype, width]:
+    fn call_ld_intrinsic[
+        pack_type: TrivialRegisterType
+    ]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str

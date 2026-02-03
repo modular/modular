@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,8 +18,7 @@ constant memory that can be used for efficient data transfer between host and GP
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ConstantMemoryMapping(ImplicitlyCopyable):
+struct ConstantMemoryMapping(TrivialRegisterType):
     """Represents a mapping of constant memory between host and device.
 
     This struct encapsulates the information needed to manage constant memory

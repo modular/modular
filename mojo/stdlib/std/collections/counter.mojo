@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,6 +16,7 @@ Import these APIs from the `collections` package:
 
 ```mojo
 from collections import Counter
+
 ```
 
 Counters provide convenient tallying objects that use a dictionary to
@@ -57,10 +58,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     `Counter`, which can accept arbitrary value types.
     They must be hashable for use in the underlying dictionary.
 
-    Usage:
+    Example:
 
     ```mojo
     from collections import Counter
+
     var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
     print(counter["a"]) # prints 3
     print(counter["b"]) # prints 2
@@ -98,10 +100,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             values: A list of values to count.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
+
         var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         print(counter["a"])  # print 3
         print(counter["b"])  # print 2
@@ -122,10 +125,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             items: A list of items to count.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
+
         var counter = Counter[String](["a", "a", "a", "b", "b", "c", "d", "c", "c"])
         print(counter["a"]) # prints 3
         print(counter["b"]) # prints 2
@@ -143,11 +147,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             keys: The keys to create the `Counter` from.
             value: The default value to associate with each key. Must be non-negative.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["a", "b", "c"], 1)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter["a"]) # output: 1
         ```
 
@@ -242,13 +247,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A string representation of the Counter.
 
-        Examples:
+        Example:
 
         ```mojo
         from collections import Counter
 
+
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
-        counter_as_string = String(c)
+        var counter_as_string = String(c)
         print(counter_as_string)
         # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
         ```
@@ -327,12 +333,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             `True` if all counts are less than or equal to the other `Counter`,
             `False` otherwise.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 10)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 10)
         print(counter.le(other)) # output: True
         counter[3] += 20
         print(counter.le(other)) # output: False
@@ -362,12 +369,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             `True` if all counts are less than in the other `Counter`, `False`
             otherwise.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 3)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 3)
         print(counter.lt(other)) # output: True
         counter[1] += 1
         print(counter.lt(other)) # output: False
@@ -397,12 +405,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             `True` if all counts are greater than in the other `Counter`,
             `False` otherwise.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 3)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 3)
         print(other.gt(counter)) # output: True
         counter[1] += 1
         print(other.gt(counter)) # output: False
@@ -424,12 +433,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             `True` if all counts are greater than or equal to the other
             `Counter`, `False` otherwise.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 10)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 10)
         print(other.ge(counter)) # output: True
         counter[3] += 20
         print(other.ge(counter)) # output: False
@@ -615,11 +625,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             An optional value containing a copy of the value if it was present,
             otherwise an empty `Optional`.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["a", "b", "c"], 1)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a").or_else(0)) # output: 1
         print(counter.get("d").or_else(0)) # output: 0
         ```
@@ -636,11 +647,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A copy of the value if it was present, otherwise default.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["a", "b", "c"], 1)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a", default=0)) # output: 1
         print(counter.get("d", default=0)) # output: 0
         ```
@@ -659,14 +671,15 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Raises:
             "KeyError" if the key was not present in the `Counter`.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["a", "b", "c"], 1)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("b").or_else(0)) # output: 1
         try:
-            count = counter.pop("b")
+            var count = counter.pop("b")
             print(count) # output: 1
             print(counter.get("b").or_else(0)) # output: 0
         except e:
@@ -687,13 +700,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             The value associated with the key, if it was in the `Counter`.
             If it wasn't, return the provided default value instead.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
 
-        counter = Counter[String].fromkeys(["a", "b", "c"], 1)
-        count = counter.pop("b", default=100)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
+        var count = counter.pop("b", default=100)
         print(count) # output: 1
         count = counter.pop("not-a-key", default=0)
         print(count) # output 0
@@ -709,11 +723,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             An iterator of immutable references to the `Counter` keys.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["d", "b", "a", "c"], 1)
+
+        var counter = Counter[String].fromkeys(["d", "b", "a", "c"], 1)
         var key_list = List[String]()
         for key in counter.keys():
             key_list.append(key)
@@ -731,16 +746,16 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             An iterator of references to the `Counter` values.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
 
         # Construct `counter`
-        counter = Counter[Int]([1, 2, 3, 1, 2, 1, 1, 1, 2, 5, 2, 9])
+        var counter = Counter[Int]([1, 2, 3, 1, 2, 1, 1, 1, 2, 5, 2, 9])
 
         # Find most populous key
-        max_count: Int = Int.MIN
+        var max_count: Int = Int.MIN
         for count in counter.values():
             if count > max_count:
                 max_count = count
@@ -759,11 +774,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             An iterator of immutable references to the `Counter` entries.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
+
+        var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         for count in counter.items():
             print(count.key, count.value)
         # output: 1 5
@@ -775,11 +791,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     fn clear(mut self):
         """Remove all elements from the `Counter`.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
+
+        var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
         counter.clear() # Removes both entries
         print(counter.total()) # output: 0
@@ -798,13 +815,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Raises:
             "KeyError" if the `Counter` is empty.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[String].fromkeys(["a", "b", "c"], 5)
+
+        var counter = Counter[String].fromkeys(["a", "b", "c"], 5)
         try:
-            tuple = counter.popitem()
+            var tuple = counter.popitem()
             print(tuple._value, tuple._count)
             # output: probably c 5 since that was last in
         except e:
@@ -822,11 +840,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             The total of all counts in the `Counter`.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
+
+        var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
         counter.clear() # Removes both entries
         print(counter.total()) # output: 0
@@ -847,11 +866,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A list of the `n` most common elements and their counts.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         for tuple in counter.most_common(2):
             print(tuple._value, tuple._count)
             # output: 1 5
@@ -878,11 +898,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             An iterator over the elements in the `Counter`.
 
-        Usage:
+        Example:
 
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         print(counter.elements())
         # output: [1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 6, 6, 7]
         ```
@@ -900,11 +921,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             other: The `Counter` to update this `Counter` with.
 
-        Usage:
+        Example:
+
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 10)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 10)
         print(counter[1]) # output: 2
         counter.update(other)
         print(counter[1]) # output: 12
@@ -921,11 +944,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             other: The `Counter` to subtract from this `Counter`.
 
-        Usage:
+        Example:
+
         ```mojo
         from collections import Counter
-        counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
-        other = Counter[Int].fromkeys([1, 2, 3], 10)
+
+        var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
+        var other = Counter[Int].fromkeys([1, 2, 3], 10)
         print(counter[1]) # output: 2
         counter.subtract(other)
         print(counter[1]) # output: -8

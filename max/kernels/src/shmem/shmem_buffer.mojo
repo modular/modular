@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,10 +42,6 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     @staticmethod
     fn get_type_name() -> String:
         return String("SHMEMBuffer[", String(Self.dtype), "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @doc_private
     @always_inline

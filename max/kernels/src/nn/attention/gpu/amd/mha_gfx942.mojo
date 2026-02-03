@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys.info import _cdna_4_or_newer
 from sys import env_get_bool
 
@@ -94,13 +90,20 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     fn get_mma_shape() -> IndexList[3]:
+        comptime wider_mfma_supported = (
+            _cdna_4_or_newer() and Self.config.depth != 64
+        )
         var mma_shape = (
             IndexList[3](32, 32, 16) if (
-                (_cdna_4_or_newer() and Self.config.depth != 64)
+                wider_mfma_supported
                 # will deal with 64 later
                 or Self.USE_EXPERIMENTAL_CDNA4_MHA_KERNEL
             ) else IndexList[3](32, 32, 8)
-        ) if not Self.token_gen else IndexList[3](16, 16, 16)
+        ) if not Self.token_gen else (
+            IndexList[3](16, 16, 32) if wider_mfma_supported else IndexList[3](
+                16, 16, 16
+            )
+        )
         return mma_shape
 
     @staticmethod
@@ -148,7 +151,7 @@ __extension Attention:
 
             var k_tile = self.gmem_manager.get_kv_tensor(
                 self.k.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
+                    UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
                     0,
@@ -158,7 +161,7 @@ __extension Attention:
 
             var v_tile = self.gmem_manager.get_kv_tensor(
                 self.v.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
+                    UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
                     0,
@@ -216,8 +219,10 @@ __extension Attention:
             self.mma_pv(v_buffer)
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
-            var end = min(i + UInt32(Self.BN), self.num_keys)
-            loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
+            var end = min(i + UInt32(Self.BN), UInt32(self.num_keys))
+            loop_over_kvcache[Int(Self.BN)](
+                i, end, end != UInt32(self.num_keys)
+            )
 
         self.out_reg_buffer.apply_softmax_denominator(
             self.softmax.rowsum_tensor
@@ -228,8 +233,12 @@ __extension Attention:
     @always_inline
     fn mha_decoding(
         mut self,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
         num_partitions: Int,
     ):
         __comptime_assert Self.BK == 32, "BK must be 32"
@@ -240,7 +249,7 @@ __extension Attention:
             tile_size: Int
         ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
             if self.mask_skip_and_advance(
-                kv_tile_start_row,
+                UInt32(kv_tile_start_row),
             ):
                 return
 
@@ -248,31 +257,31 @@ __extension Attention:
 
             var k_tile = self.gmem_manager.get_kv_tensor(
                 self.k.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
+                    UInt32(self.get_batch_idx()),
+                    UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
                     0,
                 ),
-                kv_tile_num_rows,
+                UInt32(kv_tile_num_rows),
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
                 self.v.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row,
+                    UInt32(self.get_batch_idx()),
+                    UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
                     0,
                 ),
-                kv_tile_num_rows,
+                UInt32(kv_tile_num_rows),
             )
 
             self.zero_p_buffer()
 
             comptime swizzle = Swizzle(2, 0, 2)
 
-            var num_b_rows = OptionalReg[Int](
+            var num_b_rows = Optional[Int](
                 kv_tile_num_rows
-            ) if not not_last_iter else None
+            ) if not not_last_iter else Optional[Int]()
 
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
@@ -316,8 +325,8 @@ __extension Attention:
             self.scale_p_reg()
 
             self.mask_apply(
-                kv_tile_start_row,
-                kv_tile_num_rows,
+                UInt32(kv_tile_start_row),
+                UInt32(kv_tile_num_rows),
                 not_last_iter,
             )
 

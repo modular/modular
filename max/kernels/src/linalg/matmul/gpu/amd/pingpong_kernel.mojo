@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -129,16 +129,15 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
 # =============================================================================
 
 
-@register_passable("trivial")
 struct TileLoaderLDS[
     dtype: DType,
     src_layout: Layout,  # Full tensor layout (stride = shape[1])
     src_tile_layout: Layout,  # Tile shape for loading geometry
     num_loading_warps: Int,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
     load_width: Int = simd_width_of[dtype](),
     use_full_tile_width: Bool = False,  # FP8 row-major mode
-]:
+](TrivialRegisterType):
     """Cooperative global→LDS tile loader with swizzle support.
 
     Loads tiles from global memory to LDS using AMDBufferResource which provides
@@ -322,7 +321,7 @@ fn _load_from_lds[
         # BF16 x4 = 64 bits = ds_read_b64
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<4 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -335,7 +334,7 @@ fn _load_from_lds[
         # BF16 x8 = 128 bits = ds_read_b128
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x bf16>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -349,7 +348,7 @@ fn _load_from_lds[
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<8 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -365,7 +364,7 @@ fn _load_from_lds[
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -382,7 +381,7 @@ fn _load_from_lds[
         # Load as two 128-bit chunks using pointer arithmetic
         var llvm_res0 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
@@ -393,7 +392,7 @@ fn _load_from_lds[
         ](shared_ptr_offset)
         var llvm_res1 = __mlir_op.`llvm.load`[
             _type = __mlir_type.`vector<16 x i8>`,
-            alignment = to_i64(alignment),
+            alignment = to_i64(Int64(alignment)),
             noalias_scopes=alias_scope_attr,
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
@@ -423,7 +422,7 @@ fn load_lds_fragment[
     frag_element_layout: Layout,
     //,
     mma_access_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = OptionalReg[Swizzle](),
+    swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](
     smem_tile: SMemTile[
         dtype, smem_layout, element_layout=smem_element_layout, ...
@@ -628,7 +627,7 @@ struct MmaOp[
     MMA_N: Int,
     MMA_K: Int,
     alignment: Int,
-    swizzle: OptionalReg[Swizzle],  # Swizzle pattern (None if disabled)
+    swizzle: Optional[Swizzle],  # Swizzle pattern (None if disabled)
 ]:
     """Encapsulates MMA register tiles and operations for matrix multiplication.
 
@@ -936,9 +935,9 @@ struct TileBuffers[
     )
     comptime swizzle_shift = 4
 
-    comptime byte_swizzle = OptionalReg(
+    comptime byte_swizzle = Optional(
         Swizzle(Self.swizzle_log_tile, Self.swizzle_base, Self.swizzle_shift)
-    ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+    ) if Self.enable_swizzle else Optional[Swizzle]()
 
     # FP8 uses row-major LDS layout for correct partial block OOB handling
     comptime use_fp8_row_major = Self.in_type == DType.float8_e4m3fn
@@ -1385,7 +1384,7 @@ struct AMDPingPongMatmul[
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Self.config.num_threads()
+            Int32(Self.config.num_threads())
         )
     )
     @staticmethod
@@ -1469,9 +1468,9 @@ struct AMDPingPongMatmul[
         var m = Int(block_idx.y) * BM
 
         # Swizzle for LDS bank conflict avoidance (see make_mma_swizzle docs)
-        comptime mma_swizzle = OptionalReg(
+        comptime mma_swizzle = Optional(
             make_mma_swizzle[in_type, MMA_M, MMA_K]()
-        ) if Self.enable_swizzle else OptionalReg[Swizzle]()
+        ) if Self.enable_swizzle else Optional[Swizzle]()
 
         # MmaOp handles both BF16 and FP8 via dtype-aware mma_frag_width
         comptime MmaOpType = MmaOp[
@@ -1573,11 +1572,11 @@ struct AMDPingPongMatmul[
             mma_op.load_a[1](buffers.a_mma_tiles[stage][1])  # +8 = 24
 
             # Wait for b[0], a[0] complete
-            s_waitcnt[lgkmcnt=lgkm_wait_a0_b0]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_a0_b0)]()
             mma_op.mma[0, 0]()  # Uses a[0], b[0] ✓
 
             # Wait for b[1] complete (a[1] still in flight)
-            s_waitcnt[lgkmcnt=lgkm_wait_b1]()
+            s_waitcnt[lgkmcnt = UInt32(lgkm_wait_b1)]()
             mma_op.mma[0, 1]()  # Uses a[0] (done), b[1] ✓
 
             # Wait for a[1] (drain remaining)
@@ -2222,13 +2221,13 @@ fn ping_pong_matmul[
         comptime BK = 128
         comptime config_32x32 = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(32, 32, 64),
         )
         # FP8 16×16×128 fallback for unaligned M
         comptime config_16x16 = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(16, 16, 128),
         )
 
@@ -2241,7 +2240,7 @@ fn ping_pong_matmul[
         comptime BK = 64
         comptime config = KernelConfig(
             block_shape=Index(BM, BN, BK),
-            warp_shape=Index(BM / 2, BN / 4, BK),
+            warp_shape=Index(BM // 2, BN // 4, BK),
             mma_shape=Index(16, 16, 32),
         )
         run_kernel[config]()

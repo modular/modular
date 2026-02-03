@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,9 @@ from testing import *
 from utils import IndexList
 
 
-def run_elementwise[dtype: DType](ctx: DeviceContext):
+def run_elementwise[
+    dtype: DType
+](ctx: DeviceContext) where dtype.is_floating_point():
     comptime length = 256
 
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -177,4 +177,9 @@ struct Rng(Movable):
         Raises:
             If the underlying random number generator raises an error.
         """
-        return Int(self.rand_scalar[DType.int](min=min, max=max))
+        return Int(
+            self.rand_scalar[DType.int](
+                min=Scalar[DType.int](min),
+                max=Scalar[DType.int](max),
+            )
+        )

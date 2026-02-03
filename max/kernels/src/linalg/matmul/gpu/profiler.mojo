@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,14 +31,13 @@ comptime MatmulProfileWarp[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct BlackwellWarpProfilingWorkspaceManager[
     load_warps: UInt32,
     mma_warps: UInt32,
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum
@@ -101,7 +100,9 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @staticmethod
     @parameter
     fn _calculate_buffer_length() -> UInt32:
-        return Self.sm_count * Self.entries_per_sm * Self.total_data_points
+        return (
+            UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points
+        )
 
     @staticmethod
     @always_inline
@@ -126,7 +127,9 @@ struct BlackwellWarpProfilingWorkspaceManager[
         workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
-        comptime total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
+        comptime total_threads = UInt32(WARP_SIZE) * Self._get_warp_count[
+            warp_role
+        ]()
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 

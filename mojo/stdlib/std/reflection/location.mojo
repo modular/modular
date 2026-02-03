@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -53,8 +53,7 @@ def main():
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SourceLocation(ImplicitlyCopyable, Stringable, Writable):
+struct SourceLocation(Stringable, TrivialRegisterType, Writable):
     """Type to carry file name, line, and column information.
 
     This struct stores source location data and provides utilities for formatting

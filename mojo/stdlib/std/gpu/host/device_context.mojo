@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -114,7 +114,7 @@ comptime _ConstCharPtr = UnsafePointer[UInt8, ImmutAnyOrigin]
 comptime _IntPtr = UnsafePointer[Int32, MutAnyOrigin]
 comptime _SizeT = UInt
 
-comptime _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
+comptime _DumpPath = Variant[Bool, Path, StaticString, fn() capturing -> Path]
 
 # Define helper methods to call AsyncRT bindings.
 
@@ -221,8 +221,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
+struct StreamPriorityRange(Stringable, TrivialRegisterType, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -261,8 +260,7 @@ struct StreamPriorityRange(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _DeviceBufferMode:
+struct _DeviceBufferMode(TrivialRegisterType):
     var _mode: Int
 
     comptime _SYNC = _DeviceBufferMode(0)
@@ -747,7 +745,7 @@ struct HostBuffer[dtype: DType](
 
     fn as_span[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref [origin]self) -> Span[Scalar[Self.dtype], origin]:
+    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
         """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
         Parameters:
@@ -806,19 +804,6 @@ struct DeviceBuffer[dtype: DType](
             This dtype's name.
         """
         return String("DeviceBuffer[", Self.dtype, "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This dtype's name.
-        """
-        return String("UnsafePointer[Scalar[", Self.dtype, "]]")
 
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
@@ -1668,8 +1653,7 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
 
-@register_passable("trivial")
-struct EventFlags:
+struct EventFlags(TrivialRegisterType):
     """Provides flags for creating events.
 
     These flags can be combined using the bitwise OR operator (`|`, `|=`).
@@ -1986,7 +1970,7 @@ struct DeviceFunction[
                 UInt(len(self._func_impl.asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -2054,7 +2038,7 @@ struct DeviceFunction[
             return val.unsafe_get[StaticString]() != "", val
 
         else:
-            return val.isa[fn () capturing -> Path](), val
+            return val.isa[fn() capturing -> Path](), val
 
     @staticmethod
     fn _cleanup_asm(s: StringSlice) -> String:
@@ -2135,9 +2119,9 @@ struct DeviceFunction[
             var asm = self._cleanup_asm(get_asm())
 
             @parameter
-            if dump_asm_val.isa[fn () capturing -> Path]():
+            if dump_asm_val.isa[fn() capturing -> Path]():
                 comptime dump_asm_fn = dump_asm_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 dump_asm_fn().write_text(asm)
             elif dump_asm_val.isa[Path]():
@@ -2161,9 +2145,9 @@ struct DeviceFunction[
             var sass = _to_sass[Self.target](ptx)
 
             @parameter
-            if dump_sass_val.isa[fn () capturing -> Path]():
+            if dump_sass_val.isa[fn() capturing -> Path]():
                 comptime _dump_sass_fn = dump_sass_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 _dump_sass_fn().write_text(sass)
             elif dump_sass_val.isa[Path]():
@@ -2191,9 +2175,9 @@ struct DeviceFunction[
             ]().asm
 
             @parameter
-            if dump_llvm_val.isa[fn () capturing -> Path]():
+            if dump_llvm_val.isa[fn() capturing -> Path]():
                 comptime dump_llvm_fn = dump_llvm_val.unsafe_get[
-                    fn () capturing -> Path
+                    fn() capturing -> Path
                 ]()
                 dump_llvm_fn().write_text(llvm)
             elif dump_llvm_val.isa[Path]():
@@ -2224,7 +2208,7 @@ struct DeviceFunction[
         *,
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2320,15 +2304,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2356,15 +2340,15 @@ struct DeviceFunction[
                 ](
                     ctx._handle,
                     self._handle,
-                    grid_dim.x(),
-                    grid_dim.y(),
-                    grid_dim.z(),
-                    block_dim.x(),
-                    block_dim.y(),
-                    block_dim.z(),
-                    shared_mem_bytes.or_else(0),
+                    UInt32(grid_dim.x()),
+                    UInt32(grid_dim.y()),
+                    UInt32(grid_dim.z()),
+                    UInt32(block_dim.x()),
+                    UInt32(block_dim.y()),
+                    UInt32(block_dim.z()),
+                    UInt32(shared_mem_bytes.or_else(0)),
                     attributes.unsafe_ptr(),
-                    len(attributes),
+                    UInt32(len(attributes)),
                     dense_args_addrs,
                     dense_args_sizes,
                 ),
@@ -2393,7 +2377,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2501,9 +2485,10 @@ struct DeviceFunction[
         *Ts: DevicePassable,
         num_args: Int,
     ]() -> Tuple[Int, InlineArray[Int, num_args]]:
-        comptime declared_num_args = len(
-            VariadicList(Self.declared_arg_types.value())
+        comptime declared_num_args = Variadic.size(
+            Self.declared_arg_types.value()
         )
+
         __comptime_assert (
             declared_num_args == num_args
         ), "Wrong number of arguments to enqueue"
@@ -2594,7 +2579,7 @@ struct DeviceFunction[
         var constant_memory: List[ConstantMemoryMapping] = [],
         location: OptionalReg[SourceLocation] = None,
     ) raises:
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
         var num_captures = self._func_impl.num_captures
         comptime populate = type_of(self._func_impl).populate
         comptime num_captures_static = 16
@@ -2718,7 +2703,7 @@ struct DeviceFunction[
     ) raises:
         # We need to keep track of both the number of arguments pushed by the
         # caller and the number of translated arguments expected by the kernel.
-        comptime num_passed_args = len(VariadicList(Ts))
+        comptime num_passed_args = Variadic.size(Ts)
         var num_translated_args = 0
 
         var translated_arg_offsets = InlineArray[Int, num_passed_args](
@@ -2861,15 +2846,15 @@ struct DeviceFunction[
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs,
                 dense_args_sizes,
             ),
@@ -2955,7 +2940,7 @@ struct DeviceFunction[
             ](
                 UnsafePointer(to=result),
                 self._handle,
-                block_size,
+                Int32(block_size),
                 UInt(dynamic_shared_mem_size),
             )
         )
@@ -3100,7 +3085,7 @@ struct DeviceExternalFunction:
                 UInt(len(asm)),
                 max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_slice().unsafe_ptr().bitcast[UInt8](),
-                Int(OptimizationLevel),
+                Int32(Int(OptimizationLevel)),
             )
         )
         self._handle = result
@@ -3174,7 +3159,7 @@ struct DeviceExternalFunction:
         Raises:
             If the function launch fails.
         """
-        comptime num_args = len(VariadicList(Ts))
+        comptime num_args = Variadic.size(Ts)
 
         var dense_args_addrs = InlineArray[
             OpaquePointer[MutAnyOrigin], num_args
@@ -3222,15 +3207,15 @@ struct DeviceExternalFunction:
             ](
                 ctx._handle,
                 self._handle,
-                grid_dim.x(),
-                grid_dim.y(),
-                grid_dim.z(),
-                block_dim.x(),
-                block_dim.y(),
-                block_dim.z(),
-                shared_mem_bytes.or_else(0),
+                UInt32(grid_dim.x()),
+                UInt32(grid_dim.y()),
+                UInt32(grid_dim.z()),
+                UInt32(block_dim.x()),
+                UInt32(block_dim.y()),
+                UInt32(block_dim.z()),
+                UInt32(shared_mem_bytes.or_else(0)),
                 attributes.unsafe_ptr(),
-                len(attributes),
+                UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
             )
         )
@@ -3360,7 +3345,7 @@ struct DeviceContext(ImplicitlyCopyable):
             ](
                 UnsafePointer(to=result),
                 api.as_c_string_slice().unsafe_ptr(),
-                device_id,
+                Int32(device_id),
             )
         )
         self._handle = result
@@ -3726,7 +3711,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3747,7 +3732,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        signature_func: fn(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3804,7 +3789,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3823,7 +3808,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) -> None,
+        func: fn(* args: * declared_arg_types) -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3877,7 +3862,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3898,7 +3883,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) capturing -> None,
+        signature_func: fn(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -3956,7 +3941,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -3975,7 +3960,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn compile_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) capturing -> None,
+        func: fn(* args: * declared_arg_types) capturing -> None,
         *,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4029,7 +4014,7 @@ struct DeviceContext(ImplicitlyCopyable):
             or func_attribute.value().attribute
             != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
             or func_attribute.value().value
-            <= self.default_device_info.shared_memory_per_multiprocessor,
+            <= Int32(self.default_device_info.shared_memory_per_multiprocessor),
             "Requested more than available shared memory.",
         )
         comptime result_type = type_of(result)
@@ -4491,7 +4476,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        signature_func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4620,7 +4605,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) -> None,
+        func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4741,7 +4726,7 @@ struct DeviceContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) capturing -> None,
+        signature_func: fn(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -4870,7 +4855,7 @@ struct DeviceContext(ImplicitlyCopyable):
     fn enqueue_function_experimental[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) capturing -> None,
+        func: fn(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5165,7 +5150,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time[
-        func: fn (Self) raises capturing [_] -> None
+        func: fn(Self) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5286,7 +5271,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time[
-        func: fn () raises capturing [_] -> None
+        func: fn() raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5356,7 +5341,7 @@ struct DeviceContext(ImplicitlyCopyable):
 
     @always_inline
     fn execution_time_iter[
-        func: fn (Self, Int) raises capturing [_] -> None
+        func: fn(Self, Int) raises capturing[_] -> None
     ](self, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 

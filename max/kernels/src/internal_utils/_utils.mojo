@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import OptionalReg
+from collections import Optional
 from math import ceildiv, floor
 from sys import argv, env_get_string
 from builtin.device_passable import DevicePassable
@@ -74,8 +74,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         self.value = v
 
 
-@register_passable("trivial")
-struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
+struct InitializationType(DevicePassable, Equatable, TrivialRegisterType):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -91,10 +90,6 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
     @staticmethod
     fn get_type_name() -> String:
         return "InitializationType"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(out self, value: Int):
         self._value = value
@@ -287,8 +282,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Mode(ImplicitlyCopyable, Stringable):
+struct Mode(Stringable, TrivialRegisterType):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -437,7 +431,7 @@ fn init_vector_launch[
     length: Int,
     init_type: InitializationType,
     context: DeviceContext,
-    value: OptionalReg[Scalar[dtype]] = None,
+    value: Optional[Scalar[dtype]] = None,
 ) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array

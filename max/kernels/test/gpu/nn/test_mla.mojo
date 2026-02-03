@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import ceildiv, isclose
 from random import randn
 from sys import argv, has_nvidia_gpu_accelerator
@@ -53,7 +52,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
     use_causal_mask: Bool = True,
 ](
@@ -281,7 +280,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
@@ -591,7 +592,7 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank, use_fa4=True](
+        flare_mla_prefill[rank = q.rank](
             output_device,
             q_device,
             k_device,
@@ -613,7 +614,9 @@ fn test_prefill[
         for i in range(20):
             kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
 
         var tflops = (
@@ -784,6 +787,7 @@ fn test_prefill[
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
+                    # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
                         rhs,
@@ -812,7 +816,7 @@ fn test_prefill[
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int],
+    num_partitions: Optional[Int],
     split_k: Bool,
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
@@ -999,7 +1003,7 @@ fn test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
-    ](140, 140, ctx)
+    ](1179, 1179, ctx)
     test_prefill[
         DType.bfloat16,
         depth=192,
@@ -1027,6 +1031,24 @@ fn test_mla_prefill[
         cache_num_heads=1,
         batch_size=batch_size,
     ](12, 12, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](350, 700, ctx)
+    test_prefill[
+        DType.bfloat16,
+        depth=192,
+        num_heads=128,
+        kv_depth=128,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+    ](120, 240, ctx)
 
 
 def main():
@@ -1046,5 +1068,6 @@ def main():
 
         # test mla prefill
         test_mla_prefill[2](ctx)
+        test_mla_prefill[4](ctx)
         # Test with zero batch size
         test_mla_prefill[0](ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -306,14 +306,10 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
         )
 
         # Generate Idefics3 config from HuggingFace config
-        idefics3_config = Idefics3Config.generate(
-            pipeline_config=self.pipeline_config,
+        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
-            dtype=self.dtype,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
 
@@ -443,7 +439,7 @@ class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = self.kv_params.get_symbolic_inputs()[0]

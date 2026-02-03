@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -436,7 +436,9 @@ def _test_log_impl[
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log2_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
@@ -456,7 +458,9 @@ def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log1p_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_log1p_impl[
+    dtype: DType
+](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
     var res0 = log1p(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
@@ -523,7 +527,7 @@ def test_log1p():
 
 def test_gcd():
     var l = [2, 4, 6, 8, 16]
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(gcd(Span[Int](il)), 2)
     assert_equal(gcd(2, 4, 6, 8, 16), 2)
     assert_equal(gcd(l), 2)
@@ -556,7 +560,7 @@ def test_lcm():
     assert_equal(lcm(0, 4), 0)
     assert_equal(lcm(5, 33), 165)
     assert_equal(lcm(-34, -56, -32), 3808)
-    var il = InlineArray[Int, 5](4, 16, 2, 8, 6)
+    var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(lcm(Span[Int](il)), 48)
     assert_equal(lcm(345, 623, 364, 84, 93), 346475220)
     assert_equal(lcm(0, 0), 0)

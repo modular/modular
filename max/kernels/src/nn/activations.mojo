@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -91,6 +91,7 @@ fn elu[
     Returns:
         The result of the ELU operation.
     """
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     return x.ge(0).select(x, math.expm1(x))
 
 

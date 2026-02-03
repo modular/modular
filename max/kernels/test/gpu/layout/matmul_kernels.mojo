@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,7 +35,7 @@ comptime NRUN = 1
 
 
 fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+    func: fn(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline

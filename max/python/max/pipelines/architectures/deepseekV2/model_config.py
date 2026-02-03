@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -147,6 +147,12 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:
         huggingface_config = pipeline_config.model.huggingface_config
+        if huggingface_config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
         devices = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
@@ -155,7 +161,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
         kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

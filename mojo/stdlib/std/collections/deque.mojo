@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -379,7 +379,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
-    fn __getitem__(ref self, idx: Int) -> ref [self] Self.ElementType:
+    fn __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -994,7 +994,7 @@ struct _DequeIter[
 
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.origin] Self.Element:
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
         @parameter
         if Self.forward:
             if self.index >= len(self.src[]):

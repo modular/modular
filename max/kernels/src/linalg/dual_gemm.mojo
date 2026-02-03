@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv, exp
 from os import abort
 from sys import align_of, is_defined, simd_width_of
@@ -129,7 +128,7 @@ fn multistage_dual_mma[
     num_iters: Int,
     /,
     *,
-    num_b_rows: OptionalReg[Int] = None,
+    num_b_rows: Optional[Int] = None,
 ):
     __comptime_assert (
         b0_iter_arg.address_space == b1_iter_arg.address_space
@@ -137,12 +136,12 @@ fn multistage_dual_mma[
     comptime simd_size = simd_width_of[a_type]()
 
     var tid = UInt32(thread_idx.x)
-    var warp_id = warp.broadcast(tid // WARP_SIZE)
+    var warp_id = warp.broadcast(tid // UInt32(WARP_SIZE))
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
-    var warp_x = warp_id % num_warps_n
-    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % UInt32(num_warps_n)
+    var warp_y = warp_id // UInt32(num_warps_n)
 
     var a_iter = a_iter_arg
     var b0_iter = b0_iter_arg
@@ -217,14 +216,20 @@ fn multistage_dual_mma[
 
     @parameter
     for stage in range(num_pipeline_stages - 1):
-        var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+        var a_smem_tile = a_smem_iter.next_unsafe(
+            a_smem_iter.linear_uint_type(stage)
+        )[]
 
         _copy_single_tensor_to_sram(a_smem_tile, a_iter[])
 
         a_iter._incr()
 
-        var b0_smem_tile = b0_smem_iter.next_unsafe(stage)[]
-        var b1_smem_tile = b1_smem_iter.next_unsafe(stage)[]
+        var b0_smem_tile = b0_smem_iter.next_unsafe(
+            b0_smem_iter.linear_uint_type(stage)
+        )[]
+        var b1_smem_tile = b1_smem_iter.next_unsafe(
+            b1_smem_iter.linear_uint_type(stage)
+        )[]
         if num_b_rows:
             var num_rows_bound = num_b_rows.value() if transpose_b else max(
                 0, num_b_rows.value() - stage * BK
@@ -245,7 +250,7 @@ fn multistage_dual_mma[
         async_copy_commit_group()
 
     # Guard stage 0.
-    async_copy_wait_group(num_pipeline_stages - 2)
+    async_copy_wait_group(Int32(num_pipeline_stages - 2))
     barrier()
 
     comptime accum_type = get_accum_type[a_type, preferred_accum_type=c_type]()
@@ -326,7 +331,7 @@ fn multistage_dual_mma[
 
     comptime swizzle_a_pattern = make_ldmatrix_swizzle[
         a_type, a_warp_tile.stride[0]()
-    ]() if swizzle_a else OptionalReg[Swizzle](None)
+    ]() if swizzle_a else Optional[Swizzle]()
 
     @parameter
     for i in range(k_group_size):
@@ -357,7 +362,7 @@ fn multistage_dual_mma[
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
-                comptime next = Int(k_mma_next % num_reg_tiles)
+                comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
                 @parameter
                 if k_mma_next == UInt32(num_k_mmas):
@@ -367,7 +372,9 @@ fn multistage_dual_mma[
                     # shared memory buffer.
                     if prefetch_tile_id < num_iters:
                         var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
+                            a_smem_iter.linear_uint_type(
+                                num_pipeline_stages - 1
+                            )
                         )[]
                         _copy_single_tensor_to_sram(
                             a_smem_prefetch_tile, a_iter[]
@@ -375,10 +382,14 @@ fn multistage_dual_mma[
                         a_iter._incr()
 
                         var b0_smem_prefetch_tile = b0_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
+                            b0_smem_iter.linear_uint_type(
+                                num_pipeline_stages - 1
+                            )
                         )[]
                         var b1_smem_prefetch_tile = b1_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
+                            b1_smem_iter.linear_uint_type(
+                                num_pipeline_stages - 1
+                            )
                         )[]
                         if num_b_rows:
                             var num_rows_bound = (
@@ -406,7 +417,7 @@ fn multistage_dual_mma[
                     async_copy_commit_group()
 
                     # Guard the next k tile's shared memory buffer.
-                    async_copy_wait_group(num_pipeline_stages - 2)
+                    async_copy_wait_group(Int32(num_pipeline_stages - 2))
                     barrier()
 
                     a_smem_iter._incr()
@@ -444,7 +455,7 @@ fn multistage_dual_mma[
             @parameter
             for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
-                comptime current = k_mma % num_reg_tiles
+                comptime current = k_mma % UInt32(num_reg_tiles)
                 mma_op.mma(
                     a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                     b0_reg_tiles[Int(current)],
@@ -457,7 +468,7 @@ fn multistage_dual_mma[
                 )
 
 
-comptime binary_fn_type = fn[type: DType, width: Int] (
+comptime binary_fn_type = fn[type: DType, width: Int](
     SIMD[type, width], SIMD[type, width]
 ) -> SIMD[type, width]
 
@@ -477,7 +488,7 @@ fn multistage_dual_gemm_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -709,9 +720,10 @@ fn multistage_dual_gemm_kernel[
                 comptime src_idx = type_of(c_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = (
-                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
-                )
+                var swizzled_idx = swizzle(
+                    c_smem_frag_offset
+                    + type_of(c_smem_frag_offset)(src_idx_base)
+                ) + type_of(c_smem_frag_offset)(src_idx_diff)
 
                 comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
@@ -785,7 +797,9 @@ fn multistage_dual_gemm_kernel[
 
 fn swilu[
     dtype: DType, width: Int
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     return (x * y) / (1 + exp(-x))
 
 
@@ -801,7 +815,7 @@ fn multistage_dual_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
@@ -843,7 +857,9 @@ fn multistage_dual_gemm[
         grid_dim=config.grid_dim(UInt(M), UInt(2 * N)),
         block_dim=config.block_dim(),
         shared_mem_bytes=smem_usage,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_usage)
+        ),
     )
     ctx.synchronize()
 
@@ -860,7 +876,7 @@ fn multistage_dual_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_k_partitions: Int = 1,
 ](
     c: NDBuffer[c_type, 2, _, c_shape],
@@ -947,10 +963,8 @@ fn dual_gemm[
     *,
     transpose_b: Bool,
     binary_lambda_fn: binary_fn_type = swilu,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
@@ -1196,7 +1210,7 @@ fn dual_gemv_kernel[
     tile_n: UInt,
     num_threads: UInt,
     binary_lambda_fn: binary_fn_type,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
@@ -1335,7 +1349,7 @@ fn dual_gemv[
     //,
     *,
     binary_lambda_fn: binary_fn_type = swilu,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
     a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],

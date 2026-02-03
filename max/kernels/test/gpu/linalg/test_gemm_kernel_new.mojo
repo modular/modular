@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -91,9 +91,9 @@ fn gemm_kernel[
     mat_a.rank == 2
     and mat_b.rank == 2
     and mat_c.rank == 2
-    and mat_a.ALL_DIMS_KNOWN
-    and mat_b.ALL_DIMS_KNOWN
-    and mat_c.ALL_DIMS_KNOWN
+    and mat_a.all_dims_known
+    and mat_b.all_dims_known
+    and mat_c.all_dims_known
 ):
     var K = mat_a.dim[1]()
 
@@ -309,7 +309,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
                 block_dim=(NUM_THREADS),
             )
 
-        var nstime = ctx.execution_time[run_func](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
@@ -574,15 +574,15 @@ fn matmul_kernel_naive[
     @parameter
     if transpose_b:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[(x, i)].cast[s_type]()) * rebind[
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
-            ](b[(y, i)].cast[s_type]())
+            ](b[y, i].cast[s_type]())
 
     else:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[(x, i)].cast[s_type]()) * rebind[
+            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
-            ](b[(i, y)].cast[s_type]())
+            ](b[i, y].cast[s_type]())
 
     c[(Idx(x), Idx(y))] = accum.cast[c.dtype]()
 
@@ -619,6 +619,9 @@ fn outer_product_acc[
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
+    __comptime_assert lhs.element_size == res.element_size
+    __comptime_assert lhs.element_size == rhs.element_size
+
     comptime dtype = res.dtype
 
     @parameter
@@ -627,6 +630,6 @@ fn outer_product_acc[
         @parameter
         for j in range(N):
             var idx = coord[i, j]()
-            res[idx] += (lhs[(Idx[i](),)].cast[dtype]()) * (
-                rhs[(Idx[j](),)].cast[dtype]()
-            )
+            res[idx] += rebind[res.ElementType](
+                (lhs[(Idx[i](),)]).cast[dtype]()
+            ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -476,7 +476,7 @@ fn blackwell_kernel_4[
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
     )
 
@@ -655,7 +655,9 @@ def test_blackwell_kernel_4[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
 

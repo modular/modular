@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 from typing import Any
 
+from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -32,14 +34,11 @@ from max.graph import (
 from max.nn.legacy.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
-    TensorParallelLatentAttentionWithRope,
 )
 from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
-    TensorParallelLatentAttentionWithRopeFp8,
 )
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
@@ -48,9 +47,8 @@ from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import (
     MLP,
     ColumnParallelLinear,
-    DistributedGemmConfig,
 )
-from max.nn.legacy.moe import MoE, MoEFp8
+from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -66,6 +64,44 @@ from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
 
 
+def _unpack_kv_collections(
+    kv_collections: Sequence[PagedCacheValues],
+) -> tuple[
+    list[BufferValue], list[TensorValue], list[TensorValue], list[TensorValue]
+]:
+    """Unpack KV collections into component lists.
+
+    Returns:
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths).
+    """
+    return (
+        [kv.kv_blocks for kv in kv_collections],
+        [kv.cache_lengths for kv in kv_collections],
+        [kv.lookup_table for kv in kv_collections],
+        [kv.max_lengths for kv in kv_collections],
+    )
+
+
+def _validate_parallelism_config(config: DeepseekV3Config) -> None:
+    """Validate parallelism configuration for DeepseekV3."""
+    num_devices = len(config.devices)
+    if config.data_parallel_degree != num_devices:
+        raise ValueError(
+            f"data_parallel_degree must match the number of devices ({num_devices}). "
+            "Tensor-parallel attention is not supported for DeepseekV3."
+        )
+    # Skip EP validation in virtual device mode (compilation-only) since EP
+    # will be disabled later due to NVSHMEM linking requirements
+    if (
+        num_devices > 1
+        and config.ep_config is None
+        and not is_virtual_device_mode()
+    ):
+        raise ValueError(
+            "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
+        )
+
+
 class DeepseekV3DecoderLayer(Module):
     def __init__(
         self,
@@ -73,20 +109,11 @@ class DeepseekV3DecoderLayer(Module):
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
-        distributed_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
-        if config.data_parallel_degree not in (1, num_devices):
-            raise ValueError(
-                "data_parallel_degree must be 1 (TP attention) or match the "
-                f"number of devices ({num_devices})."
-            )
-        self.use_data_parallel_attention = (
-            num_devices > 1 and config.data_parallel_degree == num_devices
-        )
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -105,32 +132,36 @@ class DeepseekV3DecoderLayer(Module):
             buffer_size=config.max_batch_context_length,
         )
 
+        nvfp4_enabled = (
+            config.float8_config is not None and config.float8_config.is_nvfp4
+        )
+        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+
+        if config.float8_config is not None and nvfp4_enabled:
+            mla_kwargs["o_proj_float8_config"] = config.float8_config
+            mla_kwargs["o_proj_dtype"] = config.dtype
+
         mla_cls: (
             type[DataParallelLatentAttentionWithRope]
-            | type[TensorParallelLatentAttentionWithRope]
             | type[DataParallelLatentAttentionWithRopeFp8]
-            | type[TensorParallelLatentAttentionWithRopeFp8]
         )
-        if config.float8_config is not None:
+        if use_fp8_mla:
             mla_kwargs["float8_config"] = config.float8_config
-            mla_cls = (
-                DataParallelLatentAttentionWithRopeFp8
-                if self.use_data_parallel_attention
-                else TensorParallelLatentAttentionWithRopeFp8
-            )
+            mla_cls = DataParallelLatentAttentionWithRopeFp8
         else:
-            mla_kwargs["dtype"] = config.dtype
-            mla_cls = (
-                DataParallelLatentAttentionWithRope
-                if self.use_data_parallel_attention
-                else TensorParallelLatentAttentionWithRope
-            )
+            mla_kwargs["dtype"] = DType.bfloat16
+            mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
-        self.mlp_shards = self.mlp.shard(config.devices)
+
+        self.mlp_shards: list[MLP | MoE]
+        if self.mlp.sharding_strategy is not None:
+            self.mlp_shards = list(self.mlp.shard(config.devices))
+        else:
+            self.mlp_shards = [self.mlp]
 
         # Create normalization layers
         create_norm = functools.partial(
@@ -153,9 +184,6 @@ class DeepseekV3DecoderLayer(Module):
         self.post_attention_layernorm_shards = (
             self.post_attention_layernorm.shard(config.devices)
         )
-
-        self.distributed_gemm_config = distributed_gemm_config
-        self.allreduce = Allreduce(num_accelerators=num_devices)
 
     def _get_mlp(self, config: DeepseekV3Config, layer_idx: int) -> MLP | MoE:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
@@ -210,27 +238,14 @@ class DeepseekV3DecoderLayer(Module):
 
             moe: MoE
             if config.float8_config is not None:
-                moe = MoEFp8(**moe_kwargs)
+                moe = MoEQuantized(**moe_kwargs)
             else:
                 moe = MoE(**moe_kwargs)
 
-            if config.ep_config is not None:
-                if not self.use_data_parallel_attention:
-                    raise ValueError(
-                        "Expert-parallel MoE/MLP is only compatible with "
-                        "data-parallel attention."
-                    )
+            num_devices = len(config.devices)
+            if num_devices > 1:
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
-                    len(config.devices)
-                )
-            else:
-                if self.use_data_parallel_attention:
-                    raise ValueError(
-                        "Tensor-parallel MoE/MLP is only compatible with "
-                        "tensor-parallel attention."
-                    )
-                moe.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    len(config.devices)
+                    num_devices
                 )
             return moe
         else:
@@ -242,14 +257,9 @@ class DeepseekV3DecoderLayer(Module):
                 devices=config.devices,
                 float8_config=config.float8_config,
             )
-            if config.ep_config is not None:
-                mlp.sharding_strategy = ShardingStrategy.replicate(
-                    len(config.devices)
-                )
-            else:
-                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-                    len(config.devices)
-                )
+            mlp.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
             return mlp
 
     def __call__(
@@ -319,15 +329,8 @@ class DeepseekV3DecoderLayer(Module):
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
         else:
-            if (
-                self.distributed_gemm_config is not None
-                and self.distributed_gemm_config.enable_matmul_allreduce
-            ):
-                raise ValueError(
-                    "Split matmul + allreduce is not supported for MoE models."
-                )
+            # Single-GPU non-EP path
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
@@ -347,11 +350,11 @@ class DeepseekV3(Module):
         num_devices = len(config.devices)
         devices = config.devices
 
-        self.use_data_parallel_attention = (
-            num_devices > 1 and config.data_parallel_degree == num_devices
-        )
+        _validate_parallelism_config(config)
 
         embedding_output_dtype = config.dtype
+        if embedding_output_dtype == DType.uint8:
+            embedding_output_dtype = DType.bfloat16
         if config.float8_config and config.float8_config.embedding_output_dtype:
             embedding_output_dtype = config.float8_config.embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
@@ -450,10 +453,17 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
+        freqs_cis = ops.distributed_broadcast(
+            self.rope.freqs_cis.to(devices[0]), signal_buffers
+        )
+        # Note: input_row_offsets uses distribute_value instead of broadcast
+        # because its size depends on batch size and may be too small for
+        # the broadcast kernel's SIMD requirements.
+        # TODO: Rebase once kernel fix is merged
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
-        if self.use_data_parallel_attention:
+        if len(devices) > 1:
+            # Split batch across devices for data-parallel attention.
             h, input_row_offsets_ = split_batch_replicated(
                 devices,
                 h,
@@ -488,14 +498,19 @@ class DeepseekV3(Module):
                 ]
             )
 
+        # Unpack KV collections once for use throughout the method
+        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
+            _unpack_kv_collections(kv_collections)
+        )
+
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
             [hidden.type for hidden in h],
             [signal_buffer.type for signal_buffer in signal_buffers],
-            [kv_collection[0].type for kv_collection in kv_collections],
-            [kv_collection[1].type for kv_collection in kv_collections],
-            [kv_collection[2].type for kv_collection in kv_collections],
-            [kv_collection[3].type for kv_collection in kv_collections],
+            [block.type for block in kv_blocks],
+            [length.type for length in cache_lengths],
+            [table.type for table in lookup_tables],
+            [length.type for length in max_lengths],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
@@ -535,22 +550,10 @@ class DeepseekV3(Module):
                             ),
                             *h,
                             *signal_buffers,
-                            *[
-                                kv_collection[0]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[1]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[2]
-                                for kv_collection in kv_collections
-                            ],
-                            *[
-                                kv_collection[3]
-                                for kv_collection in kv_collections
-                            ],
+                            *kv_blocks,
+                            *cache_lengths,
+                            *lookup_tables,
+                            *max_lengths,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
@@ -564,10 +567,10 @@ class DeepseekV3(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    [kv_collection[0] for kv_collection in kv_collections],
-                    [kv_collection[1] for kv_collection in kv_collections],
-                    [kv_collection[2] for kv_collection in kv_collections],
-                    [kv_collection[3] for kv_collection in kv_collections],
+                    kv_blocks,
+                    cache_lengths,
+                    lookup_tables,
+                    max_lengths,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
@@ -589,7 +592,9 @@ class DeepseekV3(Module):
             h0 = h[0]
             last_token_indices = input_row_offsets_[0][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = distribute_value(last_token_h, devices)
+            last_token_distributed = ops.distributed_broadcast(
+                last_token_h, signal_buffers
+            )
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(

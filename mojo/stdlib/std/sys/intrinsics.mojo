@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -257,8 +257,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct PrefetchLocality:
+struct PrefetchLocality(TrivialRegisterType):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -285,11 +284,10 @@ struct PrefetchLocality:
             value: An integer value representing the locality. Should be a value
                    in the range `[0, 3]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
 
-@register_passable("trivial")
-struct PrefetchRW:
+struct PrefetchRW(TrivialRegisterType):
     """Prefetch read or write."""
 
     var value: Int32
@@ -307,7 +305,7 @@ struct PrefetchRW:
             value: An integer value representing the prefetch read-write option
                    to be used. Should be a value in the range `[0, 1]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -323,8 +321,7 @@ struct PrefetchRW:
 
 
 # LLVM prefetch cache type
-@register_passable("trivial")
-struct PrefetchCache:
+struct PrefetchCache(TrivialRegisterType):
     """Prefetch cache type."""
 
     var value: Int32
@@ -342,11 +339,10 @@ struct PrefetchCache:
             value: An integer value representing the prefetch cache option to be
                    used. Should be a value in the range `[0, 1]`.
         """
-        self.value = value
+        self.value = Int32(value)
 
 
-@register_passable("trivial")
-struct PrefetchOptions(Defaultable):
+struct PrefetchOptions(Defaultable, TrivialRegisterType):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -687,8 +683,9 @@ fn strided_load[
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
     var offset = (
-        Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
+        SIMD[DType.int, simd_width](Int(addr))
+        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
+        * math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -734,8 +731,9 @@ fn strided_store[
         return
 
     var offset = (
-        Int(addr)
-        + stride * size_of[dtype]() * math.iota[DType.int, simd_width]()
+        SIMD[DType.int, simd_width](Int(addr))
+        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
+        * math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 
@@ -820,9 +818,8 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct _RegisterPackType[*a: __TypeOfAllTypes]:
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, Self.a, `>`]
+struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
 
     var _mlir_value: Self._mlir_type
 
@@ -847,7 +844,7 @@ struct _RegisterPackType[*a: __TypeOfAllTypes]:
 
 
 @always_inline("nodebug")
-fn expect[T: __TypeOfAllTypes, //, expected_val: T](val: T) -> T:
+fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 

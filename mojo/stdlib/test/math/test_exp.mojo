@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -57,7 +57,7 @@ def exp_libm[
     return libm_call["expf", "exp"](arg)
 
 
-def _test_exp_libm[dtype: DType]():
+def _test_exp_libm[dtype: DType]() where dtype.is_floating_point():
     seed(0)
     comptime N = 8192
     for _i in range(N):

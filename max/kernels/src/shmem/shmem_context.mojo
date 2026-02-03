@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -65,7 +65,7 @@ from .shmem_api import (
 )
 
 
-fn shmem_launch[func: fn (ctx: SHMEMContext) raises]() raises:
+fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
     """Takes a function defining the entirety of the SHMEM program on a single
     PE (Processing Element).
 
@@ -326,7 +326,7 @@ struct SHMEMContext(ImplicitlyCopyable):
     fn enqueue_function[
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
-        func: fn (* args: * declared_arg_types) -> None,
+        func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -415,7 +415,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         declared_arg_types: Variadic.TypesOfTrait[AnyType],
         //,
         func: func_type,
-        signature_func: fn (* args: * declared_arg_types) -> None,
+        signature_func: fn(* args: * declared_arg_types) -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,

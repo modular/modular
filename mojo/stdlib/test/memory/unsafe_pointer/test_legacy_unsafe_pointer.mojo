@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -478,7 +478,7 @@ def test_unsafe_mut_cast():
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutOrigin](ref [origin]to: String):
+fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 

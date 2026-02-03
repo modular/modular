@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,8 +20,7 @@ comptime gid_t = Int32
 comptime char = UnsafePointer[c_char, MutExternalOrigin]
 
 
-@register_passable("trivial")
-struct _C_Passwd:
+struct _C_Passwd(TrivialRegisterType):
     var pw_name: char
     var pw_passwd: char
     var pw_uid: uid_t

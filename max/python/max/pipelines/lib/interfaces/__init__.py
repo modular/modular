@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,11 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
-from .arch_config import ArchConfig, ArchConfigWithAttentionKVCache
+from .arch_config import (
+    ArchConfig,
+    ArchConfigWithAttentionKVCache,
+    ArchConfigWithKVCache,
+)
+from .component_model import ComponentModel
 from .generate import GenerateMixin
-from .kv_cache import KVCacheMixin, get_paged_manager
+from .kv_cache import KVCacheMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
+    InputKey,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
@@ -26,10 +32,12 @@ __all__ = [
     "AlwaysSignalBuffersMixin",
     "ArchConfig",
     "ArchConfigWithAttentionKVCache",
+    "ArchConfigWithKVCache",
+    "ComponentModel",
     "GenerateMixin",
+    "InputKey",
     "KVCacheMixin",
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
-    "get_paged_manager",
 ]

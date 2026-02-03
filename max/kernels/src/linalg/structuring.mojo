@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from sys import align_of, simd_width_of, size_of
 
 from gpu.intrinsics import AMDBufferResource
@@ -70,7 +70,7 @@ struct ScatterGatherAmd[
             mut=True, address_space = AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
-        offset: OptionalReg[UInt] = None,
+        offset: Optional[UInt] = None,
     ):
         """Copy DRAM to registers.
 
@@ -223,13 +223,12 @@ comptime SMemTileIter[
 ]
 
 
-@register_passable("trivial")
 struct SMemTileArray[
     dtype: DType,
     layout: Layout,
     num_tiles: Int,
     alignment: Int,
-]:
+](TrivialRegisterType):
     """Array of tiles in shared memory.
 
     Parameters:
@@ -256,7 +255,7 @@ struct SMemTileArray[
     ]
 
     fn __init__(
-        ref [AddressSpace.SHARED]storage: Self.Storage,
+        ref[AddressSpace.SHARED] storage: Self.Storage,
     ) -> Self:
         """Initialize with Storage.
 
@@ -321,8 +320,7 @@ struct SMemTileArray[
         return Self(ptr)
 
 
-@register_passable("trivial")
-struct SMemArray[type: __TypeOfAllTypes, size: Int]:
+struct SMemArray[type: __TypeOfAllTypes, size: Int](TrivialRegisterType):
     """Shared memory array of fixed size.
 
     Parameters:
@@ -350,7 +348,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int]:
         """
         self.ptr = unsafe_ptr
 
-    fn __init__(ref [AddressSpace.SHARED]storage: Self.Storage) -> Self:
+    fn __init__(ref[AddressSpace.SHARED] storage: Self.Storage) -> Self:
         """Initialize from Storage."""
         return Self(rebind[Self.ptr_type](storage.unsafe_ptr()))
 
@@ -391,7 +389,7 @@ struct SMemArray[type: __TypeOfAllTypes, size: Int]:
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: __TypeOfAllTypes] = UnsafePointer[
+comptime SMemPtr[type: AnyType] = UnsafePointer[
     type, address_space = AddressSpace.SHARED
 ]
 

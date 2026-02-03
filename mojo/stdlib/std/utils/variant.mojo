@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,6 +15,11 @@
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
 from builtin.variadics import Variadic
+from format._utils import (
+    FormatStruct,
+    TypeNames,
+    constrained_conforms_to_writable,
+)
 from os import abort
 from sys.intrinsics import _type_is_eq
 
@@ -23,7 +28,7 @@ from sys.intrinsics import _type_is_eq
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: AnyType](ImplicitlyCopyable):
+struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
 
@@ -159,7 +164,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         comptime idx = Self._check[T]()
-        self._get_discr() = idx
+        self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
     fn __copyinit__(out self, other: Self):
@@ -173,7 +178,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -183,7 +188,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, Copyable]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 self._get_ptr[T]().init_pointee_copy(other._get_ptr[T]()[])
                 return
 
@@ -197,7 +202,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         self._get_discr() = other._get_discr()
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -207,7 +212,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, Movable]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 # Calls the correct __moveinit__
                 self._get_ptr[T]().init_pointee_move_from(other._get_ptr[T]())
                 return
@@ -216,7 +221,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """Destroy the variant."""
 
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -226,7 +231,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             ]()
             comptime T = downcast[TUnknown, ImplicitlyDestructible]
 
-            if self._get_discr() == i:
+            if self._get_discr() == UInt8(i):
                 self._get_ptr[T]().destroy_pointee()
                 return
 
@@ -234,7 +239,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__[T: AnyType](ref self) -> ref [self] T:
+    fn __getitem__[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This explicitly check that your value is of that type!
@@ -259,8 +264,56 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
+        constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
+
+        @parameter
+        for i in range(Variadic.size(Self.Ts)):
+            comptime T = Self.Ts[i]
+            if self.isa[T]():
+                ref value = trait_downcast[Writable](self.unsafe_get[T]())
+
+                @parameter
+                if is_repr:
+                    value.write_repr_to(writer)
+                else:
+                    value.write_to(writer)
+
+                return
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the currently held variant value to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            All types in `Ts` must conform to Writable.
+        """
+        self._write_value_to[is_repr=False](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the Variant.
+
+        Args:
+            writer: The object to write to.
+
+        Constraints:
+            All types in `Ts` must conform to Writable.
+        """
+
+        @parameter
+        fn write_field(mut w: Some[Writer]):
+            self._write_value_to[is_repr=True](w)
+
+        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields[
+            FieldsFn=write_field
+        ]()
+
     @always_inline("nodebug")
-    fn _get_ptr[T: AnyType](ref [_]self) -> UnsafePointer[T, origin_of(self)]:
+    fn _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
         comptime idx = Self._check[T]()
         __comptime_assert idx != Self._sentinel, "not a union element type"
         var ptr = UnsafePointer(to=self._impl).address
@@ -271,7 +324,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         return discr_ptr
 
     @always_inline("nodebug")
-    fn _get_discr(ref self) -> ref [self] UInt8:
+    fn _get_discr(ref self) -> ref[self] UInt8:
         var ptr = UnsafePointer(to=self._impl).address
         var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
             _type = __mlir_type.`!kgen.pointer<scalar<ui8>>`
@@ -318,7 +371,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         """
         debug_assert(self.isa[T](), "taking wrong type")
         # don't call the variant's deleter later
-        self._get_discr() = Self._sentinel
+        self._get_discr() = UInt8(Self._sentinel)
         return self._get_ptr[T]().take_pointee()
 
     @always_inline
@@ -402,9 +455,9 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
             True if the variant contains the requested type.
         """
         comptime idx = Self._check[T]()
-        return self._get_discr() == idx
+        return self._get_discr() == UInt8(idx)
 
-    fn unsafe_get[T: AnyType](ref self) -> ref [self] T:
+    fn unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get the value out of the variant as a type-checked type.
 
         This doesn't explicitly check that your value is of that type!
@@ -427,7 +480,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
     @staticmethod
     fn _check[T: AnyType]() -> Int:
         @parameter
-        for i in range(len(VariadicList(Self.Ts))):
+        for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
@@ -463,7 +516,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable):
         return Self._check[T]() != Self._sentinel
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
-    fn destroy_with[T: AnyType](deinit self, destroy_func: fn (var T)):
+    fn destroy_with[T: AnyType](deinit self, destroy_func: fn(var T)):
         """Destroy a value contained in this Variant in-place using a caller
         provided destructor function.
 

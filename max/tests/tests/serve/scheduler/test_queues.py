@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,13 +35,13 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.queue.zmq_queue import (
+from max.serve.worker_interface.worker_interface import EngineQueue
+from max.serve.worker_interface.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
     ZmqPushSocket,
     generate_zmq_ipc_path,
 )
-from max.serve.scheduler.queues import EngineQueue
 from pytest_mock import MockerFixture
 
 

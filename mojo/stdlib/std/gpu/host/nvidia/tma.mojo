@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,8 +35,7 @@ from builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapDataType:
+struct TensorMapDataType(TrivialRegisterType):
     """Data type enumeration for TMA tensor map descriptors.
 
     Specifies the element data type for TMA operations. The TMA hardware supports
@@ -104,8 +103,7 @@ struct TensorMapDataType:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapInterleave:
+struct TensorMapInterleave(TrivialRegisterType):
     """Interleave mode for TMA tensor map descriptors.
 
     Specifies how data elements are interleaved in memory for TMA operations.
@@ -123,12 +121,12 @@ struct TensorMapInterleave:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
 struct TensorMapSwizzle(
     Equatable,
     ImplicitlyCopyable,
     Intable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Swizzle mode for TMA tensor map descriptors.
@@ -220,8 +218,7 @@ struct TensorMapSwizzle(
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapL2Promotion:
+struct TensorMapL2Promotion(TrivialRegisterType):
     """L2 cache promotion hint for TMA tensor map descriptors.
 
     Specifies how much data to promote into the L2 cache during TMA operations.
@@ -242,8 +239,7 @@ struct TensorMapL2Promotion:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapFloatOOBFill:
+struct TensorMapFloatOOBFill(TrivialRegisterType):
     """Out-of-bounds fill mode for floating-point TMA operations.
 
     Specifies how out-of-bounds memory accesses are handled for floating-point
@@ -289,15 +285,6 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
             The string "TMADescriptor".
         """
         return "TMADescriptor"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets the device type name for this descriptor.
-
-        Returns:
-            The string "TMADescriptor".
-        """
-        return Self.get_type_name()
 
     @always_inline
     fn __init__(out self):
@@ -384,12 +371,14 @@ fn create_tma_descriptor[
 
     @parameter
     for i in range(rank):
-        global_dim_arg[i] = global_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
-        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
+        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_strides_arg[i] = Int64(
+            global_strides[rank - i - 1] * size_of[dtype]()
+        )
+        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
 
     debug_assert(
-        global_strides_arg[0] == size_of[dtype](),
+        global_strides_arg[0] == Int64(size_of[dtype]()),
         "TMA GMEM should be row-major, global stride",
         " at dim 0 should be size_of[dtype](): ",
         size_of[dtype](),
@@ -421,7 +410,7 @@ fn create_tma_descriptor[
         ](
             tensor_map_ptr,
             TensorMapDataType.from_dtype[dtype]()._value,
-            rank,
+            Int32(rank),
             global_buf._handle,
             global_dim_arg.unsafe_ptr(),
             # global_strides_arg[0] is implicitly size_of[dtype]()

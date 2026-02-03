@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,13 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.core import (
+    PixelContext,
+    TextAndVisionContext,
+    TextContext,
+    TTSContext,
+)
+from max.pipelines.core.context import FUTURE_TOKEN
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:
@@ -737,6 +743,47 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
     assert original_context.block_counter == 1
 
 
+def test_text_context_update_with_future_token() -> None:
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_token_ids=set([42]),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Cannot realize a future token when there are no generated tokens",
+    ):
+        context.realize_future_token(123)
+
+    context.update_with_future_token()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+
+    context.realize_future_token(5)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5]
+
+    with pytest.raises(
+        ValueError, match=r"Attempted to realize a non-future token"
+    ):
+        context.realize_future_token(6)
+
+    context.update_with_future_token()
+    with pytest.raises(ValueError, match=r"Cannot have multiple future tokens"):
+        context.update_with_future_token()
+
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, FUTURE_TOKEN]
+    assert context.status == GenerationStatus.ACTIVE
+    with pytest.raises(
+        ValueError,
+        match=r"Attempted to create generation output while future token is not yet realized",
+    ):
+        context.to_generation_output()
+
+    context.realize_future_token(42)
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, 42]
+    assert context.status == GenerationStatus.END_OF_SEQUENCE
+
+
 def test_vision_context_reset() -> None:
     context = TextAndVisionContext(
         max_length=50,
@@ -1100,11 +1147,60 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     )
 
     # Protocol structural checks should NOT trigger the method body!
-    # (TextGenerationContext, VLMTextGenerationContext,
-    # and PixelGenerationContext are Protocols)
+    # (TextGenerationContext, VLMTextGenerationContext, and PixelGenerationContext are Protocols)
     _ = isinstance(ctx, TextGenerationContext)
     # The original bug report indicated that MAX threw a ValueError in call to
     # isinstance(ctx, VLMTextGenerationContext) so we are validating this case here.
     # See GENAI-318 for details.
     _ = isinstance(ctx, VLMTextGenerationContext)
     _ = isinstance(ctx, PixelGenerationContext)
+
+
+def test_pixel_context_serializable() -> None:
+    # Test that we can encode a sample PixelContext with Pickle
+    original_context = PixelContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
+    )
+
+    pickle_encoded = pickle.dumps(original_context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, PixelContext)
+    assert dataclass_equal(pickle_decoded, original_context)
+
+    # Test that we can encode a sample PixelContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(PixelContext)
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert dataclass_equal(msgpack_decoded, original_context)
+
+
+def test_pixel_context_tuple_serializable() -> None:
+    # Test that we can encode a tuple of (str, PixelContext) with Pickle
+    original_context = PixelContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        negative_tokens=TokenBuffer(np.array([5, 6], dtype=np.int64)),
+    )
+    original_tuple = ("test_key", original_context)
+
+    pickle_encoded = pickle.dumps(original_tuple)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert pickle_decoded[0] == original_tuple[0]
+    assert dataclass_equal(pickle_decoded[1], original_tuple[1])
+
+    # Test that we can encode a tuple of (str, PixelContext) with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        tuple[str, PixelContext],
+    )
+    msgpack_encoded = serialize(original_tuple)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded[0] == original_tuple[0]
+    assert dataclass_equal(msgpack_decoded[1], original_tuple[1])

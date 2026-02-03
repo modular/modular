@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,6 +39,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
     _ = PipelineConfig(
         model_path="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         quantization_encoding=SupportedEncoding.gptq,
+        use_legacy_module=False,
         device_specs=[DeviceSpec.accelerator()],
     )
 
@@ -47,6 +48,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
         _ = PipelineConfig(
             model_path="jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
             quantization_encoding=SupportedEncoding.gptq,
+            use_legacy_module=False,
             device_specs=[DeviceSpec.accelerator()],
         )
 

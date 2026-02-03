@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,11 +20,11 @@ from testing import assert_almost_equal
 from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = fn[rank: Int] (IndexList[rank]) capturing -> Tuple[
+comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
 ]
-comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int] (
+comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 

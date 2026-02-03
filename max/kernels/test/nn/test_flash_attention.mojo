@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,6 +47,7 @@ def reference_attention_bshd[
     ],
     scale: Float32,
 ):
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
@@ -179,6 +180,7 @@ def reference_attention_bshd_with_sinks[
     scale: Float32,
 ):
     """Reference implementation of attention with sink weights."""
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
 
     comptime layout_4d = Layout.row_major[4]()
 
@@ -295,8 +297,7 @@ def reference_attention_bshd_with_sinks[
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TestCaseConfig[batch_rank: Int](ImplicitlyCopyable):
+struct TestCaseConfig[batch_rank: Int](TrivialRegisterType):
     """Test case workload configuration hyperparameters."""
 
     comptime rank = Self.batch_rank + 2

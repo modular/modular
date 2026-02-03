@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 """
 
 from collections import InlineArray
-from collections.optional import Optional, OptionalReg
+from collections.optional import Optional
 
 from buffer import NDBuffer
 from gpu import (
@@ -54,7 +54,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @always_inline
@@ -111,14 +111,13 @@ fn _load_reduce[
         return accum.cast[dtype]()
 
 
-@register_passable("trivial")
 struct ReduceScatterConfig[
     dtype: DType,
     ngpus: Int,
     simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
     alignment: Int = align_of[SIMD[dtype, simd_width]](),
     accum_type: DType = get_accum_type[dtype](),
-](ImplicitlyCopyable, Movable):
+](TrivialRegisterType):
     var stride: Int
     var largest_part: Int
     var part: Int
@@ -148,7 +147,7 @@ struct ReduceScatterConfig[
             num_elements if my_rank
             == Self.ngpus - 1 else self.rank_start + part
         )
-        self.largest_part = part + (num_elements % Self.ngpus)
+        self.largest_part = num_elements - (Self.ngpus - 1) * part
         self.thr_local_start = thread_idx * Self.simd_width
 
 
@@ -175,6 +174,13 @@ fn _reduce_scatter_impl[
         dtype, ngpus, simd_width, alignment, accum_type
     ],
 ):
+    """Core implementation of the reduce-scatter operation.
+
+    This function performs the reduce-scatter by having each thread reduce
+    its assigned elements across all input buffers and then applying the
+    output epilogue.
+    """
+
     # Grid-strided loop with vectorized reduction:
     # - Each thread processes partition elements using 128-bit accesses.
     # - Accumulates in higher precision (float32) for numerical stability.
@@ -200,7 +206,7 @@ fn _reduce_scatter_impl[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 fn _reducescatter_kernel[
     dtype: DType,
@@ -277,8 +283,8 @@ fn _reducescatter_kernel[
     _reduce_scatter_impl[
         ngpus, output_lambda=output_lambda, use_multimem=use_multimem
     ](ptrs, out_buf, my_rank, reduce_scatter_config)
-    # Compared w/ usage in allreduce, a second `_multi_gpu_barrier` has been removed
-    # here, as it shouldn't be necessary
+
+    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -377,7 +383,7 @@ fn reducescatter[
     dtype: DType,
     rank: Int,
     ngpus: Int,
-    output_lambda: OptionalReg[elementwise_epilogue_type] = None,
+    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,

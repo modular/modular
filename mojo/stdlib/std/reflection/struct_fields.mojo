@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -132,8 +132,7 @@ fn struct_field_index_by_name[
     )
 
 
-@register_passable("trivial")
-struct ReflectedType[T: __mlir_type.`!kgen.type`]:
+struct ReflectedType[T: __mlir_type.`!kgen.type`](TrivialRegisterType):
     """Wrapper struct for compile-time type values from reflection.
 
     This struct wraps a `!kgen.type` value as a type parameter, allowing

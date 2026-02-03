@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -313,14 +313,14 @@ fn kernel_5[
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(a_gmem_slice_coord)),
+                    (UInt(i * BK + k), a_gmem_slice_coord),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(b_gmem_slice_coord)),
+                    (UInt(i * BK + k), b_gmem_slice_coord),
                     b_multicast_mask,
                 )
 
@@ -459,7 +459,7 @@ fn kernel_5[
             alignment=128,
         ](c_smem_offset)
 
-        c_tma_op.async_store(c_tma_tile, (UInt(col_start), UInt(row_start)))
+        c_tma_op.async_store(c_tma_tile, (col_start, row_start))
         c_tma_op.commit_group()
         c_tma_op.wait_group[0]()
 
@@ -695,7 +695,9 @@ def test_blackwell_kernel_5[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
 

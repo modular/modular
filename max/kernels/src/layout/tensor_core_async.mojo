@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,7 +34,6 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
-from collections import OptionalReg
 from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 
@@ -826,7 +825,7 @@ struct TensorCoreAsync[
         scale_c: Int = 1,
         scale_a: Int = 1,
         scale_b: Int = 1,
-        num_k_iters: OptionalReg[Int] = None,
+        num_k_iters: Optional[Int] = None,
     ](
         a_smem_tile: LayoutTensor[
             Self.a_type, _, _, address_space = AddressSpace.SHARED, ...

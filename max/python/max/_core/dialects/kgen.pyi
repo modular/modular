@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -2144,9 +2144,11 @@ class POCAttr(max._core.Attribute):
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
-    member_alias = 1
+    preserved = 1
 
-    alias = 2
+    member_alias = 2
+
+    alias = 3
 
 class TailKind(enum.Enum):
     none = 0

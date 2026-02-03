@@ -1,0 +1,45 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# DOC: max/develop/serve-custom-model-architectures.mdx
+
+from dataclasses import dataclass
+from typing import Literal
+
+from max.graph.weights import WeightData
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.llama3.model_config import Llama3Config
+from transformers import AutoConfig
+
+
+@dataclass(kw_only=True)
+class Qwen2Config(Llama3Config):
+    """Model configuration for Qwen2 graph construction/execution."""
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        super().finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            norm_method=norm_method,
+            attention_bias=True,  # Qwen2 uses attention bias
+        )

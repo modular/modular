@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 
-from .paged_cache import PagedKVCacheManager
+from .paged_kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,13 +26,14 @@ RUNNERS = {
     "MI355": "modrunner-mi355",
     "2xH100": "modrunner-h100-2x",
     "8xB200": "modrunner-b200-8x",
+    "8xMI355": "modrunner-mi355-8x",
 }
 
 # Framework → GPUs that framework cannot run on.
-HW_EX = {"vllm": {"MI355"}, "sglang": {"MI355"}}
+HW_EX = {"vllm": {"MI355", "8xMI355"}, "sglang": {"MI355", "8xMI355"}}
 
 # Models tagged "multi" are skipped on these GPUs.
-MULTI_GPUS = {"2xH100", "8xB200"}
+MULTI_GPUS = {"2xH100", "8xB200", "8xMI355"}
 
 # Model → list of exclusions:
 #   - framework (e.g. "max")
@@ -51,7 +52,6 @@ MODELS = {
     "allenai/olmOCR-2-7B-1025-FP8": [
         "sglang",  # Unimplemented model type: qwen2_5_vl_text
         "multi",
-        "max",  # Wait for 26.1
     ],
     "bytedance-seed/academic-ds-9b": [
         "max",
@@ -61,10 +61,13 @@ MODELS = {
         "vllm@B200",
     ],
     "deepseek-ai/deepseek-r1-0528": [
+        "sglang",
+        "max",  # 26.2 (weight loading issue in 26.1)
         "H100",
         "B200",
         "MI355",
         "2xH100",
+        "8xMI355",  # Currently needs nvshmem
     ],
     # E2EOPT-571: DeepSeek v2 lite chat not working on MAX
     "deepseek-ai/deepseek-v2-lite-chat": [
@@ -78,7 +81,7 @@ MODELS = {
         "vllm@B200",
     ],  # FlashInfer block_size 16 + head_size 256 bug
     "google/gemma-3-12b-it": ["multi"],
-    "google/gemma-3-27b-it": ["8xB200"],
+    "google/gemma-3-27b-it": ["8xB200", "8xMI355"],
     "meta-llama/llama-3.1-8b-instruct": ["multi"],
     "meta-llama/llama-3.2-1b-instruct": ["multi"],
     "microsoft/phi-3.5-mini-instruct": ["multi"],
@@ -93,7 +96,6 @@ MODELS = {
     ],  # vLLM 0.13.0 server crash
     "opengvlab/internvl3-8b-instruct": [
         "multi",
-        "max@MI355",  # 26.1
         "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "opengvlab/internvl3_5-8b-instruct": [
@@ -102,41 +104,54 @@ MODELS = {
         "sglang",  # Insufficient multimodal embedding length (internvl3 bug)
     ],
     "qwen/qwen2.5-7b-instruct": ["multi"],
-    "qwen/qwen2.5-vl-3b-instruct": [
-        "multi",
-        "max@MI355",  # 26.1
-    ],
-    "qwen/qwen2.5-vl-7b-instruct": [
-        "multi",
-        "max@MI355",  # 26.1
-    ],
+    "qwen/qwen2.5-vl-3b-instruct": ["multi"],
+    "qwen/qwen2.5-vl-7b-instruct": ["multi"],
     "qwen/qwen3-8b": ["multi"],
     "qwen/qwen3-vl-4b-instruct": [
-        "max",  # 26.1
+        "8xB200",
+        "8xMI355",
         "vllm@B200",
     ],
-    "qwen/qwen3-vl-30b-a3b-instruct": [
+    "qwen/qwen3-vl-4b-instruct-fp8": [
         "8xB200",
-        "max",  # 26.1
+        "8xMI355",
+        "max",  # 26.2
+        "MI355",  # FP8 not supported
         "max-ci@H100",
         "max-ci@2xH100",
     ],
+    "qwen/qwen3-vl-30b-a3b-instruct": [
+        "8xB200",
+        "8xMI355",
+        "max@H100",
+        "max@2xH100",
+        "max-ci@H100",
+        "max-ci@2xH100",
+    ],
+    "qwen/qwen3-vl-30b-a3b-instruct-fp8": [
+        "8xB200",
+        "8xMI355",
+        "max",  # 26.2
+        "MI355",  # FP8 not supported
+        "max-ci@H100",
+        "max-ci@2xH100",
+        "sglang@B200",  # FlashInfer B200 build error
+    ],
     "qwen/qwen3-vl-30b-a3b-thinking": [
         "8xB200",
+        "8xMI355",
         "max",
         "max-ci@H100",
         "max-ci@2xH100",
     ],
-    "redhatai/gemma-3-27b-it-fp8-dynamic": ["8xB200"],
+    "redhatai/gemma-3-27b-it-fp8-dynamic": ["8xB200", "8xMI355"],
     "tbmod/gemma-3-4b-it": [
         "multi",
         "H100",
-        "max@MI355",  # 26.1
     ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
-        "max@MI355",  # 26.1
         "multi",
     ],
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": [
@@ -182,6 +197,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xh100", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
+@click.option("--run-on-8xmi355", is_flag=True)
 def main(
     framework: str,
     models_override: str | None,
@@ -190,6 +206,7 @@ def main(
     run_on_mi355: bool,
     run_on_2xh100: bool,
     run_on_8xb200: bool,
+    run_on_8xmi355: bool,
 ) -> None:
     flags = {
         "H100": run_on_h100,
@@ -197,6 +214,7 @@ def main(
         "MI355": run_on_mi355,
         "2xH100": run_on_2xh100,
         "8xB200": run_on_8xb200,
+        "8xMI355": run_on_8xmi355,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
     models = parse_override(models_override) or list(MODELS)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -284,6 +284,14 @@ def test_string_indexing():
 
     assert_equal("Hello Mojo!!", str[-50::])
     assert_equal("Hello Mojo!!", str[:50:])
+
+    var str2 = "😌😃"
+    assert_equal("😌", str2[byte=0])
+    assert_equal("😌", str2[0:4])
+    assert_equal("😃", str2[byte=4])
+    assert_equal("😃", str2[4:])
+    var str3 = "😌😃🥰😋"
+    assert_equal("😃🥰", str3[4:12])
 
 
 def test_atol():
@@ -1140,7 +1148,7 @@ def test_string_char_slices_iter():
     assert_equal(123, atol(conc(vs)))
 
     concat = String()
-    for v in vs.__reversed__():
+    for v in vs.codepoint_slices_reversed():
         concat += v
     assert_equal(321, atol(concat))
 
@@ -1210,7 +1218,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for v in item.__reversed__():
+        for v in item.codepoint_slices_reversed():
             concat += v
         assert_equal(rev[item_idx], concat)
 
@@ -1346,8 +1354,8 @@ def test_format_conversion_flags():
     )
 
     var d = 42
-    assert_equal("{} {!r}".format(d, d), "42 42")
-    assert_equal("{!s} {!r}".format(d, d), "42 42")
+    assert_equal("{} {!r}".format(d, d), "42 Int(42)")
+    assert_equal("{!s} {!r}".format(d, d), "42 Int(42)")
 
     assert_true(
         "Mojo SIMD[DType.float64, 1](2" in "{} {!r} {} {!r}".format(a, b, c, d)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,7 +33,6 @@ conflicts can degrade performance.  Applying swizzle layouts
 optimizes memory access patterns for higher throughput.
 """
 
-from collections import OptionalReg
 from sys import is_compile_time, simd_width_of, size_of
 
 from bit import log2_floor
@@ -305,8 +304,7 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct Swizzle(LayoutTrait, Stringable, Writable):
+struct Swizzle(LayoutTrait, Stringable, TrivialRegisterType, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -422,7 +420,10 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         Returns:
             The swizzled scalar value.
         """
-        return offset ^ shiftr(offset & self.yyy_mask, self.shift)
+        return offset ^ shiftr(
+            offset & Scalar[offset.dtype](self.yyy_mask),
+            Scalar[offset.dtype](self.shift),
+        )
 
     @always_inline
     fn size(self) -> Int:
@@ -572,7 +573,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
 
 
 struct ComposedLayout[
-    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: OptionalReg[Int] = 0
+    LayoutA: LayoutTrait, LayoutB: LayoutTrait, offset: Optional[Int] = 0
 ](LayoutTrait):
     """Layout composed of two layouts applied sequentially.
 

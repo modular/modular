@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -63,8 +63,7 @@ comptime pm = platform_map
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
+struct ErrNo(Equatable, Stringable, TrivialRegisterType, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -413,7 +412,7 @@ struct ErrNo(Equatable, ImplicitlyCopyable, Stringable, Writable):
             0 <= value <= Int(c_int.MAX),
             "constructed ErrNo from an `Int` out of range of `c_int`",
         )
-        self.value = value
+        self.value = c_int(value)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the human-readable error description to a writer.

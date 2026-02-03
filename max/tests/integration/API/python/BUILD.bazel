@@ -15,6 +15,7 @@ modular_py_test(
         "test_bfloat16_utils.py",
         "test_context.py",
         "test_cumsum.py",
+        "test_disable_auto_sync.py",
         "test_dtype.py",
         "test_engine.py",
         "test_explicit_device.py",
@@ -141,6 +142,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
         "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
     },
+    env_inherit = ["HF_TOKEN"],
     exec_properties = {
         "test.resources:gpu-memory": "20",
     },
@@ -218,6 +220,25 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_graph_pinned",
+    srcs = [
+        "test_graph_pinned.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test-speculative-decoding",
     size = "large",
     srcs = [
@@ -238,15 +259,23 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
+        "//max/tests/integration/pipelines/python/test_common:registry",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -270,15 +299,19 @@ modular_py_test(
     }),
     tags = [
         "gpu",
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     deps = [
-        "//max/python/max",
-        "//max/python/max/entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        requirement("numpy"),
     ],
 )
 

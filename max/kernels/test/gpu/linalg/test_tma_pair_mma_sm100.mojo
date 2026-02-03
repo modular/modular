@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -242,10 +242,10 @@ fn tma_umma_kernel_pair_cta[
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
-            var a_gmem_slice_coord = UInt(
-                peer_cta_coord[2] * UInt(a_tma_rows) + block_idx.x * UInt(BM)
-            )
-            var b_gmem_slice_coord = UInt(
+            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
+                a_tma_rows
+            ) + block_idx.x * UInt(BM)
+            var b_gmem_slice_coord = (
                 peer_cta_coord[1] * UInt(b_tma_rows)
                 + peer_cta_coord[0] * UInt(BN)
                 + block_idx.y * UInt(MMA_N)

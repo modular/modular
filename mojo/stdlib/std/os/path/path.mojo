@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -603,7 +603,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     Returns:
         True if the byte is a special shell variable and False otherwise.
     """
-    comptime shell_variables = InlineArray[Int, 17](
+    comptime shell_variables: InlineArray[Int, 17] = [
         ord("*"),
         ord("#"),
         ord("$"),
@@ -621,7 +621,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
         ord("7"),
         ord("8"),
         ord("9"),
-    )
+    ]
     return Int(byte) in materialize[shell_variables]()
 
 
@@ -658,18 +658,18 @@ fn _parse_variable_name[
     Returns:
         The environment variable name and the byte count required to extract it.
     """
-    if bytes[0] == ord("{"):
+    if bytes[0] == UInt8(ord("{")):
         if (
             len(bytes) > 2
             and _is_shell_special_variable(bytes[1])
-            and bytes[2] == ord("}")
+            and bytes[2] == UInt8(ord("}"))
         ):
             return StringSlice(unsafe_from_utf8=bytes[1:2]), 3
 
         # Scan until the closing brace or the end of the bytes.
         var i = 1
         while i < len(bytes):
-            if bytes[i] == ord("}"):
+            if bytes[i] == UInt8(ord("}")):
                 return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
         return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
@@ -705,7 +705,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     i = 0
     j = 0
     while j < len(bytes):
-        if bytes[j] == ord("$") and j + 1 < len(bytes):
+        if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
             buf.write_string(path_str[i:j])

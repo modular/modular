@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct IO(ImplicitlyCopyable):
+struct IO(TrivialRegisterType):
     var value: Int
 
     # TODO: either rename or get rid of this
@@ -39,8 +38,7 @@ struct IO(ImplicitlyCopyable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct IOSpec[mut: Bool, input: IO](ImplicitlyCopyable):
+struct IOSpec[mut: Bool, input: IO](TrivialRegisterType):
     """
     Parameter used to encode whether a particular tensor argument to a DPS kernel
     is an output, input, or mutable input.

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from collections import OptionalReg
 from sys import (
     CompilationTarget,
     align_of,
@@ -63,9 +59,8 @@ comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 
-@register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Defaultable, ImplicitlyCopyable, Stringable, Writable
+    Defaultable, Stringable, TrivialRegisterType, Writable
 ):
     var _value: Int32
 
@@ -86,7 +81,7 @@ struct FlashAttentionAlgorithm(
 
     @always_inline
     fn __eq__(self, version: Int) -> Bool:
-        return self._value == version
+        return self._value == Int32(version)
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
@@ -123,8 +118,7 @@ struct FlashAttentionAlgorithm(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
+struct MHAConfig[dtype: DType](TrivialRegisterType, Writable):
     # Q, K, V, output should have the same type.
     var num_heads: UInt
     var depth: UInt
@@ -253,11 +247,11 @@ struct MHAConfig[dtype: DType](ImplicitlyCopyable, Writable):
         out self,
         num_heads: UInt,
         depth: UInt,
-        num_queries_per_block: OptionalReg[UInt] = None,
-        num_keys_per_block: OptionalReg[UInt] = None,
-        BK: OptionalReg[UInt] = None,
-        WM: OptionalReg[UInt] = None,
-        WN: OptionalReg[UInt] = None,
+        num_queries_per_block: Optional[UInt] = None,
+        num_keys_per_block: Optional[UInt] = None,
+        BK: Optional[UInt] = None,
+        WM: Optional[UInt] = None,
+        WN: Optional[UInt] = None,
         num_pipeline_stages: UInt = 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(-1),
@@ -389,7 +383,8 @@ fn _kernel_mask[
     for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
-            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[dtype]()
+            and UInt32(coord[1]) + UInt32(i)
+            < UInt32(bound[1]) else min_or_neg_inf[dtype]()
         )
 
     return masked_vec
@@ -465,24 +460,30 @@ fn _copy_frag_to_smem_nvidia[
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 comptime OffsetType = type_of(frag_offset)
-                var offset_BMxBN = frag_offset + offset_in_frag
+                var offset_BMxBN = frag_offset + type_of(frag_offset)(
+                    offset_in_frag
+                )
                 var offset_BMxBK = (
                     offset_BMxBN // OffsetType(BN)
                 ) * OffsetType(BK) + offset_BMxBN % OffsetType(BK)
                 # Convert offset to vectorized domain, since BM x BK will be loaded
                 # by vectors in 2nd mma, and swizzle
-                var swizzle_offset = swizzle_fn(offset_BMxBK // simd_width)
-                # Convert offset back to where the frag will be stored.
-                offset_BMxBK = (
-                    swizzle_offset * simd_width + offset_BMxBK % simd_width
+                var swizzle_offset = swizzle_fn(
+                    offset_BMxBK // OffsetType(simd_width)
                 )
+                # Convert offset back to where the frag will be stored.
+                offset_BMxBK = swizzle_offset * OffsetType(
+                    simd_width
+                ) + offset_BMxBK % OffsetType(simd_width)
                 # E.g. fp32x2 -> bf16x2 for bf16 mma.
                 var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, i].cast[
                     p_smem_tile.dtype
                 ]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    p_smem_iter.linear_uint_type(
+                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    )
                 )[]
                 comptime align = align_of[
                     SIMD[p_smem_iter.dtype, Int(frag_simd_width)]
@@ -565,7 +566,9 @@ fn _copy_frag_to_smem_amd[
                 ].cast[p_smem_tile.dtype]()
                 # Grep the right BMxBK tile and store the casted vec.
                 var tile_BMxBK = p_smem_iter.next_unsafe(
-                    Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    p_smem_iter.linear_uint_type(
+                        Int((offset_BMxBN % OffsetType(BN)) // OffsetType(BK))
+                    )
                 )[]
                 tile_BMxBK.ptr.store(offset_BMxBK, vec)
 
@@ -645,7 +648,7 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait] (
+comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
     mask: mask_t, score_mod: score_mod_t
 ) raises capturing -> None
 
@@ -723,7 +726,7 @@ fn dispatch_materialized_mask_and_score_mod[
 @always_inline
 fn _dispatch_score_mod[
     score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait] (
+    callback_fn: fn[score_mod_t: ScoreModTrait](
         score_mod: score_mod_t
     ) raises capturing -> None,
     num_heads: Int = -1,
@@ -750,9 +753,8 @@ fn _dispatch_score_mod[
 # when passing as a function argument.
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
-@register_passable("trivial")
-trait OptionallyStaticInt(Copyable, Intable):
-    comptime static_value: OptionalReg[Int]
+trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterType):
+    comptime static_value: Optional[Int]
 
     fn as_uint32(self) -> UInt32:
         ...
@@ -760,9 +762,10 @@ trait OptionallyStaticInt(Copyable, Intable):
 
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
-@register_passable("trivial")
-struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
-    comptime static_value: OptionalReg[Int] = OptionalReg[Int](Self.value)
+struct StaticInt[value: Int](
+    Defaultable, OptionallyStaticInt, TrivialRegisterType
+):
+    comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -777,10 +780,9 @@ struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
         return UInt32(Self.value)
 
 
-@register_passable("trivial")
-struct DynamicInt(OptionallyStaticInt):
+struct DynamicInt(OptionallyStaticInt, TrivialRegisterType):
     var value: UInt32
-    comptime static_value: OptionalReg[Int] = None
+    comptime static_value: Optional[Int] = None
 
     @always_inline("nodebug")
     fn __init__(out self, value: Int):
@@ -800,8 +802,7 @@ fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-@register_passable("trivial")
-trait MHAPartitionScheme(Copyable):
+trait MHAPartitionScheme(Copyable, TrivialRegisterType):
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -812,13 +813,12 @@ trait MHAPartitionScheme(Copyable):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         ...
 
 
-@register_passable("trivial")
 struct NoPartition[dtype: DType](
-    Defaultable, ImplicitlyCopyable, MHAPartitionScheme
+    Defaultable, MHAPartitionScheme, TrivialRegisterType
 ):
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
@@ -834,24 +834,25 @@ struct NoPartition[dtype: DType](
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return UnsafePointer[Scalar[Self.accum_dtype]]()
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
 
 
-@register_passable("trivial")
-struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
+struct SplitKPartition[dtype: DType](MHAPartitionScheme, TrivialRegisterType):
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
+    var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
     var num_partitions_value: UInt32
 
     @always_inline
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
+        ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
+        debug_assert(
+            ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]()
+        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 
@@ -862,5 +863,5 @@ struct SplitKPartition[dtype: DType](ImplicitlyCopyable, MHAPartitionScheme):
     @always_inline
     fn get_exp_sum_qk_max_pointer(
         self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
         return self.ptr

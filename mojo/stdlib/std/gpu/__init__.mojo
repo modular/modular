@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ A _kernel_ is a function that runs on the GPU in parallel across many threads.
 Currently, the
 [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) struct
 provides the interface for compiling and launching GPU kernels inside MAX
-[custom operations](/max/custom-ops/).
+[custom operations](/max/develop/custom-ops/).
 
 The [`gpu.host`](/mojo/std/gpu/host/) package includes APIs to manage
 interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU

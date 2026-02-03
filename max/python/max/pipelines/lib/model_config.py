@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,16 +23,12 @@ from typing import TYPE_CHECKING, Any
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
+from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from pydantic import (
-    ConfigDict,
-    Field,
-    PrivateAttr,
-    computed_field,
-)
+from pydantic import ConfigDict, Field, PrivateAttr, computed_field
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
@@ -92,7 +88,10 @@ class MAXModelConfig(MAXModelConfigBase):
     # asserts just to keep mypy happy.
     model_path: str = Field(
         default="",
-        description="repo_id of a Hugging Face model repository to use.",
+        description=(
+            "The repository ID of a Hugging Face model to use. "
+            "The `--model` option also works as an alias."
+        ),
     )
 
     served_model_name: str | None = Field(
@@ -194,6 +193,9 @@ class MAXModelConfig(MAXModelConfigBase):
     _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
 
+    _diffusers_config: dict[str, Any] | None = PrivateAttr(default=None)
+    """Diffusers config for diffusion pipelines. This should only be set by internal code."""
+
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
@@ -225,36 +227,40 @@ class MAXModelConfig(MAXModelConfigBase):
             explicitly define this __init__ method to seed the PrivateAttr(s).
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
+            seeded_diffusers_config = data.pop("_diffusers_config", None)
             super().__init__(**data)
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
+            if seeded_diffusers_config is not None:
+                self._diffusers_config = seeded_diffusers_config
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
         """Customize pickling to avoid serializing non-picklable HF config.
 
-        Drops `_huggingface_config` from the serialized state to ensure
-        the object remains pickleable across processes; it will be
-        lazily re-initialized on access via the `huggingface_config` property.
+        Drops `_huggingface_config` and `_diffusers_config` from the serialized state to ensure
+        the object remains pickleable across processes; they will be
+        lazily re-initialized on access via their respective properties.
         """
         # NOTE: In pydantic v2, PrivateAttr values live in `__pydantic_private__`,
         # not necessarily in `__dict__`. Preserve private state across processes,
-        # but explicitly drop `_huggingface_config` to avoid serializing possibly
+        # but explicitly drop `_huggingface_config` and `_diffusers_config` to avoid serializing possibly
         # non-picklable / remote-code-derived transformer objects.
         state = self.__dict__.copy()
         private = getattr(self, "__pydantic_private__", None)
         if private is not None:
             private_state = dict(private)
             private_state["_huggingface_config"] = None
+            private_state["_diffusers_config"] = None
             state["__pydantic_private__"] = private_state
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state while ensuring `_huggingface_config` is reset.
+        """Restore state while ensuring `_huggingface_config` and `_diffusers_config` are reset.
 
-        `_huggingface_config` is restored as None to preserve the lazy
-        loading behavior defined in `huggingface_config`.
+        `_huggingface_config` and `_diffusers_config` are restored as None to preserve the lazy
+        loading behavior defined in their respective properties.
         """
         private_state = dict(state.pop("__pydantic_private__", None) or {})
 
@@ -262,6 +268,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Restore pydantic private attrs (and fill any missing defaults).
         private_state.setdefault("_huggingface_config", None)
+        private_state.setdefault("_diffusers_config", None)
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
@@ -441,17 +448,107 @@ class MAXModelConfig(MAXModelConfigBase):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def huggingface_config(self) -> AutoConfig:
+    def huggingface_config(self) -> AutoConfig | None:
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
         # before pickling. Each worker process will reload the config fresh,
         # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            self._huggingface_config = (
-                PIPELINE_REGISTRY.get_active_huggingface_config(
-                    huggingface_repo=self.huggingface_model_repo
+            try:
+                self._huggingface_config = (
+                    PIPELINE_REGISTRY.get_active_huggingface_config(
+                        huggingface_repo=self.huggingface_model_repo
+                    )
                 )
-            )
+            except Exception as e:
+                # Not a transformers-style model (e.g., diffusers model)
+                logger.debug(
+                    f"Could not load HuggingFace config for "
+                    f"{self.model_path}: {e}"
+                )
+                return None
         return self._huggingface_config
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def diffusers_config(self) -> dict[str, Any] | None:
+        """Retrieve the diffusers config for diffusion pipelines.
+
+        Note: For multiprocessing, __getstate__ clears _diffusers_config
+        before pickling. Each worker process will reload the config fresh.
+
+        Returns:
+            The diffusers config dict if this is a diffusion pipeline, None otherwise.
+            The dict will have a structure with "_class_name" and "components" keys,
+            where each component includes "class_name" and "config_dict" fields.
+        """
+        if self._diffusers_config is None:
+            model_index = PIPELINE_REGISTRY.get_active_diffusers_config(
+                huggingface_repo=self.huggingface_model_repo
+            )
+            if model_index is not None:
+                # Enhance the model_index with component configs
+                self._diffusers_config = self._load_diffusers_components(
+                    model_index
+                )
+            else:
+                self._diffusers_config = None
+        return self._diffusers_config
+
+    def _load_diffusers_components(
+        self, model_index: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load component configs for a diffusers pipeline.
+
+        Args:
+            model_index: The raw model_index.json dict from HuggingFace.
+
+        Returns:
+            Enhanced config dict with "components" key containing loaded configs.
+        """
+        import json
+
+        from huggingface_hub import hf_hub_download
+
+        # Extract class name and version
+        class_name = model_index.get("_class_name")
+        diffusers_version = model_index.get("_diffusers_version")
+
+        # Build components dict with loaded configs
+        components = {}
+        for component_name, component_info in model_index.items():
+            if component_name.startswith("_"):
+                continue
+
+            if not isinstance(component_info, list) or len(component_info) != 2:
+                continue
+
+            library, class_type = component_info
+
+            # Try to load the component's config file
+            component_config = {}
+            try:
+                config_file_path = hf_hub_download(
+                    repo_id=self.huggingface_model_repo.repo_id,
+                    filename=f"{component_name}/config.json",
+                    revision=self.huggingface_model_repo.revision,
+                )
+                with open(config_file_path) as f:
+                    component_config = json.load(f)
+            except Exception as e:
+                logger.debug(f"Could not load config for {component_name}: {e}")
+
+            components[component_name] = {
+                "library": library,
+                "class_name": class_type,
+                "config_dict": component_config,
+            }
+
+        # Build the final config structure
+        return {
+            "_class_name": class_name,
+            "_diffusers_version": diffusers_version,
+            "components": components,
+        }
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
@@ -743,7 +840,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 and len(supported_encodings) > 1
             ):
                 # TODO(AITLIB-137): replace this with more full featured logic.
-                # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
+                # If we are running on an accelerator and the quantization encoding is not set, override to bfloat16.
                 if SupportedEncoding.float4_e2m1fnx2 in supported_encodings:
                     self.quantization_encoding = (
                         SupportedEncoding.float4_e2m1fnx2
@@ -915,6 +1012,12 @@ class MAXModelConfig(MAXModelConfigBase):
         assert self.quantization_encoding, "quantization_encoding must be set."
 
         if self.quantization_encoding == SupportedEncoding.gptq:
+            if self.huggingface_config is None:
+                raise ValueError(
+                    f"GPTQ quantization requires a HuggingFace config for '{self.model_path}', "
+                    "but config could not be loaded. "
+                    "Please ensure the model repository contains a valid config.json with quantization_config."
+                )
             hf_quant_config = self.huggingface_config.quantization_config
 
             # This is a bit hacky, but seems like we need it for now.
@@ -1003,3 +1106,95 @@ class MAXModelConfig(MAXModelConfigBase):
             The default device spec for the model.
         """
         return self.device_specs[0]
+
+    def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
+        """Create and set the KV cache configuration with the given parameters.
+
+        This method creates a new KVCacheConfig from the provided keyword arguments
+        and automatically sets the cache_dtype based on the model's quantization
+        encoding (or any explicit override in kv_cache_kwargs).
+
+        Args:
+            **kv_cache_kwargs: Keyword arguments to pass to KVCacheConfig constructor.
+                Common options include:
+                - cache_strategy: The KV cache strategy (continuous, paged, etc.)
+                - kv_cache_page_size: Number of tokens per page for paged cache
+                - enable_prefix_caching: Whether to enable prefix caching
+                - device_memory_utilization: Fraction of device memory to use
+                - cache_dtype: Override for the cache data type
+        """
+        self.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+        # Note: the quantization_encoding is possibly not set yet here, so we first check for an explicit override.
+        if cache_dtype := self._get_cache_override():
+            self.kv_cache._cache_dtype = cache_dtype
+
+    def set_default_cache_dtype_if_needed(self) -> None:
+        """Determine the KV cache dtype based on configuration.
+
+        The dtype is determined in the following priority order:
+        1. Explicit override from kv_cache.kv_cache_format (if set)
+        2. Derived from the model's quantization_encoding
+        3. Falls back to float32 if no encoding is specified
+
+        Returns:
+            The DType to use for the KV cache. Typical values are:
+            - DType.float32 for float32, q4_k, q4_0, q6_k encodings
+            - DType.bfloat16 for bfloat16, float8_e4m3fn, float4_e2m1fnx2, gptq encodings
+        """
+        # First check for an explicit override.
+        if self.kv_cache.kv_cache_format is not None:
+            return  # No default needed, override is set.
+
+        # If there's no quantization encoding return a default value.
+        if not self.quantization_encoding:
+            self.kv_cache._cache_dtype = DType.float32
+            return
+
+        # Otherwise select the default KV cache dtype based on the quantization encoding.
+        supported_encoding_to_cache_dtype = {
+            SupportedEncoding.float32: DType.float32,
+            SupportedEncoding.bfloat16: DType.bfloat16,
+            SupportedEncoding.float8_e4m3fn: DType.bfloat16,
+            SupportedEncoding.float4_e2m1fnx2: DType.bfloat16,
+            SupportedEncoding.q4_k: DType.float32,
+            SupportedEncoding.q4_0: DType.float32,
+            SupportedEncoding.q6_k: DType.float32,
+            SupportedEncoding.gptq: DType.bfloat16,
+        }
+        if self.quantization_encoding in supported_encoding_to_cache_dtype:
+            self.kv_cache._cache_dtype = supported_encoding_to_cache_dtype[
+                self.quantization_encoding
+            ]
+            return
+        else:
+            raise ValueError(
+                f"Unsupported quantization encoding for KV cache dtype resolution: {self.quantization_encoding}"
+            )
+
+    def _get_cache_override(self) -> DType | None:
+        """Check for an explicit KV cache dtype override from kv_cache_format.
+
+        Parses the kv_cache.kv_cache_format string (if set) and converts it
+        to the corresponding DType.
+
+        Returns:
+            The DType corresponding to the override string, or None if no
+            override is set or the string is not recognized. Supported values
+            are 'float32', 'bfloat16', and 'float8_e4m3fn' (case-insensitive).
+        """
+        if self.kv_cache.kv_cache_format is None:
+            return None
+
+        dtype_str = self.kv_cache.kv_cache_format.lower()
+        cache_format_to_dtype = {
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float8_e4m3fn": DType.float8_e4m3fn,
+        }
+        if dtype_str in cache_format_to_dtype:
+            return cache_format_to_dtype[dtype_str]
+        else:
+            raise ValueError(
+                f"Unrecognized kv_cache_format override: '{self.kv_cache.kv_cache_format}'. "
+                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+            )

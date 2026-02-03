@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,6 +19,8 @@ import algorithm.reduction
 from algorithm import vectorize
 from builtin.math import max as b_max
 from layout import LayoutTensor, UNKNOWN_VALUE
+from layout._coord import Coord, Idx
+from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
 
@@ -77,8 +79,8 @@ fn outer_product_acc(
 @always_inline
 fn _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int] () -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int] (
+    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
+    func: fn[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -171,7 +173,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     from layout import LayoutTensor, Layout
     from layout.math import sum
 
-    data = InlineArray[Int32, 6](0, 1, 2, 3, 4, 5)
+    data: InlineArray[Int32, 6] = [0, 1, 2, 3, 4, 5]
     tensor = LayoutTensor[DType.int32, Layout.row_major(2, 3)](data)
     print(tensor)
     print("-----")
@@ -419,6 +421,8 @@ fn mean[
         ),
     )
 
+    comptime src_dtype = src.dtype
+
     @parameter
     if dst.dtype.is_integral():
 
@@ -430,12 +434,12 @@ fn mean[
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
             var elem = dst_1d.ptr.load[width=simd_width](idx_1d)
-            var to_store = elem // n
+            var to_store = elem // SIMD[src_dtype, simd_width](n)
             dst_1d.ptr.store(idx_1d, to_store)
 
         vectorize[simd_width](dst_1d.size(), normalize_integral)
     else:
-        var n_recip = Scalar[dst.dtype](1) / n
+        var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
 
         @always_inline
         fn normalize_floating[
@@ -482,3 +486,61 @@ fn variance(
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
+
+
+fn variance(
+    src: TileTensor[...], correction: Int = 1
+) raises -> Scalar[src.dtype]:
+    """Computes the variance value of the elements in a buffer.
+
+    ```
+    variance(x) = sum((x - E(x))^2) / (size - correction)
+    ```
+
+    Args:
+        src: The buffer.
+        correction: Normalize variance by size - correction (Default=1).
+
+    Returns:
+        The variance value of the elements in a buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.variance[src.dtype, input_fn_1d](src.numel(), correction)
+
+
+fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+    """Computes the mean value of the elements in a buffer.
+
+    Args:
+        src: The buffer of elements for which the mean is computed.
+
+    Returns:
+        The mean value of the elements in the given buffer.
+
+    Raises:
+        May raise on GPU targets when a device error occurs.
+    """
+    __comptime_assert src.rank == 1, "src must be of rank 1"
+
+    debug_assert(src.numel() != 0, "input must not be empty")
+
+    @parameter
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        var src_idx = src.layout(Idx(idx))
+        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+
+    return reduction.mean[src.dtype, input_fn_1d](src.numel())

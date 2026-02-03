@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,6 +16,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, NonCallableMock
 
 from max.driver import DeviceSpec
+from max.dtype import DType
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
 from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
 
@@ -29,6 +30,7 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
     pipeline_config.model.quantization_encoding = (
         SupportedEncoding.float8_e4m3fn
     )
+    pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(NUM_RANKS)
@@ -68,6 +70,7 @@ def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
     pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     memory_estimated = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
@@ -90,6 +93,7 @@ def test_deepseekv3_memory_estimation() -> None:
 def test_deepseekv3_memory_estimation_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
     pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
@@ -111,6 +115,7 @@ def mock_weights_pipeline_config(
 ) -> NonCallableMock:
     """Create a mock pipeline config for estimate_weights_size tests."""
     huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()

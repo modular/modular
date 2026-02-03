@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,13 +13,12 @@
 
 from math import ceil
 
-from layout import Layout, LayoutTensor
+from layout._tile_tensor import TileTensor
 
 from utils.numerics import min_or_neg_inf
 
 
-@register_passable("trivial")
-struct Weighted2DPoint[dtype: DType]:
+struct Weighted2DPoint[dtype: DType](TrivialRegisterType):
 
     """Utility class to wrap 2-d point coordinates and floating point weight for
     bilinear interpolation.
@@ -110,16 +109,13 @@ fn _bilinear_interpolate[
 @always_inline
 fn roi_align_nhwc[
     dtype: DType,
-    output_layout: Layout,
-    input_layout: Layout,
-    roi_layout: Layout,
     //,
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout, ...],
-    input: LayoutTensor[dtype, input_layout, ...],
-    rois: LayoutTensor[dtype, roi_layout, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    input: TileTensor[dtype, ...],
+    rois: TileTensor[dtype, ...],
     output_height: Int,
     output_width: Int,
     in_spatial_scale: Scalar,
@@ -133,9 +129,6 @@ fn roi_align_nhwc[
 
     Parameters:
         dtype: Type of the input tensor.
-        output_layout: The output layout.
-        input_layout: The input layout.
-        roi_layout: The layout of the regions of interests (ROI).
         aligned: If not true offset the ROIs by 0.5.
         mode: The pooling mode "AVG" for average and "MAX" for max pooling.
     Args:
@@ -160,16 +153,19 @@ fn roi_align_nhwc[
     __comptime_assert (
         in_spatial_scale.dtype.is_floating_point()
     ), "the scale factor must be in floating point format"
+    __comptime_assert rois.element_size == 1
+    __comptime_assert input.element_size == 1
+    __comptime_assert output.element_size == 1
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 
     var spatial_scale = in_spatial_scale.cast[DType.float32]()
     var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
 
-    var n_regions = rois.shape[0]()
-    var height = input.shape[1]()
-    var width = input.shape[2]()
-    var channels = input.shape[3]()
+    var n_regions = rois.static_shape[0]
+    var height = input.static_shape[1]
+    var width = input.static_shape[2]
+    var channels = input.static_shape[3]
 
     var pooled_height = output_height
     var pooled_width = output_width

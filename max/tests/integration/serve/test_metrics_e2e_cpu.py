@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,7 @@
 
 import time
 
+import hf_repo_lock
 import pytest
 import requests
 from async_asgi_testclient import TestClient
@@ -33,6 +34,9 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
@@ -113,6 +117,9 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,
@@ -193,6 +200,9 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     [
         PipelineConfig(
             model_path=MODEL_NAME,
+            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
+                MODEL_NAME
+            ),
             max_length=512,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding=SupportedEncoding.float32,

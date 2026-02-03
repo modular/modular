@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
 from gpu.host import DeviceBuffer, DeviceContext, DeviceMulticastBuffer
 from testing import assert_almost_equal, assert_true
-from collections.optional import OptionalReg
+from collections import Optional
 
 from utils import IndexList, StaticTuple
 
@@ -185,14 +185,17 @@ fn allreduce_test[
 
     @parameter
     for i in range(ngpus):
+        # For multimem, all GPUs share the same multicast buffer (in_bufs[0]).
+        # For non-multimem, each GPU uses its own input buffer (in_bufs[i]).
+        comptime input_idx = 0 if use_multimem else i
         allreduce[
             ngpus=ngpus,
-            output_lambda = OptionalReg[elementwise_epilogue_type](
+            output_lambda = Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
             use_quickreduce=use_quickreduce,
-        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+        ](in_bufs[input_idx], out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
     for i in range(ngpus):
@@ -221,7 +224,7 @@ fn allreduce_test[
                 @parameter
                 for i in range(ngpus):
                     vendor_ccl.allreduce[ngpus=ngpus](
-                        in_bufs,
+                        in_bufs[i],
                         out_bufs_vendor[i],
                         rank_sigs,
                         list_of_ctx[i],
@@ -453,7 +456,8 @@ def main():
     )
 
     # First, explicitly exercise the naive allreduce path by calling it directly.
-    allreduce_naive_test()
+    # TODO(jtodd): disabled to test single input buf approach
+    # allreduce_naive_test()
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()

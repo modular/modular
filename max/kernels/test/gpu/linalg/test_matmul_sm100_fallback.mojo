@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import Optional
 from hashlib import default_comp_time_hasher
 from sys import align_of, size_of
 
@@ -29,7 +29,9 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.matmul import matmul_sm100_fallback
+from linalg.matmul.gpu.sm100_structured.default.matmul import (
+    matmul_sm100_fallback,
+)
 from linalg.utils import elementwise_epilogue_type
 
 from utils.index import Index, IndexList
@@ -167,7 +169,7 @@ def test_matmul_sm100_fallback[
         block_tile_shape=block_tile_shape,
         a_swizzle=swizzle,
         b_swizzle=swizzle,
-        elementwise_lambda_fn = OptionalReg[elementwise_epilogue_type](
+        elementwise_lambda_fn = Optional[elementwise_epilogue_type](
             epilogue_fn
         ) if use_epilogue else None,
     ](c, a, b, ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,20 +21,15 @@ from os import abort
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Handle(Defaultable):
+struct Handle(Defaultable, Equatable, TrivialRegisterType):
     var _value: OpaquePointer
 
     fn __init__(out self):
         self._value = OpaquePointer()
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
 
 @fieldwise_init
-@register_passable("trivial")
-struct Operation:
+struct Operation(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime NONE = Self(111)
@@ -42,21 +37,14 @@ struct Operation:
     comptime CONJUGATE_TRANSPOSE = Self(113)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Fill:
+struct Fill(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime UPPER = Self(121)
@@ -64,42 +52,28 @@ struct Fill:
     comptime FULL = Self(123)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Diagonal:
+struct Diagonal(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime NON_UNIT = Self(131)
     comptime DIAGONAL_UNIT = Self(132)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Side:
+struct Side(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime LEFT = Self(141)
@@ -107,21 +81,14 @@ struct Side:
     comptime BOTH = Self(143)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct DataType:
+struct DataType(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime F16_R = Self(150)
@@ -149,7 +116,7 @@ struct DataType:
     comptime INVALID = Self(255)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int32(value)
 
     fn __init__(out self, dtype: DType) raises:
         if dtype == DType.float16:
@@ -165,18 +132,11 @@ struct DataType:
                 "the dtype '", dtype, "' is not currently handled by rocBLAS"
             )
 
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
-
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
-@register_passable("trivial")
-struct ComputeType:
+struct ComputeType(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime F32 = Self(300)
@@ -187,21 +147,14 @@ struct ComputeType:
     comptime INVALID = Self(455)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Status(Equatable, Writable):
+struct Status(Equatable, TrivialRegisterType, Writable):
     var _value: Int32
 
     comptime SUCCESS = Self(0)
@@ -222,10 +175,7 @@ struct Status(Equatable, Writable):
     comptime ARCH_MISMATCH = Self(15)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -273,69 +223,47 @@ struct Status(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct PointerMode:
+struct PointerMode(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime HOST = Self(0)
     comptime DEVICE = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct MallocBase:
+struct MallocBase(TrivialRegisterType):
     var _value: Int32
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Algorithm:
+struct Algorithm(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime STANDARD = Self(0)
     comptime SOLUTION_INDEX = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct GEAMExOp:
+struct GEAMExOp(Equatable, TrivialRegisterType):
     var _value: Int32
 
     comptime MIN_PLUS = Self(0)
     comptime PLUS_MIN = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        self._value = Int32(value)
 
     fn __int__(self) -> Int:
         return Int(self._value)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -152,7 +152,15 @@ fn sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
-    var a_reg = InlineArray[_, 2](
+    var a_reg: InlineArray[
+        LayoutTensor[
+            a_type,
+            layout_a,
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ],
+        2,
+    ] = [
         LayoutTensor[
             a_type,
             layout_a,
@@ -165,9 +173,17 @@ fn sgemm_double_buffer[
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
-    )
+    ]
     comptime layout_b = Layout.row_major(TN)
-    var b_reg = InlineArray[_, 2](
+    var b_reg: InlineArray[
+        LayoutTensor[
+            b_type,
+            layout_b,
+            MutAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ],
+        2,
+    ] = [
         LayoutTensor[
             b_type,
             layout_b,
@@ -180,7 +196,7 @@ fn sgemm_double_buffer[
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ].stack_allocation(),
-    )
+    ]
     comptime layout_c = Layout.row_major(TM, TN)
     var c_reg = (
         LayoutTensor[
@@ -371,7 +387,7 @@ fn test(ctx: DeviceContext) raises:
         for _ in range(nwarmup):
             run_func(ctx)
 
-        var nstime = ctx.execution_time[run_func](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)

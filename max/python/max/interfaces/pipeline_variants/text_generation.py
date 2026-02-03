@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -488,6 +488,22 @@ class TextGenerationContext(BaseContext, Protocol):
             new_token: The token ID to add to the generation sequence.
             log_probabilities: Optional log probability data for the new token
                 and alternatives. Used for analysis and debugging.
+        """
+        ...
+
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+        ...
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
         """
         ...
 

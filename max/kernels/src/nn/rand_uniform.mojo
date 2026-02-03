@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,9 +23,9 @@ fn random_uniform[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: fn[width: Int, _rank: Int] (
+    output_fn: fn[width: Int, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing [_],
+    ) capturing[_],
     target: StaticString,
 ](
     shape: IndexList[rank],

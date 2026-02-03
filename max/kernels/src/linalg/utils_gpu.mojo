@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -67,7 +67,9 @@ fn _block_swizzle_by_scale[
     # basically num_partitions = 2^3 = 8
     var num_partitions = 1 << Int(scale)
     # while griddim_x not divisible by num_partitions, reduce scale till scale is 0
-    while (grid_dim.data[0] & (num_partitions - 1)) and scale > 0:
+    while (
+        grid_dim.data[0] & Scalar[block_idx.element_type](num_partitions - 1)
+    ) and scale > 0:
         scale -= 1
         num_partitions = 1 << Int(scale)
 
@@ -76,7 +78,8 @@ fn _block_swizzle_by_scale[
     # bx = block_idx.data[0] >> scale
     var bx = block_idx.data[0] >> scale
     var by = (block_idx.data[1] << scale) + (
-        (block_idx.data[0]) & ((1 << Int(scale)) - 1)
+        (block_idx.data[0])
+        & Scalar[block_idx.element_type]((1 << Int(scale)) - 1)
     )
 
     # for the number of rows of overflow, we want to move to next stripe
@@ -94,13 +97,12 @@ fn _block_swizzle_by_scale[
 # ===------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](ImplicitlyCopyable, Stringable, Writable):
+](Stringable, TrivialRegisterType, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -330,10 +332,9 @@ fn _shared_memory_usage[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](ImplicitlyCopyable):
+](TrivialRegisterType):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.

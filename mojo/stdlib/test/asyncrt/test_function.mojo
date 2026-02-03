@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,7 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-@register_passable("trivial")
-struct TwoS:
+struct TwoS(TrivialRegisterType):
     var s0: S
     var s1: S
 
@@ -43,10 +42,6 @@ struct OneS(DevicePassable):
     @staticmethod
     fn get_type_name() -> String:
         return "OneS"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return "TwoS"
 
     var s: S
 

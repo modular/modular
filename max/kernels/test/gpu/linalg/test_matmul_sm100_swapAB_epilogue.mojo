@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import Optional
 from random import random_si64, shuffle, seed
 from sys import align_of, size_of, argv
 
@@ -27,10 +27,12 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.matmul import (
+from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100_structured.config import MatmulConfig
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+)
 from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import Index, IndexList
@@ -202,7 +204,7 @@ def test_matmul_sm100_epilogue[
         k_group_size=k_group_size,
     )
 
-    comptime optional_lambda_fn = OptionalReg[elementwise_compute_lambda_type](
+    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
         test_lambda_add_coords_prod
     ) if test_lambda_fn else None
 
@@ -227,7 +229,9 @@ def test_matmul_sm100_epilogue[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
     else:

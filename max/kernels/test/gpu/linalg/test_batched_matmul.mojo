@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,7 +30,7 @@ from utils import Index, IndexList
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
-] (SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
@@ -258,7 +258,7 @@ fn test[
     @parameter
     if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[3](b, m, Int(n)),
+            IndexList[3](b, m, n),
             ctx,
         )
 

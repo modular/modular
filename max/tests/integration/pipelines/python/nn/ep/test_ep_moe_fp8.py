@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,7 +35,7 @@ from max.nn.legacy.float8_config import (
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.moe import MoEFp8, MoEGate
+from max.nn.legacy.moe import MoEGate, MoEQuantized
 from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
@@ -160,7 +160,7 @@ def test_ep_moe_fp8(
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
         n_nodes=1,  # Single node test
-        dispatch_fp8_config=fp8_input_config,
+        dispatch_fp8_config=fp8_config,
     )
 
     # Initialize EP communication
@@ -168,7 +168,7 @@ def test_ep_moe_fp8(
     ep_batch_manager = EPBatchManager(ep_config)
 
     # Create MoE module with EP support
-    moe = MoEFp8(
+    moe = MoEQuantized(
         devices=[DeviceRef.CPU()] + devices_ref,
         hidden_dim=HIDDEN_DIM,
         num_experts=NUM_EXPERTS,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from memory import UnsafePointer
 
 comptime elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 @parameter
@@ -72,9 +72,7 @@ fn _matmul_allreduce[
     @parameter
     for i in range(ngpus):
         allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
-            rebind[InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]](
-                c_temp_buffers
-            ),
+            c_temp_buffers[i],
             output_buffers[i],
             rank_sigs,
             ctxs[i],
@@ -205,9 +203,7 @@ fn _matmul_allreduce_split_m[
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
-                ](C_parts),
+                C_parts[i],
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],
@@ -337,9 +333,7 @@ fn _matmul_allreduce_split_n[
                 output_lambda = outputs_lambda_wrapper[input_index=i],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
-                rebind[
-                    InlineArray[NDBuffer[out_dtype, 2, MutAnyOrigin], ngpus]
-                ](C_parts),
+                C_parts[i],
                 Out_parts[i],
                 rank_sigs,
                 ctxs[i],

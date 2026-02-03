@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -385,7 +385,7 @@ struct Variadic:
 
 
 @fieldwise_init
-struct _VariadicListIter[type: __TypeOfAllTypes](
+struct _VariadicListIter[type: TrivialRegisterType](
     ImplicitlyCopyable, Iterable, Iterator
 ):
     """Const Iterator for VariadicList.
@@ -419,8 +419,9 @@ struct _VariadicListIter[type: __TypeOfAllTypes](
         return (len, {len})
 
 
-@register_passable("trivial")
-struct VariadicList[type: __TypeOfAllTypes](Iterable, Sized):
+struct VariadicList[type: TrivialRegisterType](
+    Iterable, Sized, TrivialRegisterType
+):
     """A utility class to access homogeneous variadic function arguments.
 
     `VariadicList` is used when you need to accept variadic arguments where all
@@ -569,7 +570,7 @@ struct _VariadicListMemIter[
     fn __init__(
         out self,
         index: Int,
-        ref [Self.list_origin]list: Self.variadic_list_type,
+        ref[Self.list_origin] list: Self.variadic_list_type,
     ):
         self.index = index
         self.src = Pointer(to=list)
@@ -577,7 +578,7 @@ struct _VariadicListMemIter[
     @always_inline
     fn __next__(
         mut self,
-    ) raises StopIteration -> ref [Self.elt_origin._mlir_origin] Self.elt_type:
+    ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
         var index = self.index
         if index >= len(self.src[]):
             raise StopIteration()
@@ -667,7 +668,7 @@ struct VariadicListMem[
                 ]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn (idx: Int, var elt: Self.element_type) capturing
+        elt_handler: fn(idx: Int, var elt: Self.element_type) capturing
     ](deinit self):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -712,7 +713,7 @@ struct VariadicListMem[
     @always_inline
     fn __getitem__(
         self, idx: Int
-    ) -> ref [
+    ) -> ref[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
@@ -869,7 +870,7 @@ struct VariadicPack[
                 ).mut_cast[True]().destroy_pointee()
 
     fn consume_elements[
-        elt_handler: fn[idx: Int] (var elt: Self.element_types[idx]) capturing
+        elt_handler: fn[idx: Int](var elt: Self.element_types[idx]) capturing
     ](deinit self):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -923,7 +924,7 @@ struct VariadicPack[
     @always_inline
     fn __getitem__[
         index: Int
-    ](self) -> ref [Self.origin] Self.element_types[index]:
+    ](self) -> ref[Self.origin] Self.element_types[index]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -990,6 +991,54 @@ struct VariadicPack[
         """This returns the stored KGEN pack after loading all of the elements.
         """
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+
+    fn _write_to[
+        O1: ImmutOrigin = StaticConstantOrigin,
+        O2: ImmutOrigin = StaticConstantOrigin,
+        O3: ImmutOrigin = StaticConstantOrigin,
+        *,
+        is_repr: Bool = False,
+    ](
+        self: VariadicPack[_, Writable, ...],
+        mut writer: Some[Writer],
+        start: StringSlice[O1] = rebind[StringSlice[O1]](StaticString("")),
+        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString("")),
+        sep: StringSlice[O3] = rebind[StringSlice[O3]](StaticString(", ")),
+    ):
+        """Writes a sequence of writable values from a pack to a writer with
+        delimiters.
+
+        This function formats a variadic pack of writable values as a delimited
+        sequence, writing each element separated by the specified separator and
+        enclosed by start and end delimiters.
+
+        Parameters:
+            O1: The origin of the open `StringSlice`.
+            O2: The origin of the close `StringSlice`.
+            O3: The origin of the separator `StringSlice`.
+            is_repr: Whether to use repr formatting for elements.
+
+        Args:
+            writer: The writer to write to.
+            start: The starting delimiter.
+            end: The ending delimiter.
+            sep: The separator between items.
+        """
+        writer.write_string(start)
+
+        @parameter
+        for i in range(self.__len__()):
+
+            @parameter
+            if i != 0:
+                writer.write_string(sep)
+
+            @parameter
+            if is_repr:
+                self[i].write_repr_to(writer)
+            else:
+                self[i].write_to(writer)
+        writer.write_string(end)
 
 
 # ===-----------------------------------------------------------------------===#

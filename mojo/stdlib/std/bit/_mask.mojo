@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -58,7 +58,9 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
     comptime d = dtype if dtype != DType.int else (
         DType.int32 if size_of[dtype]() == 4 else DType.int64
     )
-    return (value.cast[d]() >> (bit_width_of[d]() - 1)).cast[dtype]()
+    return (value.cast[d]() >> SIMD[d, value.size](bit_width_of[d]() - 1)).cast[
+        dtype
+    ]()
 
 
 @always_inline

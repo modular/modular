@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -785,7 +785,7 @@ def test_tma_umma[
             UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
-            shared_mem_bytes=Int(smem_use),
+            shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_use
             ),
@@ -815,7 +815,7 @@ def test_tma_umma[
             UInt(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
-            shared_mem_bytes=Int(smem_use),
+            shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_use
             ),

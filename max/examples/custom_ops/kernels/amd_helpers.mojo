@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -325,7 +325,7 @@ struct MMATileBuffers[
     @always_inline
     fn __init__(
         out self,
-        ref [Self.tensor_origin]tensor: Self.tensor_type,
+        ref[Self.tensor_origin] tensor: Self.tensor_type,
         warp_idx: Int,
         warp_k_idx: Int,
         block_idx: Int,

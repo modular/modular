@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,7 +42,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer:
+trait Indexer(ImplicitlyDestructible):
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
@@ -84,7 +84,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable:
+trait Intable(ImplicitlyDestructible):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
@@ -165,7 +165,6 @@ trait IntableRaising:
 
 
 @lldb_formatter_wrapping_type
-@register_passable("trivial")
 struct Int(
     Absable,
     Boolable,
@@ -188,6 +187,7 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
+    TrivialRegisterType,
     Truncable,
     Writable,
 ):
@@ -232,19 +232,6 @@ struct Int(
             This type's name.
         """
         return "Int"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name, for use in error messages when handing
-        arguments to kernels.
-        TODO: This will go away soon, when we get better error messages for
-        kernel calls.
-
-        Returns:
-            This type's name.
-        """
-        return Self.get_type_name()
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -473,6 +460,7 @@ struct Int(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
+    @deprecated("Explicitly cast the operands to Float64 before dividing")
     fn __truediv__(self, rhs: Int) -> Float64:
         """Return the floating point division of `self` and `rhs`.
 
@@ -1160,4 +1148,4 @@ struct Int(
         if n >> 32 == 0:
             return _calc_initial_buffer_size_int32(n)
 
-        return _calc_initial_buffer_size_int64(n)
+        return _calc_initial_buffer_size_int64(UInt64(n))

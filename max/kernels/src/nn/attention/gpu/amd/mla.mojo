@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import simd_width_of
 
 from gpu import barrier, block_idx, lane_id
@@ -122,7 +119,7 @@ __extension Attention:
 
             var k_tile = self.gmem_manager.get_kv_tensor(
                 self.k.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
+                    UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
                     0,
@@ -132,7 +129,7 @@ __extension Attention:
 
             var v_tile = self.gmem_manager.get_kv_tensor(
                 self.v.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
+                    UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
                     0,
@@ -188,10 +185,10 @@ __extension Attention:
                 masked=True,
             ](
                 k_rope.block_paged_ptr[Int(Self.BN)](
-                    self.get_batch_idx(),
-                    kv_tile_start_row + self.cache_start_pos,
-                    Int(Self.kv_head_idx() // cache_group),
-                    cache_depth - rope_depth,
+                    UInt32(self.get_batch_idx()),
+                    kv_tile_start_row + UInt32(self.cache_start_pos),
+                    UInt32(Int(Self.kv_head_idx() // cache_group)),
+                    UInt32(cache_depth - rope_depth),
                 ),
                 k_rope_runtime_layout,
             )
@@ -249,8 +246,10 @@ __extension Attention:
             self.mma_pv(v_buffer)
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
-            var end = min(i + UInt32(Self.BN), self.num_keys)
-            loop_over_kvcache[Int(Self.BN)](i, end, end != self.num_keys)
+            var end = min(i + UInt32(Self.BN), UInt32(self.num_keys))
+            loop_over_kvcache[Int(Self.BN)](
+                i, end, end != UInt32(self.num_keys)
+            )
 
         self.out_reg_buffer.apply_softmax_denominator(
             self.softmax.rowsum_tensor
@@ -261,8 +260,12 @@ __extension Attention:
     @always_inline
     fn mla_decoding(
         mut self,
-        exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
-        qk_max_ptr: UnsafePointer[Scalar[get_accum_type[Self.q_type]()]],
+        exp_sum_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
+        qk_max_ptr: UnsafePointer[
+            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
+        ],
         num_partitions: Int,
     ):
         self.mha_decoding(exp_sum_ptr, qk_max_ptr, num_partitions)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from utils import StaticTuple
 from math import iota, ceildiv
 from sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
+from collections import OptionalReg
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
@@ -65,12 +65,11 @@ struct MaskName(Stringable):
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct TileMaskStatus(
     Equatable,
     Identifiable,
-    ImplicitlyCopyable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """A tile's masking status."""
@@ -119,8 +118,7 @@ struct TileMaskStatus(
         writer.write("unknown mask")
 
 
-@register_passable("trivial")
-struct MaskStrategy(ImplicitlyCopyable):
+struct MaskStrategy(TrivialRegisterType):
     var _value: Int32
     var _upper_triangular_window_size: Int32
     comptime NO_MASK = Self(0)
@@ -180,8 +178,7 @@ struct MaskStrategy(ImplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-trait MHAMask(Copyable, DevicePassable):
+trait MHAMask(Copyable, DevicePassable, TrivialRegisterType):
     """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
     """
 
@@ -327,8 +324,7 @@ comptime MASK_VALUE = -10_000
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct CausalMask(ImplicitlyCopyable, MHAMask):
+struct CausalMask(MHAMask, TrivialRegisterType):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -348,10 +344,6 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
     @staticmethod
     fn name() -> String:
         return "CausalMask"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -375,7 +367,9 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
         # itself and previous tokens.
         # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
         var masked_score_vec = (
-            SIMD[index_type, width](q_idx).ge(iota[index_type, width](k_idx))
+            SIMD[index_type, width](q_idx).ge(
+                iota[index_type, width](Scalar[index_type](k_idx))
+            )
         ).select(score_vec, MASK_VALUE)
 
         return masked_score_vec
@@ -445,7 +439,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
         # `seq_len <= cache_len`.
         # If `seq_len` (and thus `rows`) may be larger than
         # `cache_len` (and thus `num_cols`), this will return the wrong result.
-        return ceildiv(min(row + BM, num_cols), BN)
+        return ceildiv(min(row + UInt32(BM), num_cols), UInt32(BN))
 
     @staticmethod
     fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
@@ -495,8 +489,7 @@ struct CausalMask(ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NullMask(ImplicitlyCopyable, MHAMask):
+struct NullMask(MHAMask, TrivialRegisterType):
     """Mask that's effectively a noop."""
 
     comptime apply_log2e_after_mask: Bool = False
@@ -516,10 +509,6 @@ struct NullMask(ImplicitlyCopyable, MHAMask):
     @staticmethod
     fn name() -> String:
         return "NullMask"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -595,8 +584,7 @@ struct NullMask(ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
+struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterType):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -635,10 +623,6 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
     fn name() -> String:
         return "ChunkedMask[" + String(Self.local_window_size) + "]"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn mask[
         dtype: DType,
@@ -656,9 +640,11 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         ), "SIMD width of chunked mask must be <= local window size"
 
         var k_start_idx = coord.data[3]
-        var k_end_idx = k_start_idx + width - 1
+        var k_end_idx = k_start_idx + Scalar[element_type](width) - 1
 
-        q_chunk_idx = Int(coord.data[2] // Self.local_window_size)
+        q_chunk_idx = Int(
+            coord.data[2] // Scalar[element_type](Self.local_window_size)
+        )
         k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
         k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
 
@@ -669,13 +655,10 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         elif q_chunk_idx == k_start_chunk_idx or q_chunk_idx == k_end_chunk_idx:
             # partial mask
             var retval = score_vec
-            var boundary = (
-                UInt32(
-                    (k_start_idx + Self.local_window_size - 1)
-                    // Self.local_window_size
-                )
-                * Self.local_window_size
-            )
+            var boundary = UInt32(
+                (k_start_idx + Scalar[element_type](Self.local_window_size) - 1)
+                // Scalar[element_type](Self.local_window_size)
+            ) * UInt32(Self.local_window_size)
 
             var mask_val = SIMD[DType.bool, width](fill=False)
             var k_indices = (
@@ -724,16 +707,16 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         # First column for which `row` is not masked is
-        var col: UInt32 = (
-            row // Self.local_window_size
-        ) * Self.local_window_size
+        var col: UInt32 = (row // UInt32(Self.local_window_size)) * UInt32(
+            Self.local_window_size
+        )
         comptime align_to = min(page_size, BN)
 
         @parameter
         if align_to == 1:
             return col
         else:
-            return (col // align_to) * align_to
+            return (col // UInt32(align_to)) * UInt32(align_to)
 
     @always_inline
     fn total_iters[
@@ -742,9 +725,9 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
         start_col = self.start_column[BM, BN, page_size](row)
         # end_col is 1 past the end, the first that is masked off
         end_col = (
-            1 + ((row + BM - 1) // Self.local_window_size)
-        ) * Self.local_window_size
-        return ceildiv(end_col - start_col, BN)
+            1 + ((row + UInt32(BM) - 1) // UInt32(Self.local_window_size))
+        ) * UInt32(Self.local_window_size)
+        return ceildiv(end_col - start_col, UInt32(BN))
 
     @staticmethod
     fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
@@ -783,8 +766,7 @@ struct ChunkedMask[local_window_size: Int](ImplicitlyCopyable, MHAMask):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
+struct SlidingWindowCausalMask[window_size: Int](MHAMask, TrivialRegisterType):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:
@@ -822,10 +804,6 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     fn name() -> String:
         return "SlidingWindowCausalMask[" + String(Self.window_size) + "]"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
     fn mask[
         dtype: DType,
@@ -849,7 +827,9 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         # first, check if the query is after the key, this step is the same
         # as the causal mask
         var masked_score_vec = (
-            SIMD[index_type, width](q_idx).ge(iota[index_type, width](k_idx))
+            SIMD[index_type, width](q_idx).ge(
+                iota[index_type, width](Scalar[index_type](k_idx))
+            )
         ).select(score_vec, MASK_VALUE)
 
         # second, check if the query is within the window size of the key
@@ -857,8 +837,11 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         # smaller than k_idx, but this is not possible because of the causal mask
         # that we have applied.
         return (
-            (SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx))
-            .lt(Self.window_size)
+            (
+                SIMD[index_type, width](q_idx)
+                - iota[index_type, width](Scalar[index_type](k_idx))
+            )
+            .lt(Scalar[index_type](Self.window_size))
             .select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
         )
 
@@ -894,7 +877,11 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         # around zero.
 
         var lhs = tile_offset.data[0] + 1
-        var rhs = tile_offset.data[1] + tile_size.data[1] + Self.window_size
+        var rhs = (
+            tile_offset.data[1]
+            + tile_size.data[1]
+            + Scalar[element_type](Self.window_size)
+        )
         var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
@@ -912,9 +899,10 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
 
         # Condition 2: The latest query position must be within the window range of the
         # earliest key position
-        var max_query_within_window_of_min_key = (
-            tile_offset.data[0] + tile_size.data[0] - 1
-            < tile_offset.data[1] + Self.window_size
+        var max_query_within_window_of_min_key = tile_offset.data[
+            0
+        ] + tile_size.data[0] - 1 < tile_offset.data[1] + Scalar[element_type](
+            Self.window_size
         )
 
         if min_query_after_max_key and max_query_within_window_of_min_key:
@@ -941,15 +929,15 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
             if align_to == 1:
                 return col
             else:
-                return (col // align_to) * align_to
+                return (col // UInt32(align_to)) * UInt32(align_to)
 
     @always_inline
     fn total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32, num_cols: UInt32) -> UInt32:
         start_col = self.start_column[BM, BN, page_size](row)
-        end_col = min(row + BM, num_cols)  # one past end
-        return ceildiv(end_col - start_col, BN)
+        end_col = min(row + UInt32(BM), num_cols)  # one past end
+        return ceildiv(end_col - start_col, UInt32(BN))
 
     @staticmethod
     fn count_nonfull_sets(BM: Int, BN: Int) -> Int:
@@ -966,7 +954,7 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
     ]:
         start_col = self.start_column[BM, BN, page_size](row)
         # partial_exit_end_col = row + BM
-        partial_exit_end_col = min(row + BM, num_cols)
+        partial_exit_end_col = min(row + UInt32(BM), num_cols)
         # partial's end uses `ceildiv` and unmasked uses floored division
         # Partials must cover the entire `BN` tile with an masked entry
         # The unmasked region can't handle a tile with any
@@ -983,20 +971,20 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         # Thus, we will have unmasked iters when
         # (window_size) // BN - (BM + BN - 2) // BN > 0
         #
-        end_tile = ceildiv(partial_exit_end_col - start_col, BN)
+        end_tile = ceildiv(partial_exit_end_col - start_col, UInt32(BN))
 
         @parameter
         if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
             # the partial entry region ends when row + BM - 1 is unmasked
-            var partial_entry_end_col: UInt32 = row + BM
-            if partial_entry_end_col > Self.window_size:
-                partial_entry_end_col -= Self.window_size
+            var partial_entry_end_col: UInt32 = row + UInt32(BM)
+            if partial_entry_end_col > UInt32(Self.window_size):
+                partial_entry_end_col -= UInt32(Self.window_size)
             else:
                 partial_entry_end_col = 0
             unmasked_end_col = row + 1
             return {
-                ceildiv(partial_entry_end_col - start_col, BN),
-                (unmasked_end_col - start_col) // BN,
+                ceildiv(partial_entry_end_col - start_col, UInt32(BN)),
+                (unmasked_end_col - start_col) // UInt32(BN),
                 end_tile,
             }
         else:
@@ -1032,7 +1020,8 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
         if (((Self.window_size) // BN) - ((BM + BN - 2) // BN)) > 0:
             return {
                 MaskStrategy(
-                    MaskStrategy.UPPER_TRIANGULAR._value, Self.window_size
+                    MaskStrategy.UPPER_TRIANGULAR._value,
+                    Int32(Self.window_size),
                 ),
                 MaskStrategy.NO_MASK,
                 MaskStrategy.LOWER_TRIANGULAR,
@@ -1044,7 +1033,7 @@ struct SlidingWindowCausalMask[window_size: Int](ImplicitlyCopyable, MHAMask):
                         MaskStrategy.UPPER_TRIANGULAR
                         | MaskStrategy.LOWER_TRIANGULAR
                     )._value,
-                    Self.window_size,
+                    Int32(Self.window_size),
                 )
             }
 
@@ -1061,14 +1050,16 @@ fn naively_compute_total_iters[
     var iter_count: UInt32 = 0
     var kv_row: UInt32 = 0
     while kv_row < end:
-        iter_count += Int(
-            mask.status(
-                Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
-                Index[dtype = DType.int32](BM, BN),
+        iter_count += UInt32(
+            Int(
+                mask.status(
+                    Index[dtype = DType.int32](Int(q_row), Int(kv_row)),
+                    Index[dtype = DType.int32](BM, BN),
+                )
+                != TileMaskStatus.FULL_MASK
             )
-            != TileMaskStatus.FULL_MASK
         )
-        kv_row += BN
+        kv_row += UInt32(BN)
     return iter_count
 
 
@@ -1084,13 +1075,12 @@ fn naively_get_first_nonempty_mask_col[
         )
         == TileMaskStatus.FULL_MASK
     ):
-        kv_row += BN
+        kv_row += UInt32(BN)
     return kv_row
 
 
-@register_passable("trivial")
 struct MaterializedMask[dtype_: DType, layout_: Layout](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's backed by a materialized tensor."""
 
@@ -1120,10 +1110,6 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
     @staticmethod
     fn name() -> String:
         return "MaterializedMask"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     fn __init__(
         out self,
@@ -1269,9 +1255,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's the AND of two masks."""
 
@@ -1292,10 +1277,6 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     @staticmethod
     fn name() -> String:
         return "AndMask[" + Self.T.name() + ", " + Self.S.name() + "]"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[
@@ -1379,9 +1360,8 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    ImplicitlyCopyable, MHAMask
+    MHAMask, TrivialRegisterType
 ):
     """Mask that's the OR of two masks."""
 
@@ -1402,10 +1382,6 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     @staticmethod
     fn name() -> String:
         return "OrMask[" + Self.T.name() + ", " + Self.S.name() + "]"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn mask[

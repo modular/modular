@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,7 @@
 from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true, assert_false
 from math import iota
+from memory import ImmutSpan, MutSpan
 
 
 def test_span_list_int():
@@ -64,7 +65,7 @@ def test_span_list_str():
 
 
 def test_span_array_int():
-    var l = InlineArray[Int, 7](1, 2, 3, 4, 5, 6, 7)
+    var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span[Int](array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -87,7 +88,7 @@ def test_span_array_int():
 
 
 def test_span_array_str():
-    var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
+    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span[String](array=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -110,7 +111,7 @@ def test_span_array_str():
 
 
 def test_indexing():
-    var l = InlineArray[Int, 7](1, 2, 3, 4, 5, 6, 7)
+    var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span[Int](array=l)
     assert_equal(s[True], 2)
     assert_equal(s[Int(0)], 1)
@@ -148,7 +149,7 @@ def test_copy_from():
 
 
 def test_bool():
-    var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
+    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span[String](l)
     assert_true(s)
     assert_true(not s[0:0])
@@ -164,7 +165,7 @@ def test_contains():
 
 
 def test_equality():
-    var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
+    var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span[String](l)
     var sp2 = Span[String](l)
@@ -191,14 +192,14 @@ def test_fill():
 
 
 def test_ref():
-    var l = InlineArray[Int, 3](1, 2, 3)
+    var l: InlineArray[Int, 3] = [1, 2, 3]
     var s = Span[Int](array=l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
 def test_reversed():
-    var forward = InlineArray[Int, 3](1, 2, 3)
-    var backward = InlineArray[Int, 3](3, 2, 1)
+    var forward: InlineArray[Int, 3] = [1, 2, 3]
+    var backward: InlineArray[Int, 3] = [3, 2, 1]
     var s = Span[Int](forward)
     var i = 0
     for num in reversed(s):
@@ -210,7 +211,7 @@ def test_reversed():
 # but we want to make sure it compiles
 def test_span_coerce():
     var l = [1, 2, 3]
-    var a = InlineArray[Int, 3](1, 2, 3)
+    var a: InlineArray[Int, 3] = [1, 2, 3]
 
     fn takes_span(s: Span[Int]):
         pass
@@ -266,8 +267,32 @@ def test_span_repr():
 
 def test_reverse():
     def _test_dtype[D: DType]():
-        forward = InlineArray[Scalar[D], 11](1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
-        backward = InlineArray[Scalar[D], 11](11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+        var forward: InlineArray[Scalar[D], 11] = [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+        ]
+        var backward: InlineArray[Scalar[D], 11] = [
+            11,
+            10,
+            9,
+            8,
+            7,
+            6,
+            5,
+            4,
+            3,
+            2,
+            1,
+        ]
         s = Span(forward)
         s.reverse()
         i = 0
@@ -447,6 +472,30 @@ def test_iter_empty():
     var it = iter(span)
     with assert_raises():
         _ = it.__next__()  # raises StopIteration
+
+
+def test_mut_span_alias():
+    var data = [1, 2, 3, 4, 5]
+
+    fn fill_span(span: MutSpan[Int, _]):
+        span.fill(42)
+
+    fill_span(data)
+    for val in data:
+        assert_equal(val, 42)
+
+
+def test_immut_span_alias():
+    var data = [1, 2, 3, 4, 5]
+
+    fn sum_span(span: ImmutSpan[Int, _]) -> Int:
+        var total = 0
+        for i in range(len(span)):
+            total += span[i]
+        return total
+
+    # ImmutSpan works with both mutable and immutable data
+    assert_equal(sum_span(data), 15)
 
 
 def main():

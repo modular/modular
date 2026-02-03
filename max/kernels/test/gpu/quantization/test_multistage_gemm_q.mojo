@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -87,8 +87,8 @@ fn repack_Q4_0_for_sm8x[
     var tid: UInt = thread_idx.x
     var warp_id: UInt = tid // WARP_SIZE
     comptime num_warps_x = BN // repack_tile[0]
-    var warp_x = UInt(warp_id % UInt(num_warps_x))
-    var warp_y = UInt(warp_id // UInt(num_warps_x))
+    var warp_x = warp_id % UInt(num_warps_x)
+    var warp_y = warp_id // UInt(num_warps_x)
     var lane_id = Int(tid % WARP_SIZE)
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
 
@@ -275,8 +275,8 @@ fn create_ref_b[
     var warp_id: UInt = tid // WARP_SIZE
     var lane_id: UInt = tid % WARP_SIZE
     var block_idx = Index(Int(block_idx.x), Int(block_idx.y))
-    var warp_x = UInt(warp_id // UInt(num_k_warps))
-    var warp_y = UInt(warp_id % UInt(num_k_warps))
+    var warp_x = warp_id // UInt(num_k_warps)
+    var warp_y = warp_id % UInt(num_k_warps)
 
     comptime group_bytes = group_size // 2 + 2
     comptime N = Int(b_q_layout.shape[0])
@@ -796,7 +796,7 @@ fn test_quantized[
                 ctx,
             )
 
-        var nstime = ctx.execution_time[run_func](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(

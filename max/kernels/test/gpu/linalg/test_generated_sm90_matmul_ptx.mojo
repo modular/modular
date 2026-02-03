@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from math import ceildiv
 from sys import size_of
 
@@ -22,6 +21,7 @@ from gpu.host.compile import _compile_code
 from gpu.host.info import H100
 from layout import Layout
 from layout.tma_async import _tma_desc_tile_layout
+from collections import OptionalReg
 from linalg.matmul.gpu.sm90.matmul import (
     HopperMatmulSM90Kernel,
     _get_c_smem_layout,
@@ -54,8 +54,8 @@ fn compile_sm90_matmul_ptx[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     grid_shape: OptionalReg[IndexList[2]] = None,
     use_tma_store: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: OptionalReg[
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,

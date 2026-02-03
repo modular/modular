@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,6 @@ comptime _mIsNotInteger = __mlir_attr.`#pop.simd<127> : !pop.scalar<ui8>`
 comptime _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
 
 
-@register_passable("trivial")
 struct DType(
     Equatable,
     Hashable,
@@ -35,6 +34,7 @@ struct DType(
     KeyElement,
     Representable,
     Stringable,
+    TrivialRegisterType,
     Writable,
 ):
     """Represents a data type specification and provides methods for working

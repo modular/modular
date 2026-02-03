@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,11 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PipelineConfig,
+    TextGenerationPipeline,
+)
 from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
@@ -52,7 +56,7 @@ class TokenGenerationScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        paged_manager: PagedKVCacheManager | None = None,
+        kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
     ) -> None:
         self.scheduler_config = scheduler_config
@@ -65,7 +69,7 @@ class TokenGenerationScheduler(Scheduler):
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_manager,
+            kv_cache=kv_cache,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
@@ -113,8 +117,12 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # If the batch is empty, skip
-        if not inputs and not self.support_empty_batches:
+        # Skip if there is no work to do.
+        has_pending_outputs = (
+            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            and self.pipeline.has_pending_outputs()
+        )
+        if not (inputs or self.support_empty_batches or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
@@ -131,7 +139,7 @@ class TokenGenerationScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.batch_constructor.paged_cache,
+            kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
@@ -175,15 +183,18 @@ class TokenGenerationScheduler(Scheduler):
 
             return len(batch_request_ids)
 
+        # Filter out all responses for requests that are already released.
+        # We can get a response for a request that is already released due to
+        # the quirk of overlap scheduling where the pipeline may produce an extra
+        # token after EOS.
+        responses = {
+            req_id: response
+            for req_id, response in responses.items()
+            if self.batch_constructor.contains(req_id)
+        }
+
         # Advance the requests and collect the invalid request IDs
-        for (
-            request_id
-        ) in self.batch_constructor.advance_requests_and_collect_invalid_ids(
-            inputs.batches
-        ):
-            # The only scenario where the request ID should not be in the responses dictionary, is if the pipeline
-            # errored out, this should not happen.
-            del responses[request_id]
+        self.batch_constructor.advance_requests(inputs)
 
         # Release terminated requests from the batch
         num_terminated_requests = 0
@@ -205,7 +216,7 @@ class TokenGenerationScheduler(Scheduler):
 
 
 def load_text_generation_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -218,14 +229,14 @@ def load_text_generation_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    paged_manager = get_paged_manager(pipeline)
-
     # Return Scheduler
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
-        paged_manager=paged_manager,
+        # For spec decoding, there may be multiple KVCaches. The scheduler
+        # arbitrarily uses either the draft or target one. The other kvcache is
+        # hidden from scheduler currently and managed by pipelines.
+        kv_cache=pipeline.kv_managers[0],
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

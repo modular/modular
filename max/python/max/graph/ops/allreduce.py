@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,21 +20,8 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import (
-    BufferValue,
-    BufferValueLike,
-    TensorType,
-    TensorValue,
-    TensorValueLike,
-)
-
-
-def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
-    return [BufferValue(v) for v in values]
-
-
-def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
-    return [TensorValue(v) for v in values]
+from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
+from .utils import _buffer_values, _tensor_values
 
 
 def sum(
@@ -85,14 +72,14 @@ def sum(
     graph = Graph.current
     for input_tensor, device in zip(inputs, devices, strict=True):
         in_chain = graph.device_chains[device]
-        # Each op takes all inputs but only produces output for its device.
+        # Each op takes only its own input; peer addresses shared via signals.
         result, out_chain = Graph.current._add_op_generated(
             mo.DistributedAllreduceSumOp,
             # Single output tensor type.
             input_tensor.type,
             # Output chain type.
             _ChainType(),
-            inputs,
+            input_tensor,
             signal_buffers,
             in_chain,
             device,

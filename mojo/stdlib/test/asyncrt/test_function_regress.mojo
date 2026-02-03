@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,15 +24,13 @@ comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-@register_passable("trivial")
-trait MaybeZeroSized:
+trait MaybeZeroSized(TrivialRegisterType):
     fn value(self) -> S:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
+struct ZeroSized(DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable):
     comptime device_type: AnyType = Self
 
     fn _to_device_type[
@@ -43,10 +41,6 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     @staticmethod
     fn get_type_name() -> String:
         return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @always_inline
     fn value(self) -> S:
@@ -60,8 +54,9 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
+struct NotZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterType, Writable
+):
     comptime device_type: AnyType = Self
 
     fn _to_device_type[
@@ -72,10 +67,6 @@ struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     @staticmethod
     fn get_type_name() -> String:
         return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     var val: S
 

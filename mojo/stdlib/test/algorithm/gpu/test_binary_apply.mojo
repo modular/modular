@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ from testing import assert_equal, TestSuite
 
 
 fn vec_func[
-    op: fn (Float32, Float32) capturing [_] -> Float32
+    op: fn(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],

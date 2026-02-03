@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,7 +28,7 @@ fn mma[
     //,
     tensor_core_mma: TiledTensorCore,
     BK: Int,
-    prefetch_function: OptionalReg[fn () capturing -> None],
+    prefetch_function: OptionalReg[fn() capturing -> None],
     swap_a_b: Bool = False,
     beg_iter: Int = 0,
     num_iters: Int = 1,

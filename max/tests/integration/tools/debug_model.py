@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,7 +42,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--framework",
     "framework_name",
-    type=click.Choice(["max", "torch"]),
+    type=click.Choice(["max", "torch", "vllm"]),
     default="max",
     help="Framework to run pipeline with",
 )

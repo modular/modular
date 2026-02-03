@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,7 @@ fn _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 
 @always_inline
 fn debug_assert[
-    cond: fn () capturing [_] -> Bool,
+    cond: fn() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,

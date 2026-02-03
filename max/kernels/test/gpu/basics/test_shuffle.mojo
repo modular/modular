@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,9 +30,7 @@ from testing import assert_equal
 fn kernel_wrapper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: fn (SIMD[dtype, simd_width]) capturing -> SIMD[
-        dtype, simd_width
-    ],
+    kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
 ](device_ptr: UnsafePointer[Scalar[dtype]]):
     var val = device_ptr.load[width=simd_width](thread_idx.x * UInt(simd_width))
     var result = kernel_fn(val)
@@ -44,9 +42,7 @@ fn kernel_wrapper[
 fn _kernel_launch_helper[
     dtype: DType,
     simd_width: Int,
-    kernel_fn: fn (SIMD[dtype, simd_width]) capturing -> SIMD[
-        dtype, simd_width
-    ],
+    kernel_fn: fn(SIMD[dtype, simd_width]) capturing -> SIMD[dtype, simd_width],
 ](
     host_ptr: UnsafePointer[Scalar[dtype]],
     buffer_size: Int,

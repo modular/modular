@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from testing import assert_equal
+from layout._coord import Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.spatial_merge import spatial_merge
-from layout import RuntimeLayout, LayoutTensor, Layout, UNKNOWN_VALUE
-from utils import IndexList
+from testing import assert_equal
 
 
 def test_spatial_merge(ctx: DeviceContext):
@@ -32,42 +33,20 @@ def test_spatial_merge(ctx: DeviceContext):
     var total_output_patches = 6
     var C_out = hidden_size * merge_size * merge_size
 
-    # Define layouts
-    comptime input_static_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    var input_shape = IndexList[2](total_input_patches, hidden_size)
-    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
-        input_shape
-    )
-
-    comptime output_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
-    var output_shape = IndexList[2](total_output_patches, C_out)
-    var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
-        output_shape
-    )
-
-    comptime grid_thw_static_layout = Layout.row_major(batch_size, 3)
-    var grid_thw_shape = IndexList[2](batch_size, 3)
-    var grid_thw_runtime_layout = RuntimeLayout[
-        grid_thw_static_layout
-    ].row_major(grid_thw_shape)
+    var input_size = total_input_patches * hidden_size
+    var output_size = total_output_patches * C_out
+    var grid_thw_size = batch_size * 3
 
     # Create device buffers
-    var input_device = ctx.enqueue_create_buffer[dtype](
-        input_shape.flattened_length()
-    )
-    var output_device = ctx.enqueue_create_buffer[dtype](
-        output_shape.flattened_length()
-    )
-    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](
-        grid_thw_shape.flattened_length()
-    )
+    var input_device = ctx.enqueue_create_buffer[dtype](input_size)
+    var output_device = ctx.enqueue_create_buffer[dtype](output_size)
+    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](grid_thw_size)
 
     # Initialize input data on host
     with input_device.map_to_host() as input_host:
-        var input_host_tensor = LayoutTensor[dtype, input_static_layout](
-            input_host, input_runtime_layout
+        var input_host_tensor = TileTensor(
+            input_host,
+            row_major((Idx(total_input_patches), Idx(hidden_size))),
         )
         for patch_idx in range(total_input_patches):
             for feat_idx in range(hidden_size):
@@ -77,22 +56,26 @@ def test_spatial_merge(ctx: DeviceContext):
 
     # Initialize grid_thw data on host
     with grid_thw_device.map_to_host() as grid_thw_host:
-        var grid_thw_host_tensor = LayoutTensor[
-            DType.int64, grid_thw_static_layout
-        ](grid_thw_host, grid_thw_runtime_layout)
+        var grid_thw_host_tensor = TileTensor(
+            grid_thw_host,
+            row_major[batch_size, 3](),
+        )
         for i in range(batch_size):
             for j in range(3):
                 grid_thw_host_tensor[i, j] = grid_thw_list[i * 3 + j]
 
-    # Create layout tensors for GPU operations
-    var input_tensor = LayoutTensor[dtype, input_static_layout](
-        input_device, input_runtime_layout
+    # Create TileTensors for GPU operations
+    var input_tensor = TileTensor(
+        input_device.unsafe_ptr(),
+        row_major((Idx(total_input_patches), Idx(hidden_size))),
     )
-    var output_tensor = LayoutTensor[dtype, output_static_layout](
-        output_device, output_runtime_layout
+    var output_tensor = TileTensor(
+        output_device.unsafe_ptr(),
+        row_major((Idx(total_output_patches), Idx(C_out))),
     )
-    var grid_thw_tensor = LayoutTensor[DType.int64, grid_thw_static_layout](
-        grid_thw_device, grid_thw_runtime_layout
+    var grid_thw_tensor = TileTensor(
+        grid_thw_device.unsafe_ptr(),
+        row_major[batch_size, 3](),
     )
 
     spatial_merge[dtype](

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,6 @@
 """Implements the core `String` type and related utilities."""
 
 from collections import KeyElement
-from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
 from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
@@ -478,37 +477,15 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(args.__len__()):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             self = String()
-            _write(self)
+            args._write_to(self, end=end, sep=sep)
         else:
             self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
@@ -548,37 +525,15 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             self = String()
-            _write(self)
+            args._write_to(self, end=end, sep=sep)
         else:
             self = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
     @staticmethod
@@ -600,38 +555,16 @@ struct String(
         """
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-            @parameter
-            if i < length - 1:
-                sep.write_to(total_bytes)
-        end.write_to(total_bytes)
-
-        if total_bytes.size == 0:
-            return String()
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
-
-                @parameter
-                if i < length - 1:
-                    sep.write_to(writer)
-            end.write_to(writer)
+        args._write_to(total_bytes, end=end, sep=sep)
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
             var result = String()
-            _write(result)
+            args._write_to(result, end=end, sep=sep)
             return result^
         else:
             var result = String(capacity=total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
-            _write(buffer)
+            args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
             return result^
 
@@ -647,23 +580,14 @@ struct String(
         comptime length = args.__len__()
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
-
-        @parameter
-        for i in range(length):
-            args[i].write_to(total_bytes)
-
-        @parameter
-        fn _write[W: Writer](mut writer: W):
-            @parameter
-            for i in range(length):
-                args[i].write_to(writer)
+        args._write_to(total_bytes, sep="")
 
         if total_bytes.size <= Self.INLINE_CAPACITY:
-            _write(self)
+            args._write_to(self, sep="")
         else:
             self.reserve(total_bytes.size)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
-            _write(buffer)
+            args._write_to(buffer, sep="")
             buffer.flush()
 
     fn write[T: Writable](mut self, value: T):
@@ -819,7 +743,7 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    fn _refcount(self) -> ref [self._ptr_or_data.origin] Atomic[DType.int]:
+    fn _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[DType.int]:
         # The header is stored before the string data.
         return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
             Atomic[DType.int]
@@ -892,9 +816,9 @@ struct String(
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
-        For strings containing multi-byte UTF-8 characters, this may return a
-        partial or invalid character sequence. For proper character access, use
-        `codepoint_slices()` or iterate over the string directly.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
 
         Parameters:
             I: A type that can be used as an index.
@@ -905,17 +829,15 @@ struct String(
         Returns:
             A StringSlice containing a single byte at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-        var normalized_idx = normalize_index["String"](byte, len(self))
-        return StringSlice(ptr=self.unsafe_ptr() + normalized_idx, length=1)
+        return StringSlice(self)[byte=byte]
 
     fn __getitem__(self, span: ContiguousSlice) -> StringSlice[origin_of(self)]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
         The start and end positions are byte indices. For strings containing
-        multi-byte UTF-8 characters, slicing at arbitrary byte positions may
-        produce invalid UTF-8 sequences.
+        multi-byte UTF-8 characters, slicing at byte positions that do not fall
+        on codepoint boundaries will abort.
 
         Args:
             span: A slice that specifies byte positions of the new substring.
@@ -923,15 +845,7 @@ struct String(
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        var start: Int
-        var end: Int
-        # TODO(#933): implement this for unicode when we support llvm intrinsic evaluation at compile time
-
-        start, end = span.indices(self.byte_length())
-        return StringSlice(
-            ptr=self.unsafe_ptr() + start,
-            length=end - start,
-        )
+        return StringSlice(self)[span]
 
     fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
@@ -1099,13 +1013,14 @@ struct String(
         """
         return self.codepoint_slices()
 
+    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
     fn __reversed__(self) -> CodepointSliceIter[origin_of(self), False]:
         """Iterate backwards over the string, returning immutable references.
 
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin_of(self), forward=False](self)
+        return self.codepoint_slices_reversed()
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -1227,10 +1142,15 @@ struct String(
         writer.write_string(self)
 
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the string".
+        """Formats this string slice to the provided `Writer`.
 
         Args:
-            writer: The value to write to.
+            writer: The object to write to.
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
         StringSlice(self).write_repr_to(writer)
 
@@ -1330,6 +1250,20 @@ struct String(
         ```
         """
         return StringSlice(self).codepoint_slices()
+
+    fn codepoint_slices_reversed(
+        self,
+    ) -> CodepointSliceIter[origin_of(self), False]:
+        """Iterates backwards over the string, returning single-character slices.
+
+        Each returned slice points to a single Unicode codepoint encoded in the
+        underlying UTF-8 representation of this string, starting from the end
+        and moving towards the beginning.
+
+        Returns:
+            A reversed iterator of references to the string elements.
+        """
+        return CodepointSliceIter[origin_of(self), forward=False](self)
 
     @always_inline("nodebug")
     fn unsafe_ptr(
@@ -1929,7 +1863,7 @@ struct String(
         """
         return StringSlice(self) * n
 
-    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1944,8 +1878,7 @@ struct String(
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Returns:
             The template with the given values substituted.
@@ -2028,9 +1961,9 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.rjust(10))        # "     hello"
-        print(s.rjust(10, "*"))   # "*****hello"
-        print(s.rjust(3))         # "hello" (no padding)
+        print(s.ascii_rjust(10))        # "     hello"
+        print(s.ascii_rjust(10, "*"))   # "*****hello"
+        print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_rjust(width, fillchar)
@@ -2058,14 +1991,14 @@ struct String(
 
         ```mojo
         var s = String("hello")
-        print(s.ljust(10))        # "hello     "
-        print(s.ljust(10, "*"))   # "hello*****"
-        print(s.ljust(3))         # "hello" (no padding)
+        print(s.ascii_ljust(10))        # "hello     "
+        print(s.ascii_ljust(10, "*"))   # "hello*****"
+        print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
         return StringSlice(self).ascii_ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string center justified in a string of specified width.
 
         Pads the string on both sides with the specified fill character so that
@@ -2094,21 +2027,25 @@ struct String(
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return StringSlice(self).center(width, fillchar)
+        return StringSlice(self).ascii_center(width, fillchar)
 
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not
-        lie on a codepoint boundary.
+        lie on a codepoint boundary or if fill_byte is non-ascii (>=128).
 
         Args:
             length: The new length of the string.
-            fill_byte: The byte to fill any new space with.
+            fill_byte: The byte to fill any new space with. Must be a valid single-byte
+                       utf-8 character.
 
         Notes:
             If the new length is greater than the current length, the string is
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
+        debug_assert[assert_mode="safe"](
+            fill_byte < 128, "Fill byte is the start of a multi-byte character."
+        )
         self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
@@ -2245,9 +2182,9 @@ fn chr(c: Int) -> String:
     ```
     """
     if c <= _LARGEST_UNICODE_ASCII_BYTE:
-        return _unsafe_chr_ascii(c)
+        return _unsafe_chr_ascii(UInt8(c))
 
-    var char_opt = Codepoint.from_u32(c)
+    var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
         abort(String("chr(", c, ") is not a valid Unicode codepoint"))
@@ -2289,10 +2226,10 @@ fn _repr_ascii(c: UInt8) -> String:
     Returns:
         A string containing a representation of the given code point.
     """
-    comptime ord_tab = ord("\t")
-    comptime ord_new_line = ord("\n")
-    comptime ord_carriage_return = ord("\r")
-    comptime ord_back_slash = ord("\\")
+    comptime ord_tab = UInt8(ord("\t"))
+    comptime ord_new_line = UInt8(ord("\n"))
+    comptime ord_carriage_return = UInt8(ord("\r"))
+    comptime ord_back_slash = UInt8(ord("\\"))
 
     if c == ord_back_slash:
         return r"\\"
@@ -2321,7 +2258,7 @@ fn ascii(value: StringSlice) -> String:
     Returns:
         A string containing the ASCII representation of the object.
     """
-    comptime ord_squote = ord("'")
+    comptime ord_squote = UInt8(ord("'"))
     var result = String()
     var use_dquote = False
     var data = value.as_bytes()
@@ -2501,8 +2438,8 @@ fn _trim_and_handle_sign(
     var start: Int = 0
     while start < str_len and Codepoint(buff[start]).is_posix_space():
         start += 1
-    var p: Bool = buff[start] == ord("+")
-    var n: Bool = buff[start] == ord("-")
+    var p: Bool = buff[start] == UInt8(ord("+"))
+    var n: Bool = buff[start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2529,7 +2466,7 @@ fn _handle_base_prefix(
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
         var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == ord("0") and (
+        if buff[start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
@@ -2572,7 +2509,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
                     continue
             else:
                 was_last_character_underscore = False
-            if str_slice[byte=i] != "0":
+            if str_slice[byte=i] != StringSlice("0"):
                 return -1, -1
     elif ord("1") <= ord(str_slice[byte=start]) <= ord("9"):
         return 10, start
@@ -2669,7 +2606,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     )
     var n = UInt32(n0)
     var log2 = Int(
-        (bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
+        UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
     return (n0 + lookup_table[log2]) >> 32
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -176,5 +176,4 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     assert isinstance(result, Buffer)
 
     host = CPU(0)
-    assert np.all(result.to(host).to_numpy() != np.inf)
-    assert np.all(result.to(host).to_numpy() != np.nan)
+    assert np.all(np.isfinite(result.to(host).to_numpy()))

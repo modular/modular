@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -59,6 +59,7 @@ def test_debug_context_with_hf_overrides() -> None:
     ):
         assert MAXModelConfig.huggingface_config is not orig_prop
         cfg_in_ctx = real_cfg.huggingface_config
+        assert cfg_in_ctx is not None
         assert cfg_in_ctx.n_embd == 3072
 
         assert Module.load_state_dict != orig_module_load
@@ -83,6 +84,7 @@ def test_debug_context_without_hf_overrides() -> None:
     ):
         assert MAXModelConfig.huggingface_config is orig_prop
         cfg_in_ctx = real_cfg.huggingface_config
+        assert cfg_in_ctx is not None
         assert cfg_in_ctx.n_embd == base_cfg.n_embd  # unchanged
         assert Module.load_state_dict != orig_module_load
     assert MAXModelConfig.huggingface_config is orig_prop

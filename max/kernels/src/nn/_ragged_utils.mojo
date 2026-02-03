@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,6 +17,7 @@ from algorithm.functional import elementwise
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor
+from layout._tile_tensor import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
@@ -46,6 +47,62 @@ fn get_batch_from_row_offsets(
             high = mid
 
     return Int(low)
+
+
+@always_inline
+fn get_batch_from_row_offsets(
+    row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
+) -> Int:
+    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
+    """
+    __comptime_assert row_offsets.rank == 1
+
+    var row_offsets_size = row_offsets.numel()
+
+    debug_assert(
+        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
+        "tok_idx is out of range of row_offsets",
+    )
+
+    var low: UInt = 0
+    var high = UInt(row_offsets_size - 1)
+    while low + 1 != high:
+        var mid = (low + high) // 2
+
+        if tok_idx >= Int(row_offsets[mid]):
+            low = mid
+        elif tok_idx < Int(row_offsets[mid]):
+            high = mid
+
+    return Int(low)
+
+
+@always_inline
+fn get_batch_and_token_idx_from_row_offsets(
+    row_offsets: TileTensor[DType.uint32, ...], tok_idx: Int
+) -> Tuple[Int, Int]:
+    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
+    """
+    __comptime_assert row_offsets.rank == 1
+
+    var row_offsets_size = row_offsets.numel()
+
+    debug_assert(
+        tok_idx >= 0 and tok_idx < Int(row_offsets[row_offsets_size - 1]),
+        "tok_idx is out of range of row_offsets",
+    )
+
+    var low: UInt = 0
+    var high = UInt(row_offsets_size - 1)
+    while low + 1 != high:
+        var mid = (low + high) // 2
+
+        if tok_idx >= Int(row_offsets[mid]):
+            low = mid
+        elif tok_idx < Int(row_offsets[mid]):
+            high = mid
+
+    return Int(low), Int(tok_idx - Int(row_offsets[low]))
 
 
 fn merge_ragged_tensors[
@@ -119,13 +176,15 @@ fn merge_ragged_tensors[
                 is_first_element = False
 
         if is_first_element:
-            c_row_offsets.store[width=1](IndexList[1](batch_id), dst_row_idx)
+            c_row_offsets.store[width=1](
+                IndexList[1](batch_id), UInt32(dst_row_idx)
+            )
 
             # If this is the last batch, also update the last row offset to the total size
             if batch_id == c_row_offsets.dim[0]() - 2:
                 var total_size = a.dim[0]() + b.dim[0]()
                 c_row_offsets.store[width=1](
-                    IndexList[1](batch_id + 1), total_size
+                    IndexList[1](batch_id + 1), UInt32(total_size)
                 )
 
     comptime compile_target = _current_target() if is_cpu[

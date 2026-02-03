@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,7 @@ from testing import assert_equal
 def test_construct():
     print("== test_construct")
     var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
-    assert_equal(String(t1.__str__()), "(1, 44, (1, 102))")
+    assert_equal(String(t1), "(1, 44, (1, 102))")
 
     var t2 = RuntimeTuple[IntTuple(33, IntTuple(44, IntTuple(55, 202)))]()
     assert_equal(String(t2), "(33, (44, (55, 202)))")

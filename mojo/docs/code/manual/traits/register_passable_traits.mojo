@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,8 +41,7 @@ fn test_register_passable_type():
 
 # Ensure that we can define a register-passable trivial type that conforms to a
 # register-passable trait
-@register_passable("trivial")
-struct RegPassableType2(RegPassableTrait):
+struct RegPassableType2(RegPassableTrait, TrivialRegisterType):
     fn __init__(out self):
         pass
 
@@ -50,8 +49,7 @@ struct RegPassableType2(RegPassableTrait):
         print("Hello from a register passable type!")
 
 
-@register_passable("trivial")
-trait RegPassableTrivialTrait:
+trait RegPassableTrivialTrait(TrivialRegisterType):
     fn __init__(out self, value: Int = 0):
         ...
 
@@ -59,8 +57,7 @@ trait RegPassableTrivialTrait:
         ...
 
 
-@register_passable("trivial")
-struct RegPassableTrivialType(RegPassableTrivialTrait):
+struct RegPassableTrivialType(RegPassableTrivialTrait, TrivialRegisterType):
     var value: Int
 
     fn __init__(out self, value: Int = 0):

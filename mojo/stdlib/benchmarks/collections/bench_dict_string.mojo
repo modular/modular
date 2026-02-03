@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -442,7 +442,7 @@ struct StringDict[
     fn upsert(
         mut self,
         key: StringSlice,
-        update: fn (value: Optional[Self.V]) -> Self.V,
+        update: fn(value: Optional[Self.V]) -> Self.V,
     ):
         var key_index = self._find_key_index(key)
         if key_index == 0:

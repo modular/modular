@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -264,8 +264,9 @@ struct FPUtils[
             The biased exponent as an Int.
         """
         return Int(
-            Self.bitcast_to_uint(value) >> Self.mantissa_width()
-            & ((1 << Self.exponent_width()) - 1)
+            Self.bitcast_to_uint(value)
+            >> Scalar[Self.uint_type](Self.mantissa_width())
+            & Scalar[Self.uint_type]((1 << Self.exponent_width()) - 1)
         )
 
     @staticmethod
@@ -311,7 +312,9 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
-        return Self.bitcast_to_uint(value) & Self.mantissa_mask()
+        return Self.bitcast_to_uint(value) & Scalar[Self.uint_type](
+            Self.mantissa_mask()
+        )
 
     @staticmethod
     @always_inline

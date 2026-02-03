@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,8 +13,7 @@
 # """This module includes traits abstracting WGMMA operand descriptors."""
 
 
-@register_passable("trivial")
-trait MMAOperandDescriptor(ImplicitlyCopyable):
+trait MMAOperandDescriptor(TrivialRegisterType):
     """Trait for abstracting MMA (Matrix Multiply-Accumulate) operand descriptors.
 
     This trait defines the interface for WGMMA operand descriptors used in GPU matrix operations.

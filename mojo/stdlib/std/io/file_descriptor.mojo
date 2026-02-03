@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,8 +42,7 @@ from sys.ffi import (
 from memory import Span
 
 
-@register_passable("trivial")
-struct FileDescriptor(Writer):
+struct FileDescriptor(TrivialRegisterType, Writer):
     """File descriptor of a file."""
 
     var value: Int

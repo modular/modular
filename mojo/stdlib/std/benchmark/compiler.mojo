@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,7 +13,7 @@
 """Provides compiler hints to prevent optimization of benchmark code.
 
 This module includes utilities that prevent the compiler from optimizing away
-code being benchmarked. 
+code being benchmarked.
 The `keep()` and `black_box()` functions provide hints to the compiler from
 overly optimizing away code being benchmarked.
 """
@@ -26,7 +26,7 @@ from sys._assembly import inlined_assembly
 
 
 @always_inline
-fn keep[T: AnyType, origin: Origin, //](ref [origin]value: T):
+fn keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -57,7 +57,7 @@ fn keep[T: AnyType, origin: Origin, //](ref [origin]value: T):
 @always_inline
 fn black_box[
     T: AnyType, origin: Origin, //
-](ref [origin]value: T) -> ref [origin] T:
+](ref[origin] value: T) -> ref[origin] T:
     """Prevents the compiler from optimizing away computations or values.
 
     Unlike `black_box(take=...)`, this function takes a borrowed value and

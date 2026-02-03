@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
+](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
     return Span(list)
 
 

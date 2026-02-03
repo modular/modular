@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,6 +23,7 @@ from max.pipelines.lib import (
 
 from . import weight_adapters
 from .model import DeepseekV3_2Model
+from .model_config import DeepseekV3_2Config
 
 deepseekV3_2_arch = SupportedArchitecture(
     name="DeepseekV3_2ForCausalLM_Legacy",
@@ -45,4 +46,5 @@ deepseekV3_2_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    config=DeepseekV3_2Config,
 )

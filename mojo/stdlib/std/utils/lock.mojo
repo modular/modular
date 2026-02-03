@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -77,7 +77,7 @@ struct BlockingSpinLock(Defaultable):
 
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
-        while not self.counter.compare_exchange(expected, owner):
+        while not self.counter.compare_exchange(expected, Int64(owner)):
             # this should be yield
             waiter.wait()
             expected = Self.UNLOCKED
@@ -93,11 +93,11 @@ struct BlockingSpinLock(Defaultable):
         """
 
         var expected = Int64(owner)
-        if self.counter.load() != owner:
+        if self.counter.load() != Int64(owner):
             # No one else can modify other than owner
             return False
         while not self.counter.compare_exchange(expected, Self.UNLOCKED):
-            expected = owner
+            expected = Int64(owner)
         return True
 
 

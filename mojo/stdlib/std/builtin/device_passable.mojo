@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,21 +55,5 @@ trait DevicePassable:
 
         Returns:
             The host type's name.
-        """
-        ...
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """
-        Gets device_type's name. For example, because DeviceBuffer's
-        device_type is UnsafePointer, DeviceBuffer[DType.float32]'s
-        get_device_type_name() should return something like
-        "UnsafePointer[Scalar[DType.float32]]". This is used for error messages
-        when passing types to the device.
-        TODO: This method will be retired soon when better kernel call error
-        messages arrive.
-
-        Returns:
-            The device type's name.
         """
         ...

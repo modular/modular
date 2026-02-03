@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,8 @@ from max.interfaces import (
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
+    PixelGenerationContext,
+    PixelGenerationOutput,
     RequestID,
     SamplingParams,
     TextGenerationContext,
@@ -38,6 +40,7 @@ from max.interfaces import (
 )
 
 CHUNK_SIZE = 128
+FUTURE_TOKEN = -999
 
 
 @dataclass(kw_only=True)
@@ -184,12 +187,24 @@ class TextContext:
                 final_status=self.status,
             )
 
-        # Retrieve Log Probabilities
-        log_probabilities: list[LogProbabilities] | None = None
         element_ids = range(
             self.tokens._completion_range.start,
             self.tokens._completion_range.end,
         )
+        # Consume Generated Tokens
+        if len(element_ids) > 0:
+            generated_tokens = [
+                int(x) for x in self.tokens.consume_recently_generated_tokens()
+            ]
+            if FUTURE_TOKEN in generated_tokens:
+                raise ValueError(
+                    "Attempted to create generation output while future token is not yet realized."
+                )
+        else:
+            generated_tokens = []
+
+        # Retrieve Log Probabilities
+        log_probabilities: list[LogProbabilities] | None = None
         for token_idx in element_ids:
             if token_idx in self._log_probabilities_data:
                 if log_probabilities is None:
@@ -198,14 +213,6 @@ class TextContext:
                 log_probabilities.append(
                     self._log_probabilities_data.pop(token_idx)
                 )
-
-        # Consume Generated Tokens
-        if len(element_ids) > 0:
-            generated_tokens: list[int] = [
-                int(x) for x in self.tokens.consume_recently_generated_tokens()
-            ]
-        else:
-            generated_ids: list[int] = []
 
         return TextGenerationOutput(
             request_id=self.request_id,
@@ -258,6 +265,9 @@ class TextContext:
                 log_probabilities
             )
 
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot append a token after a future token.")
+
         self.tokens.advance_with_token(new_token)
 
         if self._is_eos(new_token):
@@ -270,6 +280,51 @@ class TextContext:
             assert self.matcher.consume_token(new_token)
 
         self._is_initial_prompt = False
+
+    def update_with_future_token(self) -> None:
+        """Append a placeholder future token to the generated tokens.
+
+        This is primarily used for overlap scheduling.
+        """
+
+        if self.matcher:
+            raise ValueError(
+                "Cannot use future tokens when a matcher is present."
+            )
+
+        if self.tokens.all[-1] == FUTURE_TOKEN:
+            raise ValueError("Cannot have multiple future tokens.")
+
+        self.update(new_token=FUTURE_TOKEN)
+
+    def realize_future_token(
+        self, new_token: int, log_probabilities: LogProbabilities | None = None
+    ) -> None:
+        """Overwrite the placeholder future token with the actual token.
+
+        This is primarily used for overlap scheduling.
+        """
+        if self.tokens.generated_length == 0:
+            raise ValueError(
+                "Cannot realize a future token when there are no generated tokens."
+            )
+
+        if self.tokens.all[-1] != FUTURE_TOKEN:
+            raise ValueError(
+                "Attempted to realize a non-future token. Found token: ",
+                self.tokens.all[-1],
+            )
+
+        # Overwrite the log probabilities data
+        if log_probabilities:
+            self._log_probabilities_data[self.tokens.current_position - 1] = (
+                log_probabilities
+            )
+
+        self.tokens.overwrite_last_token(new_token)
+
+        if self._is_eos(new_token):
+            self.status = GenerationStatus.END_OF_SEQUENCE
 
     def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
@@ -569,6 +624,119 @@ class TTSContext(TextContext):
         return chunk, buffer or 0
 
 
+@dataclass(kw_only=True)
+class PixelContext:
+    """A model-ready context for image/video generation requests.
+
+    Per the design doc, this class contains only numeric data that the model
+    will execute against. User-facing strings (prompt, negative_prompt) are
+    consumed during tokenization and do not appear here.
+
+    All preprocessing is performed by PixelGenerationTokenizer.new_context():
+    - Prompt tokenization -> tokens field
+    - Negative prompt tokenization -> negative_tokens field
+    - Timestep schedule computation -> timesteps field
+    - Initial noise generation -> latents field
+
+    Configuration:
+        tokens: Tokenized prompt IDs (TokenBuffer).
+        request_id: A unique identifier for this generation request.
+        negative_tokens: Tokenized negative prompt IDs (TokenBuffer).
+        timesteps: Precomputed timestep schedule for denoising.
+        latents: Precomputed initial noise (latents).
+        height: Height of the generated image/video in pixels.
+        width: Width of the generated image/video in pixels.
+        num_inference_steps: Number of denoising steps.
+        guidance_scale: Guidance scale for classifier-free guidance.
+        num_images_per_prompt: Number of images/videos to generate per prompt.
+        model_name: Name of the model being used.
+    """
+
+    # Tokenized prompts
+    tokens: TokenBuffer
+    """Primary encoder tokens."""
+
+    # Request identification
+    request_id: RequestID = field(default_factory=RequestID)
+
+    model_name: str = field(default="")
+
+    mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for text encoder's attention."""
+
+    tokens_2: TokenBuffer | None = field(default=None)
+    """Secondary encoder tokens. None for single-encoder models."""
+
+    negative_tokens: TokenBuffer | None = field(default=None)
+    """Negative tokens for primary encoder."""
+
+    negative_tokens_2: TokenBuffer | None = field(default=None)
+    """Negative tokens for secondary encoder. None for single-encoder models."""
+
+    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
+    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
+
+    # Precomputed tensors
+    timesteps: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed timesteps schedule for denoising."""
+
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed sigmas schedule for denoising."""
+
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed initial noise (latents) for generation."""
+
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed latent image IDs for generation."""
+
+    height: int = field(default=1024)
+    width: int = field(default=1024)
+    num_inference_steps: int = field(default=50)
+    guidance_scale: float = field(default=3.5)
+    guidance: npt.NDArray[np.float32] | None = None
+    true_cfg_scale: float = field(default=1.0)
+    num_warmup_steps: int = field(default=0)
+    num_images_per_prompt: int = field(default=1)
+
+    status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Compute number of available steps for scheduler compatibility.
+
+        For image and video generation, this returns the number of inference steps.
+        """
+        return self.num_inference_steps
+
+    def reset(self) -> None:
+        """Resets the context's state."""
+        self.status = GenerationStatus.ACTIVE
+
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
+
+    def to_generation_output(self) -> PixelGenerationOutput:
+        """Convert this context to a PixelGenerationOutput object."""
+        return PixelGenerationOutput(
+            request_id=self.request_id,
+            final_status=self.status,
+            pixel_data=self.latents,
+        )
+
+
 if TYPE_CHECKING:
     # Verify that concrete classes implement their respective protocols
     def _verify_text_context_protocol() -> TextGenerationContext:
@@ -587,6 +755,12 @@ if TYPE_CHECKING:
             eos_token_ids=set(),
             vision_token_ids=[],
             images=[],
+        )
+
+    def _verify_pixel_context_protocol() -> PixelGenerationContext:
+        return PixelContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.array([0], dtype=np.int64)),
         )
 
 

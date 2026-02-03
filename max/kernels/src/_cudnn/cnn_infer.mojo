@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -106,7 +106,7 @@ fn cudnnGetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionMathType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnMathType_t],
         ) -> cudnnStatus_t,
@@ -123,7 +123,7 @@ fn cudnnIm2Col(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnIm2Col",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             OpaquePointer,
@@ -156,7 +156,7 @@ fn cudnnConvolutionBiasActivationForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBiasActivationForward",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnTensorStruct],
@@ -198,8 +198,7 @@ fn cudnnConvolutionBiasActivationForward(
     )
 
 
-@register_passable("trivial")
-struct cudnnConvolutionFwdAlgoPerfStruct:
+struct cudnnConvolutionFwdAlgoPerfStruct(TrivialRegisterType):
     var algo: cudnnConvolutionFwdAlgo_t
     var status: cudnnStatus_t
     var time: Float32
@@ -222,7 +221,7 @@ fn cudnnSetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolution2dDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             Int16,
@@ -251,7 +250,7 @@ fn cudnnCreateConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateConvolutionDescriptor",
-        fn (
+        fn(
             UnsafePointer[UnsafePointer[cudnnConvolutionStruct]],
         ) -> cudnnStatus_t,
     ]()(conv_desc)
@@ -262,7 +261,7 @@ fn cudnnSetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionGroupCount",
-        fn (UnsafePointer[cudnnConvolutionStruct], Int16) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnConvolutionStruct], Int16) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
 
 
@@ -273,8 +272,7 @@ comptime cudnnFusedOpsVariantParamPack_t = UnsafePointer[
 comptime cudnnConvolutionFwdAlgoPerf_t = cudnnConvolutionFwdAlgoPerfStruct
 
 
-@register_passable("trivial")
-struct cudnnConvolutionBwdDataAlgoPerfStruct:
+struct cudnnConvolutionBwdDataAlgoPerfStruct(TrivialRegisterType):
     var algo: cudnnConvolutionBwdDataAlgo_t
     var status: cudnnStatus_t
     var time: Float32
@@ -295,7 +293,7 @@ fn cudnnGetConvolutionForwardWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardWorkspaceSize",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -320,7 +318,7 @@ fn cudnnGetConvolution2dDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[Int16],
             UnsafePointer[Int16],
@@ -345,8 +343,7 @@ fn cudnnGetConvolution2dDescriptor(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnFusedOpsConstParamLabel_t(Equatable, Writable):
+struct cudnnFusedOpsConstParamLabel_t(Equatable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_PARAM_XDESC = Self(0)
     comptime CUDNN_PARAM_XDATA_PLACEHOLDER = Self(1)
@@ -389,7 +386,7 @@ struct cudnnFusedOpsConstParamLabel_t(Equatable, Writable):
     comptime CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -497,21 +494,22 @@ fn cudnnSetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionReorderType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], cudnnReorderType_t
         ) -> cudnnStatus_t,
     ]()(conv_desc, reorder_type)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnReorderType_t(Equatable, Identifiable, Writable):
+struct cudnnReorderType_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_DEFAULT_REORDER = Self(0)
     comptime CUDNN_NO_REORDER = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -553,7 +551,7 @@ fn cudnnGetConvolution2dForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolution2dForwardOutputDim",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -577,7 +575,7 @@ fn cudnnFindConvolutionForwardAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithm",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -616,7 +614,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithm_v7",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -639,8 +637,7 @@ fn cudnnGetConvolutionForwardAlgorithm_v7(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnFusedOps_t(Equatable, Identifiable, Writable):
+struct cudnnFusedOps_t(Equatable, Identifiable, TrivialRegisterType, Writable):
     var _value: Int8
     comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS = Self(0)
     comptime CUDNN_FUSED_SCALE_BIAS_ACTIVATION_WGRAD = Self(1)
@@ -651,7 +648,7 @@ struct cudnnFusedOps_t(Equatable, Identifiable, Writable):
     comptime CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -698,7 +695,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithmMaxCount",
-        fn (UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
     ]()(handle, count)
 
 
@@ -707,20 +704,21 @@ fn cudnnDestroyConvolutionDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyConvolutionDescriptor",
-        fn (UnsafePointer[cudnnConvolutionStruct]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnConvolutionStruct]) -> cudnnStatus_t,
     ]()(conv_desc)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnFusedOpsPointerPlaceHolder_t(Equatable, Identifiable, Writable):
+struct cudnnFusedOpsPointerPlaceHolder_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_PTR_NULL = Self(0)
     comptime CUDNN_PTR_ELEM_ALIGNED = Self(1)
     comptime CUDNN_PTR_16B_ALIGNED = Self(2)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -772,7 +770,7 @@ fn cudnnConvolutionForward(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionForward",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnTensorStruct],
@@ -810,7 +808,7 @@ fn cudnnGetConvolutionReorderType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionReorderType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnReorderType_t],
         ) -> cudnnStatus_t,
@@ -818,8 +816,9 @@ fn cudnnGetConvolutionReorderType(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnFusedOpsVariantParamLabel_t(Equatable, Writable):
+struct cudnnFusedOpsVariantParamLabel_t(
+    Equatable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_PTR_XDATA = Self(0)
     comptime CUDNN_PTR_BN_EQSCALE = Self(1)
@@ -851,7 +850,7 @@ struct cudnnFusedOpsVariantParamLabel_t(Equatable, Writable):
     comptime CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -943,7 +942,7 @@ fn cudnnGetConvolutionBackwardDataAlgorithm_v7(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataAlgorithm_v7",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -971,7 +970,7 @@ fn cudnnGetConvolutionGroupCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionGroupCount",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], UnsafePointer[Int16]
         ) -> cudnnStatus_t,
     ]()(conv_desc, group_count)
@@ -989,7 +988,7 @@ fn cudnnGetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             UnsafePointer[Int16],
@@ -1022,7 +1021,7 @@ fn cudnnGetConvolutionBackwardDataWorkspaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionBackwardDataWorkspaceSize",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -1046,7 +1045,7 @@ fn cudnnReorderFilterAndBias(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnReorderFilterAndBias",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             cudnnReorderType_t,
@@ -1080,7 +1079,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithm(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithm",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],
@@ -1119,7 +1118,7 @@ fn cudnnConvolutionBackwardData(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnConvolutionBackwardData",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             OpaquePointer,
             UnsafePointer[cudnnFilterStruct],
@@ -1162,7 +1161,7 @@ fn cudnnSetConvolutionNdDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionNdDescriptor",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             Int16,
             OpaquePointer,
@@ -1184,7 +1183,7 @@ fn cudnnSetConvolutionNdDescriptor(
 
 fn cudnnCnnInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnCnnInferVersionCheck", fn () -> cudnnStatus_t
+        "cudnnCnnInferVersionCheck", fn() -> cudnnStatus_t
     ]()()
 
 
@@ -1193,7 +1192,7 @@ fn cudnnSetConvolutionMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetConvolutionMathType",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct], cudnnMathType_t
         ) -> cudnnStatus_t,
     ]()(conv_desc, math_type)
@@ -1216,7 +1215,7 @@ fn cudnnFindConvolutionBackwardDataAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionBackwardDataAlgorithmEx",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             OpaquePointer,
@@ -1265,7 +1264,7 @@ fn cudnnFindConvolutionForwardAlgorithmEx(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnFindConvolutionForwardAlgorithmEx",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnTensorStruct],
             OpaquePointer,
@@ -1306,7 +1305,7 @@ fn cudnnGetConvolutionNdForwardOutputDim(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionNdForwardOutputDim",
-        fn (
+        fn(
             UnsafePointer[cudnnConvolutionStruct],
             UnsafePointer[cudnnTensorStruct],
             UnsafePointer[cudnnFilterStruct],
@@ -1321,19 +1320,20 @@ fn cudnnGetConvolutionForwardAlgorithmMaxCount(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetConvolutionForwardAlgorithmMaxCount",
-        fn (UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
+        fn(UnsafePointer[cudnnContext], UnsafePointer[Int16]) -> cudnnStatus_t,
     ]()(handle, count)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct cudnnConvolutionMode_t(Equatable, Identifiable, Writable):
+struct cudnnConvolutionMode_t(
+    Equatable, Identifiable, TrivialRegisterType, Writable
+):
     var _value: Int8
     comptime CUDNN_CONVOLUTION = Self(0)
     comptime CUDNN_CROSS_CORRELATION = Self(1)
 
     fn __init__(out self, value: Int):
-        self._value = value
+        self._value = Int8(value)
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -1379,7 +1379,7 @@ fn cudnnGetFoldedConvBackwardDataDescriptors(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFoldedConvBackwardDataDescriptors",
-        fn (
+        fn(
             UnsafePointer[cudnnContext],
             UnsafePointer[cudnnFilterStruct],
             UnsafePointer[cudnnTensorStruct],

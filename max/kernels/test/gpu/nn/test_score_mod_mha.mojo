@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -53,6 +53,7 @@ fn generate_alibi_bias[
     k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
+    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
     var scale: SIMD[dtype, width]
 
     @parameter
@@ -383,8 +384,8 @@ def execute_flash_attention[
                 for s in range(valid_length[bs]):
                     for h in range(num_q_heads):
                         for hd in range(kv_params.head_size):
-                            var expect = ref_out_tensor[bs, s, Int(h), Int(hd)]
-                            var actual = test_out_tensor[bs, s, Int(h), Int(hd)]
+                            var expect = ref_out_tensor[bs, s, h, Int(hd)]
+                            var actual = test_out_tensor[bs, s, h, Int(hd)]
                             assert_almost_equal(
                                 expect,
                                 actual,

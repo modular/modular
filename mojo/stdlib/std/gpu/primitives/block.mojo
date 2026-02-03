@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,7 +45,7 @@ fn _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
         dtype
     ],
     broadcast: Bool = False,
@@ -112,7 +112,7 @@ fn _block_reduce[
     dtype: DType,
     //,
     block_size: Int,
-    warp_reduce_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> Scalar[
+    warp_reduce_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
         dtype
     ],
     broadcast: Bool = False,
