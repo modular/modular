@@ -138,8 +138,31 @@ Table 3 shows how these types are represented in memory.
 
 Numbers with exponent values of all ones or all zeros represent special values,
 allowing floating-point numbers to represent infinity, negative infinity,
-signed zeros, and not-a-number (NaN). For more details on how floating-point
-numbers are represented, see [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
+signed zeros, and not-a-number (NaN). These values can be assigned from fields
+of [`FloatLiteral`](/mojo/std/builtin/float_literal/FloatLiteral):
+
+```mojo
+from math import copysign
+from utils.numerics import isfinite, isinf, isnan
+
+inf = FloatLiteral.infinity
+print(isinf(inf))  # `True`
+print(inf > 0)     # `True`
+
+neginf = FloatLiteral.negative_infinity
+print(isinf(neginf))  # `True`
+print(neginf < 0)     # `True`
+
+nan = FloatLiteral.nan
+print(isnan(nan))  # `True`
+
+negzero = FloatLiteral.negative_zero
+print(negzero == 0.0)              # `True`
+print(copysign(1.0, negzero) < 0)  # `True`
+```
+
+For more details on how floating-point numbers are represented, see
+[IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
 
 #### Floating-point approximations and comparisons
 
