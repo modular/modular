@@ -203,7 +203,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
     def _get_mistral_3_small_prompt_embeds(
         self,
-        text_input_ids: np.ndarray,
+        tokens: TokenBuffer,
         hidden_states_layers: list[int] | None = None,
         max_sequence_length: int | None = None,
     ) -> Tensor:
@@ -211,13 +211,9 @@ class Flux2Pipeline(DiffusionPipeline):
             hidden_states_layers = [10, 20, 30]
 
         if max_sequence_length is None:
-            max_sequence_length = text_input_ids.shape[-1]
-
-        if text_input_ids.ndim == 1:
-            text_input_ids = np.expand_dims(text_input_ids, axis=0)
-
-        text_input_ids = text_input_ids.astype(np.int64)
-        hidden_states_tuple = self.text_encoder(text_input_ids)
+            max_sequence_length = int(tokens.array.shape[-1])
+        
+        hidden_states_tuple = self.text_encoder(tokens)
 
         if not isinstance(hidden_states_tuple, tuple):
             raise ValueError(
@@ -288,17 +284,8 @@ class Flux2Pipeline(DiffusionPipeline):
         tokens: TokenBuffer,
         num_images_per_prompt: int = 1,
     ) -> tuple[Tensor, Tensor]:
-        text_input_ids = tokens.array
-        if text_input_ids.ndim == 1:
-            text_input_ids = np.expand_dims(text_input_ids, axis=0)
-        text_input_ids = text_input_ids.astype(np.int64)
-
-        max_sequence_length = text_input_ids.shape[-1]
-
         prompt_embeds = self._get_mistral_3_small_prompt_embeds(
-            text_input_ids=text_input_ids,
-            hidden_states_layers=None,
-            max_sequence_length=max_sequence_length,
+            tokens=tokens,
         )
 
         bs_embed, seq_len, _ = prompt_embeds.shape
