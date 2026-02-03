@@ -467,6 +467,13 @@ struct Optional[T: Movable](
         else:
             writer.write("None")
 
+    fn write_repr_to[
+        U: Representable & Copyable & Movable, //
+    ](self: Optional[U], mut writer: Some[Writer]):
+        writer.write("Optional(")
+        self.write_to(writer)
+        writer.write(")")
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
