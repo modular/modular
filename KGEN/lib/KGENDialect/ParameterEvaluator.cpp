@@ -108,17 +108,6 @@ bool KGEN::isParameterizedType(Type type) {
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-FailureOr<ResolvedAbstractStructHandle>
-ParameterEvaluationContext::resolveAbstractStructHandle(
-    TypedAttr /*typeValue*/) {
-  return failure();
-}
-
-Operation *ParameterEvaluationContext::resolveConformanceForAbstractStruct(
-    const ResolvedAbstractStructHandle & /*handle*/, StringAttr /*traitName*/) {
-  return nullptr;
-}
-
 FailureOr<ResolvedStructHandle>
 ParameterEvaluationContext::resolveStructOp(TypedAttr /*typeValue*/,
                                             bool /*acceptAsync*/) {
@@ -195,47 +184,23 @@ FailureOr<TypedAttr>
 ParameterEvaluationContext::evaluateGetWitness(GetWitnessAttr getWitness) {
   FailureOr<ResolvedStructHandle> resolvedOr =
       resolveStructOp(getWitness.getTypeValue(), /*acceptAsync=*/false);
-  Operation *conformanceOp = nullptr;
-  ArrayRef<ParamDeclAttr> inputParameters;
-  ArrayRef<TypedAttr> paramValues;
-  // If we resolved to a struct, look up the conformance in the struct.
-  if (succeeded(resolvedOr)) {
-    ResolvedStructHandle resolved = *resolvedOr;
-    conformanceOp =
-        resolveConformanceForStruct(resolved, getWitness.getTraitName());
-    if (!conformanceOp) {
-      emitEvaluationError(
-          "struct '" +
-          SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
-          "' does not have witness table for trait '" +
-          getWitness.getTraitName().getValue() + "'");
-      return failure();
-    }
-    inputParameters = resolved.decl.getInputParams();
-    paramValues = resolved.paramValues;
-  } else {
-    // Otherwise, try to resolve conformance directly from the type value.
-    // This handles closures which store conformance in StructGeneratorOp.
-    FailureOr<ResolvedAbstractStructHandle> abstractHandleOr =
-        resolveAbstractStructHandle(getWitness.getTypeValue());
-    if (failed(abstractHandleOr))
-      return failure();
-    ResolvedAbstractStructHandle abstractHandle = *abstractHandleOr;
-    conformanceOp = resolveConformanceForAbstractStruct(
-        abstractHandle, getWitness.getTraitName());
-    if (!conformanceOp) {
-      emitEvaluationError("'" + abstractHandle.name.getValue() +
-                          "' does not have witness table for trait '" +
-                          getWitness.getTraitName().getValue() + "'");
-      return failure();
-    }
-    inputParameters = abstractHandle.inputParams;
-    paramValues = abstractHandle.paramValues;
+  if (failed(resolvedOr))
+    return failure();
+  ResolvedStructHandle resolved = *resolvedOr;
+  Operation *conformanceOp =
+      resolveConformanceForStruct(resolved, getWitness.getTraitName());
+  if (!conformanceOp) {
+    emitEvaluationError(
+        "struct '" +
+        SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
+        "' does not have witness table for trait '" +
+        getWitness.getTraitName().getValue() + "'");
+    return failure();
   }
 
   auto conformance = cast<ConformanceOp>(conformanceOp);
   FailureOr<TypedAttr> result = failure();
-  withEvaluator(inputParameters, paramValues,
+  withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {
                   result = getWitness.simplify(conformance, &evaluator);
                 });
