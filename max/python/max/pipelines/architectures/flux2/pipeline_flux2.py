@@ -315,20 +315,11 @@ class Flux2Pipeline(DiffusionPipeline):
             .to(self.transformer.devices[0])
             .cast(dtype)
         )
-
         latents = self._patchify_latents(latents)
         latents = self._pack_latents(latents)
-
-        image_seq_len = latents.shape[1].dim
-        patch_h = patch_w = int(image_seq_len**0.5)
-
-        latent_image_ids = self._prepare_latent_image_ids(
-            batch_size=latents.shape[0].dim,
-            height=patch_h,
-            width=patch_w,
-            device=self.transformer.devices[0],
-            dtype=dtype,
-        )
+        latent_image_ids = Tensor.from_dlpack(
+            model_inputs.latent_image_ids.astype(np.int64)
+        ).to(self.transformer.devices[0])
 
         guidance = Tensor.full(
             [latents.shape[0]],
@@ -635,42 +626,6 @@ class Flux2Pipeline(DiffusionPipeline):
             (batch_size, num_channels_latents // 4, height * 2, width * 2),
         )
         return latents
-
-    def prepare_latents(
-        self,
-        batch_size: int,
-        num_channels_latents: int,
-        height: int,
-        width: int,
-        dtype: DType,
-        device: DeviceRef,
-        latents: Tensor | None = None,
-    ) -> tuple[Tensor, Tensor]:
-        height = 2 * (int(height) // (self.vae_scale_factor * 2))
-        width = 2 * (int(width) // (self.vae_scale_factor * 2))
-
-        shape = (batch_size, num_channels_latents * 4, height // 2, width // 2)
-
-        if latents is not None:
-            latents = (
-                latents
-                if isinstance(latents, Tensor)
-                else Tensor.from_dlpack(latents)
-            )
-            latent_image_ids = self._prepare_latent_image_ids(
-                batch_size, height // 2, width // 2, device, dtype
-            )
-            return latents.to(device).cast(dtype), latent_image_ids
-
-        latents = random.normal(shape, device=device, dtype=dtype)
-
-        latent_image_ids = self._prepare_latent_image_ids(
-            batch_size, height // 2, width // 2, device, dtype
-        )
-
-        latents = self._pack_latents(latents)
-
-        return latents, latent_image_ids
 
     def prepare_image_latents(
         self,
