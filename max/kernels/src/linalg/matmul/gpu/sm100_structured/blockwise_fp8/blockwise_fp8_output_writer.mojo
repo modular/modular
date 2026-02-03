@@ -39,7 +39,8 @@ from linalg.structuring import SMemTileArray
 
 struct BlockwiseFP8TileWriter[
     c_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
     accum_type: DType,
     accum_layout: Layout,
     /,
@@ -53,6 +54,11 @@ struct BlockwiseFP8TileWriter[
     c_swizzle: TensorMapSwizzle,
 ]:
     """Write register accumulators to GMEM via SMEM and TMA."""
+
+    # ========== Layout from dimensions ==========
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
 
     # ========== Tile Array Type ==========
     comptime CTileArray = SMemTileArray[
@@ -80,9 +86,8 @@ struct BlockwiseFP8TileWriter[
     comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
 
     # TMA tile height calculation
-    comptime c_smem_shape0 = Self.c_smem_layout.shape[0].value()
-    comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
-    comptime CG1_TMA_BM = Self.c_smem_shape0
+    comptime CG2_TMA_BM = Self.c_smem_dim0 if Self.MMA_M == 256 else Self.BM
+    comptime CG1_TMA_BM = Self.c_smem_dim0
     comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
 
     @staticmethod

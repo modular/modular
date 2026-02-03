@@ -193,21 +193,28 @@ struct B200MatmulSmem[
     comptime InputTiles = StandardTileStorage[
         Self.a_type,
         Self.b_type,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
         Self.num_pipeline_stages,
     ]
     # Output tiles: C matrix (different stage count)
     comptime OutputTiles = OutputTileStorage[
         Self.c_type,
-        Self.c_smem_layout,
+        Self.OutputM,
+        Self.OutputN,
         Self.num_output_stages,
     ]
 
     # Re-export tile array types for external use
-    comptime ATileArray = Self.InputTiles.ATileArray
-    comptime BTileArray = Self.InputTiles.BTileArray
-    comptime CTileArray = Self.OutputTiles.CTileArray
+    comptime ATileArray = Self.InputTiles.ATileArray  # TileTensor-based
+    comptime BTileArray = Self.InputTiles.BTileArray  # TileTensor-based
+    # CTileArray is LayoutTensor-based for backward compatibility
+    comptime CTileArray = Self.OutputTiles.CTileArrayLT
+    comptime CTileArrayTT = Self.OutputTiles.CTileArray  # TileTensor-based (new)
 
     # ========== Tile Storage Fields ==========
     var input_tiles: Self.InputTiles
@@ -233,8 +240,12 @@ struct B200MatmulSmem[
         StandardTilePayload[
             Self.a_type,
             Self.b_type,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
             Self.num_pipeline_stages,
         ],
     ]
@@ -478,14 +489,33 @@ struct BlackwellMatmulSM100Kernel[
     comptime TilePayload = StandardTilePayload[
         Self.a_type,
         Self.b_type,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Self.config.k_group_size,
+    ]
+
+    # ========== LayoutTensor Types for Boundary Conversion ==========
+    # Used for TMA/MMA ops - 128B alignment required for shared memory
+    comptime ATileLT = LayoutTensor[
+        Self.a_type,
+        Self.SmemType.a_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime BTileLT = LayoutTensor[
+        Self.b_type,
+        Self.SmemType.b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
     ]
 
     # ========== Tile Loader Types ==========
@@ -591,7 +621,8 @@ struct BlackwellMatmulSM100Kernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -745,8 +776,12 @@ struct BlackwellMatmulSM100Kernel[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
                 var is_first_k = (iter_idx + UInt32(j)) == k_start
+                # Convert to LayoutTensor at MMA boundary
                 mma_op.mma(
-                    a_tile, b_tile, UInt32(accum.offset()), init_c=is_first_k
+                    Self.ATileLT(a_tile.ptr),
+                    Self.BTileLT(b_tile.ptr),
+                    UInt32(accum.offset()),
+                    init_c=is_first_k,
                 )
             mma_op.commit(tiles.mbar())
 
@@ -835,16 +870,29 @@ struct BlackwellMatmulSM100Kernel[
                 # TMA descriptor layout. Pointer arithmetic with a_tma_load_size
                 # preserves the original working behavior.
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
                 )
 
                 var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
 
-                a_loader.load(a_peer_tile, barrier[0], k_coord, a_gmem_m_coord)
-                b_loader.load(b_peer_tile, barrier[0], k_coord, b_gmem_n_coord)
+                # Convert to LayoutTensor at TMA boundary
+                a_loader.load(
+                    Self.ATileLT(a_peer_tile.ptr),
+                    barrier[0],
+                    k_coord,
+                    a_gmem_m_coord,
+                )
+                b_loader.load(
+                    Self.BTileLT(b_peer_tile.ptr),
+                    barrier[0],
+                    k_coord,
+                    b_gmem_n_coord,
+                )
 
     @staticmethod
     @always_inline

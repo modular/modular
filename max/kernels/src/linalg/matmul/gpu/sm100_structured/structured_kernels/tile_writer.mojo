@@ -33,6 +33,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
+from layout._layout import Layout as InternalLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
@@ -41,6 +42,15 @@ from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv
 from utils.static_tuple import StaticTuple
+
+# TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
+from .tile_types import (
+    SMemTile as TileSMemTile,
+    SMemTileStride,
+    SMemTileShape,
+    SMemTileArray2D,
+    SMemTileArrayWithLayout,
+)
 
 
 # =============================================================================
@@ -340,7 +350,8 @@ struct TMAStoreCoords[
 
 struct TMAStoreExecutor[
     c_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
+    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -359,11 +370,16 @@ struct TMAStoreExecutor[
     When batched=True, uses 3D coordinates (M, N, Batch) for TMA stores.
     """
 
+    # Create internal layout from dimensions (eliminates public Layout from interface)
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
     comptime num_c_smem_tiles = 128 // Self.swizzle_width // (
         1 if Self.is_lower_frag_required else 2
     )
-    comptime c_smem_shape0 = Self.c_smem_layout.shape[0].value()
+    comptime c_smem_shape0 = Self.c_smem_dim0  # Now direct access
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
     comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
@@ -723,7 +739,8 @@ struct EpilogueApplier[
 struct TMEMToSMemWriter[
     c_type: DType,
     accum_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
+    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -736,12 +753,17 @@ struct TMEMToSMemWriter[
 ](TrivialRegisterType):
     """Write TMEM accumulators to SMEM via st.matrix (SM100-specific)."""
 
+    # Create internal layout from dimensions
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
     comptime Config = EpilogueConfig[
         Self.MMA_M, Self.MMA_N, Self.stageN, Self.cta_group, Self.transpose_c
     ]
 
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
-    comptime stage_contiguous_size = Self.c_smem_layout.shape[1].value()
+    comptime stage_contiguous_size = Self.c_smem_dim1  # Now direct access
     comptime data_paths = 16
     comptime swizzle = _make_swizzle[Self.c_type, Self.c_swizzle]()
 
@@ -908,10 +930,11 @@ from layout.layout import coalesce, flatten
 struct SMemEpilogueWriter[
     # Infer-only: deduced from c_tiles argument type
     c_type: DType,
-    c_smem_layout: Layout,
     num_output_stages: Int,
     //,
     # Configuration parameters (must be explicit)
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
     epilogue_dtype: DType,
     BM: Int,
     BN: Int,
@@ -930,9 +953,13 @@ struct SMemEpilogueWriter[
 ](TrivialRegisterType):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
-    comptime N_dim = 0 if Self.transpose_c else 1
-    comptime stageN = Self.c_smem_layout.shape[Self.N_dim].value()
-    comptime stage_contiguous_size = Self.c_smem_layout.shape[1].value()
+    # Create layout from dimensions
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
+    comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
+    comptime stage_contiguous_size = Self.c_smem_dim1
 
     comptime swizzle = _make_swizzle[Self.c_type, Self.c_swizzle]()
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()

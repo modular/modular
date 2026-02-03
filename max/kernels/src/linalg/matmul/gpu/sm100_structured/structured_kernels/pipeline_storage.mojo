@@ -16,13 +16,18 @@ This module provides a single-source-of-truth framework for pipeline storage,
 where stage count determines barrier count, and tile storage type determines
 the SMEM layout for input tiles.
 
+All tile storage uses TileTensor natively. Conversion to LayoutTensor only
+happens at external API boundaries (TMA, MMA) using the {ptr} syntax or
+explicit LayoutTensor construction.
+
 Design Principles
 -----------------
 1. **Single Source of Truth**: Stage count parameterizes barrier count
 2. **Single Source of Truth**: Tile storage types define array types once
-3. **Composable**: SMEM structs compose storage objects
-4. **Extensible**: Easy to add new storage types
-5. **Escape Hatch**: Raw storage access when framework doesn't fit
+3. **TileTensor Native**: All SMEM tiles use TileTensor
+4. **Composable**: SMEM structs compose storage objects
+5. **Extensible**: Easy to add new storage types
+6. **Escape Hatch**: Raw storage access when framework doesn't fit
 
 Architecture
 ------------
@@ -30,15 +35,15 @@ Architecture
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Tile Storage (defines tile arrays and storage)                     │
 │                                                                     │
-│  StandardTileStorage[a_type, b_type, layouts, stages]              │
-│      ├── ATileArray = SMemTileArray[...]                           │
-│      ├── BTileArray = SMemTileArray[...]                           │
+│  StandardTileStorage[a_type, b_type, a_dim0, a_dim1, b_dim0, ...]  │
+│      ├── ATileArray = SMemTileArray2D[...]  # TileTensor-based     │
+│      ├── BTileArray = SMemTileArray2D[...]  # TileTensor-based     │
 │      ├── var a_tiles_storage                                        │
 │      ├── var b_tiles_storage                                        │
-│      └── fn a_tiles(), b_tiles()                                    │
+│      └── fn a_tiles(), b_tiles()  # Returns TileTensor             │
 │                                                                     │
-│  BlockScaledTileStorage[..., sfa_type, sfb_type, ...]              │
-│  BlockwiseFP8TileStorage[..., a_scales_type, ...]                  │
+│  BlockScaledTileStorage[..., sfa_type, sfb_type, dims, ...]        │
+│  BlockwiseFP8TileStorage[..., a_scales_type, dims, ...]            │
 │  OutputTileStorage[c_type, c_layout, num_stages]                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Pipeline Storage (defines barriers)                                │
@@ -68,7 +73,8 @@ struct MyKernelSmem[config: MyConfig]:
     # Tile storage (single source of truth for tile types)
     comptime Tiles = StandardTileStorage[
         config.a_type, config.b_type,
-        config.a_layout, config.b_layout,
+        config.BM, config.BK,  # A tile dimensions
+        config.BN, config.BK,  # B tile dimensions
         config.num_pipeline_stages,
     ]
     var tiles: Self.Tiles
@@ -85,10 +91,10 @@ struct MyKernelSmem[config: MyConfig]:
 
     # Accessors delegate to composed storage
     fn a_tiles(ref[SHARED] self) -> Self.Tiles.ATileArray:
-        return self.tiles.a_tiles()
+        return self.tiles.a_tiles()  # Returns TileTensor
 
     fn c_tiles(ref[SHARED] self) -> Self.OutputTiles.CTileArray:
-        return self.output_tiles.c_tiles()
+        return self.output_tiles.c_tiles()  # Returns LayoutTensor
 ```
 
 Extensibility
@@ -110,7 +116,14 @@ from gpu.memory import AddressSpace
 from layout import Layout
 from layout.tma_async import SharedMemBarrier
 
-from linalg.structuring import SMemArray, SMemTileArray, SMemPtr
+# SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
+from linalg.structuring import SMemArray, SMemPtr
+
+# LayoutTensor-based SMemTileArray for C output tiles (used by tile_writer)
+from linalg.structuring import SMemTileArray as LTSMemTileArray
+
+# TileTensor-based tile arrays for input tiles (A, B, scales)
+from .tile_types import SMemTileArray2D
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
@@ -126,8 +139,13 @@ from .tile_pipeline import TilePayload
 struct StandardTileStorage[
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
 ]:
     """Storage for standard matmul tiles (A and B).
@@ -135,19 +153,25 @@ struct StandardTileStorage[
     This is the single source of truth for tile array types and storage.
     SMEM structs embed this rather than defining tile arrays separately.
 
+    All tiles use TileTensor natively. Convert to LayoutTensor at TMA/MMA
+    boundaries using {ptr} syntax or explicit construction.
+
     Parameters:
         a_type: Data type for A matrix tiles.
         b_type: Data type for B matrix tiles.
-        a_tile_layout: SMEM layout for A tiles.
-        b_tile_layout: SMEM layout for B tiles.
+        a_dim0: First dimension for A tiles.
+        a_dim1: Second dimension for A tiles.
+        b_dim0: First dimension for B tiles.
+        b_dim1: Second dimension for B tiles.
         num_pipeline_stages: Number of pipeline stages (determines array depth).
     """
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    # TileTensor-based array types (native, explicit dimensions)
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
 
     var a_tiles_storage: Self.ATileArray.Storage
@@ -155,13 +179,13 @@ struct StandardTileStorage[
 
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        """Get A tile array accessor."""
-        return Self.ATileArray(self.a_tiles_storage)
+        """Get A tile array accessor (TileTensor-based)."""
+        return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        """Get B tile array accessor."""
-        return Self.BTileArray(self.b_tiles_storage)
+        """Get B tile array accessor (TileTensor-based)."""
+        return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
 
 struct BlockScaledTileStorage[
@@ -170,17 +194,32 @@ struct BlockScaledTileStorage[
     c_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_tile_layout: Layout,
-    sfa_tile_layout: Layout,
-    sfb_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # C tile dimensions (explicit dimensions, layout defined internally)
+    c_dim0: Int,
+    c_dim1: Int,
+    # SFA tile dimensions
+    sfa_dim0: Int,
+    sfa_dim1: Int,
+    # SFB tile dimensions
+    sfb_dim0: Int,
+    sfb_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
 ]:
     """Storage for block-scaled matmul tiles (A, B, C, SFA, SFB).
 
     Single source of truth for block-scaled tile arrays and storage.
+
+    All tiles use TileTensor natively. C tiles also store as TileTensor but
+    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    .reshape[] and .tile[] methods.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
 
@@ -190,35 +229,51 @@ struct BlockScaledTileStorage[
         c_type: Data type for C matrix tiles.
         sfa_type: Data type for A scale factor tiles.
         sfb_type: Data type for B scale factor tiles.
-        a_tile_layout: SMEM layout for A tiles.
-        b_tile_layout: SMEM layout for B tiles.
-        c_tile_layout: SMEM layout for C tiles.
-        sfa_tile_layout: SMEM layout for A scale tiles.
-        sfb_tile_layout: SMEM layout for B scale tiles.
+        a_dim0: First dimension for A tiles.
+        a_dim1: Second dimension for A tiles.
+        b_dim0: First dimension for B tiles.
+        b_dim1: Second dimension for B tiles.
+        c_dim0: First dimension for C tiles (OutputM).
+        c_dim1: Second dimension for C tiles (OutputN).
+        sfa_dim0: First dimension for SFA tiles.
+        sfa_dim1: Second dimension for SFA tiles.
+        sfb_dim0: First dimension for SFB tiles.
+        sfb_dim1: Second dimension for SFB tiles.
         num_pipeline_stages: Number of input pipeline stages.
         num_output_stages: Number of output pipeline stages.
     """
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    # C tile layout derived from dimensions (row_major for TMA compatibility)
+    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
+
+    # TileTensor-based array types (native, explicit dimensions)
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime CTileArray = SMemTileArray[
+    # TileTensor-based for C storage (same size as LayoutTensor version)
+    comptime CTileArray = SMemTileArray2D[
+        Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
+    ]
+    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
-    comptime SFATileArray = SMemTileArray[
+    comptime SFATileArray = SMemTileArray2D[
         Self.sfa_type,
-        Self.sfa_tile_layout,
+        Self.sfa_dim0,
+        Self.sfa_dim1,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
-    comptime SFBTileArray = SMemTileArray[
+    comptime SFBTileArray = SMemTileArray2D[
         Self.sfb_type,
-        Self.sfb_tile_layout,
+        Self.sfb_dim0,
+        Self.sfb_dim1,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
 
     # Field order preserves SMEM layout: a, b, c, sfa, sfb
@@ -230,23 +285,40 @@ struct BlockScaledTileStorage[
 
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        return Self.ATileArray(self.a_tiles_storage)
+        """Get A tile array accessor."""
+        return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        return Self.BTileArray(self.b_tiles_storage)
+        """Get B tile array accessor."""
+        return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        return Self.CTileArray(self.c_tiles_storage)
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array accessor (LayoutTensor-based for backward compat).
+
+        Returns LayoutTensor view for compatibility with tile_writer.mojo
+        which uses .reshape[] and .tile[] methods.
+        """
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor (TileTensor-based).
+
+        Returns native TileTensor for future TileTensor-native code paths.
+        """
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
-        return Self.SFATileArray(self.sfa_tiles_storage)
+        """Get SFA tile array accessor."""
+        return Self.SFATileArray(self.sfa_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
-        return Self.SFBTileArray(self.sfb_tiles_storage)
+        """Get SFB tile array accessor."""
+        return Self.SFBTileArray(self.sfb_tiles_storage.unsafe_ptr())
 
 
 struct BlockwiseFP8TileStorage[
@@ -254,10 +326,19 @@ struct BlockwiseFP8TileStorage[
     b_type: DType,
     c_type: DType,
     a_scales_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    c_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # C tile dimensions (explicit dimensions, layout defined internally)
+    c_dim0: Int,
+    c_dim1: Int,
+    # A-scales tile dimensions
+    a_scales_dim0: Int,
+    a_scales_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
 ]:
@@ -266,6 +347,10 @@ struct BlockwiseFP8TileStorage[
     Single source of truth for blockwise FP8 tile arrays and storage.
     B-scales are read directly from global memory during epilogue.
 
+    All tiles use TileTensor natively. C tiles also store as TileTensor but
+    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    .reshape[] and .tile[] methods.
+
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
 
     Parameters:
@@ -273,28 +358,43 @@ struct BlockwiseFP8TileStorage[
         b_type: Data type for B matrix tiles.
         c_type: Data type for C matrix tiles.
         a_scales_type: Data type for A scale tiles.
-        a_tile_layout: SMEM layout for A tiles.
-        b_tile_layout: SMEM layout for B tiles.
-        c_tile_layout: SMEM layout for C tiles.
-        a_scales_tile_layout: SMEM layout for A scale tiles.
+        a_dim0: First dimension for A tiles.
+        a_dim1: Second dimension for A tiles.
+        b_dim0: First dimension for B tiles.
+        b_dim1: Second dimension for B tiles.
+        c_dim0: First dimension for C tiles (OutputM).
+        c_dim1: Second dimension for C tiles (OutputN).
+        a_scales_dim0: First dimension for A scale tiles.
+        a_scales_dim1: Second dimension for A scale tiles.
         num_pipeline_stages: Number of input pipeline stages.
         num_output_stages: Number of output pipeline stages.
     """
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    # C tile layout derived from dimensions (row_major for TMA compatibility)
+    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
+
+    # TileTensor-based array types for A/B (native, explicit dimensions)
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime CTileArray = SMemTileArray[
+    # TileTensor-based for C storage (same size as LayoutTensor version)
+    comptime CTileArray = SMemTileArray2D[
+        Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
+    ]
+    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
-    comptime AScalesTileArray = SMemTileArray[
+    # TileTensor-based for A-scales (explicit dimensions)
+    comptime AScalesTileArray = SMemTileArray2D[
         Self.a_scales_type,
-        Self.a_scales_tile_layout,
+        Self.a_scales_dim0,
+        Self.a_scales_dim1,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
 
     # Field order preserves SMEM layout: a, b, c, a_scales
@@ -305,24 +405,41 @@ struct BlockwiseFP8TileStorage[
 
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        return Self.ATileArray(self.a_tiles_storage)
+        """Get A tile array accessor."""
+        return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        return Self.BTileArray(self.b_tiles_storage)
+        """Get B tile array accessor."""
+        return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        return Self.CTileArray(self.c_tiles_storage)
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array accessor (LayoutTensor-based for backward compat).
+
+        Returns LayoutTensor view for compatibility with tile_writer.mojo
+        which uses .reshape[] and .tile[] methods.
+        """
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor (TileTensor-based).
+
+        Returns native TileTensor for future TileTensor-native code paths.
+        """
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
-        return Self.AScalesTileArray(self.a_scales_tiles_storage)
+        """Get A-scales tile array accessor."""
+        return Self.AScalesTileArray(self.a_scales_tiles_storage.unsafe_ptr())
 
 
 struct OutputTileStorage[
     c_type: DType,
-    c_tile_layout: Layout,
+    c_dim0: Int,
+    c_dim1: Int,
     num_output_stages: Int,
 ]:
     """Storage for output tiles (C matrix).
@@ -330,21 +447,47 @@ struct OutputTileStorage[
     Single source of truth for output tile array and storage.
     Separate from input tiles since output has different stage count.
 
+    All tiles use TileTensor natively. C tiles also store as TileTensor but
+    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    .reshape[] and .tile[] methods.
+
     Parameters:
         c_type: Data type for C matrix tiles.
-        c_tile_layout: SMEM layout for C tiles.
+        c_dim0: First dimension for C tiles (OutputM).
+        c_dim1: Second dimension for C tiles (OutputN).
         num_output_stages: Number of output pipeline stages.
     """
 
-    comptime CTileArray = SMemTileArray[
+    # C tile layout derived from dimensions (row_major for TMA compatibility)
+    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
+
+    # TileTensor-based for C storage
+    comptime CTileArray = SMemTileArray2D[
+        Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
+    ]
+    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
 
     var c_tiles_storage: Self.CTileArray.Storage
 
     @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        return Self.CTileArray(self.c_tiles_storage)
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArrayLT:
+        """Get C tile array accessor (LayoutTensor-based for backward compat).
+
+        Returns LayoutTensor view for compatibility with tile_writer.mojo
+        which uses .reshape[] and .tile[] methods.
+        """
+        return Self.CTileArrayLT(self.c_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn c_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor (TileTensor-based).
+
+        Returns native TileTensor for future TileTensor-native code paths.
+        """
+        return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
 
 # =============================================================================

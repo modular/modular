@@ -34,7 +34,8 @@ from layout import Layout, LayoutTensor
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
-from linalg.structuring import RegTile, SMemTile, SMemTileArray
+from linalg.structuring import RegTile, SMemTile
+from ..structured_kernels.tile_types import SMemTileArray2D
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
@@ -48,7 +49,7 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 @always_inline
 fn get_accumulator_layout[
     *,
-    c_smem_layout: Layout,
+    c_smem_dim1: Int,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cta_group: Int,
@@ -67,7 +68,7 @@ fn get_accumulator_layout[
 
     constrained[num_m_mmas == 1 and num_n_mmas == 1]()
 
-    comptime stageN = c_smem_layout.shape[1].value()
+    comptime stageN = c_smem_dim1
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
     comptime cg1_num_stages = MMA_N // stageN
     comptime num_stages = cg2_num_stages if cta_group == 2 else cg1_num_stages
@@ -177,15 +178,18 @@ struct BlockwiseFP8Accumulator[
         b_scales_dtype: DType,
         b_scales_layout: Layout,
         a_scales_dtype: DType,
-        a_scales_smem_layout: Layout,
+        # A-scales tile dimensions
+        a_scales_dim0: Int,
+        a_scales_dim1: Int,
     ](
         mut self,
         b_scales: LayoutTensor[b_scales_dtype, b_scales_layout, MutAnyOrigin],
-        a_scales_tiles: SMemTileArray[
+        a_scales_tiles: SMemTileArray2D[
             a_scales_dtype,
-            a_scales_smem_layout,
+            a_scales_dim0,
+            a_scales_dim1,
             num_pipeline_stages,
-            alignment=128,
+            128,
         ],
         epi_stage: EpilogueKStage[
             num_accum_pipeline_stages,

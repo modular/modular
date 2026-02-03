@@ -39,7 +39,7 @@ from ..structured_kernels.pipeline_storage import (
     BlockwiseFP8TileStorage,
 )
 from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
-from linalg.structuring import SMemTileArray, SMemArray
+from linalg.structuring import SMemArray
 
 
 struct BlockwiseFP8Smem[
@@ -95,43 +95,58 @@ struct BlockwiseFP8Smem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Combined storage preserves SMEM layout: a, b, c, a_scales
+    # Note: Layouts are still defined above for LayoutTensor boundary conversion
     comptime Tiles = BlockwiseFP8TileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.a_scales_type,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.c_smem_layout,
-        Self.a_scales_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
+        # C tile dimensions (OutputM x OutputN)
+        Self.OutputM,
+        Self.OutputN,
+        # A-scales dimensions (1 x BM)
+        1,
+        Self.BM,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types for external use
-    comptime ATileArray = Self.Tiles.ATileArray
-    comptime BTileArray = Self.Tiles.BTileArray
-    comptime CTileArray = Self.Tiles.CTileArray
-    comptime AScalesTileArray = Self.Tiles.AScalesTileArray
+    # Re-export tile array types
+    comptime ATileArray = Self.Tiles.ATileArray  # TileTensor-based
+    comptime BTileArray = Self.Tiles.BTileArray  # TileTensor-based
+    # CTileArray is LayoutTensor-based for backward compatibility
+    comptime CTileArray = Self.Tiles.CTileArrayLT
+    comptime CTileArrayTT = Self.Tiles.CTileArray  # TileTensor-based (new)
+    comptime AScalesTileArray = Self.Tiles.AScalesTileArray  # TileTensor-based
 
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
 
-    # ========== Tile Accessors (Delegated) ==========
+    # ========== Tile Accessors (TileTensor - Delegated) ==========
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor (TileTensor-based)."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor (TileTensor-based)."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor (TileTensor-based)."""
         return self.tiles.c_tiles()
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
+        """Get A-scales tile array accessor (TileTensor-based)."""
         return self.tiles.a_scales_tiles()
 
     # ========== Pipeline Storage (Embedded) ==========
@@ -141,9 +156,15 @@ struct BlockwiseFP8Smem[
             Self.a_type,
             Self.b_type,
             Self.a_scales_type,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
-            Self.a_scales_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
+            # A-scales dimensions (1 x BM)
+            1,
+            Self.BM,
             Self.num_pipeline_stages,
         ],
     ]

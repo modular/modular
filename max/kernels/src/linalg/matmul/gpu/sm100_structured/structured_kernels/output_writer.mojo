@@ -79,8 +79,9 @@ struct TileWriter[
     num_accum_pipeline_stages: Int,
     c_swizzle: TensorMapSwizzle,
     transpose_c: Bool,
-    # Kernel-level parameters
-    c_smem_layout: Layout,
+    # Kernel-level parameters - dimensions replace c_smem_layout
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
     num_output_stages: Int,
     stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: Int,
@@ -101,6 +102,11 @@ struct TileWriter[
     constructing the OutputTilePipeline that provides OutputStage
     instances to the write() method.
     """
+
+    # Create internal layout from dimensions
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
@@ -127,10 +133,10 @@ struct TileWriter[
         Self.c_type if Self.a_type == DType.bfloat16 else DType.float32
     )
 
-    # Stage dimensions
+    # Stage dimensions - now use direct dimension access
     comptime N_dim = 0 if Self.transpose_c else 1
-    comptime stageN = Self.c_smem_layout.shape[Self.N_dim].value()
-    comptime stage_contiguous_size = Self.c_smem_layout.shape[1].value()
+    comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
+    comptime stage_contiguous_size = Self.c_smem_dim1
 
     # Fragment layout constants
     comptime data_paths = 16
@@ -257,7 +263,8 @@ struct TileWriter[
         comptime SMEMWriter = TMEMToSMemWriter[
             Self.c_type,
             Self.accum_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -272,7 +279,8 @@ struct TileWriter[
 
         comptime StoreExecutor = TMAStoreExecutor[
             Self.c_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -363,6 +371,8 @@ struct TileWriter[
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
+                    Self.c_smem_dim0,
+                    Self.c_smem_dim1,
                     Self.epilogue_dtype,
                     Self.BM,
                     Self.BN,
@@ -390,7 +400,7 @@ struct TileWriter[
                 Self.MMA_N,
                 Self.stageN,
                 Self.cta_group,
-                Self.c_smem_layout.shape[0].value(),
+                Self.c_smem_dim0,
                 stage,
                 batched = Self.batched,
             ]
@@ -436,7 +446,8 @@ struct TileWriter[
         comptime SMEMWriter = TMEMToSMemWriter[
             Self.c_type,
             Self.accum_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -451,7 +462,8 @@ struct TileWriter[
 
         comptime StoreExecutor = TMAStoreExecutor[
             Self.c_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -570,6 +582,8 @@ struct TileWriter[
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
+                    Self.c_smem_dim0,
+                    Self.c_smem_dim1,
                     Self.epilogue_dtype,
                     Self.BM,
                     Self.BN,
@@ -597,7 +611,7 @@ struct TileWriter[
                 Self.MMA_N,
                 Self.stageN,
                 Self.cta_group,
-                Self.c_smem_layout.shape[0].value(),
+                Self.c_smem_dim0,
                 stage,
                 batched = Self.batched,
             ]
@@ -656,7 +670,8 @@ struct TileWriter[
         comptime SMEMWriter = TMEMToSMemWriter[
             Self.c_type,
             Self.accum_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -671,7 +686,8 @@ struct TileWriter[
 
         comptime StoreExecutorLocal = TMAStoreExecutor[
             Self.c_type,
-            Self.c_smem_layout,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
             Self.BM,
             Self.BN,
             Self.MMA_M,
@@ -767,7 +783,7 @@ struct TileWriter[
                     Self.MMA_N,
                     Self.stageN,
                     Self.cta_group,
-                    Self.c_smem_layout.shape[0].value(),
+                    Self.c_smem_dim0,
                     loop_stage,
                     batched=False,
                 ]
@@ -828,7 +844,7 @@ struct TileWriter[
             lane: Current lane ID.
         """
         comptime output_threads = Self.num_output_warps * WARP_SIZE
-        comptime c_smem_M = Self.c_smem_layout.shape[0].value()
+        comptime c_smem_M = Self.c_smem_dim0
         comptime TMA_BM = 64 if Self.cta_group == 1 else 128
         comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
             layout,

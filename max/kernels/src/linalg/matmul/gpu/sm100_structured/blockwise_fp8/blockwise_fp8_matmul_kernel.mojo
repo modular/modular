@@ -82,6 +82,8 @@ from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
+)
+from ..structured_kernels.tile_types import (
     BlockwiseFP8TilePayload,
 )
 from ..structured_kernels.tile_scheduler import (
@@ -290,19 +292,48 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]
 
     # ========== Tile Pipeline Type ==========
+    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
     comptime TilePayload = BlockwiseFP8TilePayload[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.a_scales_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # A-scales dimensions (1 x BM)
+        1,
+        Self.SmemType.BM,
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Self.config.k_group_size,
+    ]
+
+    # ========== LayoutTensor Types for Boundary Conversion ==========
+    # Used for MMA ops that don't support {ptr} syntax inference
+    # TMA/MMA requires 128B alignment in shared memory
+    comptime ATileLT = LayoutTensor[
+        Self.a_type,
+        Self.SmemType.a_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime BTileLT = LayoutTensor[
+        Self.b_type,
+        Self.SmemType.b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime AScalesTileLT = LayoutTensor[
+        Self.a_scales_type,
+        Self.SmemType.a_scales_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
     ]
 
     # ========== Tile Loader Types ==========
@@ -367,7 +398,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]()
 
     comptime accum_layout = get_accumulator_layout[
-        c_smem_layout = Self.c_smem_layout,
+        c_smem_dim1 = Self.OutputN,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
         cta_group = Self.cta_group,
@@ -385,7 +416,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Output Writer Type ==========
     comptime TileWriterType = BlockwiseFP8TileWriter[
         Self.c_type,
-        Self.c_smem_layout,
+        Self.OutputM,
+        Self.OutputN,
         Self.accum_type,
         Self.accum_layout,
         block_tile_shape = Self.config.block_tile_shape,
@@ -472,36 +504,38 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             var barrier = tiles.barrier()
             var stage = tiles.stage()
 
-            # Get tiles
+            # Get tiles as TileTensor (native SMEM storage)
             var a_tile, b_tile, a_scales_tile = tiles.payload().get_tile[
                 Self.config.k_group_size
             ](stage, 0)
 
-            # Peer CTA slicing
+            # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                b_tile.layout,
             )
 
-            # Load A and B using TileLoaders
+            # Load A and B - convert to LayoutTensor at TMA boundary
             a_loader.load(
-                a_peer_tile,
+                Self.ATileLT(a_peer_tile.ptr),
                 barrier[0],
                 iter_idx * UInt(Self.BK),
                 a_gmem_m_coord,
             )
             b_loader.load(
-                b_peer_tile,
+                Self.BTileLT(b_peer_tile.ptr),
                 barrier[0],
                 iter_idx * UInt(Self.BK),
                 b_gmem_n_coord,
             )
 
-            # Load A-scales using ScalesTileLoader
+            # Load A-scales - convert to LayoutTensor at TMA boundary
             a_scales_loader.load(
-                a_scales_tile,
+                Self.AScalesTileLT(a_scales_tile.ptr),
                 barrier[0],
                 Int(work_tile_coord[0]) * Self.BM,
                 Int(iter_idx),
@@ -538,15 +572,19 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         if elect_one_sync():
             # Loop through k_group_size tiles (typically 1)
             for jj in range(Self.config.k_group_size):
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, _ = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), jj)
 
                 # Blockwise FP8: always init_c=True since epilogue accumulates
-                # in registers, not TMEM. Use typed tensor's offset() for MMA.
+                # in registers, not TMEM.
+                # Explicit LayoutTensor at MMA boundary - uses swizzled layouts
+                # (SMemTileArray2D tiles have row_major layout internally, but
+                # actual SMEM data is in swizzled layout from TMA)
                 mma_op.mma(
-                    a_tile,
-                    b_tile,
+                    Self.ATileLT(a_tile.ptr),
+                    Self.BTileLT(b_tile.ptr),
                     UInt32(accum_tensor.offset()),
                     init_c=True,
                 )

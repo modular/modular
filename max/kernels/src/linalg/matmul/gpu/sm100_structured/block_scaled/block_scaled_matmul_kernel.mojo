@@ -68,8 +68,7 @@ from gpu.primitives.grid_controls import (
 )
 from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.layout_tensor import LayoutTensorIter
+from layout import Layout
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
@@ -106,6 +105,7 @@ from ..structured_kernels.tile_pipeline import (
     InputConsumerStage,
     BlockScaledTilePayload,
 )
+from ..structured_kernels.tile_types import internal_k_major_128B
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
@@ -335,22 +335,75 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== Tile Pipeline Type ==========
     # Manages A, B, SFA, SFB tiles with producer-consumer synchronization
-    # Uses generic TilePipeline with BlockScaledTilePayload for composition
+    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.sfa_smem_layout,
-        Self.SmemType.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # SFA tile dimensions
+        Self.SmemType.SFA_DIM0,
+        Self.SmemType.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SmemType.SFB_DIM0,
+        Self.SmemType.SFB_DIM1,
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
         Self.SmemType.num_group_pipeline_stages,
         Self.config.k_group_size,
+    ]
+
+    # ========== Internal Swizzled Layouts for TileTensor.to_layout_tensor() ==========
+    # These comptime aliases enable TileTensor to carry swizzled layouts so that
+    # .to_layout_tensor() produces correctly swizzled LayoutTensors. The internal
+    # Layout type (from layout._layout) preserves shape_types/stride_types through
+    # struct chains, unlike the public Layout type which uses runtime IntTuple.
+    #
+    # Usage pattern (not yet enabled due to compilation time investigation needed):
+    #   SmemType.ATile(ptr, a_internal_layout).to_layout_tensor()
+    #
+    # Currently using explicit LayoutTensor construction instead (see ATileLT below).
+    comptime a_internal_layout = internal_k_major_128B[
+        Self.a_type, Self.BM, Self.BK
+    ]
+    comptime b_internal_layout = internal_k_major_128B[
+        Self.b_type, Self.BN, Self.BK
+    ]
+
+    # ========== LayoutTensor Types for Boundary Conversion ==========
+    # At TMA/MMA boundaries, construct LayoutTensor from TileTensor pointer.
+    # TMA requires 128B alignment in shared memory.
+    comptime ATileLT = LayoutTensor[
+        Self.a_type,
+        Self.SmemType.a_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime BTileLT = LayoutTensor[
+        Self.b_type,
+        Self.SmemType.b_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime SFATileLT = LayoutTensor[
+        Self.sfa_dtype,
+        Self.SmemType.sfa_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
+    comptime SFBTileLT = LayoutTensor[
+        Self.sfb_dtype,
+        Self.SmemType.sfb_smem_layout,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
@@ -397,7 +450,8 @@ struct BlackwellBlockScaledMatmulKernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -477,32 +531,34 @@ struct BlackwellBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                # Get tiles at this pipeline stage using the payload accessor
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
 
-                # Peer CTA slice using pointer arithmetic
+                # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
-                # Load A and B with multicast
+                # Load A and B with multicast - explicit LayoutTensor at boundary
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
-                    a_peer_tile,
+                    Self.ATileLT(a_peer_tile.ptr),
                     barrier[0],
                     (k_coord, a_gmem_m_coord, batch_coord),
                     a_multicast_mask,
                 )
                 b_tma_op.async_multicast_load_3d[Self.cta_group](
-                    b_peer_tile,
+                    Self.BTileLT(b_peer_tile.ptr),
                     barrier[0],
                     (k_coord, b_gmem_n_coord, batch_coord),
                     b_multicast_mask,
@@ -510,7 +566,7 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 # Load SFA and SFB (no multicast, 5D addressing)
                 sfa_tma_op.async_copy_5d[Self.cta_group](
-                    sfa_tile,
+                    Self.SFATileLT(sfa_tile.ptr),
                     barrier[0],
                     (
                         0,
@@ -523,7 +579,7 @@ struct BlackwellBlockScaledMatmulKernel[
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
-                    sfb_tile,
+                    Self.SFBTileLT(sfb_tile.ptr),
                     barrier[0],
                     (
                         0,
@@ -576,7 +632,7 @@ struct BlackwellBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
-                # Get tiles at this pipeline stage using the payload accessor
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
@@ -598,11 +654,12 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
+                # Explicit LayoutTensor at MMA boundary
                 mma_op.mma(
-                    a_tile,
-                    b_tile,
-                    sfa_tile,
-                    sfb_tile,
+                    Self.ATileLT(a_tile.ptr),
+                    Self.BTileLT(b_tile.ptr),
+                    Self.SFATileLT(sfa_tile.ptr),
+                    Self.SFBTileLT(sfb_tile.ptr),
                     tmem_addr,
                     sfa_tmem_offset,
                     sfb_tmem_offset,

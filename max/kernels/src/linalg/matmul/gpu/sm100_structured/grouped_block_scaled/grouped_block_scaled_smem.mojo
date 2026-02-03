@@ -31,25 +31,17 @@ from layout.tensor_core_async import (
 )
 from memory import UnsafePointer
 
-from linalg.fp4_utils import (
-    SF_MN_GROUP_SIZE,
-    SF_ATOM_M,
-    SF_ATOM_K,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
+from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
+from linalg.structuring import SMemArray
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.pipeline_storage import (
     InputPipelineStorage,
     OutputPipelineStorage,
     ClcPipelineStorage,
     TmemDeallocStorage,
     BlockScaledTileStorage,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    BlockScaledTilePayload,
-)
-from linalg.structuring import SMemTileArray, SMemArray
+from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
 
 
 # Number of tensormap descriptors for grouped GEMM
@@ -134,28 +126,56 @@ struct GroupedBlockScaledSmem[
         Self.config.vec_sf_size,
     ]()
 
+    # SF tile dimensions (computed from tile_sf_layout_k_major formula)
+    # The layout uses a nested structure, so we compute dimensions directly:
+    # Row: (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0] = (BM // 128) * 32
+    # Col: (BK // (SF_ATOM_K * vec_sf_size)) * (SF_ATOM_M[1] * SF_ATOM_K)
+    #    = (BK // (4 * vec_sf_size)) * 16
+    comptime SF_BK = Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles
+    comptime SFA_DIM0 = (Self.BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+    comptime SFA_DIM1 = (
+        Self.SF_BK // (SF_ATOM_K * Self.config.vec_sf_size)
+    ) * (SF_ATOM_M[1] * SF_ATOM_K)
+    comptime SFB_DIM0 = (Self.MMA_N // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+    comptime SFB_DIM1 = (
+        Self.SF_BK // (SF_ATOM_K * Self.config.vec_sf_size)
+    ) * (SF_ATOM_M[1] * SF_ATOM_K)
+
     # ========== Tile Storage ==========
+    # Note: Layouts are still defined above for LayoutTensor boundary conversion
     comptime Tiles = BlockScaledTileStorage[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.a_smem_layout,
-        Self.b_smem_layout,
-        Self.c_smem_layout,
-        Self.sfa_smem_layout,
-        Self.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.BM,
+        Self.BK,
+        # B tile dimensions (BN x BK)
+        Self.BN,
+        Self.BK,
+        # C tile dimensions (OutputM x OutputN)
+        Self.OutputM,
+        Self.OutputN,
+        # SFA tile dimensions
+        Self.SFA_DIM0,
+        Self.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SFB_DIM0,
+        Self.SFB_DIM1,
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types for external use
-    comptime ATileArray = Self.Tiles.ATileArray
-    comptime BTileArray = Self.Tiles.BTileArray
-    comptime CTileArray = Self.Tiles.CTileArray
-    comptime SFATileArray = Self.Tiles.SFATileArray
-    comptime SFBTileArray = Self.Tiles.SFBTileArray
+    # Re-export tile array types
+    comptime ATileArray = Self.Tiles.ATileArray  # TileTensor-based
+    comptime BTileArray = Self.Tiles.BTileArray  # TileTensor-based
+    # CTileArray is LayoutTensor-based for backward compatibility
+    comptime CTileArray = Self.Tiles.CTileArrayLT
+    comptime CTileArrayTT = Self.Tiles.CTileArray  # TileTensor-based (new)
+    comptime SFATileArray = Self.Tiles.SFATileArray  # TileTensor-based
+    comptime SFBTileArray = Self.Tiles.SFBTileArray  # TileTensor-based
 
     # ========== Storage Fields ==========
     # IMPORTANT: Field order MUST match BlockScaledSmem to preserve layout compatibility
@@ -172,10 +192,18 @@ struct GroupedBlockScaledSmem[
             Self.b_type,
             Self.sfa_dtype,
             Self.sfb_dtype,
-            Self.a_smem_layout,
-            Self.b_smem_layout,
-            Self.sfa_smem_layout,
-            Self.sfb_smem_layout,
+            # A tile dimensions (BM x BK)
+            Self.BM,
+            Self.BK,
+            # B tile dimensions (BN x BK)
+            Self.BN,
+            Self.BK,
+            # SFA tile dimensions
+            Self.SFA_DIM0,
+            Self.SFA_DIM1,
+            # SFB tile dimensions
+            Self.SFB_DIM0,
+            Self.SFB_DIM1,
             Self.num_pipeline_stages,
         ],
     ]
@@ -219,26 +247,31 @@ struct GroupedBlockScaledSmem[
     # The tensormap fields are stored inline in SMEM at the start
     # of the struct, before tile storage, ensuring proper layout.
 
-    # ========== Tile Accessors (Delegated) ==========
+    # ========== Tile Accessors (TileTensor - Delegated) ==========
 
     @always_inline
     fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
+        """Get A tile array accessor (TileTensor-based)."""
         return self.tiles.a_tiles()
 
     @always_inline
     fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
+        """Get B tile array accessor (TileTensor-based)."""
         return self.tiles.b_tiles()
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
+        """Get C tile array accessor (TileTensor-based)."""
         return self.tiles.c_tiles()
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
+        """Get SFA tile array accessor (TileTensor-based)."""
         return self.tiles.sfa_tiles()
 
     @always_inline
     fn sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
+        """Get SFB tile array accessor (TileTensor-based)."""
         return self.tiles.sfb_tiles()
 
     # ========== Barrier Accessors (Delegated to Pipelines) ==========
