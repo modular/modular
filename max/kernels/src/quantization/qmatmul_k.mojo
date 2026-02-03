@@ -237,8 +237,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack_from_ptr[
         *, zero_point: UInt8 = 0
-    ](self_ptr: UnsafePointer[Self, ...], var dst_ptr: UnsafePointer[mut=True, UInt8]):
-        """Unpacks the local storage to the supplied external buffer using a pointer."""
+    ](
+        self_ptr: UnsafePointer[Self, ...],
+        var dst_ptr: UnsafePointer[mut=True, UInt8],
+    ):
+        """Unpacks the local storage to the supplied external buffer using a pointer.
+        """
         __comptime_assert (Self._packed_stride % Self._simd_width) == 0
 
         var bits_ptr = self_ptr[].bits.unsafe_ptr()
@@ -254,7 +258,10 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @staticmethod
     @always_inline
-    fn _unpack_int4_static(var bits_ptr: UnsafePointer[UInt8, ...], var dst_ptr: UnsafePointer[mut=True, UInt8]):
+    fn _unpack_int4_static(
+        var bits_ptr: UnsafePointer[UInt8, ...],
+        var dst_ptr: UnsafePointer[mut=True, UInt8],
+    ):
         __comptime_assert Self.bit_width == 4
         __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
@@ -276,7 +283,12 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @staticmethod
     @always_inline
-    fn _unpack_int6_static[zero_point: UInt8](var bits_ptr: UnsafePointer[UInt8, ...], var dst_ptr: UnsafePointer[mut=True, UInt8]):
+    fn _unpack_int6_static[
+        zero_point: UInt8
+    ](
+        var bits_ptr: UnsafePointer[UInt8, ...],
+        var dst_ptr: UnsafePointer[mut=True, UInt8],
+    ):
         __comptime_assert Self.bit_width == 6
         __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
@@ -333,7 +345,7 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 fn _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
 ](a: LayoutTensor[dtype, ...]) -> UnsafePointer[
-    mut = True, _block_Q8_K_packed[group_size], MutExternalOrigin
+    mut=True, _block_Q8_K_packed[group_size], MutExternalOrigin
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
@@ -1077,7 +1089,9 @@ fn _matmul_Q4_K_tile[
     ) capturing[_] -> None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size], MutAnyOrigin],
+    a_ptr: UnsafePointer[
+        _block_Q8_K_packed[_block_Q4_K.group_size], MutAnyOrigin
+    ],
     b_ptr: UnsafePointer[_block_Q4_K_packed[], MutAnyOrigin],
     b_q_scales_and_mins_buf: UnsafePointer[UInt8, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
@@ -1152,7 +1166,9 @@ fn _matmul_Q4_K_columns[
     simd_width: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size], MutAnyOrigin],
+    var a_ptr: UnsafePointer[
+        _block_Q8_K_packed[_block_Q4_K.group_size], MutAnyOrigin
+    ],
     b_ptr: UnsafePointer[_block_Q4_K_packed[], MutAnyOrigin],
     var c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M: Int,
@@ -1184,14 +1200,14 @@ fn _matmul_Q4_K_columns[
             a_q_bits_ptr: UnsafePointer[Int8],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
-            _matmul_group_packed_Q4_K(
-                a_q_bits_ptr, b_q_bits_ptr, c_int32_group
-            )
+            _matmul_group_packed_Q4_K(a_q_bits_ptr, b_q_bits_ptr, c_int32_group)
 
         _matmul_Q4_K_tile[
-            tile_m=1, tile_n=tile_n, simd_width=simd_width,
+            tile_m=1,
+            tile_n=tile_n,
+            simd_width=simd_width,
             matmul_group_fn=matmul_group_packed,
-            elementwise_lambda_fn=elementwise_lambda_fn
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](
             a_ptr,
             b_ptr,
@@ -1231,9 +1247,11 @@ fn _matmul_Q4_K_columns[
             )
 
         _matmul_Q4_K_tile[
-            tile_m=tile_m, tile_n=tile_n, simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            simd_width=simd_width,
             matmul_group_fn=matmul_group_unpacked,
-            elementwise_lambda_fn=elementwise_lambda_fn
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](
             a_ptr,
             b_ptr,
@@ -1313,7 +1331,9 @@ fn _matmul_Q6_K_tile[
     ) capturing[_] -> None,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size], MutAnyOrigin],
+    a_ptr: UnsafePointer[
+        _block_Q8_K_packed[_block_Q6_K.group_size], MutAnyOrigin
+    ],
     b_ptr: UnsafePointer[_block_Q6_K_packed[], MutAnyOrigin],
     c_ptr: UnsafePointer[mut=True, Float32, MutAnyOrigin],
     N: Int,
@@ -1396,7 +1416,9 @@ fn _matmul_Q6_K_columns[
     simd_width: Int,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    var a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q6_K.group_size], MutAnyOrigin],
+    var a_ptr: UnsafePointer[
+        _block_Q8_K_packed[_block_Q6_K.group_size], MutAnyOrigin
+    ],
     b_ptr: UnsafePointer[_block_Q6_K_packed[], MutAnyOrigin],
     var c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M: Int,
@@ -1431,9 +1453,11 @@ fn _matmul_Q6_K_columns[
             )
 
         _matmul_Q6_K_tile[
-            tile_m=1, tile_n=tile_n, simd_width=simd_width,
+            tile_m=1,
+            tile_n=tile_n,
+            simd_width=simd_width,
             matmul_group_fn=matmul_group_packed,
-            elementwise_lambda_fn=elementwise_lambda_fn
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](
             a_ptr,
             b_ptr,
@@ -1454,7 +1478,6 @@ fn _matmul_Q6_K_columns[
     ]()
     b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
 
-
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
@@ -1473,9 +1496,11 @@ fn _matmul_Q6_K_columns[
             )
 
         _matmul_Q6_K_tile[
-            tile_m=tile_m, tile_n=tile_n, simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            simd_width=simd_width,
             matmul_group_fn=matmul_group_unpacked,
-            elementwise_lambda_fn=elementwise_lambda_fn
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](
             a_ptr,
             b_ptr,
@@ -1557,9 +1582,12 @@ fn _matmul_Qb_K[
 
         for k_block in range(k_blocks):
             var bn_packed_ptr = b_packed_ptr + task_n_start
-            var cn_ptr = UnsafePointer[Float32, MutAnyOrigin](
-                unsafe_from_address=Int(c.ptr)
-            ) + task_n_start
+            var cn_ptr = (
+                UnsafePointer[Float32, MutAnyOrigin](
+                    unsafe_from_address=Int(c.ptr)
+                )
+                + task_n_start
+            )
             var accumulate = k_block > 0
 
             # only run epilogue for the last iter of K loop

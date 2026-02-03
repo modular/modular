@@ -2519,9 +2519,14 @@ fn _qmatmul_gguf_quantized_common[
             output,
         )
     elif quantization_encoding == "q4_k":
+
         @parameter
         if elementwise_lambda_fn:
-            matmul_Q4_K[elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value())](
+            matmul_Q4_K[
+                elementwise_lambda_fn = OptionalReg(
+                    elementwise_lambda_fn.value()
+                )
+            ](
                 hidden_state,
                 weight,
                 output,
@@ -2533,9 +2538,14 @@ fn _qmatmul_gguf_quantized_common[
                 output,
             )
     elif quantization_encoding == "q6_k":
+
         @parameter
         if elementwise_lambda_fn:
-            matmul_Q6_K[elementwise_lambda_fn=OptionalReg(elementwise_lambda_fn.value())](
+            matmul_Q6_K[
+                elementwise_lambda_fn = OptionalReg(
+                    elementwise_lambda_fn.value()
+                )
+            ](
                 hidden_state,
                 weight,
                 output,

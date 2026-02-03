@@ -1221,9 +1221,7 @@ fn _matmul_qint4[
 
     comptime aq_type = kernel.aq_type()
 
-    var a_quant_base_ptr = alloc[Scalar[aq_type]](
-        M * K, alignment=alignment
-    )
+    var a_quant_base_ptr = alloc[Scalar[aq_type]](M * K, alignment=alignment)
     var a_scale_base_ptr = alloc[Float32](M * k_groups)
 
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
