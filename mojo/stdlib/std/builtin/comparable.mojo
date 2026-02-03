@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ comptime EqualityComparable = Equatable
 """Deprecated alias for `Equatable`."""
 
 
-trait Equatable:
+trait Equatable(ImplicitlyDestructible):
     """A type which can be compared for equality with other instances of itself.
 
     The `Equatable` trait has a default implementation of `__eq__()` that uses

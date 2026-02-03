@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -1863,7 +1863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self
 
     @always_inline
-    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1878,8 +1878,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Returns:
             The template with the given values substituted.
@@ -2797,7 +2796,7 @@ fn _memmem_impl[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            var offset = i + Int(count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 output = haystack + offset
                 return

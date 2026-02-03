@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -742,7 +742,9 @@ struct ManagedTensorSlice[
 
         var adjusted_shape = IndexList[Self.rank]()
         for i in range(Self.rank):
-            adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
+            adjusted_shape[i] = Int(
+                ceil(Float64(stop[i] - start[i]) / Float64(step[i]))
+            )
         var slice_spec = RuntimeTensorSpec[Self.dtype](adjusted_shape)
 
         var slicer_strides = _row_major_strides(adjusted_shape)
@@ -1240,6 +1242,98 @@ struct ManagedTensorSlice[
             new_runtime_shape,
             new_runtime_strides,
         }
+
+    @doc_private
+    @always_inline
+    fn _bind_to_fused_input[
+        lambda_fn: StaticTensorSpec[Self.dtype, Self.rank].in_lambda_t
+    ](
+        self,
+        out result: ManagedTensorSlice[
+            dtype = Self.dtype,
+            rank = Self.rank,
+            io_spec=FusedInput,
+            static_spec = rebuild_static_tensor_specs_with_input_lambda(
+                Self.static_spec, lambda_fn
+            ),
+        ],
+    ):
+        constrained[
+            not Self.static_spec.in_lambda
+            and not Self.static_spec.out_lambda
+            and not Self.static_spec.out_compute_lambda,
+            "The tensor is already bound to a lambda",
+        ]()
+        return {self._ptr, self._spec, self._runtime_strides}
+
+    @doc_private
+    @always_inline
+    fn _bind_to_fused_output[
+        lambda_fn: StaticTensorSpec[Self.dtype, Self.rank].out_lambda_t
+    ](
+        self,
+        out result: ManagedTensorSlice[
+            dtype = Self.dtype,
+            rank = Self.rank,
+            io_spec=FusedOutput,
+            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+                Self.static_spec, lambda_fn
+            ),
+        ],
+    ):
+        constrained[
+            not Self.static_spec.in_lambda
+            and not Self.static_spec.out_lambda
+            and not Self.static_spec.out_compute_lambda,
+            "The tensor is already bound to a lambda",
+        ]()
+        return {self._ptr, self._spec, self._runtime_strides}
+
+    @doc_private
+    @always_inline
+    fn _bind_to_fused_compute_output[
+        lambda_fn: StaticTensorSpec[Self.dtype, Self.rank].out_compute_lambda_t
+    ](
+        self,
+        out result: ManagedTensorSlice[
+            dtype = Self.dtype,
+            rank = Self.rank,
+            io_spec=_FusedComputeOutput,
+            static_spec = rebuild_static_tensor_specs_with_compute_output_lambda(
+                Self.static_spec, lambda_fn
+            ),
+        ],
+    ):
+        constrained[
+            not Self.static_spec.in_lambda
+            and not Self.static_spec.out_lambda
+            and not Self.static_spec.out_compute_lambda,
+            "The tensor is already bound to a lambda",
+        ]()
+        return {self._ptr, self._spec, self._runtime_strides}
+
+    @doc_private
+    @always_inline
+    fn _bind_to_fused_compute_output[
+        lambda_fn: StaticTensorSpec[Self.dtype, Self.rank].out_lambda_t
+    ](
+        self,
+        out result: ManagedTensorSlice[
+            dtype = Self.dtype,
+            rank = Self.rank,
+            io_spec=_FusedComputeOutput,
+            static_spec = rebuild_static_tensor_specs_with_output_lambda(
+                Self.static_spec, lambda_fn
+            ),
+        ],
+    ):
+        constrained[
+            not Self.static_spec.in_lambda
+            and not Self.static_spec.out_lambda
+            and not Self.static_spec.out_compute_lambda,
+            "The tensor is already bound to a lambda",
+        ]()
+        return {self._ptr, self._spec, self._runtime_strides}
 
     @always_inline
     fn to_layout_tensor(

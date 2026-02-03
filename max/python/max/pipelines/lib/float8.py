@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -600,7 +600,13 @@ def parse_float8_config(  # TODO: rename to generic
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> Float8Config | None:
-    if dtype in (DType.uint8, DType.float4_e2m1fn):
+    quant_config = getattr(huggingface_config, "quantization_config", {})
+    quant_method = quant_config.get("quant_method")
+
+    if (
+        dtype in (DType.uint8, DType.float4_e2m1fn)
+        and quant_method == "modelopt"
+    ):
         return _parse_float4_config(
             huggingface_config,
             state_dict,

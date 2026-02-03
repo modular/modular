@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,7 @@ import pathlib
 from collections.abc import Sequence
 
 import max._core
+import max._core.dialects.builtin
 import max._core.dialects.m
 import max._core.dialects.mo
 import max._core.driver
@@ -28,6 +29,14 @@ def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None: ...
 def array_attr(
     arg0: max._core.driver.Buffer, arg1: max._core.dialects.mo.TensorType, /
 ) -> max._core.dialects.m.ArrayElementsAttr: ...
+def _buffer_from_constant_attr(
+    attr: max._core.dialects.builtin.ElementsAttr,
+    dtype: max._core.dtype.DType,
+    shape: Sequence[int],
+    device: max._core.driver.Device,
+) -> max._core.driver.Buffer:
+    """Create a Buffer from an MLIR constant attribute"""
+
 def next_operation(
     arg: max._mlir.ir.Operation, /
 ) -> max._mlir.ir.Operation: ...
