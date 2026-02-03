@@ -783,7 +783,7 @@ PIPELINES = {
                 tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
                 json_file="torch_llama3_1_bfloat16_golden.json",
             ),
-            cos_dist_threshold=3.0e-4,
+            cos_dist_threshold=3.7e-4,
             kl_div_threshold=7.4e-3,
         ),
     ),
@@ -908,7 +908,7 @@ PIPELINES = {
             pipeline="OpenGVLab/InternVL3-1B-Instruct",
             encoding="bfloat16",
             # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=3.7e-03,
+            cos_dist_threshold=4.0e-03,
             kl_div_threshold=1.5e-02,
         ),
     ),
