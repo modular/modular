@@ -101,6 +101,23 @@ def lookup_handler(op: _core.Operation) -> OpHandler | None:
     return None
 
 
+def _check_cpu_only(op: _core.Operation, target_device: Device) -> None:
+    """Check that operation is running on CPU (host device).
+
+    Args:
+        op: The operation being executed.
+        target_device: The target device for execution.
+
+    Raises:
+        NotImplementedError: If target device is not CPU.
+    """
+    if not target_device.is_host:
+        raise NotImplementedError(
+            f"GPU execution not supported for {type(op).__name__} "
+            "in MO interpreter"
+        )
+
+
 # Constant operations
 
 
@@ -214,12 +231,15 @@ def _handle_static_broadcast_to(
     Returns:
         List containing the broadcast tensor buffer.
     """
-    assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
-
     # Get target shape from result type
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    input_np = inputs[0].to_numpy()
+
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
         raise NotImplementedError(
@@ -248,12 +268,14 @@ def _handle_broadcast_to(
     Returns:
         List containing the broadcast tensor buffer.
     """
-    assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
-
-    # Try to get target shape from result type first (static case)
+    # Get target device from result type and check CPU-only
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    input_np = inputs[0].to_numpy()
 
     shape = result_type.shape
     if graph.Shape.is_static(shape):
@@ -409,20 +431,15 @@ def _handle_matmul(
     op: mo.MatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.matmul by dispatching to Mojo matmul kernel."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     lhs = inputs[0]
     rhs = inputs[1]
     assert isinstance(lhs, Buffer)
     assert isinstance(rhs, Buffer)
-
-    # Check that device is CPU (GPU not yet supported)
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_buffers_on_device(inputs, target_device)
-    if not target_device.is_host:
-        raise NotImplementedError(
-            f"Matmul is only supported on CPU, got device: {target_device}"
-        )
 
     # Calculate output shape: (M, K) @ (K, N) -> (M, N)
     m = lhs.shape[0]
@@ -443,11 +460,15 @@ def _reshape_common(
     op_name: str,
 ) -> Sequence[Buffer]:
     """Common implementation for reshape operations."""
-    assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
-    # Get target shape from result type
+    # Get target device from result type and check CPU-only
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    input_np = inputs[0].to_numpy()
+
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
         raise NotImplementedError(f"Dynamic shapes not supported for {op_name}")
@@ -479,6 +500,11 @@ def _handle_transpose(
     op: mo.TransposeOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.transpose."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
     # TransposeOp should have a permutation attribute
@@ -500,6 +526,11 @@ def _handle_slice(
     The op takes (input, start, stop, step) tensors where start/stop/step
     are 1D tensors with one element per dimension of the input.
     """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     assert isinstance(inputs[2], Buffer)
@@ -531,6 +562,11 @@ def _handle_shape_of(
     op: mo.ShapeOfOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
     """Handle mo.shape_of - returns the shape of a tensor as a 1D si64 tensor."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     assert isinstance(inputs[0], Buffer)
     shape = inputs[0].shape
     result_np = np.array(shape, dtype=np.int64)
@@ -543,6 +579,11 @@ def _handle_broadcast_shape(
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
     """Handle mo.broadcast_shape - compute broadcast shape of two shapes."""
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     shape_x = tuple(inputs[0].to_numpy().tolist())
@@ -563,6 +604,11 @@ def _handle_shape_to_tensor(
     This op just passes through the buffer since ParamToValueOp already
     created a tensor representation.
     """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
     # The input should already be a buffer containing the shape values
     # Just pass it through
     assert isinstance(inputs[0], Buffer)
