@@ -821,6 +821,11 @@ static bool findUnionType(UnionType unionType, Type type) {
 
 static LogicalResult verifyUnionType(Operation *op, UnionType unionType,
                                      Type type, StringRef desc) {
+  // Skip verification for parameterized (unresolved) union types.
+  // When the union is not resolved, the union types are not yet
+  // specialized, so we cannot verify type membership at compile time.
+  if (!unionType.isResolved())
+    return success();
   if (findUnionType(unionType, type))
     return success();
   return op->emitOpError(desc)

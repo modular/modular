@@ -145,6 +145,98 @@ ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
 // UnionType
 //===----------------------------------------------------------------------===//
 
+Type UnionType::parse(AsmParser &p) {
+  if (p.parseLess())
+    return {};
+
+  auto metatype = TypeType::get(p.getContext());
+  auto variadicType = VariadicType::get(metatype);
+  TypedAttr variadic;
+
+  // Special case `[<variadic>]` to parse the variadic parameter directly.
+  if (succeeded(p.parseOptionalLSquare())) {
+    if (parseParamValue(p, variadic, variadicType) || p.parseRSquare() ||
+        p.parseGreater())
+      return {};
+    return get(p.getContext(), variadic);
+  }
+
+  // Empty union: !pop.union<> - check for '>' before trying to parse types.
+  if (succeeded(p.parseOptionalGreater()))
+    return get(p.getContext(), ArrayRef<Type>{});
+
+  // Parse a non-empty list of concrete types.
+  SmallVector<Type> values;
+  if (parseParamTypes(p, values) || p.parseGreater())
+    return {};
+
+  return get(p.getContext(), values);
+}
+
+void UnionType::print(AsmPrinter &p) const {
+  p << '<';
+  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+
+  // Unresolved (parametric) variadic - print with brackets.
+  if (!attr) {
+    p << '[';
+    printParamValue(p, getVariadic());
+    p << ']';
+  } else if (!attr.getValues().empty()) {
+    // Resolved non-empty union - print concrete types.
+    SmallVector<Type> values;
+    for (TypedAttr value : attr.getValues())
+      values.push_back(ParamType::get(value));
+    printParamTypes(p, values);
+  }
+  // Empty union - prints nothing between < and >.
+  p << '>';
+}
+
+UnionType UnionType::get(MLIRContext *ctx, ArrayRef<Type> types) {
+  auto metatype = TypeType::get(ctx);
+  auto variadicType = VariadicType::get(metatype);
+  SmallVector<TypedAttr> elements;
+  for (Type type : types)
+    elements.push_back(TypeParamAttr::get(type, metatype));
+  return get(ctx, VariadicAttr::get(elements, variadicType));
+}
+
+UnionType UnionType::get(ArrayRef<Type> types) {
+  assert(!types.empty() && "use get(MLIRContext*, ArrayRef<Type>) for "
+                           "potentially empty unions");
+  return get(types.front().getContext(), types);
+}
+
+bool UnionType::isResolved() const { return isa<VariadicAttr>(getVariadic()); }
+
+Type UnionType::getType(unsigned index) const {
+  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  if (!attr)
+    return {};
+  return ParamType::get(attr.getValues()[index]);
+}
+
+size_t UnionType::getNumTypes() const {
+  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  if (!attr)
+    return 0;
+  return attr.getValues().size();
+}
+
+static Type unwrapTypeAttr(TypedAttr attr) { return ParamType::get(attr); }
+
+llvm::iterator_range<
+    llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator, Type (*)(TypedAttr)>>
+UnionType::getTypes() const {
+  auto attr = dyn_cast<VariadicAttr>(getVariadic());
+  if (!attr) {
+    // Return empty range for non-resolved variadics.
+    return llvm::map_range(ArrayRef<TypedAttr>{}, unwrapTypeAttr);
+  }
+  return llvm::map_range(attr.getValues(), unwrapTypeAttr);
+}
+
 OptionalParseResult UnionType::parseValue(AsmParser &p,
                                           TypedAttr &value) const {
   if (failed(p.parseOptionalLBrace()))
@@ -169,6 +261,7 @@ LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
+  assert(isResolved() && "cannot compute size of unresolved union type");
   int64_t maxSize = 0;
   for (Type type : getTypes()) {
     std::optional<int64_t> size =
@@ -181,6 +274,7 @@ std::optional<int64_t> UnionType::getTypeSize(TargetInfoAttr target) const {
 }
 
 std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
+  assert(isResolved() && "cannot compute alignment of unresolved union type");
   // The alignment of the union type is the max alignment of all variant types.
   // This respects @align decorators on variant types.
   int64_t maxAlign = 1;

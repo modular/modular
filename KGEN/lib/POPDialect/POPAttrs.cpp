@@ -42,6 +42,10 @@ void POPDialect::registerAttributes() {
 
 LogicalResult UnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                 TypedAttr value, UnionType type) {
+  // Skip verification for unresolved (parameterized) union types.
+  // The types are not yet known, so we cannot verify membership.
+  if (!type.isResolved())
+    return success();
   auto it = llvm::find(type.getTypes(), value.getType());
   if (it != type.getTypes().end())
     return success();

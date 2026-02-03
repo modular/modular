@@ -222,6 +222,10 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(ParamType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::UnionType type) {
+  // Unresolved (parameterized) unions must be specialized before lowering.
+  // They are resolved during monomorphization in the KGEN elaboration pass.
+  assert(type.isResolved() &&
+         "cannot build debug info for unresolved union type");
   SmallVector<DIMemberType> variantMembers;
   uint64_t maxMemberSizeInBits = 0;
   for (auto [index, member] : llvm::enumerate(type.getTypes())) {
