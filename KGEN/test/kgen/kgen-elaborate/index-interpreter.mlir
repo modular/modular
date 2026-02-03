@@ -549,3 +549,45 @@ kgen.generator export @main() -> !pop.scalar<bool> {
   kgen.return %0 : !pop.scalar<bool>
 }
 }
+
+// -----
+
+// COM: llvm.ctlz with index on 32-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @call_llvm_ctlz(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<bool>) -> !pop.scalar<index> {
+  %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.ctlz", (%arg0, %arg1) : (!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> !pop.scalar<index> {
+  kgen.param.declare value : !pop.scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index> @call_llvm_ctlz, 16, false)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <27>
+  %0 = kgen.param.constant: !pop.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+}
+
+// -----
+
+// COM: llvm.ctlz with index on 64-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @call_llvm_ctlz(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<bool>) -> !pop.scalar<index> {
+  %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.ctlz", (%arg0, %arg1) : (!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() -> !pop.scalar<index> {
+  kgen.param.declare value : !pop.scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index> @call_llvm_ctlz, 16, false)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <59>
+  %0 = kgen.param.constant: !pop.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+}
