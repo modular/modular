@@ -301,17 +301,19 @@ class Gemma3_MultiModalModelV3(
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
 
         raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
-        model_config = Gemma3ForConditionalGenerationConfig.generate(
+        model_config = Gemma3ForConditionalGenerationConfig.initialize(
+            self.pipeline_config
+        )
+        model_config.finalize(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             state_dict=raw_state_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
             kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
-        self.config = model_config
 
         input_row_offsets_prealloc_host = Buffer.from_numpy(
             np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
@@ -660,7 +662,7 @@ class Gemma3_MultiModalModelV3(
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
         n_devices = kv_params.n_devices
         fetch_types = kv_params.get_symbolic_inputs()[0]

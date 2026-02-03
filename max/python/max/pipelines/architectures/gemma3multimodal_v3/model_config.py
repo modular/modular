@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -25,12 +24,13 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.lib import (
     KVCacheConfig,
-    MAXModelConfigBase,
     PipelineConfig,
     RopeType,
     parse_float8_config,
 )
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
+from typing_extensions import Self, override
 
 
 @dataclass
@@ -82,26 +82,29 @@ class Gemma3VisionConfig:
         "swish": "silu",
     }
 
-    @staticmethod
-    def generate(vision_config: AutoConfig) -> Gemma3VisionConfig:
-        hidden_act = vision_config.hidden_act
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        hidden_act = huggingface_config.hidden_act
         if hidden_act in Gemma3VisionConfig._HIDDEN_ACTIVATION_MAP:
             hidden_act = Gemma3VisionConfig._HIDDEN_ACTIVATION_MAP[hidden_act]
 
-        return Gemma3VisionConfig(
-            hidden_size=vision_config.hidden_size,
-            image_size=vision_config.image_size,
-            intermediate_size=vision_config.intermediate_size,
-            num_attention_heads=vision_config.num_attention_heads,
-            num_hidden_layers=vision_config.num_hidden_layers,
-            patch_size=vision_config.patch_size,
-            num_channels=vision_config.num_channels,
+        return cls(
+            hidden_size=huggingface_config.hidden_size,
+            image_size=huggingface_config.image_size,
+            intermediate_size=huggingface_config.intermediate_size,
+            num_attention_heads=huggingface_config.num_attention_heads,
+            num_hidden_layers=huggingface_config.num_hidden_layers,
+            patch_size=huggingface_config.patch_size,
+            num_channels=huggingface_config.num_channels,
             hidden_act=hidden_act,
-            layer_norm_eps=vision_config.layer_norm_eps,
+            layer_norm_eps=huggingface_config.layer_norm_eps,
         )
 
 
-class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
+@dataclass(kw_only=True)
+class Gemma3ForConditionalGenerationConfig(ArchConfigWithKVCache):
     """Base configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture, typically
@@ -166,7 +169,6 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
     converting a multi-head checkpoint to a GQA checkpoint, each group key and value head should be constructed"
     """
 
-    @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
@@ -203,20 +205,35 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
             return max_seq_len
         return huggingface_config.text_config.max_position_embeddings
 
-    @staticmethod
-    def generate(
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        dtype: DType,
-        n_devices: int,
-        cache_dtype: DType,
-        kv_cache_config: KVCacheConfig,
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> Gemma3ForConditionalGenerationConfig:
-        """Generate a combined language and vision config class"""
+    @override
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        """Initializes an InternVLConfig instance from pipeline configuration.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+
+        Returns:
+            An InternVLConfig instance with fields initialized from config.
+        """
+        return cls.initialize_from_config(
+            pipeline_config, pipeline_config.model.huggingface_config
+        )
+
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
+        """Initializes a Gemma3ForConditionalGenerationConfig instance from
+        pipeline configuration and HuggingFace configuration.
+
+        Args:
+            pipeline_config: The MAX Engine pipeline configuration.
+            huggingface_config: The HuggingFace configuration object.
+
+        Returns:
+            A Gemma3ForConditionalGenerationConfig instance
+        """
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
@@ -233,21 +250,14 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
             huggingface_config, "tie_word_embeddings", False
         )
 
-        # Parse the float8 config from compressed-tensors
-        layer_name_prefix = "language_model.model."
-        float8_config = parse_float8_config(
-            huggingface_config,
-            state_dict,
-            dtype,
-            state_dict_name_prefix=layer_name_prefix,
-            ignored_modules_prefix=layer_name_prefix,
-        )
-
         # Generate the individual vision and text configs from Huggingface config
         hf_vision_config = getattr(huggingface_config, "vision_config", None)
         if hf_vision_config is None:
             raise ValueError("vision_config not found in huggingface_config")
-        vision_config = Gemma3VisionConfig.generate(hf_vision_config)
+        vision_config = Gemma3VisionConfig.initialize_from_config(
+            pipeline_config=pipeline_config,
+            huggingface_config=hf_vision_config,
+        )
 
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
@@ -257,22 +267,10 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
             huggingface_config=hf_text_config,
         )
 
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=device_refs,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-
-        gemma3_config = Gemma3ForConditionalGenerationConfig(
+        return cls(
             tie_word_embeddings=tie_word_embeddings,
-            dtype=dtype,
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
-            return_logits=return_logits,
-            kv_params=kv_params,
-            float8_config=float8_config,
             vision_config=vision_config,
             text_config=text_config,
             mm_tokens_per_image=huggingface_config.mm_tokens_per_image,
@@ -282,4 +280,40 @@ class Gemma3ForConditionalGenerationConfig(MAXModelConfigBase):
             initializer_range=0.0,
         )
 
-        return gemma3_config
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        dtype: DType,
+        return_logits: ReturnLogits,
+        cache_dtype: DType,
+        kv_cache_config: KVCacheConfig,
+        pipeline_config: PipelineConfig,
+        device_refs: list[DeviceRef],
+    ) -> None:
+        """
+        Finalize the Gemma3ForConditionalGenerationConfig instance with
+        state_dict dependent fields.
+        """
+        self.dtype = dtype
+
+        # Parse the float8 config from compressed-tensors
+        layer_name_prefix = "language_model.model."
+        float8_config = parse_float8_config(
+            huggingface_config,
+            state_dict,
+            dtype,
+            state_dict_name_prefix=layer_name_prefix,
+            ignored_modules_prefix=layer_name_prefix,
+        )
+        self.float8_config = float8_config
+        self.return_logits = return_logits
+
+        kv_params = self.get_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=device_refs,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+        self.kv_params = kv_params

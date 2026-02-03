@@ -25,6 +25,8 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
+from .model_config import Gemma3ForConditionalGenerationConfig
+
 ENABLE_NEW_IMPL = os.environ.get(
     "MODULAR_MAX_ENABLE_GEMMA3_VISION", "0"
 ).lower() in (
@@ -72,6 +74,7 @@ if ENABLE_NEW_IMPL:
             "enable_chunked_prefill": False,
         },
         context_type=TextAndVisionContext,
+        config=Gemma3ForConditionalGenerationConfig,
     )
 else:
     gemma3_multimodal_arch_v3 = SupportedArchitecture(
@@ -92,4 +95,5 @@ else:
             WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         },
         context_type=TextContext,
+        config=Gemma3ForConditionalGenerationConfig,
     )
