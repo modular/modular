@@ -20,7 +20,7 @@ from max.tensor import Tensor
 
 
 @module_dataclass
-class WeightedRMSNorm(Module):
+class WeightedRMSNorm(Module[[Tensor], Tensor]):
     """RMSNorm wrapper for Flux2.
 
     Applies Root Mean Square Layer Normalization to the input tensor.
@@ -43,6 +43,7 @@ class WeightedRMSNorm(Module):
             normalized_shape = (normalized_shape,)
         self.normalized_shape = tuple(normalized_shape)
 
+        self.weight: Tensor | None
         if elementwise_affine:
             self.weight = Tensor.ones(self.normalized_shape)
         else:
@@ -59,16 +60,23 @@ class WeightedRMSNorm(Module):
         Returns:
             Normalized tensor of same shape as input.
         """
+        weight = (
+            self.weight
+            if self.weight is not None
+            else Tensor.ones(
+                self.normalized_shape, dtype=x.dtype, device=x.device
+            )
+        )
         return rms_norm(
             x,
-            self.weight,
+            weight,
             self.eps,
             weight_offset=0.0,
             multiply_before_cast=self.elementwise_affine,
         )
 
 
-class WeightedLayerNorm(Module):
+class WeightedLayerNorm(Module[[Tensor], Tensor]):
     """LayerNorm for Flux2.
 
     Standard Layer Normalization with optional affine transformation.
@@ -96,6 +104,8 @@ class WeightedLayerNorm(Module):
         self.eps = eps
         self.elementwise_affine = elementwise_affine
 
+        self.weight: Tensor | None
+        self.bias: Tensor | None
         if elementwise_affine:
             self.weight = Tensor.ones(list(normalized_shape))
             if bias:
@@ -137,7 +147,7 @@ class WeightedLayerNorm(Module):
         )
 
 
-class AdaLayerNormContinuous(Module):
+class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
     """Adaptive Layer Normalization with continuous conditioning.
 
     Used for the final output normalization in Flux2, where the normalization
@@ -167,6 +177,7 @@ class AdaLayerNormContinuous(Module):
         self.linear = Linear(
             conditioning_embedding_dim, embedding_dim * 2, bias=bias
         )
+        self.norm: WeightedLayerNorm | WeightedRMSNorm
         if norm_type == "layer_norm":
             self.norm = WeightedLayerNorm(
                 embedding_dim,

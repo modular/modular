@@ -13,7 +13,6 @@
 
 """Flux2 architecture package."""
 
-from .arch import flux2_arch
 from .model import Flux2Model
 
-__all__ = ["Flux2Model", "flux2_arch"]
+__all__ = ["Flux2Model"]

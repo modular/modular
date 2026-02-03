@@ -82,11 +82,16 @@ class Flux2Model(ComponentModel):
                 image_seq_len=image_seq_len,
                 text_seq_len=text_seq_len,
             )
-            self._compiled_model = self._flux2.compile(
+            compiled = self._flux2.compile(
                 *input_types, weights=self._state_dict
             )
+            # compile returns a callable, but we need to store it as Model
+            # The actual Model is created when the callable is invoked
+            self._compiled_model = compiled  # type: ignore[assignment]
             self._compiled_shapes = current_shapes
 
+        if self._compiled_model is None:
+            raise RuntimeError("Model compilation failed")
         return self._compiled_model
 
     def __call__(
