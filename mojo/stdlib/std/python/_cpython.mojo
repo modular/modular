@@ -67,6 +67,34 @@ comptime Py_TPFLAGS_DICT_SUBCLASS = c_ulong(1 << 29)
 comptime Py_TPFLAGS_BASE_EXC_SUBCLASS = c_ulong(1 << 30)
 comptime Py_TPFLAGS_TYPE_SUBCLASS = c_ulong(1 << 31)
 
+# Python constants, for example some operations may want to return Not Implemented.
+# ref: https://github.com/python/cpython/blob/main/Include/object.h#L659
+# ref:  https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
+comptime Py_CONSTANT_NONE = 0
+comptime Py_CONSTANT_FALSE = 1
+comptime Py_CONSTANT_TRUE = 2
+comptime Py_CONSTANT_ELLIPSIS = 3
+comptime Py_CONSTANT_NOT_IMPLEMENTED = 4
+comptime Py_CONSTANT_ZERO = 5
+comptime Py_CONSTANT_ONE = 6
+comptime Py_CONSTANT_EMPTY_STR = 7
+comptime Py_CONSTANT_EMPTY_BYTES = 8
+comptime Py_CONSTANT_EMPTY_TUPLE = 9
+
+
+struct RichCompareOps:
+    """Flags used by the richcompare function.
+
+    ref: https://github.com/python/cpython/blob/main/Include/object.h#L721
+    """
+
+    comptime Py_LT = 0
+    comptime Py_LE = 1
+    comptime Py_EQ = 2
+    comptime Py_NE = 3
+    comptime Py_GT = 4
+    comptime Py_GE = 5
+
 
 # TODO(MOCO-1138):
 #   This should be a C ABI function pointer, not a Mojo ABI function.
@@ -404,12 +432,22 @@ struct PyType_Spec(TrivialRegisterType):
     var slots: UnsafePointer[PyType_Slot, MutAnyOrigin]
 
 
-# https://github.com/python/cpython/blob/main/Include/typeslots.h
-comptime Py_tp_dealloc = 52
-comptime Py_tp_init = 60
-comptime Py_tp_methods = 64
-comptime Py_tp_new = 65
-comptime Py_tp_repr = 66
+struct TypeSlots:
+    """Python type slots as defined in the file below.
+
+    https://github.com/python/cpython/blob/main/Include/typeslots.h
+    """
+
+    comptime Py_mp_setitem = 3
+    comptime Py_mp_length = 4
+    comptime Py_mp_getitem = 5
+    comptime Py_tp_dealloc = 52
+    comptime Py_tp_init = 60
+    comptime Py_tp_methods = 64
+    comptime Py_tp_new = 65
+    comptime Py_tp_repr = 66
+    comptime Py_tp_richcompare = 67
+
 
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
@@ -447,36 +485,76 @@ struct PyType_Slot(TrivialRegisterType):
     @staticmethod
     fn tp_dealloc(func: destructor) -> Self:
         return PyType_Slot(
-            Py_tp_dealloc,
+            TypeSlots.Py_tp_dealloc,
             rebind[OpaquePointer[MutAnyOrigin]](func),
         )
 
     @staticmethod
     fn tp_init(func: Typed_initproc) -> Self:
         return PyType_Slot(
-            Py_tp_init, rebind[OpaquePointer[MutAnyOrigin]](func)
+            TypeSlots.Py_tp_init, rebind[OpaquePointer[MutAnyOrigin]](func)
         )
 
     @staticmethod
     fn tp_methods(methods: UnsafePointer[PyMethodDef, MutAnyOrigin]) -> Self:
         return PyType_Slot(
-            Py_tp_methods,
+            TypeSlots.Py_tp_methods,
             rebind[OpaquePointer[MutAnyOrigin]](methods),
         )
 
     @staticmethod
     fn tp_new(func: Typed_newfunc) -> Self:
-        return PyType_Slot(Py_tp_new, rebind[OpaquePointer[MutAnyOrigin]](func))
+        return PyType_Slot(
+            TypeSlots.Py_tp_new, rebind[OpaquePointer[MutAnyOrigin]](func)
+        )
 
     @staticmethod
     fn tp_repr(func: reprfunc) -> Self:
         return PyType_Slot(
-            Py_tp_repr, rebind[OpaquePointer[MutAnyOrigin]](func)
+            TypeSlots.Py_tp_repr, rebind[OpaquePointer[MutAnyOrigin]](func)
         )
 
     @staticmethod
     fn null() -> Self:
         return PyType_Slot(0, OpaquePointer[MutAnyOrigin]())
+
+    @staticmethod
+    fn mp_subscript(
+        func: fn(py_self: PyObjectPtr, key: PyObjectPtr) -> PyObjectPtr
+    ) -> Self:
+        return PyType_Slot(
+            TypeSlots.Py_mp_getitem,
+            rebind[OpaquePointer[MutAnyOrigin]](func),
+        )
+
+    @staticmethod
+    fn mp_length(func: fn(py_self: PyObjectPtr) -> Int) -> Self:
+        return PyType_Slot(
+            TypeSlots.Py_mp_length,
+            rebind[OpaquePointer[MutAnyOrigin]](func),
+        )
+
+    @staticmethod
+    fn mp_ass_subscript(
+        func: fn(
+            py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
+        ) -> c_int
+    ) -> Self:
+        return PyType_Slot(
+            TypeSlots.Py_mp_setitem,
+            rebind[OpaquePointer[MutAnyOrigin]](func),
+        )
+
+    @staticmethod
+    fn tp_richcompare(
+        func: fn(
+            py_self: PyObjectPtr, other: PyObjectPtr, tp_op: c_int
+        ) -> PyObjectPtr
+    ) -> Self:
+        return PyType_Slot(
+            TypeSlots.Py_tp_richcompare,
+            rebind[OpaquePointer[MutAnyOrigin]](func),
+        )
 
 
 @fieldwise_init
@@ -1381,6 +1459,8 @@ struct CPython(Defaultable, Movable):
     var _PyType_FromSpec: PyType_FromSpec.type
     # The None Object
     var _Py_None: PyObjectPtr
+    # The NotImplemented Object
+    var _Py_NotImplemented: PyObjectPtr
     # Integer Objects
     var _PyLong_Type: PyTypeObjectPtr
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
@@ -1565,11 +1645,22 @@ struct CPython(Defaultable, Movable):
             # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
             self._Py_None = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](0)
+            ](Py_CONSTANT_NONE)
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
                 upcast_from=self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            )
+        # The NotImplemented Object
+        if self.version.minor >= 13:
+            self._Py_NotImplemented = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](Py_CONSTANT_NOT_IMPLEMENTED)
+        else:
+            self._Py_NotImplemented = PyObjectPtr(
+                upcast_from=self.lib.get_symbol[PyObject](
+                    "_Py_NotImplementedStruct"
+                )
             )
         # Integer Objects
         # PyTypeObject PyLong_Type
@@ -2388,6 +2479,19 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/none.html#c.Py_None
         """
         return self._Py_None
+
+    # ===-------------------------------------------------------------------===#
+    # The NotImplemented Object
+    # ref: https://docs.python.org/3/c-api/object.html#c.Py_NotImplemented
+    # ===-------------------------------------------------------------------===#
+
+    fn Py_NotImplemented(self) -> PyObjectPtr:
+        """The Python `NotImplemented` singleton object.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.Py_NotImplemented
+        """
+        return self._Py_NotImplemented
 
     # ===-------------------------------------------------------------------===#
     # Integer Objects
