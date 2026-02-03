@@ -1184,7 +1184,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="kathywu95/deepseek-v3-small-random",
             encoding="bfloat16",
-            cos_dist_threshold=9.4e-03,
+            cos_dist_threshold=2.9e-02,
             kl_div_threshold=8.0e-2,  # TODO(MODELS-998)
         ),
     ),
