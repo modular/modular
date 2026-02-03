@@ -408,13 +408,30 @@ for op_type in ops.UNARY_ELEMENTWISE:
 def _handle_matmul(
     op: mo.MatmulOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.matmul by dispatching to matmul kernel."""
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
-    lhs_np = inputs[0].to_numpy()
-    rhs_np = inputs[1].to_numpy()
-    result_np = np.matmul(lhs_np, rhs_np)
-    return [Buffer.from_numpy(result_np)]
+    """Handle mo.matmul by dispatching to Mojo matmul kernel."""
+    lhs = inputs[0]
+    rhs = inputs[1]
+    assert isinstance(lhs, Buffer)
+    assert isinstance(rhs, Buffer)
+
+    # Check that device is CPU (GPU not yet supported)
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_buffers_on_device(inputs, target_device)
+    if not target_device.is_host:
+        raise NotImplementedError(
+            f"Matmul is only supported on CPU, got device: {target_device}"
+        )
+
+    # Calculate output shape: (M, K) @ (K, N) -> (M, N)
+    m = lhs.shape[0]
+    n = rhs.shape[1]
+
+    output = Buffer(shape=(m, n), dtype=lhs.dtype, device=target_device)
+
+    ops.mojo_ops.Matmul(output, lhs, rhs)
+    return [output]
 
 
 # Shape manipulation operations

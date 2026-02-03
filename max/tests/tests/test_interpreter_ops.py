@@ -31,6 +31,8 @@ INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UINT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 SIGNED_DTYPES = FLOAT_DTYPES + INT_DTYPES
 ELEMENTWISE_DTYPES = SIGNED_DTYPES + UINT_DTYPES
+# DTypes to test for matmul operations (float and integer)
+MATMUL_DTYPES = FLOAT_DTYPES + INT_DTYPES
 
 
 class TestBinaryElementwiseOps:
@@ -1105,3 +1107,120 @@ class TestInterpreterVsCompiled:
         np.testing.assert_array_almost_equal(
             interp_result.to_numpy(), compiled_result
         )
+
+
+class TestMatmulOp:
+    """Tests for matmul Mojo op."""
+
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_matmul_basic(self, dtype: DType) -> None:
+        """Test basic 2D matmul matches numpy."""
+        device = CPU()
+        lhs_shape = [3, 4]
+        rhs_shape = [4, 5]
+        lhs_type = TensorType(dtype, lhs_shape, device)
+        rhs_type = TensorType(dtype, rhs_shape, device)
+
+        with Graph("matmul_test", input_types=[lhs_type, rhs_type]) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        # Use small values to avoid overflow for integer types
+        a_np = np.arange(12, dtype=np_dtype).reshape(lhs_shape) % 10
+        b_np = np.arange(20, dtype=np_dtype).reshape(rhs_shape) % 10
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_matmul_square(self, dtype: DType) -> None:
+        """Test square matrix matmul."""
+        device = CPU()
+        shape = [4, 4]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph(
+            "matmul_square_test", input_types=[input_type, input_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(16, dtype=np_dtype).reshape(shape) % 5
+        b_np = np.arange(16, dtype=np_dtype).reshape(shape) % 5
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_matmul_float_precision(self, dtype: DType) -> None:
+        """Test matmul with random floats for precision."""
+        device = CPU()
+        lhs_shape = [8, 16]
+        rhs_shape = [16, 8]
+        lhs_type = TensorType(dtype, lhs_shape, device)
+        rhs_type = TensorType(dtype, rhs_shape, device)
+
+        with Graph(
+            "matmul_float_test", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        np.random.seed(42)
+        a_np = np.random.randn(8, 16).astype(np_dtype)
+        b_np = np.random.randn(16, 8).astype(np_dtype)
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(
+            result.to_numpy(), expected, decimal=5
+        )
+
+    def test_matmul_vector(self) -> None:
+        """Test matmul with vector-like shapes."""
+        device = CPU()
+        dtype = DType.float32
+        lhs_type = TensorType(dtype, [1, 4], device)
+        rhs_type = TensorType(dtype, [4, 1], device)
+
+        with Graph(
+            "matmul_vec_test", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        a_np = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+        b_np = np.array([[1.0], [2.0], [3.0], [4.0]], dtype=np.float32)
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(result.to_numpy(), expected)

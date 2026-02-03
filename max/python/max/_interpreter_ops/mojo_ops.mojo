@@ -24,6 +24,9 @@ from sys.info import (
 
 from algorithm.functional import elementwise, IndexList
 from memory import OpaquePointer
+from linalg.matmul import matmul
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.runtime_layout import RuntimeLayout
 from reflection import get_base_type_name
 from runtime.asyncrt import DeviceContextPtr
 from tensor import (
@@ -239,6 +242,11 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Unary boolean operation
         b.def_function[unary_bool_dispatcher[Not]](
             "Not", docstring="Elementwise Not (bool only)"
+        )
+
+        # Matrix multiplication
+        b.def_function[matmul_dispatcher](
+            "Matmul", docstring="Matrix multiplication"
         )
 
         return b.finalize()
@@ -926,3 +934,105 @@ fn unary_elementwise_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Matmul operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn matmul_dispatcher(
+    out_buffer: PythonObject, lhs_buffer: PythonObject, rhs_buffer: PythonObject
+) raises:
+    """Matmul dispatcher with dtype dispatch."""
+    var dtype = _get_dtype(lhs_buffer)
+    var rhs_dtype = _get_dtype(rhs_buffer)
+    if dtype != rhs_dtype:
+        raise Error(
+            "Mismatched input dtypes for matmul: "
+            + String(dtype)
+            + " and "
+            + String(rhs_dtype)
+        )
+
+    # Float types
+    if dtype == DType.float16:
+        matmul_op[DType.float16](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.float32:
+        matmul_op[DType.float32](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.float64:
+        matmul_op[DType.float64](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.bfloat16:
+        matmul_op[DType.bfloat16](out_buffer, lhs_buffer, rhs_buffer)
+    # Integer types
+    elif dtype == DType.int8:
+        matmul_op[DType.int8](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.int16:
+        matmul_op[DType.int16](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.int32:
+        matmul_op[DType.int32](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.int64:
+        matmul_op[DType.int64](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.uint8:
+        matmul_op[DType.uint8](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.uint16:
+        matmul_op[DType.uint16](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.uint32:
+        matmul_op[DType.uint32](out_buffer, lhs_buffer, rhs_buffer)
+    elif dtype == DType.uint64:
+        matmul_op[DType.uint64](out_buffer, lhs_buffer, rhs_buffer)
+    else:
+        raise Error("Unsupported dtype for matmul: " + String(dtype))
+
+
+@always_inline
+fn matmul_op[
+    dtype: DType
+](
+    out_buffer: PythonObject, lhs_buffer: PythonObject, rhs_buffer: PythonObject
+) raises:
+    """Matrix multiplication: out = lhs @ rhs.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_buffer: The output buffer object.
+        lhs_buffer: The left-hand side buffer object.
+        rhs_buffer: The right-hand side buffer object.
+    """
+    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        unsafe_from_address=Int(py=out_buffer._data_ptr())
+    )
+    var lhs_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        unsafe_from_address=Int(py=lhs_buffer._data_ptr())
+    )
+    var rhs_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
+        unsafe_from_address=Int(py=rhs_buffer._data_ptr())
+    )
+
+    # Extract shapes: lhs is (M, K), rhs is (K, N), out is (M, N)
+    var lhs_shape = lhs_buffer.shape
+    var m = Int(py=lhs_shape[0])
+    var k = Int(py=lhs_shape[1])
+    var rhs_shape = rhs_buffer.shape
+    var n = Int(py=rhs_shape[1])
+
+    # Define static layout type with unknown dimensions for 2D row-major matrices
+    comptime layout_2d = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    comptime LayoutType = RuntimeLayout[layout_2d]
+
+    # Create LayoutTensors with runtime shapes
+    var c = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
+        out_ptr, LayoutType.row_major(IndexList[2](m, n))
+    )
+    var a = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
+        lhs_ptr, LayoutType.row_major(IndexList[2](m, k))
+    )
+    var b = LayoutTensor[dtype, layout_2d, MutExternalOrigin](
+        rhs_ptr, LayoutType.row_major(IndexList[2](k, n))
+    )
+
+    # Call matmul with None for CPU context
+    # Use single_thread_blocking_override to avoid async runtime initialization issues
+    matmul[target="cpu", single_thread_blocking_override=True](c, a, b, None)
