@@ -503,6 +503,16 @@ def test_log2_floor():
             ),
         )
 
+    # test UInt
+    assert_equal(log2_floor(UInt(0)), UInt.MAX)  # returns MAX for 0
+    assert_equal(log2_floor(UInt(1)), 0)
+    assert_equal(log2_floor(UInt(2)), 1)
+    assert_equal(log2_floor(UInt(3)), 1)
+    assert_equal(log2_floor(UInt(4)), 2)
+    assert_equal(log2_floor(UInt(5)), 2)
+    assert_equal(log2_floor(UInt(2**59)), 59)
+    assert_equal(log2_floor(UInt(2**63)), 63)
+
     # test dtypes
     @parameter
     for dtype in [
