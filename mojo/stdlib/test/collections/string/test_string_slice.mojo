@@ -1209,6 +1209,52 @@ def test_count_simd_edge_cases():
     assert_equal(String("xy" + "a" * 125 + "xy").count("xy"), 2)  # size 129
 
 
+def test_count_unicode():
+    """Test count() with multi-byte Unicode characters."""
+    # Single multi-byte character as needle
+    assert_equal(String("hello🔥world🔥!").count("🔥"), 2)
+    assert_equal(String("🔥🔥🔥").count("🔥"), 3)
+    assert_equal(String("abc").count("🔥"), 0)
+
+    # Multi-byte needle not present
+    assert_equal(String("hello world").count("🌍"), 0)
+
+    # Multi-byte characters in both haystack and needle
+    assert_equal(String("café café café").count("café"), 3)
+    assert_equal(String("naïve naïve").count("naïve"), 2)
+
+    # CJK characters
+    assert_equal(String("日本語日本語日本語").count("日本語"), 3)
+    assert_equal(String("日本語abc日本語").count("日本語"), 2)
+    assert_equal(String("日本語").count("本"), 1)
+
+    # Mixed ASCII and multi-byte
+    assert_equal(String("a🌍b🌍c🌍d").count("🌍"), 3)
+    assert_equal(String("hello🌍world").count("🌍world"), 1)
+    assert_equal(String("hello🌍world").count("o🌍w"), 1)
+
+    # Empty substring with unicode haystack
+    assert_equal(String("🔥").count(""), 5)  # 4 bytes + 1
+    assert_equal(String("aé").count(""), 4)  # 3 bytes + 1
+
+    # Emoji sequences and accented characters as substrings
+    assert_equal(String("ééé").count("é"), 3)
+    assert_equal(String("αβγαβγαβγ").count("αβγ"), 3)
+    assert_equal(String("αβγ").count("β"), 1)
+
+    # Non-overlapping with multi-byte characters
+    assert_equal(String("aaéééaa").count("éé"), 1)  # non-overlapping
+
+    # Needle longer than haystack (multi-byte)
+    assert_equal(String("🔥").count("🔥🔥"), 0)
+
+    # Large string with unicode to exercise SIMD path
+    var large = String("ab🌍cd" * 20)  # 7 bytes per repeat = 140 bytes
+    assert_equal(large.count("🌍"), 20)
+    assert_equal(large.count("ab🌍"), 20)
+    assert_equal(large.count("🌍cd"), 20)
+
+
 # This is just a compile test
 # it does not need to be run
 def test_merge():
