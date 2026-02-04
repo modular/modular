@@ -102,6 +102,11 @@ public:
   void runOnOperation() override;
 
 private:
+  const std::string kNVPTXHopperArchName = "nvptx-sm_90";
+  const std::string kNVPTXArchName = "nvptx";
+  const std::string kAMDGCNArchName = "amdgcn";
+  const std::string kMetalArchName = "metal";
+  const std::string kCPUArchName = "cpu";
   // A map of types for which target has implemented conversions
   //              "target-arch" -> {input-type -> {output-types...}}
   // For example, "nvptx-sm_90" -> {f8e4m3fn   -> {f16, f32}}
@@ -146,10 +151,21 @@ private:
 
   /// Return target key that is used to get all legal conversion for the target.
   std::string getTargetKey(TargetInfoAttr target) const {
-    // TODO: Support other targets as well
-    if (!isNVPTX_HopperAndAbove(target))
-      return "";
-    return "nvptx-sm_90";
+    llvm::Triple triple = target.getTriple();
+    if (triple.isNVPTX()) {
+      if (isNVPTX_HopperAndAbove(target))
+        return kNVPTXHopperArchName;
+      return kNVPTXArchName;
+    }
+    if (triple.isAMDGPU()) {
+      // TODO: That has to be something smarter than this, i.e. include GPU
+      // generation.
+      return kAMDGCNArchName;
+    }
+    if (isMetalTriple(triple))
+      return kMetalArchName;
+    assert(!isGPUTriple(triple) && "Not all GPU targets were covered");
+    return kCPUArchName;
   }
 };
 
@@ -158,31 +174,110 @@ private:
 //===----------------------------------------------------------------------===//
 
 void LegalizePOPOperations::initializeTargetLegalConversions(MLIRContext *ctx) {
+  auto addSupportedConversion = [&](StringRef arch, KGENDType fromDType,
+                                    SmallVector<KGENDType> toDTypes) {
+    for (KGENDType toDType : toDTypes) {
+      targetLegalConversion[arch][KGENDType(fromDType)].insert(
+          KGENDType(toDType));
+    }
+  };
+
+  // Helper function to add all supported conversions that can be represented
+  // via `fpext` and `fptrunc` in LLVM IR.
+  auto addLLVMNativeConversions = [&](StringRef arch) {
+    // List of all supported conversions from f16
+    addSupportedConversion(arch, KGENDType::f16,
+                           {
+                               KGENDType::f32,
+                               KGENDType::f64,
+                           });
+
+    // List of all supported conversions from bf16
+    addSupportedConversion(arch, KGENDType::bf16,
+                           {
+                               KGENDType::f32,
+                               KGENDType::f64,
+                           });
+
+    // List of all supported conversions from f32
+    addSupportedConversion(arch, KGENDType::f32,
+                           {
+                               KGENDType::f16,
+                               KGENDType::bf16,
+                               KGENDType::f64,
+                           });
+
+    // List of all supported conversions from f64
+    addSupportedConversion(arch, KGENDType::f64,
+                           {
+                               KGENDType::f16,
+                               KGENDType::bf16,
+                               KGENDType::f32,
+                           });
+  };
+
   // List of conversion for NVPTX Hopper and above
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e5m2)].insert(
-      KGENDType(KGENDType::f16));
+  //
+  // List of all supported conversions from f8e5m2
+  addSupportedConversion(kNVPTXHopperArchName, KGENDType::f8e5m2,
+                         {
+                             KGENDType::f16,
+                         });
 
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f8e4m3fn)].insert(
-      KGENDType(KGENDType::f16));
+  // List of all supported conversions from f8e4m3fn
+  addSupportedConversion(kNVPTXHopperArchName, KGENDType::f8e4m3fn,
+                         {
+                             KGENDType::f16,
+                         });
 
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].insert(
-      KGENDType(KGENDType::f8e5m2));
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].insert(
-      KGENDType(KGENDType::f8e4m3fn));
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].insert(
-      KGENDType(KGENDType::f16)); // supported by LLVM
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f32)].insert(
-      KGENDType(KGENDType::bf16)); // supported by LLVM
+  // List of all supported conversions from f32
+  addSupportedConversion(kNVPTXHopperArchName, KGENDType::f32,
+                         {
+                             KGENDType::f8e5m2,
+                             KGENDType::f8e4m3fn,
+                         });
 
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f16)].insert(
-      KGENDType(KGENDType::f32)); // supported by LLVM
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f16)].insert(
-      KGENDType(KGENDType::f64)); // supported by LLVM
+  // List of conversion for AMD GPU
+  //
+  // List of all supported conversions from f8e5m2
+  addSupportedConversion(kAMDGCNArchName, KGENDType::f8e5m2,
+                         {
+                             KGENDType::f32,
+                         });
 
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::bf16)].insert(
-      KGENDType(KGENDType::f32)); // supported by LLVM
-  targetLegalConversion["nvptx-sm_90"][KGENDType(KGENDType::f16)].insert(
-      KGENDType(KGENDType::f64)); // supported by LLVM
+  // List of all supported conversions from f8e5m2fnuz
+  addSupportedConversion(kAMDGCNArchName, KGENDType::f8e5m2fnuz,
+                         {
+                             KGENDType::f32,
+                         });
+
+  // List of all supported conversions from f8e4m3fn
+  addSupportedConversion(kAMDGCNArchName, KGENDType::f8e4m3fn,
+                         {
+                             KGENDType::f32,
+                         });
+
+  // List of all supported conversions from f8e4m3fnuz
+  addSupportedConversion(kAMDGCNArchName, KGENDType::f8e4m3fnuz,
+                         {
+                             KGENDType::f32,
+                         });
+
+  // List of all supported conversions from f32
+  addSupportedConversion(kAMDGCNArchName, KGENDType::f32,
+                         {
+                             KGENDType::f8e5m2,
+                             KGENDType::f8e5m2fnuz,
+                             KGENDType::f8e4m3fn,
+                             KGENDType::f8e4m3fnuz,
+                         });
+
+  // Register remaining conversions that must be supported by LLVM
+  addLLVMNativeConversions(kNVPTXHopperArchName);
+  addLLVMNativeConversions(kAMDGCNArchName);
+  addLLVMNativeConversions(kMetalArchName);
+  addLLVMNativeConversions(kCPUArchName);
+
   // TODO: This list has to be complete for all supported types, but ideally it
   // should be taken from lowering of the POP::CastOp.
 }
@@ -229,19 +324,31 @@ bool LegalizePOPOperations::conversionRequiresLegalization(
     CastOp castOp, TargetInfoAttr target) const {
   Type fromType = castOp.getInput().getType();
   Type toType = castOp.getOutput().getType();
+  if (fromType == toType) {
+    // should be folded instead.
+    return false;
+  }
+
   KGENDType fromDType = getScalarKGENDType(fromType);
   KGENDType toDType = getScalarKGENDType(toType);
   if (!typeRequiresLegalization(fromType) &&
-      !typeRequiresLegalization(toType)) {
-    // Special case for FP16 -> BF16 on NVPTX
-    // TODO: Correctly provide all supported types instead of this hack.
-    if (fromDType != KGENDType::f16 || toDType != KGENDType::bf16)
-      return false;
+      !typeRequiresLegalization(toType) &&
+      (!fromDType.isFloat() || !toDType.isFloat() ||
+       fromDType.getWidthInBits() != toDType.getWidthInBits())) {
+    // No need to legalize conversion if it's natively supported by LLVM.
+    // Also need to legalize it if size of to/from types is the same, because
+    // `fpext` and `fptrunc` instructions do assert that size of `from type` is
+    // different to size to `to type.
+    return false;
   }
 
   auto targetConversionsIt = targetLegalConversion.find(getTargetKey(target));
-  assert(targetConversionsIt != targetLegalConversion.end() &&
-         "targetLegalConversion map was not initialized");
+  if (targetConversionsIt == targetLegalConversion.end()) {
+    // Conservatively assume that all fp8 and smaller types do require
+    // legalization, even if target is unknown. This will help to build a list
+    // of supported conversions that can be used here
+    return true;
+  }
 
   // If there's no direct conversion available, then legalization is required
   auto typeConversionsIt = targetConversionsIt->second.find(fromDType);
@@ -261,8 +368,11 @@ LegalizePOPOperations::findConversionSequence(Type fromType, Type toType,
   KGENDType fromDType = getScalarKGENDType(fromType);
   KGENDType toDType = getScalarKGENDType(toType);
   auto targetConversionsIt = targetLegalConversion.find(getTargetKey(target));
-  assert(targetConversionsIt != targetLegalConversion.end() &&
-         "target not found");
+  if (targetConversionsIt == targetLegalConversion.end()) {
+    // Unknown target. Return empty sequence and let caller throw an error.
+    return {};
+  }
+
   SmallVector<Type> types;
   DenseSet<KGENDType> visited;
   // Recusively find a sequence of available conversions that can be used to
@@ -330,8 +440,13 @@ LogicalResult LegalizePOPOperations::legalizeConversion(CastOp castOp,
 
   SmallVector<Type> commonTypes =
       findConversionSequence(castOp.getInput().getType(), type, target);
-  if (commonTypes.empty())
-    return castOp->emitError("cannot legalize conversion ");
+  if (commonTypes.empty()) {
+    KGENDType fromDType = getScalarKGENDType(castOp.getInput().getType());
+    KGENDType toDType = getScalarKGENDType(type);
+    return castOp->emitError("conversion from '")
+           << fromDType.getAsString() << "' to '" << toDType.getAsString()
+           << "' is not implemented";
+  }
 
   Value newResult = castOp.getInput();
   for (Type commonType : commonTypes)
@@ -373,8 +488,9 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
   SmallVector<Type> types =
       findConversionSequence(inputType, inputType, target);
   if (types.empty()) {
-    return op->emitError(
-        "cannot legalize operand to LLVM's supported type on that target");
+    KGENDType inputDType = getScalarKGENDType(inputType);
+    return op->emitError("operation with a type '")
+           << inputDType.getAsString() << "' is not implemented";
   }
   SmallVector<Value> newOperands;
 
@@ -420,28 +536,27 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
 void LegalizePOPOperations::runOnOperation() {
   Operation *op = getOperation();
   TargetInfoAttr target = lookupTargetInfo(op);
-  if (getTargetKey(target).empty())
-    return;
 
   initializeTargetLegalConversions(&getContext());
 
-  op->walk([&](Operation *op) {
-    if (auto castOp = dyn_cast<CastOp>(op)) {
-      if (conversionRequiresLegalization(castOp, target)) {
-        if (failed(legalizeConversion(castOp, target)))
-          return WalkResult::interrupt();
-        castOp->erase();
-      }
-      return WalkResult::advance();
-    }
-    if (!operationRequiresLegalization(op, target))
-      return WalkResult::advance();
+  if (op->walk([&](Operation *op) {
+          if (auto castOp = dyn_cast<CastOp>(op)) {
+            if (conversionRequiresLegalization(castOp, target)) {
+              if (failed(legalizeConversion(castOp, target)))
+                return WalkResult::interrupt();
+              castOp->erase();
+            }
+            return WalkResult::advance();
+          }
+          if (!operationRequiresLegalization(op, target))
+            return WalkResult::advance();
 
-    if (failed(legalizeOperation(op, target)))
-      return WalkResult::interrupt();
-    op->erase();
-    return WalkResult::advance();
-  });
+          if (failed(legalizeOperation(op, target)))
+            return WalkResult::interrupt();
+          op->erase();
+          return WalkResult::advance();
+        }).wasInterrupted())
+    return signalPassFailure();
 }
 
 } // namespace
