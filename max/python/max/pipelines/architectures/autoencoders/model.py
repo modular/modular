@@ -76,16 +76,21 @@ class BaseAutoencoderModel(ComponentModel):
         decoder_state_dict = {}
         encoder_state_dict = {}
         quant_conv_state_dict = {}
+        target_dtype = self.config.dtype
 
         for key, value in self.weights.items():
+            weight_data = value.data()
+            if weight_data.dtype != target_dtype:
+                weight_data = weight_data.astype(target_dtype)
+
             if key.startswith("decoder."):
-                decoder_state_dict[key.removeprefix("decoder.")] = value.data()
+                decoder_state_dict[key.removeprefix("decoder.")] = weight_data
             elif key.startswith("post_quant_conv."):
-                decoder_state_dict[key] = value.data()
+                decoder_state_dict[key] = weight_data
             elif key.startswith("encoder."):
-                encoder_state_dict[key.removeprefix("encoder.")] = value.data()
+                encoder_state_dict[key.removeprefix("encoder.")] = weight_data
             elif key.startswith("quant_conv."):
-                quant_conv_state_dict[key] = value.data()
+                quant_conv_state_dict[key] = weight_data
 
         with F.lazy():
             autoencoder = self.autoencoder_class(self.config)
