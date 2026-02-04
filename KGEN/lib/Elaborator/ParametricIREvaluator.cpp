@@ -717,7 +717,7 @@ void ParametricIREvaluator::withEvaluator(
   callback(nestedEvaluator.getCurrentParamEval());
 }
 
-void ParametricIREvaluator::emitEvaluationError(const Twine &message) {
+void ParametricIREvaluator::emitMaterializationError(const Twine &message) {
   IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
 

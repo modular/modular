@@ -116,11 +116,13 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateContextSpecific(
   return failure();
 }
 
-void ParameterEvaluationContext::emitEvaluationError(
+void ParameterEvaluationContext::emitMaterializationError(
     const Twine & /*message*/) {
   // Base class does nothing - derived classes can override to emit diagnostics.
-  // Only elaboration-time contexts should handle error emission, as prior
-  // contexts may not end up getting used.
+  // This is only meaningful in materialization contexts where the expression
+  // will persist and be used. In non-materialization contexts (e.g.,
+  // speculative partial-evaluation during lowering), ill-formed expressions
+  // simply persist unevaluated.
 }
 
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(

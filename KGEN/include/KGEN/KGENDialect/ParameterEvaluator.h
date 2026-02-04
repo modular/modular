@@ -144,9 +144,17 @@ public:
   virtual FailureOr<TypedAttr>
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr);
 
-  /// Emit an evaluation error message. The base implementation does nothing.
-  /// Derived classes can override to emit diagnostics.
-  virtual void emitEvaluationError(const Twine &message);
+  /// Returns true if this is a materialization context where evaluated
+  /// expressions will persist as constants. In such contexts, ill-formed
+  /// expressions should emit errors. In non-materialization contexts
+  /// (e.g., speculative partial-evaluation during lowering), ill-formed
+  /// expressions simply persist unevaluated.
+  virtual bool isMaterializationContext() const { return false; }
+
+  /// Emit an error for an ill-formed expression during materialization.
+  /// This is a no-op in non-materialization contexts, but callers can
+  /// always call this method regardless of context.
+  virtual void emitMaterializationError(const Twine &message);
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
