@@ -515,20 +515,43 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Build components dict with loaded configs
         components = {}
-        repo_files = list_repo_files(
-            repo_id=self.huggingface_model_repo.repo_id,
-            revision=self.huggingface_model_repo.revision,
-        )
+        repo = self.huggingface_model_repo
+        repo_root: Path | None = None
+        if repo.repo_type == RepoType.local:
+            repo_root = Path(repo.repo_id)
+            assert repo_root.exists(), (
+                "Local Hugging Face repository path does not exist: "
+                f"{repo_root}"
+            )
+            repo_files = [
+                path.relative_to(repo_root).as_posix()
+                for path in repo_root.rglob("*")
+                if path.is_file()
+            ]
+        else:
+            repo_files = list_repo_files(
+                repo_id=repo.repo_id,
+                revision=repo.revision,
+            )
+
         component_configs = {}
         for file_name in repo_files:
             if file_name.endswith("config.json") and "/" in file_name:
                 try:
                     component_name = file_name.split("/")[0]
-                    cfg_path = hf_hub_download(
-                        repo_id=self.huggingface_model_repo.repo_id,
-                        filename=file_name,
-                        revision=self.huggingface_model_repo.revision,
-                    )
+                    if repo.repo_type == RepoType.local:
+                        assert repo_root is not None, (
+                            "repo_root must be set for local repo types."
+                        )
+                        cfg_path = repo_root / file_name
+                    else:
+                        cfg_path = Path(
+                            hf_hub_download(
+                                repo_id=repo.repo_id,
+                                filename=file_name,
+                                revision=repo.revision,
+                            )
+                        )
                     with open(cfg_path) as f:
                         component_configs[component_name] = json.load(f)
                 except Exception as e:
