@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 from ..llama3 import weight_adapters
 from .model import Qwen3Model
 from .model_config import Qwen3Config
+from .weight_adapters import convert_qwen3_moe_state_dict
 
 qwen3_arch = SupportedArchitecture(
     name="Qwen3ForCausalLM_Legacy",
@@ -46,6 +47,32 @@ qwen3_arch = SupportedArchitecture(
     rope_type=RopeType.normal,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    config=Qwen3Config,
+)
+
+# Qwen3MoE architecture - uses the same model and config as Qwen3,
+# but with MoE-specific weight adapter to handle expert weight stacking
+qwen3_moe_arch = SupportedArchitecture(
+    name="Qwen3MoeForCausalLM_Legacy",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["Qwen/Qwen3-30B-A3B-Instruct"],
+    default_weights_format=WeightsFormat.safetensors,
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.bfloat16: [
+            KVCacheStrategy.PAGED,
+        ],
+        SupportedEncoding.float32: [
+            KVCacheStrategy.PAGED,
+        ],
+    },
+    pipeline_model=Qwen3Model,
+    tokenizer=TextTokenizer,
+    context_type=TextContext,
+    rope_type=RopeType.normal,
+    weight_adapters={
+        WeightsFormat.safetensors: convert_qwen3_moe_state_dict,
     },
     config=Qwen3Config,
 )

@@ -555,7 +555,9 @@ struct ContinuousBatchingKVCache[
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]() - 1
         # yields number of rows:
         # (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
-        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            self.blocks.dim[1]()
+        )
 
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
@@ -590,7 +592,9 @@ struct ContinuousBatchingKVCache[
             "BK must be a multiple of swizzle granularity",
         ]()
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + self.blocks.dim[1]()
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            self.blocks.dim[1]()
+        )
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,
@@ -779,7 +783,7 @@ struct PagedKVCache[
 
     @always_inline
     fn _stride(self) -> UInt32:
-        return self.blocks.runtime_layout.stride.value[0] // UInt32(
+        return UInt32(self.blocks.runtime_layout.stride.value[0]) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
         )
 
@@ -794,7 +798,9 @@ struct PagedKVCache[
             "KVCache tok_idx out of range",
         )
 
-        debug_assert(batch_idx < self.cache_lengths.size(), "batch_idx is oob")
+        debug_assert(
+            batch_idx < UInt32(self.cache_lengths.size()), "batch_idx is oob"
+        )
         debug_assert(
             lut_block_index < self.blocks.dim[0](),
             "block_idx is OOB. Attempted to access block index ",
@@ -804,7 +810,7 @@ struct PagedKVCache[
         )
         block_idx = self.lookup_table[Int(batch_idx), lut_block_index][0]
         # alias row_stride = Int(num_heads * head_size * Self.collection_size)
-        return block_idx * self._stride() + tok_in_block_idx
+        return block_idx * self._stride() + UInt32(tok_in_block_idx)
 
     @always_inline
     fn create_tma_tile[
@@ -837,7 +843,9 @@ struct PagedKVCache[
         #
         # Create a view that accounts for the paged layout
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + Self.page_size
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            Self.page_size
+        )
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
@@ -871,7 +879,9 @@ struct PagedKVCache[
             "BK must be a multiple of swizzle granularity",
         ]()
         var total_blocks = self.blocks.dim[0]()
-        var rows = (total_blocks - 1) * self._stride() + Self.page_size
+        var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
+            Self.page_size
+        )
         tma = type_of(tma).create[depth = Int(Self.kv_params.head_size)](
             ctx,
             self.blocks.ptr,

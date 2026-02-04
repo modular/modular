@@ -1656,12 +1656,12 @@ fn _conv_transposed_cudnn[
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
             cudnn_handle[].ptr_conv_desc,
-            padding[0],
-            padding[1],
-            stride[0],
-            stride[1],
-            dilation[0],
-            dilation[1],
+            Int16(padding[0]),
+            Int16(padding[1]),
+            Int16(stride[0]),
+            Int16(stride[1]),
+            Int16(dilation[0]),
+            Int16(dilation[1]),
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )

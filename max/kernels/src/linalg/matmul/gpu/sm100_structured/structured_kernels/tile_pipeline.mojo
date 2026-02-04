@@ -17,6 +17,9 @@ Provides staged tile storage with producer-consumer barrier synchronization
 for TMA-MMA pipeline coordination. All barrier operations are encapsulated
 in context managers for safety and clarity.
 
+All tiles use TileTensor natively. Convert to LayoutTensor at TMA/MMA
+boundaries using {ptr} syntax or explicit LayoutTensor construction.
+
 Key Abstractions
 ----------------
 - InputTilePipeline[Payload]: Generic pipeline with payload abstraction
@@ -75,8 +78,19 @@ from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
-from linalg.structuring import SMemPtr, SMemTileArray, SMemArray
 
+# SMemArray for barriers (non-tile arrays), SMemPtr for pointers
+from linalg.structuring import SMemPtr, SMemArray
+
+# LayoutTensor-based SMemTileArray for tiles needing element-level access (A-scales)
+from linalg.structuring import SMemTileArray as LTSMemTileArray
+
+# TileTensor-based tile arrays for most tile storage (A, B)
+from .tile_types import (
+    SMemTileArray2D,
+    SMemTileArrayWithLayout,
+    internal_sf_k_major,
+)
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
@@ -95,17 +109,35 @@ trait TilePayload(TrivialRegisterType):
 struct StandardTilePayload[
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
-    """Tile payload for standard matmul (A and B tiles)."""
+    """Tile payload for standard matmul (A and B tiles).
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    Uses explicit dimensions for tile arrays. The tiles are stored as TileTensor
+    with row_major layout and converted to LayoutTensor with swizzled layouts
+    at TMA/MMA boundaries.
+    """
+
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.num_pipeline_stages,
+        128,
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type,
+        Self.b_dim0,
+        Self.b_dim1,
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime ATile = Self.ATileArray.Tile
     comptime BTile = Self.BTileArray.Tile
@@ -146,31 +178,44 @@ struct BlockScaledTilePayload[
     b_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    sfa_tile_layout: Layout,
-    sfb_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # SFA tile dimensions
+    sfa_dim0: Int,
+    sfa_dim1: Int,
+    # SFB tile dimensions
+    sfb_dim0: Int,
+    sfb_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
     """Tile payload for block-scaled matmul (A, B, SFA, SFB tiles)."""
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime SFATileArray = SMemTileArray[
+    # SF tiles use internal_sf_k_major layout (matches tile_sf_layout_k_major).
+    # MMA extracts layout directly from TileTensor type parameters.
+    comptime sfa_layout = internal_sf_k_major[Self.sfa_dim0, Self.sfa_dim1]
+    comptime sfb_layout = internal_sf_k_major[Self.sfb_dim0, Self.sfb_dim1]
+    comptime SFATileArray = SMemTileArrayWithLayout[
         Self.sfa_type,
-        Self.sfa_tile_layout,
+        Self.sfa_layout,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
-    comptime SFBTileArray = SMemTileArray[
+    comptime SFBTileArray = SMemTileArrayWithLayout[
         Self.sfb_type,
-        Self.sfb_tile_layout,
+        Self.sfb_layout,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
     comptime ATile = Self.ATileArray.Tile
     comptime BTile = Self.BTileArray.Tile
@@ -243,9 +288,16 @@ struct BlockwiseFP8TilePayload[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # A-scales tile dimensions
+    a_scales_dim0: Int,
+    a_scales_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload, TrivialRegisterType):
     """Tile payload for blockwise FP8 matmul (A, B, A-scales tiles).
@@ -254,17 +306,19 @@ struct BlockwiseFP8TilePayload[
     B-scales are read directly from global memory during the epilogue phase.
     """
 
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime AScalesTileArray = SMemTileArray[
+    # TileTensor-based for A-scales (explicit dimensions)
+    comptime AScalesTileArray = SMemTileArray2D[
         Self.a_scales_type,
-        Self.a_scales_tile_layout,
+        Self.a_scales_dim0,
+        Self.a_scales_dim1,
         Self.num_pipeline_stages,
-        alignment=128,
+        128,
     ]
     comptime ATile = Self.ATileArray.Tile
     comptime BTile = Self.BTileArray.Tile
@@ -911,8 +965,13 @@ struct InputConsumer[
 struct TilePipeline[
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
@@ -927,19 +986,21 @@ struct TilePipeline[
     Template Parameters:
         a_type: Data type for A matrix tiles.
         b_type: Data type for B matrix tiles.
-        a_tile_layout: Memory layout for A tiles.
-        b_tile_layout: Memory layout for B tiles.
+        a_dim0: First dimension for A tiles.
+        a_dim1: Second dimension for A tiles.
+        b_dim0: First dimension for B tiles.
+        b_dim1: Second dimension for B tiles.
         num_pipeline_stages: Total number of tile stages (stages * k_group_size).
         num_group_stages: Number of synchronization stages.
         k_group_size: Number of tiles per synchronization stage.
     """
 
     comptime Pipeline = ProducerConsumerPipeline[Self.num_group_stages]
-    comptime ATileArray = SMemTileArray[
-        Self.a_type, Self.a_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime ATileArray = SMemTileArray2D[
+        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime BTileArray = SMemTileArray[
-        Self.b_type, Self.b_tile_layout, Self.num_pipeline_stages, alignment=128
+    comptime BTileArray = SMemTileArray2D[
+        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
     comptime ATile = Self.ATileArray.Tile
     comptime BTile = Self.BTileArray.Tile
@@ -982,8 +1043,10 @@ struct TilePipeline[
         origin,
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -998,8 +1061,10 @@ struct TilePipeline[
         origin,
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1066,8 +1131,13 @@ struct StandardProducerStage[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
@@ -1078,8 +1148,10 @@ struct StandardProducerStage[
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1158,8 +1230,13 @@ struct StandardConsumerStage[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
@@ -1170,8 +1247,10 @@ struct StandardConsumerStage[
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1246,8 +1325,13 @@ struct StandardTileProducer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
@@ -1257,8 +1341,10 @@ struct StandardTileProducer[
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1290,8 +1376,10 @@ struct StandardTileProducer[
         Self.origin,
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1314,8 +1402,13 @@ struct StandardTileConsumer[
     origin: MutOrigin,
     a_type: DType,
     b_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    # A tile dimensions
+    a_dim0: Int,
+    a_dim1: Int,
+    # B tile dimensions
+    b_dim0: Int,
+    b_dim1: Int,
+    # Pipeline stages
     num_pipeline_stages: Int,
     num_group_stages: Int,
     k_group_size: Int,
@@ -1325,8 +1418,10 @@ struct StandardTileConsumer[
     comptime TilePipelineType = TilePipeline[
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,
@@ -1349,8 +1444,10 @@ struct StandardTileConsumer[
         Self.origin,
         Self.a_type,
         Self.b_type,
-        Self.a_tile_layout,
-        Self.b_tile_layout,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.b_dim0,
+        Self.b_dim1,
         Self.num_pipeline_stages,
         Self.num_group_stages,
         Self.k_group_size,

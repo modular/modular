@@ -87,6 +87,17 @@ what we publish.
 
 ### Library changes
 
+- The `builtin.math` module has been merged into `math`. The traits `Absable`,
+  `DivModable`, `Powable`, `Roundable` and functions `abs()`, `divmod()`,
+  `max()`, `min()`, `pow()`, `round()` are now part of the `math` module and
+  continue to be available in the prelude. Code that explicitly imported from
+  `builtin.math` should update to import from `math` instead.
+
+- The `ffi` module is now a top-level module in the standard library, rather
+  than being nested under `sys`. This improves discoverability of FFI
+  functionality. Update your imports from `from sys.ffi import ...` to
+  `from ffi import ...`.
+
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
     indefinitely
@@ -171,6 +182,10 @@ what we publish.
 
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.
+
+- Formatting compile-time format strings (`StringLiteral`s) no longer allocates
+  memory! It uses `global_constant` to store what would be heap allocated
+  parsed formatting data.
 
 - The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
   casting the operands to Float64 before dividing. This deprecation is to help

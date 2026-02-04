@@ -112,7 +112,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                     var bytes = (src_ptr + i * Self._packed_stride).load[
                         width = Self._simd_width
                     ]()
-                    packed_bits |= bytes << (i * 4)
+                    packed_bits |= bytes << UInt8(i * 4)
 
                 src_ptr += Self._simd_width
 
@@ -137,7 +137,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
                 @parameter
                 for i in range(2):
-                    var bytes = (packed_bits >> (i * 4)) & 15
+                    var bytes = (packed_bits >> UInt8(i * 4)) & 15
                     (dst_ptr + i * Self._packed_stride).store(bytes)
 
                 dst_ptr += Self._simd_width
@@ -171,7 +171,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                     var bytes = (src_col_ptr + i * Self._packed_stride).load[
                         width = Self._simd_width
                     ]()
-                    var packed_bits = bytes | (((hi_bytes >> (i * 2)) & 3) << 6)
+                    var packed_bits = bytes | (
+                        ((hi_bytes >> UInt8(i * 2)) & 3) << 6
+                    )
 
                     bits_ptr.store(packed_bits)
                     bits_ptr += Self._simd_width
@@ -205,7 +207,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                         (packed_bits & 63) - zero_point,
                     )
 
-                    hi_bytes |= (packed_bits >> 6) << (i * 2)
+                    hi_bytes |= (packed_bits >> 6) << UInt8(i * 2)
 
                 (dst_col_ptr + 3 * Self._packed_stride).store(
                     hi_bytes - zero_point,
@@ -360,7 +362,7 @@ fn _expand_q_bits_lo[
 
         @parameter
         for i in range(2):
-            dst_ptr.store((src_q_bits >> (i * 4)) & 15)
+            dst_ptr.store((src_q_bits >> UInt8(i * 4)) & 15)
             dst_ptr += width
 
 
@@ -379,8 +381,8 @@ fn _expand_and_merge_q_bits_hi[
 
         for _ in range(values_per_byte):
             var dst_q_bits_lo = dst_ptr.load[width=width]()
-            var dst_q_bits_hi = (src_q_bits & bit_mask) << 4
-            src_q_bits >>= bit_count
+            var dst_q_bits_hi = (src_q_bits & UInt8(bit_mask)) << 4
+            src_q_bits >>= UInt8(bit_count)
 
             dst_ptr.store(dst_q_bits_hi | dst_q_bits_lo)
             dst_ptr += width
@@ -1040,7 +1042,7 @@ fn _matmul_group_packed_Q4_K[
 
             @parameter
             for i in range(2):
-                var bytes = (packed_bits >> (i * 4)) & 15
+                var bytes = (packed_bits >> UInt8(i * 4)) & 15
                 b_vals[col * tile_k + i] = bytes
 
     _matmul_group_stream[
@@ -1277,7 +1279,7 @@ fn _matmul_group_packed_Q6_K[
                 var bytes = packed_bits & 63
                 b_vals[col * tile_k + i] = bytes - zero_point
 
-                hi_bytes |= (packed_bits >> 6) << (i * 2)
+                hi_bytes |= (packed_bits >> 6) << UInt8(i * 2)
 
             b_vals[col * tile_k + 3] = hi_bytes - zero_point
 
@@ -1429,7 +1431,7 @@ fn _matmul_Q6_K_columns[
             a_q_bits_ptr: UnsafePointer[Int8],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
-            _matmul_group_packed_Q6_K[zero_point=b_zero_point](
+            _matmul_group_packed_Q6_K[zero_point = UInt8(b_zero_point)](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
@@ -1444,7 +1446,7 @@ fn _matmul_Q6_K_columns[
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
-    b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
+    b_tile_ptr[].q_bits.unpack[zero_point = UInt8(b_zero_point)](b_q_bits)
 
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)

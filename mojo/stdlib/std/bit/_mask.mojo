@@ -19,7 +19,7 @@ from bit.mask import is_negative
 ```
 """
 
-from sys.info import size_of, bit_width_of
+from sys.info import bit_width_of
 
 
 @always_inline
@@ -53,14 +53,7 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
     __comptime_assert (
         dtype.is_integral() and dtype.is_signed()
     ), "This function is for signed integral types."
-
-    # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype != DType.int else (
-        DType.int32 if size_of[dtype]() == 4 else DType.int64
-    )
-    return (value.cast[d]() >> SIMD[d, value.size](bit_width_of[d]() - 1)).cast[
-        dtype
-    ]()
+    return value >> SIMD[dtype, value.size](bit_width_of[dtype]() - 1)
 
 
 @always_inline

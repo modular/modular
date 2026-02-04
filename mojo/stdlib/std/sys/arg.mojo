@@ -15,7 +15,7 @@ environment.
 """
 
 
-from sys import external_call
+from ffi import external_call
 
 
 # TODO: When we have global variables, this should be a global list.

@@ -13,5 +13,7 @@ modular_py_binary(
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("pillow"),
+        requirement("sentencepiece"),
+        requirement("torch"),  # for test
     ],
 )

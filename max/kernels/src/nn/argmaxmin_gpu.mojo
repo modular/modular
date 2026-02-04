@@ -55,13 +55,7 @@ fn argmaxmin_gpu[
         row_major(Coord(out_vals_shape)),
     )
 
-    topk_gpu[sampling=False, largest=largest](
-        ctx,
-        K,
-        input.to_layout_tensor(),
-        out_vals.to_layout_tensor(),
-        output.to_layout_tensor(),
-    )
+    topk_gpu[sampling=False, largest=largest](ctx, K, input, out_vals, output)
 
     _ = out_vals_buf^
 

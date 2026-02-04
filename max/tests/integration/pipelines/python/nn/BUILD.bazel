@@ -101,7 +101,6 @@ modular_py_test(
             "test_linear_fp8_amd_gpu.py",
             "test_lora_kernels_gpu.py",
             "test_sgmv_kernels_gpu.py",
-            "test_sleep_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -135,7 +134,6 @@ modular_py_test(
     name = "nn_nvidia_gpu_tests",
     srcs = [
         "test_conv_transpose_gpu.py",
-        "test_sleep_gpu.py",
     ],
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],

@@ -53,10 +53,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-
+from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
 

@@ -185,8 +185,8 @@ fn ep_signal_completion[
     number of store_release operations from n_experts to p2p_world_size.
     """
 
-    var my_p2p_world, my_p2p_rank = divmod(my_rank, p2p_world_size)
-    var dst_p2p_world, dst_p2p_rank = divmod(dst_rank, p2p_world_size)
+    var my_p2p_world, my_p2p_rank = divmod(my_rank, Int32(p2p_world_size))
+    var dst_p2p_world, dst_p2p_rank = divmod(dst_rank, Int32(p2p_world_size))
 
     # If the target device is on the same node, we can directly write to its
     # receive count buffer.
@@ -198,7 +198,7 @@ fn ep_signal_completion[
 
         # If this is the last expert for this destination rank,
         # use store_release to flush all pending stores.
-        if old_count < n_experts_per_device - 1:
+        if old_count < Int32(n_experts_per_device - 1):
             dst_p2p_ptr[] = signal
         else:
             # Technically, this store_release only guarantees the arrival of
@@ -1207,7 +1207,7 @@ struct EPDispatchKernel[
         var expert_idx = Int32(block_idx.x * UInt(Self.n_warps) + warp_id())
         var expert_count: Int32 = 0
 
-        if expert_idx < Self.n_experts:
+        if expert_idx < Int32(Self.n_experts):
             for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
                 if topk_ids.ptr[i] == expert_idx:
                     expert_count += 1
@@ -1224,8 +1224,10 @@ struct EPDispatchKernel[
                 ):
                     pass
 
-                var dst_rank = expert_idx // Self.n_local_experts
-                var dst_expert_local_idx = expert_idx % Self.n_local_experts
+                var dst_rank = expert_idx // Int32(Self.n_local_experts)
+                var dst_expert_local_idx = expert_idx % Int32(
+                    Self.n_local_experts
+                )
                 var signal_offset = recv_count_layout(
                     RtTuple_2(Int(dst_expert_local_idx), Int(my_rank))
                 )
@@ -1285,7 +1287,9 @@ struct EPDispatchKernel[
 
         var tid = thread_idx.x
         var num_tokens = input_tokens.dim[0]()
-        var my_p2p_world, my_p2p_rank = divmod(my_rank, Self.p2p_world_size)
+        var my_p2p_world, my_p2p_rank = divmod(
+            my_rank, Int32(Self.p2p_world_size)
+        )
 
         var input_scale = Float32(1.0)
 
@@ -1345,10 +1349,10 @@ struct EPDispatchKernel[
             for topk_idx in range(warp_id(), Self.top_k, Self.n_warps):
                 var target_expert = topk_ids.load[width=1](token_idx, topk_idx)
                 var dst_rank, dst_expert_local_idx = divmod(
-                    target_expert, Self.n_local_experts
+                    target_expert, Int32(Self.n_local_experts)
                 )
                 var dst_p2p_world, dst_p2p_rank = divmod(
-                    dst_rank, Self.p2p_world_size
+                    dst_rank, Int32(Self.p2p_world_size)
                 )
 
                 if my_p2p_world == dst_p2p_world:
@@ -1405,9 +1409,9 @@ struct EPDispatchKernel[
                         token_idx, Int(topk_idx)
                     )
                     var dst_rank, dst_expert_local_idx = divmod(
-                        target_expert, Self.n_local_experts
+                        target_expert, Int32(Self.n_local_experts)
                     )
-                    var dst_p2p_world = dst_rank // Self.p2p_world_size
+                    var dst_p2p_world = dst_rank // Int32(Self.p2p_world_size)
                     if (
                         rc_map_offset == dst_expert_local_idx
                         and my_p2p_world != dst_p2p_world
@@ -1489,8 +1493,11 @@ struct EPDispatchKernel[
 
                 @parameter
                 if Self.expert_m_padding != 0:
-                    shared_expert_token_count = align_up(
-                        Int(shared_expert_token_count), Self.expert_m_padding
+                    shared_expert_token_count = UInt32(
+                        align_up(
+                            Int(shared_expert_token_count),
+                            Self.expert_m_padding,
+                        )
                     )
 
                 # Place the shared expert's inputs before all routed experts'
@@ -1661,7 +1668,7 @@ struct EPDispatchKernel[
         var local_expert_start_offset = offset_ptr.load(1)
 
         for token_idx in range(warp_id_in_wg, token_count, wg_size):
-            var token_pos = Int(token_idx + output_offset)
+            var token_pos = Int(Int32(token_idx) + output_offset)
             var recv_buf_ptr = recv_buf_p + recv_buf_layout(
                 RtTuple_4(
                     Int(local_expert_id),
@@ -1686,9 +1693,9 @@ struct EPDispatchKernel[
                         + Int(lane_id() * UInt(size_of[UInt16]())),
                     )
                 )
-                var global_expert_idx = my_rank * Self.n_local_experts + Int32(
-                    local_expert_id
-                )
+                var global_expert_idx = my_rank * Int32(
+                    Self.n_local_experts
+                ) + Int32(local_expert_id)
                 if global_expert_idx == Int32(src_topk_idx):
                     # Store the source token index and the top-k id.
                     var src_idx = bitcast[DType.int32, 1](
@@ -1769,7 +1776,7 @@ struct EPDispatchKernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn dispatch_async_kernel[
     input_type: DType,
@@ -1882,7 +1889,7 @@ fn dispatch_async_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn dispatch_wait_kernel[
     num_threads: Int,
@@ -1998,7 +2005,7 @@ fn dispatch_wait_kernel[
             recv_count_p,
             atomic_counter,
             my_rank,
-            reserved_shared_expert_tokens,
+            UInt32(reserved_shared_expert_tokens),
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -2210,7 +2217,9 @@ struct EPCombineKernel[
 
         var tid = Int(thread_idx.x)
         var sm_id = Int(block_idx.x)
-        var my_p2p_world, my_p2p_rank = divmod(my_rank, Self.p2p_world_size)
+        var my_p2p_world, my_p2p_rank = divmod(
+            my_rank, Int32(Self.p2p_world_size)
+        )
 
         # Each rank holds `n_local_experts` experts, and for each expert, it
         # needs to send back different tokens to `n_ranks` remote ranks. We use
@@ -2275,12 +2284,12 @@ struct EPCombineKernel[
                     ) % Self.n_local_experts
 
                     var n_rounds = ceildiv(
-                        token_end - token_start, Self.n_warps
+                        token_end - token_start, Int32(Self.n_warps)
                     )
                     for round_i in range(n_rounds):
                         var token_idx = (
                             token_start
-                            + round_i * Self.n_warps
+                            + round_i * Int32(Self.n_warps)
                             + Int32(warp_id())
                         )
                         if token_idx < token_end:
@@ -2309,7 +2318,7 @@ struct EPCombineKernel[
                         ):
                             var token_idx = (
                                 token_start
-                                + round_i * Self.n_warps
+                                + round_i * Int32(Self.n_warps)
                                 + Int32(lane_id())
                             )
                             if token_idx < token_end:
@@ -2337,7 +2346,7 @@ struct EPCombineKernel[
                                     dst_recv_buf_ptr,
                                     curr_send_buf_ptr,
                                     UInt(Self.msg_bytes),
-                                    target_rank,
+                                    Int32(target_rank),
                                 )
 
             barrier()
@@ -2352,16 +2361,16 @@ struct EPCombineKernel[
                 and local_expert_id == rc_map_offset
             ):
                 if lane_id() == 0:
-                    var signal_offset = (
-                        my_rank * Self.n_local_experts + local_expert_id
-                    )
+                    var signal_offset = my_rank * Int32(
+                        Self.n_local_experts
+                    ) + Int32(local_expert_id)
 
                     ep_signal_completion[
                         Self.use_shmem,
                         n_experts_per_device = Self.n_local_experts,
                     ](
                         my_rank,
-                        target_rank,
+                        Int32(target_rank),
                         recv_count_ptrs,
                         signal_offset,
                         UInt64(token_end - token_start),
@@ -2559,7 +2568,7 @@ struct EPCombineKernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn combine_async_kernel[
     input_type: DType,
@@ -2673,7 +2682,7 @@ fn combine_async_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn combine_wait_kernel[
     output_type: DType,
@@ -2770,7 +2779,7 @@ fn combine_wait_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn dispatch_kernel[
     input_type: DType,
@@ -2903,14 +2912,14 @@ fn dispatch_kernel[
 
         # ===== dispatch_wait =====
         var wait_atomic_counter = ep_counters.get_dispatch_wait_ptr()
-        var my_p2p_rank = my_rank % p2p_world_size
+        var my_p2p_rank = my_rank % Int32(p2p_world_size)
 
         if block_idx.x < UInt(dispatch_impl.n_offset_sms):
             var reserved_shared_expert_tokens: UInt32 = 0
 
             @parameter
             if fused_shared_expert:
-                reserved_shared_expert_tokens = input_tokens.dim(0)
+                reserved_shared_expert_tokens = UInt32(input_tokens.dim(0))
 
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
                 format_handler,
@@ -2941,7 +2950,7 @@ fn dispatch_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn combine_kernel[
     input_type: DType,
@@ -3065,7 +3074,7 @@ fn combine_kernel[
 
         # ===== combine_wait =====
         var wait_atomic_counter = ep_counters.get_combine_wait_ptr()
-        var my_p2p_rank = my_rank % p2p_world_size
+        var my_p2p_rank = my_rank % Int32(p2p_world_size)
 
         if block_idx.x < combine_impl.n_wait_sms:
             combine_impl.wait_for_all_arrivals(
@@ -3133,7 +3142,7 @@ fn combine_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn fused_silu_kernel[
     output_dtype: DType,
@@ -3182,9 +3191,13 @@ fn fused_silu_kernel[
 
     with PDL():
         var num_tokens = row_offsets[row_offsets.size() - 1]
-        var num_elem = num_tokens * output_dim
+        var num_elem = num_tokens * UInt32(output_dim)
 
-        for i in range(gid, num_elem // simd_width, num_threads * num_sms):
+        for i in range(
+            gid,
+            num_elem // UInt32(simd_width),
+            num_threads * num_sms,
+        ):
             var m = (i * simd_width) // output_dim
             var k = (i * simd_width) % output_dim
 
@@ -3204,7 +3217,7 @@ fn fused_silu_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn fused_silu_fp8_kernel[
     fp8_dtype: DType,
@@ -3267,9 +3280,13 @@ fn fused_silu_fp8_kernel[
 
     with PDL():
         var num_tokens = row_offsets[row_offsets.size() - 1]
-        var num_elem = num_tokens * output_dim
+        var num_elem = num_tokens * UInt32(output_dim)
 
-        for i in range(gid, num_elem // simd_width, num_threads * num_sms):
+        for i in range(
+            gid,
+            num_elem // UInt32(simd_width),
+            num_threads * num_sms,
+        ):
             var m = (i * simd_width) // output_dim
             var k = (i * simd_width) % output_dim
 

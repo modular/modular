@@ -640,9 +640,11 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
+    # Output must be 32-bit integer (int32 or uint32) since i8mm produces 4-wide
+    # SIMD vectors.
     return (
-        # Return False for now until i8mm is fully ready.
         CompilationTarget.has_neon_int8_matmul()
+        and (c_type == DType.int32 or c_type == DType.uint32)
         and (
             (a_type == DType.uint8 and b_type == DType.uint8)
             or (a_type == DType.uint8 and b_type == DType.int8)

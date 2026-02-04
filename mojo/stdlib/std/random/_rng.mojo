@@ -26,7 +26,7 @@ Use the public API in `random.mojo` instead.
 
 from math import sqrt, log, cos, pi
 from os import abort
-from sys.ffi import _Global
+from ffi import _Global
 from utils.numerics import isnan, max_finite, FPUtils
 
 from .philox import Random as PhiloxRandom
