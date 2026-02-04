@@ -119,12 +119,160 @@ Backtick = r"[^`\\]*(?:\\.[^`\\]*)*`"
 Single3 = r"[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*'''"
 # Tail end of """ string.
 Double3 = r'[^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*"""'
-_litprefix = r"(?:[uUrRbBfF]|[rR][fFbB]|[fFbBuU][rR])?"
+
+# F-string/T-string prefixes for detection
+_FSTRING_SINGLE_PREFIXES = (
+    'f"',
+    "f'",
+    't"',
+    "t'",
+)
+_FSTRING_TRIPLE_PREFIXES = (
+    'f"""',
+    "f'''",
+    't"""',
+    "t'''",
+)
+
+
+def _is_fstring_or_tstring(token: str, triple_quoted: bool = False) -> bool:
+    token_lower = token.lower()
+    prefixes = (
+        _FSTRING_TRIPLE_PREFIXES if triple_quoted else _FSTRING_SINGLE_PREFIXES
+    )
+    return token_lower.startswith(prefixes)
+
+
+def _get_fstring_quote(token: str, triple_quoted: bool = False) -> str:
+    """Parse f-string/t-string token to extract quote characters.
+
+    Args:
+        token: The token string (e.g., f", t''', etc.)
+        triple_quoted: Whether this is a triple-quoted string
+
+    Returns:
+        The quote character(s) - single or triple quotes
+    """
+    # Prefix is always 1 character (f or t)
+    if triple_quoted:
+        return token[1:4]  # """ or '''
+    else:
+        return token[1]  # " or '
+
+
+def scan_fstring_content(s: str, start: int, quote: str) -> int:
+    """Scan f-string content handling nested braces and return end position.
+
+    This function properly tracks brace depth to handle nested f-strings
+    with same-quote delimiters, e.g., f"{f"{x}"}".
+
+    Args:
+        s: The source string to scan
+        start: Starting position (after opening quote)
+        quote: The quote character(s) to match (single or triple quotes)
+
+    Returns:
+        Position after closing quote, or -1 if not found
+    """
+    i = start
+    brace_depth = 0
+    quote_len = len(quote)
+
+    while i < len(s):
+        # Check for closing quote (only when not inside braces)
+        if brace_depth == 0 and s[i : i + quote_len] == quote:
+            return i + quote_len
+
+        # Handle escaped characters
+        if s[i] == "\\" and i + 1 < len(s):
+            i += 2
+            continue
+
+        # Track brace depth
+        if s[i] == "{":
+            # Only treat {{ as escaped when outside expressions (brace_depth == 0)
+            if brace_depth == 0 and i + 1 < len(s) and s[i + 1] == "{":
+                i += 2  # Escaped {{
+                continue
+            brace_depth += 1
+            i += 1
+            continue
+
+        if s[i] == "}":
+            if brace_depth > 0:
+                brace_depth -= 1
+                i += 1
+                continue
+            # Only treat }} as escaped when outside expressions (brace_depth == 0)
+            if i + 1 < len(s) and s[i + 1] == "}":
+                i += 2  # Escaped }}
+                continue
+            i += 1
+            continue
+
+        # Inside braces, skip over string literals to avoid false brace matches
+        if brace_depth > 0 and s[i] in ('"', "'", "`"):
+            # Detect triple-quoted strings
+            delim = s[i : i + 3] if s[i : i + 3] in ('"""', "'''") else s[i]
+            i += len(delim)
+            # Skip to end of string literal
+            while i < len(s):
+                if s[i : i + len(delim)] == delim:
+                    i += len(delim)
+                    break
+                if s[i] == "\\" and i + 1 < len(s):
+                    i += 2
+                else:
+                    i += 1
+            continue
+
+        i += 1
+
+    return -1  # Not found
+
+
+def _process_fstring_or_tstring(
+    token: str,
+    line: str,
+    start: int,
+    triple_quoted: bool,
+) -> tuple[str, int, str | None] | None:
+    """Process f-string or t-string token and return (token, pos, continuation_quote).
+
+    Returns:
+        Tuple of (token, new_pos, continuation_quote) or None
+    """
+    if not _is_fstring_or_tstring(token, triple_quoted):
+        return None
+
+    quote_chars = _get_fstring_quote(token, triple_quoted)
+    quote_len = 3 if triple_quoted else 1
+    # Prefix is always 1 character (f or t)
+    content_start = start + 1 + quote_len
+
+    new_end = scan_fstring_content(line, content_start, quote_chars)
+
+    if new_end > 0:
+        # Found on same line
+        return (line[start:new_end], new_end, None)
+    else:
+        # Multiline - needs continuation
+        return (line[start:], len(line), quote_chars)
+
+
+_litprefix = r"(?:[uUrRbBfFtT]|[rR][fFbBtT]|[fFbBuUtT][rR])?"
+_fprefix = r"(?:[fFtT]|[fFtT][rR]|[rR][fFtT])"
+_non_fprefix = r"(?:[uUrRbB]|[rR][bB]|[bB][rR])?"
 Triple = group(_litprefix + "'''", _litprefix + '"""')
 # Single-line ' or " string or ` expr.
+# F-strings need special handling to allow nested quotes inside {...}
 String = group(
-    _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
-    _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*"',
+    # F-string patterns (must come first for longest match)
+    _fprefix + r"'[^\n'\\{]*(?:(?:\\.|(?:\{[^\}]*\}))[^\n'\\{]*)*'",
+    _fprefix + r'"[^\n"\\{]*(?:(?:\\.|(?:\{[^\}]*\}))[^\n"\\{]*)*"',
+    # Regular string patterns
+    _non_fprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
+    _non_fprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*"',
     _litprefix + r"`[^\n`\\]*(?:\\.[^\n`\\]*)*`",
 )
 
@@ -148,9 +296,18 @@ Special = group(r"\r?\n", r"[:;.,@]")
 Funny = group(Operator, Bracket, Special)
 
 # First (or only) line of ' or " string.
+# F-strings need special patterns to allow nested quotes inside {...}
 ContStr = group(
-    _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*" + group("'", r"\\\r?\n"),
-    _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*' + group('"', r"\\\r?\n"),
+    # F-string patterns
+    _fprefix
+    + r"'[^\n'\\{]*(?:(?:\\.|(?:\{[^\}]*\}))[^\n'\\{]*)*"
+    + group("'", r"\\\r?\n"),
+    _fprefix
+    + r'"[^\n"\\{]*(?:(?:\\.|(?:\{[^\}]*\}))[^\n"\\{]*)*'
+    + group('"', r"\\\r?\n"),
+    # Regular string patterns
+    _non_fprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*" + group("'", r"\\\r?\n"),
+    _non_fprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*' + group('"', r"\\\r?\n"),
     _litprefix + r"`[^\n`\\]*(?:\\.[^\n`\\]*)*" + group("`", r"\\\r?\n"),
 )
 PseudoExtras = group(r"\\\r?\n", Comment, Triple)
@@ -162,6 +319,7 @@ double3prog = re.compile(Double3)
 
 _strprefixes = (
     _combinations("r", "R", "f", "F")
+    | _combinations("r", "R", "t", "T")
     | _combinations("r", "R", "b", "B")
     | {"u", "U", "ur", "uR", "Ur", "UR"}
 )
@@ -172,6 +330,7 @@ endprogs: Final = {
     "`": re.compile(Backtick),
     "'''": single3prog,
     '"""': double3prog,
+    # All string prefixes that aren't f/t-strings use regular regex
     **{f"{prefix}'''": single3prog for prefix in _strprefixes},
     **{f'{prefix}"""': double3prog for prefix in _strprefixes},
     **{prefix: None for prefix in _strprefixes},
@@ -449,6 +608,9 @@ def generate_tokens(
     numchars: Final = "0123456789"
     contstr, needcont = "", 0
     contline: str | None = None
+    contstr_fstring_quote: str | None = (
+        None  # Track f-string quote for continuation
+    )
     indents = [0]
 
     # If we know we're parsing 3.7+, we can unconditionally parse `async` and
@@ -499,33 +661,58 @@ def generate_tokens(
             assert contline is not None
             if not line:
                 raise TokenError("EOF in multi-line string", strstart)
-            endmatch = endprog.match(line)
-            if endmatch:
-                pos = end = endmatch.end(0)
-                yield (
-                    STRING,
-                    contstr + line[:end],
-                    strstart,
-                    (lnum, end),
-                    contline + line,
-                )
-                contstr, needcont = "", 0
-                contline = None
-            elif needcont and line[-2:] != "\\\n" and line[-3:] != "\\\r\n":
-                yield (
-                    ERRORTOKEN,
-                    contstr + line,
-                    strstart,
-                    (lnum, len(line)),
-                    contline,
-                )
-                contstr = ""
-                contline = None
-                continue
+
+            # Check if this is a continued f-string that needs stateful scanning
+            if contstr_fstring_quote is not None:
+                # Use stateful scanner for f-string continuation
+                end = scan_fstring_content(line, 0, contstr_fstring_quote)
+                if end > 0:
+                    # Found the end
+                    pos = end
+                    yield (
+                        STRING,
+                        contstr + line[:end],
+                        strstart,
+                        (lnum, end),
+                        contline + line,
+                    )
+                    contstr, needcont = "", 0
+                    contline = None
+                    contstr_fstring_quote = None
+                else:
+                    # Still continuing
+                    contstr = contstr + line
+                    contline = contline + line
+                    continue
             else:
-                contstr = contstr + line
-                contline = contline + line
-                continue
+                # Regular string continuation (not f-string)
+                endmatch = endprog.match(line)
+                if endmatch:
+                    pos = end = endmatch.end(0)
+                    yield (
+                        STRING,
+                        contstr + line[:end],
+                        strstart,
+                        (lnum, end),
+                        contline + line,
+                    )
+                    contstr, needcont = "", 0
+                    contline = None
+                elif needcont and line[-2:] != "\\\n" and line[-3:] != "\\\r\n":
+                    yield (
+                        ERRORTOKEN,
+                        contstr + line,
+                        strstart,
+                        (lnum, len(line)),
+                        contline,
+                    )
+                    contstr = ""
+                    contline = None
+                    continue
+                else:
+                    contstr = contstr + line
+                    contline = contline + line
+                    continue
 
         elif parenlev == 0 and not continued:  # new statement
             if not line:
@@ -643,25 +830,68 @@ def generate_tokens(
                         stashed = None
                     yield (COMMENT, token, spos, epos, line)
                 elif token in triple_quoted:
-                    endprog = endprogs[token]  # type: ignore
-                    endmatch = endprog.match(line, pos)
-                    if endmatch:  # all on one line
-                        pos = endmatch.end(0)
-                        token = line[start:pos]
-                        if stashed:
-                            yield stashed
-                            stashed = None
-                        yield (STRING, token, spos, (lnum, pos), line)
+                    # Try processing as f-string/t-string
+                    result = _process_fstring_or_tstring(
+                        token, line, start, triple_quoted=True
+                    )
+                    if result:
+                        token, pos, quote_chars = result
+                        if quote_chars is None:
+                            # Found on same line
+                            if stashed:
+                                yield stashed
+                                stashed = None
+                            yield (STRING, token, spos, (lnum, pos), line)
+                        else:
+                            # Multi-line f-string/t-string
+                            strstart = (lnum, start)
+                            contstr = token
+                            contline = line
+                            contstr_fstring_quote = quote_chars
+                            break
                     else:
-                        strstart = (lnum, start)  # multiple lines
-                        contstr = line[start:]
-                        contline = line
-                        break
+                        # Regular triple-quoted string (not f-string/t-string)
+                        endprog = endprogs[token]  # type: ignore
+                        endmatch = endprog.match(line, pos)
+                        if endmatch:  # all on one line
+                            pos = endmatch.end(0)
+                            token = line[start:pos]
+                            if stashed:
+                                yield stashed
+                                stashed = None
+                            yield (STRING, token, spos, (lnum, pos), line)
+                        else:
+                            strstart = (lnum, start)  # multiple lines
+                            contstr = line[start:]
+                            contline = line
+                            break
                 elif (
                     initial in single_quoted
                     or token[:2] in single_quoted
                     or token[:3] in single_quoted
                 ):
+                    # Try processing as f-string/t-string
+                    if token[-1] != "\n":
+                        result = _process_fstring_or_tstring(
+                            token, line, start, triple_quoted=False
+                        )
+                        if result:
+                            token, pos, quote_char = result
+                            if quote_char is None:
+                                # Found on same line
+                                if stashed:
+                                    yield stashed
+                                    stashed = None
+                                yield (STRING, token, spos, (lnum, pos), line)
+                                continue
+                            else:
+                                # Multi-line f-string/t-string
+                                strstart = (lnum, start)
+                                contstr = token
+                                contline = line
+                                contstr_fstring_quote = quote_char
+                                break
+
                     if token[-1] == "\n":  # continued string
                         strstart = (lnum, start)
                         endprog = (

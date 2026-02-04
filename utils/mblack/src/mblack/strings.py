@@ -24,7 +24,7 @@ from re import Pattern
 from typing import Final
 
 STRING_PREFIX_CHARS: Final = (
-    "furbFURB"  # All possible string prefix characters.
+    "furbFURBtT"  # All possible string prefix characters.
 )
 STRING_PREFIX_RE: Final = re.compile(
     r"^([" + STRING_PREFIX_CHARS + r"]*)(.*)$", re.DOTALL
@@ -157,6 +157,7 @@ def normalize_string_prefix(s: str) -> str:
     orig_prefix = match.group(1)
     new_prefix = (
         orig_prefix.replace("F", "f")
+        .replace("T", "t")
         .replace("B", "b")
         .replace("U", "")
         .replace("u", "")
@@ -200,10 +201,17 @@ def normalize_string_quotes(s: str) -> str:
         return s  # There's an internal error
 
     prefix = s[:first_quote_pos]
+
+    # Skip normalization for f-strings and t-strings to avoid breaking interpolations
+    # Check that prefix only contains valid string prefix characters and includes 'f' or 't'
+    if "f" in prefix.casefold() or "t" in prefix.casefold():
+        return s
+
     unescaped_new_quote = _cached_compile(rf"(([^\\]|^)(\\\\)*){new_quote}")
     escaped_new_quote = _cached_compile(rf"([^\\]|^)\\((?:\\\\)*){new_quote}")
     escaped_orig_quote = _cached_compile(rf"([^\\]|^)\\((?:\\\\)*){orig_quote}")
     body = s[first_quote_pos + len(orig_quote) : -len(orig_quote)]
+
     if "r" in prefix.casefold():
         if unescaped_new_quote.search(body):
             # There's at least one unescaped new_quote in this raw string

@@ -535,6 +535,21 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
             prefix = get_string_prefix(LL[next_str_idx].value).lower()
             next_str_idx += 1
 
+        # For f-strings and t-strings, check if all strings use the same quote character.
+        # If they don't, skip merging to preserve original quote choices.
+        if "f" in prefix or "t" in prefix:
+            first_quote = LL[string_idx].value[-1]
+            temp_idx = string_idx
+            while (
+                is_valid_index(temp_idx) and LL[temp_idx].type == token.STRING
+            ):
+                if LL[temp_idx].value[-1] != first_quote:
+                    # Mixed quotes in f-string/t-string group - don't merge
+                    return TErr(
+                        "Skipping merge due to mixed quote characters in f-string/t-string group"
+                    )
+                temp_idx += 1
+
         # The next loop merges the string group. The final string will be
         # contained in 'S'.
         #
@@ -557,9 +572,13 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
             SS = LL[next_str_idx].value
             next_prefix = get_string_prefix(SS).lower()
 
-            # If this is an f-string group but this substring is not prefixed
-            # with 'f'...
-            if "f" in prefix and "f" not in next_prefix:
+            # If this is an f-string or t-string group but this substring is not prefixed
+            # with 'f' or 't'...
+            if (
+                ("f" in prefix or "t" in prefix)
+                and "f" not in next_prefix
+                and "t" not in next_prefix
+            ):
                 # Then we must escape any braces contained in this substring.
                 SS = re.sub(r"(\{|\})", r"\1\1", SS)
 
@@ -702,7 +721,12 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
                 f"Too many inline string comments ({num_of_inline_string_comments})."
             )
 
-        if len(set_of_prefixes) > 1 and set_of_prefixes != {"", "f"}:
+        # Allow merging strings with no prefix with f-strings or t-strings
+        allowed_prefix_sets = [{"", "f"}, {"", "t"}, {"f", "t"}, {"", "f", "t"}]
+        if (
+            len(set_of_prefixes) > 1
+            and set_of_prefixes not in allowed_prefix_sets
+        ):
             return TErr(f"Too many different prefixes ({set_of_prefixes}).")
 
         return Ok(None)
@@ -1277,13 +1301,13 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
 
         prefix = get_string_prefix(LL[string_idx].value).lower()
 
-        # We MAY choose to drop the 'f' prefix from substrings that don't
-        # contain any f-expressions, but ONLY if the original f-string
-        # contains at least one f-expression. Otherwise, we will alter the AST
+        # We MAY choose to drop the 'f' or 't' prefix from substrings that don't
+        # contain any f-expressions/t-expressions, but ONLY if the original f-string/t-string
+        # contains at least one expression. Otherwise, we will alter the AST
         # of the program.
-        drop_pointless_f_prefix = ("f" in prefix) and fstring_contains_expr(
-            LL[string_idx].value
-        )
+        drop_pointless_f_prefix = (
+            "f" in prefix or "t" in prefix
+        ) and fstring_contains_expr(LL[string_idx].value)
 
         first_string_line = True
 
@@ -1527,7 +1551,8 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
             would result in the splitting of an f-expression (which is NOT
             allowed).
         """
-        if "f" not in get_string_prefix(string).lower():
+        prefix = get_string_prefix(string).lower()
+        if "f" not in prefix and "t" not in prefix:
             return
         yield from iter_fexpr_spans(string)
 
@@ -1651,8 +1676,10 @@ class StringSplitter(BaseStringSplitter, CustomSplitMapMixin):
         """
         assert_is_leaf_string(string)
 
-        if "f" in prefix and not fstring_contains_expr(string):
-            new_prefix = prefix.replace("f", "")
+        if ("f" in prefix or "t" in prefix) and not fstring_contains_expr(
+            string
+        ):
+            new_prefix = prefix.replace("f", "").replace("t", "")
 
             temp = string[len(prefix) :]
             temp = re.sub(r"\{\{", "{", temp)
