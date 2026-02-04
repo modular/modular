@@ -81,7 +81,7 @@ def test_constructors():
 def test_copy():
     var s0 = "find"
     var s1 = String(s0)
-    s1.unsafe_ptr_mut()[3] = ord("e")
+    s1.unsafe_ptr_mut()[3] = Byte(ord("e"))
     assert_equal("find", s0)
     assert_equal("fine", s1)
 

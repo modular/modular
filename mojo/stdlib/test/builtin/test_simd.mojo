@@ -391,7 +391,7 @@ def test_issue_1625():
     comptime simd_width = 8
     var ptr = alloc[Int64](size)
     for i in range(size):
-        ptr[i] = i
+        ptr[i] = Int64(i)
 
     var x = ptr.load[width = 2 * simd_width](0)
     var evens_and_odds = x.deinterleave()
@@ -411,7 +411,7 @@ def test_issue_1625():
 def test_issue_20421():
     var a = alloc[UInt8](count=16 * 64, alignment=64)
     for i in range(16 * 64):
-        a[i] = i & 255
+        a[i] = UInt8(i & 255)
     var av16 = (a + 128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
     assert_equal(
         av16,
@@ -833,7 +833,7 @@ def test_mod():
     assert_equal(UInt32(99) % UInt32(3), 0)
 
     assert_equal(
-        SIMD[DType.int32, 2](7, 7) % Int(4), SIMD[DType.int32, 2](3, 3)
+        SIMD[DType.int32, 2](7, 7) % Int32(Int(4)), SIMD[DType.int32, 2](3, 3)
     )
 
     # fmt: off
@@ -938,11 +938,11 @@ def test_divmod():
 
 
 def test_rmod():
-    assert_equal(Int32(3).__rmod__(Int(4)), 1)
+    assert_equal(Int32(3).__rmod__(Int32(Int(4))), 1)
 
     comptime I = SIMD[DType.int32, 2]
     var i = I(78, 78)
-    assert_equal(i.__rmod__(Int(78)), I(0, 0))
+    assert_equal(i.__rmod__(Int32(Int(78))), I(0, 0))
 
     comptime F = SIMD[DType.float32, 4]
     var f = F(3, -4, 1, 5)
@@ -1875,9 +1875,9 @@ def test_rpow():
     assert_equal(2**i32x4_val, I32x4(1, 2, 4, 8))
     assert_equal((-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_equal(Int(0) ** i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(Int(2) ** i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal(Int(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(Int32(Int(0)) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(Int32(Int(2)) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(Int32(Int(-1)) ** i32x4_val, I32x4(1, -1, 1, -1))
 
     assert_almost_equal(1.0**f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
     assert_almost_equal(2.5**f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
@@ -2368,19 +2368,23 @@ def test_is_power_of_two():
 
     # Test with different integer types and larger powers (avoiding duplicate zero tests)
     # Note that for DType.int8, the maximum value is 127, so 2**7 == 128 which overflows.
-    comptime var1 = SIMD[DType.int8, 4](-114, 100, 2**6, 2**7)
+    comptime var1 = SIMD[DType.int8, 4](-114, 100, Int8(2**6), Int8(2**7))
     assert_equal(
         var1.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, False),
     )
 
-    comptime var2 = SIMD[DType.int16, 4](-11444, 3000, 2**13, 2**14)
+    comptime var2 = SIMD[DType.int16, 4](
+        -11444, 3000, Int16(2**13), Int16(2**14)
+    )
     assert_equal(
         var2.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, True),
     )
 
-    comptime var3 = SIMD[DType.int32, 4](-111444, 30000, 2**29, 2**30)
+    comptime var3 = SIMD[DType.int32, 4](
+        -111444, 30000, Int32(2**29), Int32(2**30)
+    )
     assert_equal(
         var3.is_power_of_two(),
         SIMD[DType.bool, 4](False, False, True, True),
@@ -2397,7 +2401,9 @@ def test_is_power_of_two():
     )
 
     # Test edge cases: negative numbers and boundary values
-    var signed_edge_cases = SIMD[DType.int32, 4](-4, -1, Int32.MAX, 2**31)
+    var signed_edge_cases = SIMD[DType.int32, 4](
+        -4, -1, Int32.MAX, Int32(2**31)
+    )
     var signed_results = signed_edge_cases.is_power_of_two()
     var expected_signed = SIMD[DType.bool, 4](False, False, False, False)
     assert_equal(signed_results, expected_signed)

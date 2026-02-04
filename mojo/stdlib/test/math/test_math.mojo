@@ -279,11 +279,11 @@ def test_iota():
     var buff = vector.unsafe_ptr()
     iota(buff, length, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     iota(vector, offset)
     for i in range(length):
-        assert_equal(vector[i], offset + i)
+        assert_equal(vector[i], Int32(offset + i))
 
     var vector2 = List[Int](unsafe_uninit_length=length)
 

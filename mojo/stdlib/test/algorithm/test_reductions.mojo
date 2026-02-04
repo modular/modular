@@ -36,7 +36,7 @@ def test_reductions():
     var vector = InlineArray[Float32, size](fill=0)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 1.0
     print(min(vector))
@@ -70,7 +70,7 @@ def test_fused_reductions_inner():
     var vector = Span(vector_stack)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     @always_inline
     @__copy_capture(vector)
@@ -154,7 +154,7 @@ def test_fused_reductions_outer():
     # COM: A slice of the first column gives all odd numbers: 1, 3, 5 ... 99
     # COM: while a slice of the second gives all even numbers: 2, 4, 6, ... 100
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     @always_inline
     @__copy_capture(vector)
@@ -233,7 +233,7 @@ def test_product():
     var vector = InlineArray[Float32, size](uninitialized=True)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 3628800.0
     print(product(vector))
@@ -250,7 +250,7 @@ def test_mean_variance():
     var vector = InlineArray[Float32, size](fill=0)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 50.5
     print(mean(vector))
@@ -265,7 +265,7 @@ def test_cumsum():
 
     var vector = InlineArray[Float32, 150](fill=0)
     for i in range(len(vector)):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
     var cumsum_out1 = InlineArray[Float32, vector.size](fill=0)
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
@@ -295,7 +295,7 @@ def test_cumsum():
 
     var vector2 = InlineArray[Int64, 128](fill=0)
     for i in range(vector2.__len__()):
-        vector2[i] = i + 1
+        vector2[i] = Int64(i + 1)
     var cumsum_out2 = InlineArray[Int64, 128](fill=0)
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)

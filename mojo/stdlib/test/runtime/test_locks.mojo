@@ -60,7 +60,7 @@ def test_basic_lock():
         ", and raw counter, ",
         rawCounter,
     )
-    assert_equal(counter.load(), rawCounter, "atomic stress test failed")
+    assert_equal(counter.load(), Int64(rawCounter), "atomic stress test failed")
 
     return
 

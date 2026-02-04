@@ -111,7 +111,7 @@ def assert_fill_factor[
 
     for idx, w in enumerate(words):
         var h = hash[HasherType=HasherType](w)
-        buckets[h % num_buckets] += 1
+        buckets[h % UInt64(num_buckets)] += 1
 
         # Collect first 5 hash samples for debugging
         if idx < 5:

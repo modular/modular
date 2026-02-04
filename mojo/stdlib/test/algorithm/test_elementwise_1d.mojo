@@ -28,7 +28,7 @@ def test_elementwise_1d():
     var vector = Span(ptr=ptr, length=num_elements)
 
     for i in range(len(vector)):
-        vector[i] = i
+        vector[i] = Float32(i)
 
     @always_inline
     @__copy_capture(vector)

@@ -39,15 +39,15 @@ fn random_numbers[
             or dtype == DType.int32
             or dtype == DType.int64
         ):
-            result.append(random_si64(0, max).cast[dtype]())
+            result.append(random_si64(0, Int64(max)).cast[dtype]())
         elif (
             dtype == DType.float16
             or dtype == DType.float32
             or dtype == DType.float64
         ):
-            result.append(random_float64(0, max).cast[dtype]())
+            result.append(random_float64(0, Float64(max)).cast[dtype]())
         else:
-            result.append(random_ui64(0, max).cast[dtype]())
+            result.append(random_ui64(0, UInt64(max)).cast[dtype]())
     return result^
 
 
@@ -310,7 +310,7 @@ fn test_sort_any_103() raises:
     var list = List[Float32](capacity=length)
 
     for i in range(length):
-        list.append(length - i - 1)
+        list.append(Float32(length - i - 1))
 
     sort(list)
 
@@ -323,10 +323,10 @@ fn test_quick_sort_repeated_val() raises:
     var list = List[Float32](capacity=length)
 
     for i in range(0, length // 4):
-        list.append(i + 1)
-        list.append(i + 1)
-        list.append(i + 1)
-        list.append(i + 1)
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
 
     @parameter
     fn _greater_than(lhs: Float32, rhs: Float32) -> Bool:
@@ -426,7 +426,7 @@ fn _test_partition_top_k(length: Int, k: Int) raises:
     var list = List[Float32](capacity=length)
 
     for i in range(0, length):
-        list.append(i)
+        list.append(Float32(i))
 
     @parameter
     fn _great_than(lhs: Float32, rhs: Float32) -> Bool:
@@ -435,7 +435,7 @@ fn _test_partition_top_k(length: Int, k: Int) raises:
     _ = partition[_great_than](list, k)
 
     for i in range(0, k):
-        assert_false(list[i] < length - k)
+        assert_false(list[i] < Float32(length - k))
 
 
 fn test_sort_stress() raises:
@@ -451,7 +451,7 @@ fn test_sort_stress() raises:
     ](length: Int) raises:
         var list = List[Int](capacity=length)
         for _ in range(length):
-            list.append(Int(random_si64(-length, length)))
+            list.append(Int(random_si64(Int64(-length), Int64(length))))
 
         _quicksort[cmp_fn](list)
 

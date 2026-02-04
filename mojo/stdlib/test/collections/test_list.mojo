@@ -39,7 +39,7 @@ from testing.prop.strategy import SIMD, List
 def test_mojo_issue_698():
     var list = List[Float64]()
     for i in range(5):
-        list.append(i)
+        list.append(Float64(i))
 
     assert_equal(0.0, list[0])
     assert_equal(1.0, list[1])

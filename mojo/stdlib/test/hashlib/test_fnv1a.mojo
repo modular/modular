@@ -64,7 +64,7 @@ def test_avalanche():
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
-        buffer[i >> 3] = v
+        buffer[i >> 3] = UInt8(v)
         hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, 15)

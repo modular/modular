@@ -25,13 +25,13 @@ def test_host_mapped():
 
     with in_buf.map_to_host() as in_map:
         for i in range(length):
-            in_map[i] = i
+            in_map[i] = Int64(i)
 
     in_buf.enqueue_copy_to(out_buf)
 
     with out_buf.map_to_host() as out_map:
         for i in range(length):
-            assert_equal(out_map[i], i)
+            assert_equal(out_map[i], Int64(i))
 
     print("Done")
 

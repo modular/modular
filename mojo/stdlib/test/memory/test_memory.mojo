@@ -88,7 +88,7 @@ def test_memcpy_dtype():
     var a = alloc[Int32](4)
     var b = alloc[Int32](4)
     for i in range(4):
-        a[i] = i
+        a[i] = Int32(i)
         b[i] = -1
 
     assert_equal(b[0], -1)
@@ -778,7 +778,7 @@ def test_dtypepointer_scatter():
 def test_indexing():
     var ptr = alloc[Float32](4)
     for i in range(4):
-        ptr[i] = i
+        ptr[i] = Float32(i)
 
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)

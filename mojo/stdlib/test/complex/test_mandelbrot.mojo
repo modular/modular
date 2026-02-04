@@ -34,7 +34,8 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     var maxY = -0.5 + yRange
 
     var c = ComplexFloat32(
-        minX + col * xRange / width, maxY - row * yRange / height
+        minX + Float32(col) * xRange / width,
+        maxY - Float32(row) * yRange / height,
     )
 
     var z = c
