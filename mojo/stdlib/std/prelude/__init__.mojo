@@ -70,7 +70,7 @@ from builtin.int import (
 )
 from builtin.int_literal import IntLiteral
 from builtin.len import Sized, SizedRaising, UIntSized, len
-from builtin.math import (
+from math.math import (
     Absable,
     Powable,
     Roundable,

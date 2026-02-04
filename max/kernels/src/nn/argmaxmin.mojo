@@ -21,7 +21,7 @@ from sys.info import simd_width_of
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
-from builtin.math import min as _min
+from math.math import min as _min
 from layout._tile_tensor import TileTensor
 
 

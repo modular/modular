@@ -73,7 +73,7 @@ from bit import bit_width, byte_swap, pop_count
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _write_int
-from builtin.math import DivModable, Powable
+from math import DivModable, Powable
 from documentation import doc_private
 from memory import bitcast, memcpy, pack_bits
 from python import ConvertibleToPython, Python, PythonObject

@@ -26,7 +26,7 @@ from sys.info import is_32bit
 from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
-from builtin.math import Absable, DivModable, Powable
+from math import Absable, DivModable, Powable
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,

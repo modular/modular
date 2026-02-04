@@ -17,7 +17,7 @@ from sys.info import simd_width_of
 
 import algorithm.reduction
 from algorithm import vectorize
-from builtin.math import max as b_max
+from math.math import max as b_max
 from layout import LayoutTensor, UNKNOWN_VALUE
 from layout._coord import Coord, Idx
 from layout._tile_tensor import TileTensor

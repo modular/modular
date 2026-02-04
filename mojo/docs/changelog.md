@@ -87,6 +87,12 @@ what we publish.
 
 ### Library changes
 
+- The `builtin.math` module has been merged into `math`. The traits `Absable`,
+  `DivModable`, `Powable`, `Roundable` and functions `abs()`, `divmod()`,
+  `max()`, `min()`, `pow()`, `round()` are now part of the `math` module and
+  continue to be available in the prelude. Code that explicitly imported from
+  `builtin.math` should update to import from `math` instead.
+
 - The `ffi` module is now a top-level module in the standard library, rather
   than being nested under `sys`. This improves discoverability of FFI
   functionality. Update your imports from `from sys.ffi import ...` to
