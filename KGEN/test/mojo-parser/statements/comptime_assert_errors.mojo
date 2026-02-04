@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 ##===----------------------------------------------------------------------===##
-# __comptime_assert errors
+# comptime assert errors
 ##===----------------------------------------------------------------------===##
 
 struct NotBool:
@@ -15,22 +15,22 @@ struct NotBool:
 
 fn test_non_bool_type_error[x: NotBool]():
     # expected-error @below {{'NotBool' does not implement the '__bool__' method}}
-    __comptime_assert x
+    comptime assert x
 
 
 fn test_runtime_expr_error(x: Int, y: Int):
-    # expected-error @below {{cannot use a dynamic value in '__comptime_assert' expression}}
-    __comptime_assert x == y
+    # expected-error @below {{cannot use a dynamic value in 'comptime assert' expression}}
+    comptime assert x == y
 
 
 fn test_non_string_literal_message_error():
     # expected-error @below {{cannot implicitly convert}}
-    __comptime_assert True, 42
+    comptime assert True, 42
 
 
 struct NotFn[x: Bool]:
-    # expected-error @below {{'__comptime_assert' statements must be inside a function}}
-    __comptime_assert x
+    # expected-error @below {{'comptime assert' statements must be inside a function}}
+    comptime assert x
 
 
 # expected-note @below {{cannot prove constraint}}
@@ -42,7 +42,7 @@ fn requires_natural[x: Int]() where x >= 0:
 fn test_assert_injects_assumption_correctly[x: Int]():
     @parameter
     if x > 10:
-        __comptime_assert x >= 0
+        comptime assert x >= 0
 
         # This is OK.
         requires_natural[x]()
@@ -62,18 +62,18 @@ fn test_newly_created_scope[x: Int]():
     comptime y = requires_natural[x]()
 
     # COM: This assert should not validate the above statement.
-    __comptime_assert x >= 0
+    comptime assert x >= 0
 
 
 fn test_always_false_error():
-    # expected-error @below {{failed __comptime_assert: condition is always False}}
-    __comptime_assert 2 < 1
+    # expected-error @below {{failed comptime assert: condition is always False}}
+    comptime assert 2 < 1
 
 
 fn test_always_false_error_with_message():
-    # expected-error @below {{failed __comptime_assert: condition is always False}}
-    __comptime_assert False, "this message is ignored"
+    # expected-error @below {{failed comptime assert: condition is always False}}
+    comptime assert False, "this message is ignored"
 
 
 fn test_always_true_no_warning():
-    __comptime_assert 2 > 1
+    comptime assert 2 > 1
