@@ -14,7 +14,7 @@ These implementations prioritize performance and correctness, and are intended
 to be used both directly and as primitives in higher-level libraries.
 
 To evaluate kernel performance on NVIDIA hardware, see [Kernel profiling with
-Nsight Compute](docs/profiling.md).
+Nsight Compute](/max/docs/kernel-profiling.md).
 
 To benchmark, autotune, and analyze Mojo kernel performance, use the
 [`kbench` tool](benchmarks/autotune#readme).

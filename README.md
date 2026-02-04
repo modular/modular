@@ -10,7 +10,7 @@
 [API docs]: https://docs.modular.com/max/api
 [Contributing]: ./CONTRIBUTING.md
 [Changelog]: https://docs.modular.com/max/changelog
-[MAX Model Development]: ./max/development.md
+[MAX Model Development]: /max/docs/development.md
 
 ---
 
