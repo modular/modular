@@ -222,6 +222,17 @@ LogicalResult DivOp::canonicalize(DivOp op, PatternRewriter &b) {
     return b.notifyMatchFailure(op, "result type size isn't resolved");
 
   // Canonicalize "x / 2^n" into "x >> n"
+
+  if (!dtype->isUInt()) {
+    // Note we could perform this optimization if we knew that the LHS values
+    // were all non-negative or a negated power of two. We don't have that
+    // analysis right now, though. If the LHS were all constants we could
+    // obviously infer this, but then we'll just end up constant folding it
+    // elsewhere anyway.
+    return b.notifyMatchFailure(
+        op, "lhs values are signed and not known to be safe");
+  }
+
   SIMDAttr rhsAttr;
   if (!mlir::matchPattern(op.getRhs(), mlir::m_Constant(&rhsAttr)))
     return b.notifyMatchFailure(op, "rhs is not a constant");
