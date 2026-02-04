@@ -39,8 +39,7 @@ fn anytype_result[T: TrivialRegisterType]() -> T:
 
 @fieldwise_init
 @nonmaterializable(Thing)
-@register_passable
-struct NMType(ImplicitlyCopyable):
+struct NMType(ImplicitlyCopyable, RegisterType):
     pass
 
 

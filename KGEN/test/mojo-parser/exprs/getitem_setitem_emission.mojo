@@ -153,8 +153,7 @@ fn test_writeback2[
     takes_inout_int(b[x][y])
 
 
-@register_passable
-struct RegWeirdArray:
+struct RegWeirdArray(RegisterType):
     fn __getitem__(self, idx: Int) -> Int:
         return idx
 

@@ -6,8 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
-@register_passable
-struct SomeNonTrivRegPassable: pass
+struct SomeNonTrivRegPassable(RegisterType): pass
 
 struct MemType:
   fn __init__(out self):
@@ -434,8 +433,7 @@ fn bad_func return fn() -> __mlir_type.index
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
 
-@register_passable
-struct WeirdBoolish:
+struct WeirdBoolish(RegisterType):
   fn __bool__(self) -> Bool: return False
   fn __copyinit__(out self, existing: Self): pass;
 
@@ -455,8 +453,7 @@ struct Conv2:
   @implicit
   fn __init__(out self, value: Conv1): pass
 
-@register_passable
-struct MyIntPair:
+struct MyIntPair(RegisterType):
   var a: Int
   var b: Int
 
@@ -730,8 +727,7 @@ fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   _ = Pointer(to=args)
   _ = Pointer(to=args[0])
 
-@register_passable
-struct NonTrivialReg:
+struct NonTrivialReg(RegisterType):
   pass
 
 fn get_ref_to_reg_variadic(*args: NonTrivialReg):

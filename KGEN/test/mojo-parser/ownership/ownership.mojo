@@ -38,8 +38,7 @@ struct MemPair:
 
 # CHECK-LABEL: lit.struct.decl @RegExample
 # CHECK: destructor {{.*}}@RegExample::@"__del__
-@register_passable
-struct RegExample(ImplicitlyCopyable):
+struct RegExample(ImplicitlyCopyable, RegisterType):
   fn __init__(out self):
     return
 
@@ -486,8 +485,7 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   return example2^
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
-@register_passable
-struct BigRegExample(ImplicitlyCopyable):
+struct BigRegExample(ImplicitlyCopyable, RegisterType):
   var a: RegExample
   var b: RegExample
 
@@ -582,8 +580,7 @@ fn bigreg_test():
   # CHECK-NEXT: kgen.param.constant: none
 
 # CHECK-LABEL: lit.struct.decl @ExoticDelExample
-@register_passable
-struct ExoticDelExample:
+struct ExoticDelExample(RegisterType):
   var cond: __mlir_type.i1
   var b: BigRegExample
   var c: RegExample
@@ -657,8 +654,7 @@ struct GenericType(SomeTrait):
     fn __del__(deinit self):
         pass
 
-@register_passable
-struct GenericRegType(SomeTrait):
+struct GenericRegType(RegisterType, SomeTrait):
     fn __del__(deinit self):
         pass
 
@@ -676,13 +672,11 @@ fn destruct_generic_return():
 
 
 # CHECK-LABEL: lit.struct.decl @RegisterExistingDtor
-@register_passable
-struct RegisterExistingDtor:
+struct RegisterExistingDtor(RegisterType):
     fn __del__(deinit self):
         pass
 
-@register_passable
-struct RegisterNoDtor:
+struct RegisterNoDtor(RegisterType):
     pass
 
 struct MemoryNoDtor:
@@ -693,8 +687,7 @@ struct MemoryNoDtor:
 # Compiler crashes trying to insert a destructor call
 # https://github.com/modularml/modular/issues/26410
 @fieldwise_init
-@register_passable
-struct RegExampleValue(ImplicitlyCopyable):
+struct RegExampleValue(ImplicitlyCopyable, RegisterType):
   var x: RegExample
   fn __init__(out self):
     self.x = RegExample()

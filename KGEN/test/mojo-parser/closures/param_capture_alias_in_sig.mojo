@@ -10,8 +10,7 @@
 # CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
 
-@register_passable
-struct Param[y: __mlir_type.index]:
+struct Param[y: __mlir_type.index](RegisterType):
     pass
 
 
