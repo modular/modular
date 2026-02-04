@@ -361,49 +361,14 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.config.k_group_size,
     ]
 
-    # ========== Internal Swizzled Layouts for TileTensor.to_layout_tensor() ==========
-    # These comptime aliases enable TileTensor to carry swizzled layouts so that
-    # .to_layout_tensor() produces correctly swizzled LayoutTensors. The internal
-    # Layout type (from layout._layout) preserves shape_types/stride_types through
-    # struct chains, unlike the public Layout type which uses runtime IntTuple.
-    #
-    # Usage pattern (not yet enabled due to compilation time investigation needed):
-    #   SmemType.ATile(ptr, a_internal_layout).to_layout_tensor()
-    #
-    # Currently using explicit LayoutTensor construction instead (see ATileLT below).
+    # ========== Internal Swizzled Layouts ==========
+    # These layouts encode the swizzle pattern used by TileTensor storage.
+    # MMA extracts layout from TileTensor type parameters via coord_to_int_tuple.
     comptime a_internal_layout = internal_k_major_128B[
         Self.a_type, Self.BM, Self.BK
     ]
     comptime b_internal_layout = internal_k_major_128B[
         Self.b_type, Self.BN, Self.BK
-    ]
-
-    # ========== LayoutTensor Types for Boundary Conversion ==========
-    # At TMA/MMA boundaries, construct LayoutTensor from TileTensor pointer.
-    # TMA requires 128B alignment in shared memory.
-    comptime ATileLT = LayoutTensor[
-        Self.a_type,
-        Self.SmemType.a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime BTileLT = LayoutTensor[
-        Self.b_type,
-        Self.SmemType.b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime SFATileLT = LayoutTensor[
-        Self.sfa_dtype,
-        Self.SmemType.sfa_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime SFBTileLT = LayoutTensor[
-        Self.sfb_dtype,
-        Self.SmemType.sfb_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
@@ -550,23 +515,24 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
-                # Load A and B with multicast - explicit LayoutTensor at boundary
+                # Load A and B with multicast - TileTensor directly to TMA
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
-                    Self.ATileLT(a_peer_tile.ptr),
+                    a_peer_tile,
                     barrier[0],
                     (k_coord, a_gmem_m_coord, batch_coord),
                     a_multicast_mask,
                 )
                 b_tma_op.async_multicast_load_3d[Self.cta_group](
-                    Self.BTileLT(b_peer_tile.ptr),
+                    b_peer_tile,
                     barrier[0],
                     (k_coord, b_gmem_n_coord, batch_coord),
                     b_multicast_mask,
                 )
 
                 # Load SFA and SFB (no multicast, 5D addressing)
+                # TMA 5D now has TileTensor overload - pass tiles directly
                 sfa_tma_op.async_copy_5d[Self.cta_group](
-                    Self.SFATileLT(sfa_tile.ptr),
+                    sfa_tile,
                     barrier[0],
                     (
                         0,
@@ -579,7 +545,7 @@ struct BlackwellBlockScaledMatmulKernel[
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
-                    Self.SFBTileLT(sfb_tile.ptr),
+                    sfb_tile,
                     barrier[0],
                     (
                         0,
@@ -654,12 +620,12 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
-                # Explicit LayoutTensor at MMA boundary
+                # Pass TileTensor directly to MMA - layout encoded in type
                 mma_op.mma(
-                    Self.ATileLT(a_tile.ptr),
-                    Self.BTileLT(b_tile.ptr),
-                    Self.SFATileLT(sfa_tile.ptr),
-                    Self.SFBTileLT(sfb_tile.ptr),
+                    a_tile,
+                    b_tile,
+                    sfa_tile,
+                    sfb_tile,
                     tmem_addr,
                     sfa_tmem_offset,
                     sfb_tmem_offset,

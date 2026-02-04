@@ -791,6 +791,241 @@ public `Layout` from the **external interface** by:
 - `BlockwiseFP8TileWriter` - separate struct
 - Full TileTensor internal migration (Phase 2 of long-term plan)
 
+### TMA API TileTensor Overloads (2026-02-02)
+
+**Work completed:** Added TileTensor overloads to TMA API in `tma_async.mojo`:
+
+- `async_multicast_load` - 2D multicast load with TileTensor
+- `async_multicast_load_3d` - 3D multicast load with TileTensor
+- `async_store` - 2D store with TileTensor
+- `async_store_3d` - 3D store with TileTensor
+
+**Kernel updates:** SM100 kernels now pass TileTensor directly to TMA loads:
+
+```mojo
+# Before (explicit LayoutTensor construction)
+a_tma_op.async_multicast_load_3d[Self.cta_group](
+    Self.ATileLT(a_peer_tile.ptr),  # Construct LayoutTensor
+    barrier, coords, mask)
+
+# After (TileTensor directly)
+a_tma_op.async_multicast_load_3d[Self.cta_group](
+    a_peer_tile,  # TileTensor directly
+    barrier, coords, mask)
+```
+
+**Updated files:**
+
+- `tma_async.mojo` - Added 4 TileTensor overloads
+- `tile_loader.mojo` - Updated to call TileTensor TMA overload
+- `block_scaled_matmul_kernel.mojo` - TileTensor for A/B loads
+- `grouped_block_scaled_matmul_kernel.mojo` - TileTensor for A/B loads
+- `grouped_1d1d_matmul_kernel.mojo` - TileTensor for A/B loads
+- `matmul_kernels.mojo` - TileTensor for A/B loads via tile_loader
+
+### Alignment Parameter Removal (2026-02-02)
+
+The TileTensor TMA overloads do **not** have alignment parameters, unlike the
+LayoutTensor overloads. This is intentional:
+
+**Rationale:**
+
+1. **TileTensor doesn't transport alignment info** - Unlike LayoutTensor which has
+   an `alignment` template parameter, TileTensor carries only dtype, shape, stride,
+   and address space
+2. **Alignment is guaranteed by the allocator** - `SMemTileArray2D.stack_allocation()`
+   uses `alignment = Self.alignment` (128 bytes) ensuring all allocated tiles meet
+   TMA's 128-byte alignment requirement
+3. **The alignment parameter was just a compile-time promise** - It didn't add
+   runtime verification; the LayoutTensor overload trusted the caller's promise
+
+**TMA TileTensor API signatures:**
+
+```mojo
+# 2D multicast load - no alignment parameter
+fn async_multicast_load[cta_group: Int = 1](
+    self,
+    dst: TileTensor[
+        mut=True, dtype=Self.dtype,
+        address_space=AddressSpace.SHARED, ...
+    ],
+    ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+    coords: Tuple[UInt, UInt],
+    multicast_mask: UInt16,
+)
+
+# 3D multicast load - no alignment parameter
+fn async_multicast_load_3d[cta_group: Int = 1](
+    self,
+    dst: TileTensor[...],  # Same constraints
+    ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+    coords: Tuple[UInt, UInt, UInt],
+    multicast_mask: UInt16,
+)
+```
+
+**Alignment guarantee chain:**
+
+```text
+SMemTileArray2D[dtype, dim0, dim1, num_tiles]
+    |
+    +-- alignment = 128  (compile-time constant)
+    |
+    +-- stack_allocation() uses alignment = Self.alignment
+    |
+    v
+TileTensor storage is 128-byte aligned by construction
+    |
+    v
+TMA operations succeed (require 128B alignment)
+```
+
+**Remaining LayoutTensor usages:**
+
+1. **MMA operations** - Kernels still use LayoutTensor construction at MMA boundary
+   because TileTensor overloads require explicit layout parameters (see below)
+2. **Scale factor loads** - `async_copy_4d`/`async_copy_5d` don't have TileTensor
+   overloads yet
+3. **C tile output** - Complex `.reshape[]` operations in tile_writer.mojo still
+   use LayoutTensor-based SMemTile from linalg.structuring
+
+### MMA TileTensor Overloads (2026-02-02)
+
+TileTensor overloads were added to `MmaOpSM100_SS` and `MmaOpSM100_BlockScaled_SS`
+in [mma.mojo](max/kernels/src/linalg/arch/sm100/mma.mojo). The layout is extracted
+from TileTensor's compile-time type parameters (`shape_types`, `stride_types`)
+using `coord_to_int_tuple`.
+
+**How layout extraction works:**
+
+TileTensor's type parameters are compile-time:
+
+```mojo
+struct TileTensor[
+    shape_types: Variadic.TypesOfTrait[CoordLike],  # Compile-time!
+    stride_types: Variadic.TypesOfTrait[CoordLike],  # Compile-time!
+    ...
+]
+```
+
+The MMA TileTensor overload extracts Layout at compile-time:
+
+```mojo
+fn mma(self, a: TileTensor[...], b: TileTensor[...], ...):
+    # Extract Layout from TileTensor's compile-time type parameters
+    comptime a_layout = Layout(
+        coord_to_int_tuple[*a.shape_types](),
+        coord_to_int_tuple[*a.stride_types](),
+    )
+    comptime a_coalesced_layout = coalesce(a_layout)
+    # ... rest identical to LayoutTensor version
+```
+
+**TileTensor MMA API signatures:**
+
+```mojo
+# MmaOpSM100_SS - standard MMA (no explicit layout params needed!)
+fn mma(
+    self,
+    a: TileTensor[address_space = AddressSpace.SHARED, ...],
+    b: TileTensor[address_space = AddressSpace.SHARED, ...],
+    c_tmem: UInt32,
+    init_c: Bool,
+)
+
+# MmaOpSM100_BlockScaled_SS - block-scaled MMA
+fn mma(
+    self,
+    a: TileTensor[...],
+    b: TileTensor[...],
+    sfa_smem: TileTensor[...],
+    sfb_smem: TileTensor[...],
+    c_tmem: UInt32,
+    sfa_tmem: UInt32,
+    sfb_tmem: UInt32,
+    init_c: Bool,
+)
+```
+
+**Why kernels still use LayoutTensor for MMA:**
+
+The MMA TileTensor overload works correctly, but kernels can't use it directly
+because `SMemTileArray2D` returns tiles with `row_major` layout:
+
+```mojo
+# SMemTileArray2D.__getitem__ creates tiles with row_major layout
+return Self.Tile(tile_ptr, row_major[Self.dim0, Self.dim1]())
+```
+
+But MMA needs the **swizzled layout** for correct K-iteration offsets. The
+LayoutTensor approach works because `ATileLT` has the swizzled layout:
+
+```mojo
+# ATileLT carries the swizzled layout from SmemType
+comptime ATileLT = LayoutTensor[a_type, SmemType.a_smem_layout, ...]
+mma_op.mma(Self.ATileLT(a_tile.ptr), ...)  # Constructs with swizzled layout
+```
+
+**Compiler limitation blocking direct TileTensor MMA usage:**
+
+Using `SMemTileArrayWithLayout` or `SMemTile` with swizzled layouts in kernel
+type aliases causes compiler issues due to variadic template parameter inference:
+
+```mojo
+# This causes compiler crash - Layout's variadic shape_types/stride_types
+# don't propagate correctly through nested template parameters
+comptime ATileTT = SMemTile[a_type, SmemType.a_smem_layout, alignment=128]
+```
+
+The `SMemTileArray2D.get_with_layout` method provides an alternative:
+
+```mojo
+# Get tile with swizzled layout (available but blocked by same issue)
+var a_tile = smem.a_tiles().get_with_layout[SmemType.a_smem_layout](stage)
+```
+
+**Current workaround:**
+
+Kernels continue using LayoutTensor construction at the MMA boundary:
+
+```mojo
+comptime ATileLT = LayoutTensor[a_type, SmemType.a_smem_layout, ...]
+mma_op.mma(Self.ATileLT(a_tile.ptr), Self.BTileLT(b_tile.ptr), ...)
+```
+
+This works because LayoutTensor's template inference handles the Layout
+parameter correctly, while TileTensor/SMemTile aliases don't.
+
+### TileLoader TileTensor Support (2026-02-02)
+
+The `TileLoaderTMA` struct in `tile_loader.mojo` now has TileTensor overloads for
+its `load` method:
+
+```mojo
+# TileTensor overload - calls TileTensor TMA directly
+fn load[dim0: Int, dim1: Int, /, alignment: Int = 128](
+    self,
+    dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
+    ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+    k_coord: UInt,
+    row_coord: UInt,
+):
+    """TileTensor overload - no conversion needed."""
+    self.tma_op[].async_multicast_load[Self.cta_group](
+        dest, barrier, (k_coord, row_coord), self.multicast_mask
+    )
+```
+
+**Key points:**
+
+1. **Direct TMA call** - The TileTensor overload passes the tile directly to the
+   TMA TileTensor overload without any LayoutTensor conversion
+2. **Alignment parameter retained** - While the TMA API doesn't need alignment,
+   the loader keeps it for API consistency with existing call sites
+3. **ScalesTileLoader still converts** - The `ScalesTileLoader` TileTensor overload
+   still constructs a LayoutTensor internally since `async_copy` doesn't have
+   a TileTensor overload yet
+
 ---
 
 ## Long-Term Goal: Complete LayoutTensor Elimination
@@ -801,10 +1036,20 @@ explicit LayoutTensor type aliases is a **transition strategy**.
 
 ### Current Blockers
 
-1. **TMA APIs require LayoutTensor** - `TMATensorTile.async_store()` expects
-   LayoutTensor parameters
-2. **MMA APIs require LayoutTensor** - `mma_op.mma()` expects LayoutTensor
-3. **Compilation performance** - `.to_layout_tensor()` at every call site is slow
+1. ~~**TMA APIs require LayoutTensor**~~ - **RESOLVED**: Added TileTensor overloads
+   for `async_store`, `async_store_3d`, `async_multicast_load`, `async_multicast_load_3d`
+2. ~~**MMA APIs require LayoutTensor**~~ - **RESOLVED**: Added TileTensor overloads
+   to `MmaOpSM100_SS` and `MmaOpSM100_BlockScaled_SS` that extract layout from
+   TileTensor's compile-time type parameters using `coord_to_int_tuple`.
+3. **Variadic template parameter inference** - **BLOCKING KERNEL INTEGRATION**:
+   Using `SMemTile[dtype, swizzled_layout]` or `SMemTileArrayWithLayout` as kernel
+   type aliases causes compiler crashes/errors. Layout's variadic `shape_types` and
+   `stride_types` don't propagate correctly through nested template parameters.
+   Added `SMemTileArray2D.get_with_layout` method but same issue applies.
+4. **Compilation performance** - `.to_layout_tensor()` at every call site is slow
+5. **C tile reshape operations** - tile_writer.mojo uses `.reshape[]` which TileTensor
+   doesn't support; requires computing pointer offsets manually or adding TileTensor
+   reshape support
 
 ### Path to Complete Elimination
 

@@ -117,13 +117,11 @@ struct BlockwiseFP8Smem[
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types
-    comptime ATileArray = Self.Tiles.ATileArray  # TileTensor-based
-    comptime BTileArray = Self.Tiles.BTileArray  # TileTensor-based
-    # CTileArray is LayoutTensor-based for backward compatibility
-    comptime CTileArray = Self.Tiles.CTileArrayLT
-    comptime CTileArrayTT = Self.Tiles.CTileArray  # TileTensor-based (new)
-    comptime AScalesTileArray = Self.Tiles.AScalesTileArray  # TileTensor-based
+    # Re-export tile array types (all TileTensor-based now)
+    comptime ATileArray = Self.Tiles.ATileArray
+    comptime BTileArray = Self.Tiles.BTileArray
+    comptime CTileArray = Self.Tiles.CTileArray  # TileTensor-based
+    comptime AScalesTileArray = Self.Tiles.AScalesTileArray
 
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
@@ -142,7 +140,7 @@ struct BlockwiseFP8Smem[
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor (TileTensor-based)."""
-        return self.tiles.c_tiles()
+        return self.tiles.c_tiles_tt()
 
     @always_inline
     fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:

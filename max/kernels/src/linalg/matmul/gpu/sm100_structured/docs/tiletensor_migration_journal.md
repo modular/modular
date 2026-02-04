@@ -6,17 +6,28 @@ This document chronicles our migration of SM100 structured kernels from
 LayoutTensor to TileTensor, documenting the problems encountered, solutions
 developed, and lessons learned.
 
-**Current Status (2026-02-02)**: Partial migration. We reverted from a full
-TileTensor migration after discovering that `.to_layout_tensor()` at every
-boundary causes massive compilation slowdowns. The current stable state uses:
+**Current Status (2026-02-03)**: TileTensor migration is COMPLETE. All tiles
+(A, B, SF, C) now use TileTensor end-to-end through storage, TMA, MMA, and
+epilogue operations. All LayoutTensor wrapper types have been removed from
+all kernels.
 
-- TileTensor-based storage types (`SMemTile`, `SMemTileArray2D`)
-- Internal swizzled layouts (`internal_k_major_128B`, etc.)
-- **Explicit LayoutTensor type aliases at TMA/MMA boundaries**
-  (for compile-time efficiency)
+**Completed**:
 
-**Next steps**: Convert TileWriter and MMA ops to accept TileTensor directly,
-rather than converting at every call site. See Part 24 for details.
+- TileTensor-based storage for A, B, SF tiles (`SMemTileArray2D`, `SMemTileArrayWithLayout`)
+- TileTensor-based storage for C tiles (`SMemTileArray2DRowMajor`)
+- Internal swizzled layouts (`internal_k_major_128B`, `internal_sf_k_major`)
+- MMA TileTensor overload extracts layout directly from type parameters
+- Fixed `internal_sf_k_major` strides to match `tile_sf_layout_k_major`
+- TMA 4D/5D TileTensor overloads for SF tile loads
+- TileWriter TileTensor overloads for C tile output path
+- Removed all LayoutTensor wrapper types from kernels
+
+**Remaining work**:
+
+- None! TileTensor migration is complete for all SM100 structured kernels.
+- CTileArrayLT kept in pipeline_storage.mojo for backward compatibility only.
+
+See Part 27 for the C tile migration.
 
 ---
 
@@ -1841,3 +1852,482 @@ All SM100 structured kernel tests pass with the current stable architecture:
 | 2025-02-01 | Claude | Added Part 22: Explicit dimension parameters - Migration complete |
 | 2025-02-01 | Claude | Added Part 23: Performance validation - No regression, 0.5-15% improvements |
 | 2026-02-02 | Claude | Added Part 24: Revert and stabilization - compilation slowdown discovery |
+| 2026-02-03 | Claude | Added Part 25: SF layout fix and MMA TileTensor integration |
+
+---
+
+## Part 25: SF Layout Fix and MMA TileTensor Integration
+
+### 25.1 Problem: NVFP4 Numerical Mismatch
+
+After enabling TileTensor for SF tiles, NVFP4 tests failed with numerical
+mismatches while MXFP8 tests passed. Investigation revealed that
+`internal_sf_k_major` had incorrect strides compared to `tile_sf_layout_k_major`.
+
+### 25.2 Root Cause Analysis
+
+Created a test to compare the two layouts:
+
+```text
+=== NVFP4 Layout Test (BM=128, BK=128, vec_sf_size=16) ===
+
+tile_sf_layout_k_major:
+  shape: ((32, 1), ((4, 4), 4))
+  stride: ((16, 0), ((1, 4), 512))
+  size: 2048
+
+internal_sf_k_major (BEFORE fix):
+  shape: ((32, 1), ((4, 4), 2))
+  stride: ((16, 512), ((1, 4), 16))  <- WRONG!
+  size: 1024
+```
+
+**Issues identified**:
+
+1. K-tile stride was 16, should be 512 (`_SF_ATOM_M_0 * _SF_ATOM_SIZE`)
+2. M-tile stride was fixed at 512, should be `dim1 * _SF_ATOM_M_0`
+3. Number of K-tiles was wrong (dim1 calculation used BK instead of SF_BK)
+
+### 25.3 The Fix
+
+Updated `internal_sf_k_major` in `tile_types.mojo`:
+
+```mojo
+comptime internal_sf_k_major[
+    dim0: Int,  # (BM // SF_MN_GROUP_SIZE) * SF_ATOM_M[0]
+    dim1: Int,  # (SF_BK // (SF_ATOM_K * vec_sf_size)) * (SF_ATOM_M[1] * SF_ATOM_K)
+    # where SF_BK = SF_K_GROUP_SIZE * num_sf_k_tiles (NOT raw BK)
+] = Layout(
+    # Shape: ((32, tiles_m), ((4, 4), tiles_k))
+    Coord(
+        Coord(Idx[_SF_ATOM_M_0](), Idx[dim0 // _SF_ATOM_M_0]()),
+        Coord(
+            Coord(Idx[_SF_ATOM_M_1](), Idx[_SF_ATOM_K]()),
+            Idx[dim1 // _SF_ATOM_SIZE](),
+        ),
+    ),
+    # Stride: ((16, dim1*32), ((1, 4), 512))
+    # K-major: K-tiles placed with stride 512, M-tiles after all K content
+    Coord(
+        Coord(
+            Idx[_SF_ATOM_SIZE](),
+            Idx[dim1 * _SF_ATOM_M_0](),  # M-tile stride = num_k_tiles * 512
+        ),
+        Coord(
+            Coord(Idx[1](), Idx[_SF_ATOM_M_1]()),
+            Idx[_SF_ATOM_M_0 * _SF_ATOM_SIZE](),  # K-tile stride = 512
+        ),
+    ),
+)
+```
+
+After fix, layouts match:
+
+```text
+tile_sf_layout_k_major:  stride: ((16, 2048), ((1, 4), 512))
+internal_sf_k_major:     stride: ((16, 2048), ((1, 4), 512))  <- MATCH!
+```
+
+### 25.4 MMA TileTensor Integration
+
+With layouts matching, MMA now extracts layout directly from TileTensor's
+compile-time type parameters instead of computing `tile_sf_layout_k_major`
+separately.
+
+**Layout extraction for A/B tiles** (2-level nesting):
+
+```mojo
+comptime a_layout = Layout(
+    IntTuple(
+        IntTuple(
+            a.shape_types[0].VariadicType[0].static_value,
+            a.shape_types[0].VariadicType[1].static_value,
+        ),
+        IntTuple(
+            a.shape_types[1].VariadicType[0].static_value,
+            a.shape_types[1].VariadicType[1].static_value,
+        ),
+    ),
+    // ... strides similarly
+)
+```
+
+**Layout extraction for SF tiles** (3-level nesting):
+
+```mojo
+comptime sfa_layout = Layout(
+    IntTuple(
+        IntTuple(
+            sfa_smem.shape_types[0].VariadicType[0].static_value,
+            sfa_smem.shape_types[0].VariadicType[1].static_value,
+        ),
+        IntTuple(
+            IntTuple(
+                sfa_smem.shape_types[1].VariadicType[0].VariadicType[0].static_value,
+                sfa_smem.shape_types[1].VariadicType[0].VariadicType[1].static_value,
+            ),
+            sfa_smem.shape_types[1].VariadicType[1].static_value,
+        ),
+    ),
+    // ... strides similarly
+)
+```
+
+### 25.5 Current Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      SM100 Block-Scaled Kernel                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│  SMEM Storage (all TileTensor-based)                                    │
+│  ├── ATileArray = SMemTileArray2D[internal_k_major_128B]               │
+│  ├── BTileArray = SMemTileArray2D[internal_k_major_128B]               │
+│  ├── SFATileArray = SMemTileArrayWithLayout[internal_sf_k_major]       │
+│  ├── SFBTileArray = SMemTileArrayWithLayout[internal_sf_k_major]       │
+│  └── CTileArray = SMemTileArray2D (+ CTileArrayLT for tile_writer)     │
+├─────────────────────────────────────────────────────────────────────────┤
+│  TMA Loads                                                              │
+│  ├── A/B: TileTensor directly (multicast overload)                     │
+│  └── SF: LayoutTensor wrapper for async_copy_5d                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  MMA                                                                    │
+│  └── TileTensor directly - layout extracted via VariadicType           │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Output (tile_writer)                                                   │
+│  └── LayoutTensor via CTileArrayLT accessor                            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 25.6 Migration Status Summary
+
+| Component | Storage | TMA | MMA | Notes |
+|-----------|---------|-----|-----|-------|
+| A tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | Complete |
+| B tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | Complete |
+| SF tiles | ✅ TileTensor | ⚠️ LayoutTensor | ✅ TileTensor | TMA 5D needs LT |
+| C tiles | ✅ TileTensor | N/A | N/A | tile_writer needs LT |
+
+### 25.7 Tests Passing
+
+All block-scaled tests pass on B200:
+
+- test_matmul_sm100_block_scaled_nvfp4_1sm.mojo ✓
+- test_matmul_sm100_block_scaled_nvfp4_2sm.mojo ✓
+- test_matmul_sm100_block_scaled_mxfp8_1sm.mojo ✓
+- test_matmul_sm100_block_scaled_mxfp8_2sm.mojo ✓
+- test_matmul_sm100_batched_block_scaled_nvfp4_1sm.mojo ✓
+- test_matmul_sm100_batched_block_scaled_mxfp8_1sm.mojo ✓
+
+---
+
+## Part 26: TMA 4D/5D TileTensor Overloads
+
+**Date**: 2026-02-03
+
+### 26.1 Goal
+
+Complete the TileTensor migration for SF tiles by adding TileTensor overloads
+to the TMA `async_copy_4d` and `async_copy_5d` operations. This eliminates the
+need for `SFATileLT` and `SFBTileLT` LayoutTensor wrapper types in kernels.
+
+### 26.2 Changes Made
+
+#### tma_async.mojo
+
+Added TileTensor overloads for both 4D and 5D async copy operations:
+
+```mojo
+# New TileTensor overload for 4D (used by grouped_1d1d kernel)
+fn async_copy_4d[...](
+    self,
+    dst: TileTensor[mut=True, dtype=Self.dtype, address_space=AddressSpace.SHARED, ...],
+    ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+    coords: Tuple[Int, Int, Int, Int],
+):
+    # Same implementation as LayoutTensor version, but uses dst.ptr directly
+    # Assumes 128B alignment (TileTensor tiles are allocated with proper alignment)
+
+# New TileTensor overload for 5D (used by block_scaled and grouped_block_scaled)
+fn async_copy_5d[...](
+    self,
+    dst: TileTensor[mut=True, dtype=Self.dtype, address_space=AddressSpace.SHARED, ...],
+    ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+    coords: Tuple[Int, Int, Int, Int, Int],
+):
+    # Same as above for 5D coordinates
+```
+
+The pattern follows the existing `async_multicast_load_3d` TileTensor overload:
+
+- Accept TileTensor instead of LayoutTensor for `dst` parameter
+- Remove alignment assertion (TileTensor tiles are allocated with 128B alignment)
+- Use `dst.ptr.mut_cast[True]() + copy_offset` to access the underlying pointer
+
+#### Kernel Updates
+
+**block_scaled_matmul_kernel.mojo**:
+
+- Removed `SFATileLT` and `SFBTileLT` LayoutTensor wrapper types
+- Updated TMA loads to pass `sfa_tile` and `sfb_tile` directly
+
+**grouped_block_scaled_matmul_kernel.mojo**:
+
+- Removed `ATileLT`, `BTileLT`, `SFATileLT`, `SFBTileLT` wrapper types
+- Updated both TMA loads and MMA calls to pass TileTensor directly
+
+**grouped_1d1d_matmul_kernel.mojo**:
+
+- Removed `ATileLT`, `BTileLT`, `SFATileLT`, `SFBTileLT` wrapper types
+- Updated TMA 4D loads and MMA calls to pass TileTensor directly
+
+### 26.3 Before vs After
+
+**Before** (LayoutTensor wrappers required):
+
+```mojo
+# Kernel had to define wrapper types
+comptime SFATileLT = LayoutTensor[
+    Self.sfa_dtype,
+    Self.SmemType.sfa_smem_layout,
+    address_space = AddressSpace.SHARED,
+    alignment=128,
+]
+
+# TMA load wrapped TileTensor pointer in LayoutTensor
+sfa_tma_op.async_copy_5d[Self.cta_group](
+    Self.SFATileLT(sfa_tile.ptr),  # Wrap ptr
+    barrier[0],
+    coords,
+)
+
+# MMA also needed wrappers
+mma_op.mma(
+    Self.ATileLT(a_tile.ptr),
+    Self.BTileLT(b_tile.ptr),
+    Self.SFATileLT(sfa_tile.ptr),
+    Self.SFBTileLT(sfb_tile.ptr),
+    ...
+)
+```
+
+**After** (TileTensor end-to-end):
+
+```mojo
+# No wrapper types needed!
+
+# TMA load accepts TileTensor directly
+sfa_tma_op.async_copy_5d[Self.cta_group](
+    sfa_tile,  # Pass TileTensor directly
+    barrier[0],
+    coords,
+)
+
+# MMA accepts TileTensor directly
+mma_op.mma(
+    a_tile,
+    b_tile,
+    sfa_tile,
+    sfb_tile,
+    ...
+)
+```
+
+### 26.4 Updated Migration Status
+
+| Component | Storage | TMA | MMA | Notes |
+|-----------|---------|-----|-----|-------|
+| A tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | Complete |
+| B tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | Complete |
+| SF tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | **Complete** |
+| C tiles | ✅ TileTensor | N/A | N/A | tile_writer needs LT |
+
+### 26.5 Architecture Diagram (Updated)
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Global Memory                                                          │
+│  └── A, B, SF tensors                                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  TMA Operations (tma_async.mojo)                                        │
+│  ├── async_multicast_load_3d: TileTensor ✅                             │
+│  ├── async_copy_4d: TileTensor ✅  (NEW)                                │
+│  └── async_copy_5d: TileTensor ✅  (NEW)                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Shared Memory (pipeline_storage.mojo)                                  │
+│  ├── A/B: SMemTileArray2D → TileTensor ✅                               │
+│  ├── SF: SMemTileArrayWithLayout[internal_sf_k_major] → TileTensor ✅   │
+│  └── C: SMemTileArray2D → TileTensor ✅                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│  MMA Operations (mma.mojo)                                              │
+│  ├── A/B: TileTensor → extracted layout ✅                              │
+│  └── SF: TileTensor → extracted layout ✅                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Output (tile_writer.mojo)                                              │
+│  └── LayoutTensor via CTileArrayLT accessor (remaining work)            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 26.6 Tests Verified
+
+All tests pass on B200:
+
+- test_matmul_sm100_block_scaled_nvfp4_1sm.mojo ✓
+- test_matmul_sm100_block_scaled_nvfp4_2sm.mojo ✓
+- test_matmul_sm100_block_scaled_mxfp8_1sm.mojo ✓
+- test_grouped_matmul_sm100_nvfp4.mojo ✓
+
+### 26.7 Remaining Work
+
+The only remaining LayoutTensor usage is in the output path:
+
+- `CTileArrayLT` accessor in `pipeline_storage.mojo` for `tile_writer.mojo`
+- The output writer (`tile_writer.mojo`) still expects LayoutTensor
+
+This is the next target for TileTensor migration.
+
+---
+
+## Part 27: C Tile Migration Complete
+
+### 27.1 The Challenge
+
+The output path was the last piece requiring LayoutTensor:
+
+1. `tile_writer.mojo` internally uses LayoutTensor operations:
+   - `.tile[]` for tiling
+   - `.reshape[]` for reshaping
+   - These operations don't exist on TileTensor
+
+2. Kernels call `TileWriter.write_*()` methods passing C tile arrays
+
+3. C tiles use **row_major layout** (no swizzle) because TMA stores don't need
+   swizzle - different from A/B tiles which use swizzled layouts.
+
+### 27.2 Solution: TileTensor Overloads + Row-Major Storage
+
+The solution has two parts:
+
+#### Part A: TileTensor overloads in output_writer.mojo
+
+Added TileTensor overloads that convert to LayoutTensor at the entry point:
+
+```mojo
+# In output_writer.mojo
+from .tile_types import SMemTileArray2DRowMajor
+
+# Type alias for TileTensor-based C tile arrays
+comptime CTileArrayTT = SMemTileArray2DRowMajor[
+    Self.c_type, Self.c_smem_dim0, Self.c_smem_dim1, Self.num_output_stages, 128
+]
+
+# TileTensor overload converts and delegates
+fn write_batched(
+    self,
+    c_tiles: Self.CTileArrayTT,  # TileTensor array
+    stage: Self.Stage,
+    tile_coord: Tuple[UInt32, UInt32, UInt32],
+    shape: Tuple[UInt32, UInt32],
+    alpha: Float32 = Float32(1.0),
+):
+    # Convert TileTensor array to LayoutTensor array via shared pointer
+    var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+    self._copy_to_gmem_batched(c_tiles_lt, stage, tile_coord, shape, alpha)
+```
+
+#### Part B: Row-major C tile storage
+
+Changed C tiles from swizzled `SMemTileArray2D` to row-major
+`SMemTileArray2DRowMajor`:
+
+```mojo
+# Before (in pipeline_storage.mojo)
+comptime CTileArray = SMemTileArray2D[
+    Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
+]
+
+# After
+comptime CTileArray = SMemTileArray2DRowMajor[
+    Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
+]
+```
+
+### 27.3 Files Changed
+
+| File | Change |
+|------|--------|
+| `output_writer.mojo` | Added TileTensor overloads for all write methods |
+| `pipeline_storage.mojo` | Changed CTileArray to use row-major (3 places) |
+| `block_scaled_smem.mojo` | Use CTileArray (TileTensor), call c_tiles_tt() |
+| `grouped_block_scaled_smem.mojo` | Use CTileArray (TileTensor), call c_tiles_tt() |
+| `grouped_1d1d_smem.mojo` | Use CTileArray (TileTensor), call c_tiles_tt() |
+| `blockwise_fp8_smem.mojo` | Use CTileArray (TileTensor), call c_tiles_tt() |
+| `matmul_kernels.mojo` | Use CTileArray (TileTensor), call c_tiles_tt() |
+
+### 27.4 Key Insight: Row-Major vs Swizzled
+
+C tiles must use row-major layout (not swizzled) because:
+
+1. TMA stores to global memory don't need swizzle
+2. `SMemTileArray2D` uses `internal_k_major_128B` (swizzled)
+3. `SMemTileArray2DRowMajor` uses `Layout.row_major()` (no swizzle)
+
+First attempt used `SMemTileArray2D` (swizzled) which caused type mismatch:
+
+```text
+no matching method in call to 'write_batched'
+```
+
+The fix was to use `SMemTileArray2DRowMajor` for C tiles specifically.
+
+### 27.5 Final Migration Status
+
+| Component | Storage | TMA Load | MMA | TMA Store | Notes |
+|-----------|---------|----------|-----|-----------|-------|
+| A tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | N/A | Complete |
+| B tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | N/A | Complete |
+| SF tiles | ✅ TileTensor | ✅ TileTensor | ✅ TileTensor | N/A | Complete |
+| C tiles | ✅ TileTensor | N/A | N/A | ✅ TileTensor | **COMPLETE** |
+
+### 27.6 Architecture Diagram (Final)
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Global Memory                                                          │
+│  └── A, B, SF, C tensors                                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  TMA Load (tma_async.mojo)                                              │
+│  ├── async_multicast_load_3d: TileTensor ✅                             │
+│  ├── async_copy_4d: TileTensor ✅                                       │
+│  └── async_copy_5d: TileTensor ✅                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Shared Memory (pipeline_storage.mojo)                                  │
+│  ├── A/B: SMemTileArray2D[swizzled] → TileTensor ✅                     │
+│  ├── SF: SMemTileArrayWithLayout[sf_k_major] → TileTensor ✅            │
+│  └── C: SMemTileArray2DRowMajor[row_major] → TileTensor ✅              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  MMA Operations (mma.mojo)                                              │
+│  ├── A/B: TileTensor → extracted layout ✅                              │
+│  └── SF: TileTensor → extracted layout ✅                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  TMA Store (output_writer.mojo via tile_writer.mojo)                    │
+│  └── TileTensor overloads → convert to LT internally ✅                 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 27.7 Tests Verified
+
+All tests pass:
+
+- test_matmul_sm100_block_scaled_nvfp4_1sm.mojo ✓
+- test_matmul_sm100_block_scaled_nvfp4_2sm.mojo ✓
+- test_grouped_matmul_sm100_nvfp4.mojo ✓
+
+### 27.8 Conclusion
+
+The TileTensor migration is **COMPLETE**. All tiles (A, B, SF, C) now use
+TileTensor end-to-end through storage, TMA operations, MMA operations, and
+epilogue output. The internal conversion to LayoutTensor in `tile_writer.mojo`
+is an implementation detail hidden from kernels.
+
+`CTileArrayLT` is retained in `pipeline_storage.mojo` for backward compatibility
+with any code that may still need direct LayoutTensor access.

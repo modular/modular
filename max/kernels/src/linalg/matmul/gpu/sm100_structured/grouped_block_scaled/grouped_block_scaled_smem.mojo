@@ -168,14 +168,12 @@ struct GroupedBlockScaledSmem[
         Self.num_output_stages,
     ]
 
-    # Re-export tile array types
-    comptime ATileArray = Self.Tiles.ATileArray  # TileTensor-based
-    comptime BTileArray = Self.Tiles.BTileArray  # TileTensor-based
-    # CTileArray is LayoutTensor-based for backward compatibility
-    comptime CTileArray = Self.Tiles.CTileArrayLT
-    comptime CTileArrayTT = Self.Tiles.CTileArray  # TileTensor-based (new)
-    comptime SFATileArray = Self.Tiles.SFATileArray  # TileTensor-based
-    comptime SFBTileArray = Self.Tiles.SFBTileArray  # TileTensor-based
+    # Re-export tile array types (all TileTensor-based now)
+    comptime ATileArray = Self.Tiles.ATileArray
+    comptime BTileArray = Self.Tiles.BTileArray
+    comptime CTileArray = Self.Tiles.CTileArray  # TileTensor-based
+    comptime SFATileArray = Self.Tiles.SFATileArray
+    comptime SFBTileArray = Self.Tiles.SFBTileArray
 
     # ========== Storage Fields ==========
     # IMPORTANT: Field order MUST match BlockScaledSmem to preserve layout compatibility
@@ -262,7 +260,7 @@ struct GroupedBlockScaledSmem[
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor (TileTensor-based)."""
-        return self.tiles.c_tiles()
+        return self.tiles.c_tiles_tt()
 
     @always_inline
     fn sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:

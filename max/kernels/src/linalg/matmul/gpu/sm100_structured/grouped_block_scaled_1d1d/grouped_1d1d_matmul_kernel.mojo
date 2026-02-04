@@ -294,33 +294,6 @@ struct Grouped1D1DMatmulKernel[
         Self.config.k_group_size,
     ]
 
-    # ========== LayoutTensor Types for Boundary Conversion ==========
-    # Used for TMA/MMA ops - 128B alignment required for shared memory
-    comptime ATileLT = LayoutTensor[
-        Self.a_type,
-        Self.SmemType.a_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime BTileLT = LayoutTensor[
-        Self.b_type,
-        Self.SmemType.b_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime SFATileLT = LayoutTensor[
-        Self.sfa_dtype,
-        Self.SmemType.sfa_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-    comptime SFBTileLT = LayoutTensor[
-        Self.sfb_dtype,
-        Self.SmemType.sfb_smem_layout,
-        address_space = AddressSpace.SHARED,
-        alignment=128,
-    ]
-
     # ========== TMEM and Output Pipeline Types ==========
 
     comptime Tmem = TmemAllocation[Self.cta_group]
@@ -764,21 +737,22 @@ struct Grouped1D1DMatmulKernel[
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
-                # Convert to LayoutTensor at TMA boundary
+                # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load[Self.cta_group](
-                    Self.ATileLT(a_peer_tt.ptr),
+                    a_peer_tt,
                     barrier[0],
                     (k_coord, a_gmem_m_coord),
                     UInt16((1 << Self.CLUSTER_M) - 1),
                 )
                 b_tma_op.async_multicast_load[Self.cta_group](
-                    Self.BTileLT(b_peer_tt.ptr),
+                    b_peer_tt,
                     barrier[0],
                     (k_coord, b_gmem_n_coord),
                     UInt16((1 << Self.CLUSTER_N) - 1),
                 )
 
                 # Scale factor load with offset
+                # TMA 4D now has TileTensor overload - pass tiles directly
                 var a_scale_offset = rebind[Scalar[DType.uint32]](
                     a_scale_offsets[Int(group_idx)]
                 )
@@ -786,7 +760,7 @@ struct Grouped1D1DMatmulKernel[
                     a_scale_offset
                 )
                 sfa_tma_op.async_copy_4d[Self.cta_group](
-                    Self.SFATileLT(sfa_tt.ptr),
+                    sfa_tt,
                     barrier[0],
                     (
                         0,
@@ -800,7 +774,7 @@ struct Grouped1D1DMatmulKernel[
                     Int(n_coord) + Int(expert_id) * Self.static_N
                 ) // SF_MN_GROUP_SIZE
                 sfb_tma_op.async_copy_4d[Self.cta_group](
-                    Self.SFBTileLT(sfb_tt.ptr),
+                    sfb_tt,
                     barrier[0],
                     (
                         0,
@@ -851,14 +825,13 @@ struct Grouped1D1DMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
-                # Explicit LayoutTensor at MMA boundary - uses swizzled layouts
-                # (SMemTileArray2D tiles have row_major layout internally, but
-                # actual SMEM data is in swizzled layout from TMA)
+                # MMA has TileTensor overload - pass tiles directly
+                # (layout is extracted from TileTensor type parameters)
                 mma_op.mma(
-                    Self.ATileLT(a_tt.ptr),
-                    Self.BTileLT(b_tt.ptr),
-                    Self.SFATileLT(sfa_tt.ptr),
-                    Self.SFBTileLT(sfb_tt.ptr),
+                    a_tt,
+                    b_tt,
+                    sfa_tt,
+                    sfb_tt,
                     tmem_addr,
                     sfa_tmem_offset,
                     sfb_tmem_offset,

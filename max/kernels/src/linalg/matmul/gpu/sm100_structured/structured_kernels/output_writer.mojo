@@ -47,6 +47,9 @@ from linalg.utils import elementwise_compute_lambda_type
 
 from utils.index import IndexList
 
+# TileTensor-based types for C tiles
+from .tile_types import SMemTileArray2DRowMajor
+
 from .barriers import WarpGroupBarrier
 from .tile_pipeline import OutputStage
 from .tile_scheduler_splitk import TileScheduler, WorkInfo
@@ -113,8 +116,17 @@ struct TileWriter[
         Self.c_type, Self.c_layout, Self.c_desc_layout
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
+    # LayoutTensor-based C tile array (used internally)
     comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
+    ]
+    # TileTensor-based C tile array (for TileTensor overloads)
+    comptime CTileArrayTT = SMemTileArray2DRowMajor[
+        Self.c_type,
+        Self.c_smem_dim0,
+        Self.c_smem_dim1,
+        Self.num_output_stages,
+        128,
     ]
     comptime Stage = OutputStage[
         Self.num_accum_pipeline_stages,
@@ -177,6 +189,125 @@ struct TileWriter[
             "stage_stride_cols must be positive",
         ]()
         self.c_tma_op = c_tma_op
+
+    # ========== TileTensor Overloads ==========
+    # These accept TileTensor-based C tile arrays and convert to LayoutTensor
+    # internally. This allows kernels to use TileTensor throughout while
+    # tile_writer internals continue using LayoutTensor for .tile[]/.reshape[].
+
+    @always_inline
+    fn write(
+        self,
+        c_tiles: Self.CTileArrayTT,
+        stage: Self.Stage,
+        tile_coord: Tuple[UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        elect_one_warp: Bool,
+    ):
+        """Write accumulated results to global memory (2D coords).
+
+        TileTensor overload - converts to LayoutTensor internally.
+        """
+        # Convert TileTensor array to LayoutTensor array via shared pointer
+        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+        self._copy_to_gmem(c_tiles_lt, stage, tile_coord, shape)
+
+    @always_inline
+    fn write_batched(
+        self,
+        c_tiles: Self.CTileArrayTT,
+        stage: Self.Stage,
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        shape: Tuple[UInt32, UInt32],
+        alpha: Float32 = Float32(1.0),
+    ):
+        """Write accumulated results to global memory (3D batched coords).
+
+        TileTensor overload - converts to LayoutTensor internally.
+
+        Args:
+            c_tiles: TileTensor-based SMEM tile array for C output.
+            stage: OutputStage with pipeline, index, and TMEM handle.
+            tile_coord: (m_tile, n_tile, batch) coordinates.
+            shape: (M, N) problem dimensions.
+            alpha: Tensor scale factor (scalar).
+        """
+        # Convert TileTensor array to LayoutTensor array via shared pointer
+        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+        self._copy_to_gmem_batched(c_tiles_lt, stage, tile_coord, shape, alpha)
+
+    @always_inline
+    fn write_splitk[
+        reduction_layout: Layout,
+    ](
+        self,
+        c_tiles: Self.CTileArrayTT,
+        stage: Self.Stage,
+        scheduler: TileScheduler,
+        reduction_tensor: LayoutTensor[
+            Self.accum_type, reduction_layout, MutAnyOrigin
+        ],
+        work_info: WorkInfo,
+        shape: Tuple[UInt32, UInt32],
+        elect_one_warp: Bool,
+    ):
+        """Write with split-K reduction. Only last split writes to GMEM.
+
+        TileTensor overload - converts to LayoutTensor internally.
+        """
+        # Convert TileTensor array to LayoutTensor array via shared pointer
+        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+
+        var epilogue_thread_idx = thread_idx.x
+
+        # Perform reduction and check if this is the last split
+        var is_last_split = scheduler.reduction(
+            reduction_tensor,
+            stage.tmem.address(),
+            epilogue_thread_idx,
+            work_info,
+        )
+
+        # If not last split, signal and exit early
+        if not is_last_split:
+            AccumBarrier[Self.cta_group].arrive(stage.pipeline, stage.index)
+            return
+
+        self._copy_to_gmem(c_tiles_lt, stage, (work_info.m, work_info.n), shape)
+
+    @always_inline
+    fn write_absolute_with_bounds_check[
+        c_tensor_layout: Layout,
+    ](
+        self,
+        c_tiles: Self.CTileArrayTT,
+        output_stage: Self.Stage,
+        m_abs: UInt32,
+        n_abs: UInt32,
+        m_end: UInt32,
+        expert_scale: Float32,
+        c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+    ):
+        """Write with absolute coordinates and bounds checking.
+
+        TileTensor overload - converts to LayoutTensor internally.
+        For 1D-1D grouped kernels where M coordinate is absolute.
+        """
+        # Convert TileTensor array to LayoutTensor array via shared pointer
+        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+        self._write_absolute_with_bounds_check[c_tensor_layout](
+            c_tiles_lt,
+            output_stage,
+            m_abs,
+            n_abs,
+            m_end,
+            expert_scale,
+            c_tensor,
+        )
+
+    # ========== LayoutTensor Overloads (Original) ==========
+    # Keep these for backward compatibility with code that still uses
+    # LayoutTensor-based C tile arrays.
 
     @always_inline
     fn write(
@@ -635,7 +766,7 @@ struct TileWriter[
                 WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
-    fn write_absolute_with_bounds_check[
+    fn _write_absolute_with_bounds_check[
         c_tensor_layout: Layout,
     ](
         self,
@@ -647,14 +778,14 @@ struct TileWriter[
         expert_scale: Float32,
         c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):
-        """Write accumulated results using absolute coordinates with bounds checking.
+        """Internal implementation of write with absolute coordinates and bounds checking.
 
         For 1D-1D grouped kernels where M coordinate is absolute (not tile index).
         Handles partial tiles that cross expert boundaries by using element-by-element
         stores for rows that would exceed m_end.
 
         Args:
-            c_tiles: SMEM tile array for C output (double-buffered).
+            c_tiles: SMEM tile array for C output (LayoutTensor-based).
             output_stage: OutputStage with pipeline, index, and TMEM handle.
             m_abs: Absolute M coordinate (start of tile in token space).
             n_abs: Absolute N coordinate (start of tile).

@@ -86,8 +86,11 @@ from linalg.structuring import SMemPtr, SMemArray
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for most tile storage (A, B)
-from .tile_types import SMemTileArray2D
-
+from .tile_types import (
+    SMemTileArray2D,
+    SMemTileArrayWithLayout,
+    internal_sf_k_major,
+)
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
@@ -115,13 +118,26 @@ struct StandardTilePayload[
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
-    """Tile payload for standard matmul (A and B tiles)."""
+    """Tile payload for standard matmul (A and B tiles).
+
+    Uses explicit dimensions for tile arrays. The tiles are stored as TileTensor
+    with row_major layout and converted to LayoutTensor with swizzled layouts
+    at TMA/MMA boundaries.
+    """
 
     comptime ATileArray = SMemTileArray2D[
-        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
+        Self.a_type,
+        Self.a_dim0,
+        Self.a_dim1,
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime BTileArray = SMemTileArray2D[
-        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
+        Self.b_type,
+        Self.b_dim0,
+        Self.b_dim1,
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime ATile = Self.ATileArray.Tile
     comptime BTile = Self.BTileArray.Tile
@@ -185,17 +201,19 @@ struct BlockScaledTilePayload[
     comptime BTileArray = SMemTileArray2D[
         Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    comptime SFATileArray = SMemTileArray2D[
+    # SF tiles use internal_sf_k_major layout (matches tile_sf_layout_k_major).
+    # MMA extracts layout directly from TileTensor type parameters.
+    comptime sfa_layout = internal_sf_k_major[Self.sfa_dim0, Self.sfa_dim1]
+    comptime sfb_layout = internal_sf_k_major[Self.sfb_dim0, Self.sfb_dim1]
+    comptime SFATileArray = SMemTileArrayWithLayout[
         Self.sfa_type,
-        Self.sfa_dim0,
-        Self.sfa_dim1,
+        Self.sfa_layout,
         Self.num_pipeline_stages,
         128,
     ]
-    comptime SFBTileArray = SMemTileArray2D[
+    comptime SFBTileArray = SMemTileArrayWithLayout[
         Self.sfb_type,
-        Self.sfb_dim0,
-        Self.sfb_dim1,
+        Self.sfb_layout,
         Self.num_pipeline_stages,
         128,
     ]

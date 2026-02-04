@@ -190,6 +190,8 @@ struct B200MatmulSmem[
 
     # ========== Tile Storage (Single Source of Truth) ==========
     # Input tiles: A and B matrices
+    # Tiles are stored with row_major layout and converted to swizzled layouts
+    # at TMA/MMA boundaries using LayoutTensor construction.
     comptime InputTiles = StandardTileStorage[
         Self.a_type,
         Self.b_type,
@@ -210,11 +212,10 @@ struct B200MatmulSmem[
     ]
 
     # Re-export tile array types for external use
-    comptime ATileArray = Self.InputTiles.ATileArray  # TileTensor-based
-    comptime BTileArray = Self.InputTiles.BTileArray  # TileTensor-based
-    # CTileArray is LayoutTensor-based for backward compatibility
-    comptime CTileArray = Self.OutputTiles.CTileArrayLT
-    comptime CTileArrayTT = Self.OutputTiles.CTileArray  # TileTensor-based (new)
+    # Re-export tile array types (all TileTensor-based now)
+    comptime ATileArray = Self.InputTiles.ATileArray
+    comptime BTileArray = Self.InputTiles.BTileArray
+    comptime CTileArray = Self.OutputTiles.CTileArray  # TileTensor-based
 
     # ========== Tile Storage Fields ==========
     var input_tiles: Self.InputTiles
@@ -231,7 +232,7 @@ struct B200MatmulSmem[
 
     @always_inline
     fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        return self.output_tiles.c_tiles()
+        return self.output_tiles.c_tiles_tt()
 
     # ========== Pipeline Storage (Embedded) ==========
     # Each pipeline owns its barrier storage - instantiated here in SMEM
@@ -490,11 +491,11 @@ struct BlackwellMatmulSM100Kernel[
         Self.a_type,
         Self.b_type,
         # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
+        Self.BM,
+        Self.BK,
         # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
+        Self.BN,
+        Self.BK,
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
@@ -541,16 +542,6 @@ struct BlackwellMatmulSM100Kernel[
     comptime b_tma_load_size = Self.b_desc_layout.size()
     comptime a_tma_rows = Self.a_desc_layout.shape[0].value()
     comptime b_tma_rows = Self.b_desc_layout.shape[0].value()
-
-    # Peer tile types - each peer CTA loads a slice matching the TMA descriptor
-    # These have the correct shape (a_desc_layout, b_desc_layout) rather than
-    # the full SMEM tile shape (a_smem_layout, b_smem_layout)
-    comptime APeerTile = SMemTile[
-        Self.a_type, Self.a_desc_layout, alignment=128
-    ]
-    comptime BPeerTile = SMemTile[
-        Self.b_type, Self.b_desc_layout, alignment=128
-    ]
 
     # ========== Epilogue Configuration ==========
     # Note: stageN is typically c_smem_layout.shape[1] for non-transposed output
@@ -771,15 +762,15 @@ struct BlackwellMatmulSM100Kernel[
 
             @parameter
             for j in range(Self.config.k_group_size):
-                # Get tiles using payload accessor
+                # Get tiles using payload accessor - tiles have swizzled layout
                 var a_tile, b_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
                 var is_first_k = (iter_idx + UInt32(j)) == k_start
-                # Convert to LayoutTensor at MMA boundary
+                # Pass TileTensor directly to MMA - layout is encoded in type
                 mma_op.mma(
-                    Self.ATileLT(a_tile.ptr),
-                    Self.BTileLT(b_tile.ptr),
+                    a_tile,
+                    b_tile,
                     UInt32(accum.offset()),
                     init_c=is_first_k,
                 )
@@ -880,15 +871,15 @@ struct BlackwellMatmulSM100Kernel[
 
                 var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
 
-                # Convert to LayoutTensor at TMA boundary
+                # TileTensor directly to loader (uses TileTensor TMA overload)
                 a_loader.load(
-                    Self.ATileLT(a_peer_tile.ptr),
+                    a_peer_tile,
                     barrier[0],
                     k_coord,
                     a_gmem_m_coord,
                 )
                 b_loader.load(
-                    Self.BTileLT(b_peer_tile.ptr),
+                    b_peer_tile,
                     barrier[0],
                     k_coord,
                     b_gmem_n_coord,

@@ -35,7 +35,10 @@ from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
 from linalg.structuring import RegTile, SMemTile
-from ..structured_kernels.tile_types import SMemTileArray2D
+from ..structured_kernels.tile_types import (
+    SMemTileArray2D,
+    SMemTileArray2DRowMajor,
+)
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
@@ -184,12 +187,11 @@ struct BlockwiseFP8Accumulator[
     ](
         mut self,
         b_scales: LayoutTensor[b_scales_dtype, b_scales_layout, MutAnyOrigin],
-        a_scales_tiles: SMemTileArray2D[
+        a_scales_tiles: SMemTileArray2DRowMajor[
             a_scales_dtype,
             a_scales_dim0,
             a_scales_dim1,
             num_pipeline_stages,
-            128,
         ],
         epi_stage: EpilogueKStage[
             num_accum_pipeline_stages,

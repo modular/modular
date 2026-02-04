@@ -123,7 +123,17 @@ from linalg.structuring import SMemArray, SMemPtr
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for input tiles (A, B, scales)
-from .tile_types import SMemTileArray2D
+from .tile_types import (
+    SMemTileArray,
+    SMemTileArray2D,
+    SMemTileArray2DRowMajor,
+    SMemTileArrayWithLayout,
+    internal_sf_k_major,
+)
+
+# Import variadic types for SMemTileArray parameters
+from builtin.variadics import Variadic
+from layout._coord import CoordLike
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
@@ -253,25 +263,27 @@ struct BlockScaledTileStorage[
     comptime BTileArray = SMemTileArray2D[
         Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    # TileTensor-based for C storage (same size as LayoutTensor version)
-    comptime CTileArray = SMemTileArray2D[
+    # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
+    comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    # LayoutTensor-based accessor (kept for backward compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
-    comptime SFATileArray = SMemTileArray2D[
+    # SF tiles use internal_sf_k_major layout (matches tile_sf_layout_k_major).
+    # MMA extracts layout directly from TileTensor type parameters.
+    comptime sfa_layout = internal_sf_k_major[Self.sfa_dim0, Self.sfa_dim1]
+    comptime sfb_layout = internal_sf_k_major[Self.sfb_dim0, Self.sfb_dim1]
+    comptime SFATileArray = SMemTileArrayWithLayout[
         Self.sfa_type,
-        Self.sfa_dim0,
-        Self.sfa_dim1,
+        Self.sfa_layout,
         Self.num_pipeline_stages,
         128,
     ]
-    comptime SFBTileArray = SMemTileArray2D[
+    comptime SFBTileArray = SMemTileArrayWithLayout[
         Self.sfb_type,
-        Self.sfb_dim0,
-        Self.sfb_dim1,
+        Self.sfb_layout,
         Self.num_pipeline_stages,
         128,
     ]
@@ -380,21 +392,21 @@ struct BlockwiseFP8TileStorage[
     comptime BTileArray = SMemTileArray2D[
         Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
     ]
-    # TileTensor-based for C storage (same size as LayoutTensor version)
-    comptime CTileArray = SMemTileArray2D[
+    # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
+    comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    # LayoutTensor-based accessor (kept for backward compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
-    # TileTensor-based for A-scales (explicit dimensions)
-    comptime AScalesTileArray = SMemTileArray2D[
+    # A-scales are 1D vectors (1 x BM) - use row_major, NOT swizzled
+    # Swizzled layout would corrupt indexing for 1D vectors
+    comptime AScalesTileArray = SMemTileArray2DRowMajor[
         Self.a_scales_type,
         Self.a_scales_dim0,
         Self.a_scales_dim1,
         Self.num_pipeline_stages,
-        128,
     ]
 
     # Field order preserves SMEM layout: a, b, c, a_scales
@@ -461,11 +473,11 @@ struct OutputTileStorage[
     # C tile layout derived from dimensions (row_major for TMA compatibility)
     comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
-    # TileTensor-based for C storage
-    comptime CTileArray = SMemTileArray2D[
+    # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
+    comptime CTileArray = SMemTileArray2DRowMajor[
         Self.c_type, Self.c_dim0, Self.c_dim1, Self.num_output_stages, 128
     ]
-    # LayoutTensor-based accessor for tile_writer.mojo compatibility
+    # LayoutTensor-based accessor (kept for backward compatibility)
     comptime CTileArrayLT = LTSMemTileArray[
         Self.c_type, Self.c_tile_layout, Self.num_output_stages, alignment=128
     ]
