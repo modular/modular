@@ -107,6 +107,7 @@ from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from gpu.host.info import B200, GPUInfo
 from nn.mla_decode_sm100 import mla_decode_sm100
+from nn.mla_decode_sm100_kv_fp8 import mla_decode_sm100_kv_fp8
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -391,36 +392,70 @@ fn flare_mla_decoding_dispatch[
         # TODO: add partitioning for SM100
         var num_partitions_value: Int = 1
 
-        mla_decode_sm100[
-            q.dtype,
-            q.layout,
-            k_t,
-            output.dtype,
-            mask_t,
-            score_mod_t,
-            valid_length.layout,
-            config=config,
-            depth = Int(depth),
-            num_heads = Int(num_heads),
-            group = Int(group),
-            use_score_mod=use_score_mod,
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            batch_size,
-            num_partitions_value,
-            max_cache_valid_length,
-            max_prompt_len,
-            valid_length,
-            mask_functor,
-            score_mod_functor,
-            ctx,
-        )
+        @parameter
+        if k_t.dtype == DType.float8_e4m3fn:
+            # convert fp8 KV to bf16 KV
+            mla_decode_sm100_kv_fp8[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                mask_t,
+                score_mod_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                max_prompt_len,
+                valid_length,
+                mask_functor,
+                score_mod_functor,
+                ctx,
+            )
+        else:
+            mla_decode_sm100[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                mask_t,
+                score_mod_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                max_prompt_len,
+                valid_length,
+                mask_functor,
+                score_mod_functor,
+                ctx,
+            )
     else:
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
