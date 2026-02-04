@@ -106,6 +106,9 @@ MODELS = {
     "qwen/qwen2.5-7b-instruct": ["multi"],
     "qwen/qwen2.5-vl-3b-instruct": ["multi"],
     "qwen/qwen2.5-vl-7b-instruct": ["multi"],
+    "qwen/qwen3-30b-a3b-instruct-2507": [
+        "multi",
+    ],
     "qwen/qwen3-8b": ["multi"],
     "qwen/qwen3-vl-4b-instruct": [
         "8xB200",
