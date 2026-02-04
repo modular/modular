@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 from max import functional as F
@@ -28,12 +29,7 @@ from .vae import Decoder, Encoder
 
 
 class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
-    r"""A VAE model with KL loss for Flux2, encoding images into latents and decoding latent representations into images.
-
-    This is similar to AutoencoderKL but uses Flux2-specific configuration
-    with 32 latent channels (vs 4 for Flux1) and supports BatchNorm statistics
-    for latent patchification.
-    """
+    r"""A VAE model with KL loss for encoding images into latents and decoding latent representations into images."""
 
     def __init__(
         self,
@@ -107,28 +103,10 @@ class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
         return self.decoder(z, temb)
 
 
-class BatchNormStats:
-    """Container for BatchNorm statistics.
-
-    This class provides a simple interface to access BatchNorm running statistics
-    (mean and variance) for Flux2's latent patchification process.
-    """
-
-    def __init__(self, running_mean: Tensor, running_var: Tensor) -> None:
-        """Initialize BatchNormStats.
-
-        Args:
-            running_mean: Running mean tensor.
-            running_var: Running variance tensor.
-        """
-        self.running_mean = running_mean
-        self.running_var = running_var
-
-
 class AutoencoderKLFlux2Model(BaseAutoencoderModel):
-    """ComponentModel wrapper for AutoencoderKLFlux2.
+    """MaxModel wrapper for AutoencoderKLFlux2.
 
-    This class provides the ComponentModel interface for AutoencoderKLFlux2, handling
+    This class provides the MaxModel interface for AutoencoderKLFlux2, handling
     configuration, weight loading, model compilation, and BatchNorm statistics
     for Flux2's latent patchification.
     """
@@ -150,8 +128,6 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
             devices: List of devices to use.
             weights: Model weights.
         """
-        # Initialize BatchNorm statistics attributes BEFORE super().__init__()
-        # because super().__init__() calls load_model() which may set these values
         self.bn_running_mean: Tensor | None = None
         self.bn_running_var: Tensor | None = None
 
@@ -303,15 +279,14 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         return self.model
 
     @property
-    def bn(self) -> BatchNormStats:
+    def bn(self) -> SimpleNamespace:
         """Property to access BatchNorm statistics, compatible with diffusers API.
 
-        This returns a simple object with running_mean and running_var attributes
+        Returns a SimpleNamespace with running_mean and running_var attributes
         for compatibility with pipeline code that accesses self.vae.bn.running_mean.
-        The statistics are returned as MAX Tensors.
 
         Returns:
-            BatchNormStats: Object containing running_mean and running_var.
+            SimpleNamespace: Object containing running_mean and running_var attributes.
 
         Raises:
             ValueError: If BatchNorm statistics are not loaded.
@@ -322,4 +297,6 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
                 "Make sure the model weights contain 'bn.running_mean' and 'bn.running_var'."
             )
 
-        return BatchNormStats(self.bn_running_mean, self.bn_running_var)
+        return SimpleNamespace(
+            running_mean=self.bn_running_mean, running_var=self.bn_running_var
+        )
