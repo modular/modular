@@ -239,8 +239,8 @@ def execute_ragged_flash_attention():
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_full_context_length),
     )
 
     mixed_ce_kv_collection = PagedCollectionType(
@@ -271,8 +271,8 @@ def execute_ragged_flash_attention():
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_full_context_length),
     )
 
     # "true CE" execution

@@ -57,7 +57,7 @@ fn test_index_tensor_DLRM() raises:
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
-        input_stack[i] = i
+        input_stack[i] = Int32(i)
 
     # We have two 1D tensors with index_len elements each.
 
@@ -151,7 +151,7 @@ fn test_index_tensor_DLRM_batch() raises:
     var input = TileTensor(input_stack, input_layout)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_3 * dim_4):
-        input_stack[i] = i
+        input_stack[i] = Int32(i)
 
     # We have two 1D tensors with index_len elements each.
 
@@ -244,7 +244,7 @@ fn test_index_tensor_CLIPVIT() raises:
     var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1 * dim_2):
-        input.ptr[i] = i
+        input.ptr[i] = Int32(i)
 
     # We have two 2D tensors with 1 element each.
 
@@ -370,7 +370,7 @@ fn test_index_tensor_llama2_mistral() raises:
     var input = LayoutTensor[input_type, input_layout](input_stack)
     # Initialize with sequential data for test purposes.
     for i in range(dim_0 * dim_1):
-        input.ptr[i] = i
+        input.ptr[i] = Int32(i)
 
     # We have one 2D tensor with index_len elements each.
 
@@ -454,7 +454,7 @@ fn test_advanced_indexing_getitem() raises:
     var input_buffer = TileTensor(input_stack, input_static_layout)
     var input_dyn = input_buffer.make_dynamic[DType.int64]()
     for i in range(input_shape.flattened_length()):
-        input_stack[i] = i
+        input_stack[i] = Int32(i)
 
     # Create tensors for indexing in a somewhat predictable pattern
     comptime index_rank = 2
@@ -472,8 +472,8 @@ fn test_advanced_indexing_getitem() raises:
     var _index_a_dyn = index_a.make_dynamic[DType.int64]()
     var _index_b_dyn = index_b.make_dynamic[DType.int64]()
     for i in range(index_shape.flattened_length()):
-        a_stack[i] = i % 5
-        b_stack[i] = (i + 1) % 5
+        a_stack[i] = UInt64(i % 5)
+        b_stack[i] = UInt64((i + 1) % 5)
     # Create output tensor
     comptime output_rank = input_rank + index_rank - num_index_tensors
     comptime ref_shape = IndexList[output_rank](2, 3, 2, 3)
@@ -621,8 +621,8 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var _index_a_dyn = index_a.make_dynamic[DType.int64]()
     var _index_b_dyn = index_b.make_dynamic[DType.int64]()
     for i in range(index_shape.flattened_length()):
-        a_stack[i] = i % 4
-        b_stack[i] = (i + 1) % 4
+        a_stack[i] = UInt64(i % 4)
+        b_stack[i] = UInt64((i + 1) % 4)
 
     # Create the updates list and set it sequential data to make it easy to read
     comptime updates_rank = 4
@@ -634,7 +634,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     var updates = TileTensor(updates_stack, updates_static_layout)
     var updates_dyn = updates.make_dynamic[DType.int64]()
     for i in range(updates_shape.flattened_length()):
-        updates_stack[i] = 1 + i
+        updates_stack[i] = Int32(1 + i)
 
     @parameter
     @always_inline

@@ -161,7 +161,7 @@ def test_accumulate_with_offsets[
         a_base_stack.unsafe_ptr()
     )
     a_base_offsets[0] = 0
-    a_base_offsets[1] = length
+    a_base_offsets[1] = Int32(length)
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
@@ -186,7 +186,7 @@ def test_accumulate_with_offsets[
     )
 
     a_base_offsets[0] = 0
-    a_base_offsets[1] = 2 * length
+    a_base_offsets[1] = Int32(2 * length)
     acc.accumulate(
         length,
         a.unsafe_ptr(),
@@ -212,8 +212,8 @@ def test_accumulate_with_offsets[
         SIMD[type, simd_size](7.0),
     )
 
-    a_base_offsets[0] = length
-    a_base_offsets[1] = 3 * length
+    a_base_offsets[0] = Int32(length)
+    a_base_offsets[1] = Int32(3 * length)
 
     acc.accumulate(
         length,

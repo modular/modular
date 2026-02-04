@@ -44,7 +44,7 @@ fn test_convtranspose_pads():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = i
+        input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
@@ -116,7 +116,7 @@ fn test_convtranspose():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = i
+        input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
@@ -274,7 +274,7 @@ fn test_convtranspose_attributes():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = i
+        input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.size()](

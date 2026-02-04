@@ -804,7 +804,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
     # Fill sink weights with known values
     for i in range(num_heads):
         sink_weights[i] = Scalar[dtype](
-            0.5 * (i + 1)
+            0.5 * Float64((i + 1))
         )  # 0.5, 1.0 for heads 0, 1
 
     # Test 1: Regular attention without sinks

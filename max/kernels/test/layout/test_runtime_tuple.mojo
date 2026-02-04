@@ -97,7 +97,7 @@ def test_crd2idx():
             )
             # Compute expected result: i * stride[0] + j * stride[1] = i * 4 + j * 1
             var expected = i * 4 + j
-            assert_equal(rt_result, expected)
+            assert_equal(rt_result, UInt64(expected))
 
 
 def test_shape_div():

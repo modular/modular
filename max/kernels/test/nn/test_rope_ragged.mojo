@@ -88,7 +88,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     ](input_row_offsets_layout.static_product)
     ctx.synchronize()
     for i in range(batch_size):
-        input_row_offsets_host_buffer[i] = i * seq_len
+        input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
     input_row_offsets_host_buffer[batch_size] = batch_size * seq_len
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_host_buffer, input_row_offsets_layout

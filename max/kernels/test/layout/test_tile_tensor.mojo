@@ -59,7 +59,7 @@ fn test_distribute() raises:
 
     var expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
     for i in range(16):
-        assert_equal(ptr[i], expected[i])
+        assert_equal(ptr[i], UInt32(expected[i]))
 
 
 fn test_distribute_with_swizzle() raises:
@@ -211,7 +211,7 @@ fn test_tile() raises:
     # Tile (1,1): values 12,13,14,15 -> positions [10,11], [14,15]
     var expected = [0, 1, 4, 5, 2, 3, 6, 7, 8, 9, 12, 13, 10, 11, 14, 15]
     for i in range(16):
-        assert_equal(data[i], expected[i])
+        assert_equal(data[i], UInt32(expected[i]))
 
 
 def test_tensor_span_constructor():
@@ -246,7 +246,7 @@ fn test_slice() raises:
 
     # Initialize with values 0-15 in row-major order
     for i in range(16):
-        data_2d[i] = i
+        data_2d[i] = Int32(i)
 
     # Create 4x4 tensor:
     # [0  1  2  3]
@@ -295,7 +295,7 @@ fn test_slice_3d() raises:
     var data_3d = InlineArray[Int32, 64](uninitialized=True)
 
     for i in range(64):
-        data_3d[i] = i
+        data_3d[i] = Int32(i)
 
     var tensor_3d = TileTensor(data_3d, row_major[4, 4, 4]())
 
@@ -364,7 +364,7 @@ fn test_vectorize() raises:
 
     # Initialize with sequential values
     for i in range(256):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = TileTensor(data, row_major[16, 16]())
 
@@ -403,7 +403,7 @@ fn test_vectorize_non_square() raises:
     var data = InlineArray[Int32, 64](uninitialized=True)
 
     for i in range(64):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 8x8 tensor
     var tensor = TileTensor(data, row_major[8, 8]())
@@ -435,7 +435,7 @@ fn test_vectorize_1d() raises:
     var data = InlineArray[Int32, 16](uninitialized=True)
 
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 16-element 1D tensor
     var tensor = TileTensor(data, row_major[16]())
@@ -515,7 +515,7 @@ fn test_coalesce_2d() raises:
 
     # Initialize with sequential values
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 4x4 tensor
     var tensor = TileTensor(data, row_major[4, 4]())
@@ -539,7 +539,7 @@ fn test_coalesce_3d() raises:
     var data = InlineArray[Int32, 24](uninitialized=True)
 
     for i in range(24):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 2x3x4 tensor
     var tensor = TileTensor(data, row_major[2, 3, 4]())
@@ -563,7 +563,7 @@ fn test_coalesce_1d() raises:
     var data = InlineArray[Int32, 8](uninitialized=True)
 
     for i in range(8):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 8-element 1D tensor
     var tensor = TileTensor(data, row_major[8]())
@@ -585,7 +585,7 @@ fn test_coalesce_element_size() raises:
     var data = InlineArray[Int32, 16](uninitialized=True)
 
     for i in range(16):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create 4x4 tensor
     var tensor = TileTensor(data, row_major[4, 4]())

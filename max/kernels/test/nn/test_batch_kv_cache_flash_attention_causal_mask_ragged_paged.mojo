@@ -188,8 +188,8 @@ def execute_ragged_flash_attention[
                 lookup_table_continuous.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     kv_block_paged_heap = alloc[Scalar[dtype]](
@@ -298,8 +298,8 @@ def execute_ragged_flash_attention[
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     # continuous execution

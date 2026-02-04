@@ -57,7 +57,7 @@ fn test_prepack():
     )
 
     for i in range(len(src_storage)):
-        src_storage[i] = i
+        src_storage[i] = Float32(i)
 
     pack_b[
         False,

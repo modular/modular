@@ -129,7 +129,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
             ),
         ),
         max_seq_length=seq_len,
-        max_cache_length=max_cache_len_in_batch,
+        max_cache_length=UInt32(max_cache_len_in_batch),
     )
 
     # Create and initialize query buffer.

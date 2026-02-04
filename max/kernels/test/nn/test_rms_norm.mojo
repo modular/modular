@@ -34,7 +34,9 @@ fn compute_rms[
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / data.numel()) + eps.cast[DType.float32]())
+    return sqrt(
+        (sum_of_squares / Float32(data.numel())) + eps.cast[DType.float32]()
+    )
 
 
 fn run_rms_norm_cpu[

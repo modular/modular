@@ -223,8 +223,8 @@ def execute_ragged_flash_attention[
                 lookup_table.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_context_length),
     )
 
     var k_cache = kv_collection.get_key_cache(layer_idx)
