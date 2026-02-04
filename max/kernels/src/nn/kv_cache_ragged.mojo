@@ -2519,9 +2519,7 @@ fn _qmatmul_gguf_quantized_common[
 
         @parameter
         if elementwise_lambda_fn:
-            matmul_Q4_K[
-                elementwise_lambda_fn = elementwise_lambda_fn
-            ](
+            matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
                 hidden_state,
                 weight,
                 output,
@@ -2536,9 +2534,7 @@ fn _qmatmul_gguf_quantized_common[
 
         @parameter
         if elementwise_lambda_fn:
-            matmul_Q6_K[
-                elementwise_lambda_fn = elementwise_lambda_fn
-            ](
+            matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
                 hidden_state,
                 weight,
                 output,
