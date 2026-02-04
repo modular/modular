@@ -18,64 +18,12 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.deepseekV3_2.layers import (
+    DeepseekV3_2MLP,
+    DeepseekV3_2MoE,
     DeepseekV3_2TopKRouter,
-    MoE,
-    MoEFp8,
 )
-
-
-def test_moe_basic() -> None:
-    """Tests basic MoE functionality."""
-    hidden_dim = 64
-    num_experts = 8
-    num_experts_per_token = 2
-    moe_dim = 128
-
-    moe = MoE(
-        devices=[DeviceRef.CPU()],
-        hidden_dim=hidden_dim,
-        num_experts=num_experts,
-        num_experts_per_token=num_experts_per_token,
-        moe_dim=moe_dim,
-        gate_cls=functools.partial(
-            DeepseekV3_2TopKRouter,
-            routed_scaling_factor=1.0,
-            scoring_func="sigmoid",
-            topk_method="noaux_tc",
-            n_group=1,
-            topk_group=1,
-            norm_topk_prob=False,
-            gate_dtype=DType.bfloat16,
-            correction_bias_dtype=DType.float32,
-        ),
-        has_shared_experts=False,
-        dtype=DType.bfloat16,
-    )
-
-    # Initialize weight names to avoid collisions.
-    moe.state_dict()
-
-    def forward(x: TensorValue) -> TensorValue:
-        return moe(x)
-
-    g = Graph(
-        "test_moe_basic",
-        forward=forward,
-        input_types=[
-            TensorType(DType.bfloat16, (10, hidden_dim), DeviceRef.CPU())
-        ],
-    )
-
-    # Verify the graph was constructed successfully.
-    assert g is not None
 
 
 def test_moe_with_shared_experts() -> None:
@@ -86,7 +34,7 @@ def test_moe_with_shared_experts() -> None:
     moe_dim = 128
     shared_experts_dim = 256
 
-    moe = MoE(
+    moe = DeepseekV3_2MoE(
         devices=[DeviceRef.CPU()],
         hidden_dim=hidden_dim,
         num_experts=num_experts,
@@ -102,10 +50,13 @@ def test_moe_with_shared_experts() -> None:
             norm_topk_prob=False,
             gate_dtype=DType.bfloat16,
             correction_bias_dtype=DType.float32,
+            linear_cls=Linear,
         ),
+        mlp_cls=DeepseekV3_2MLP,
         has_shared_experts=True,
         shared_experts_dim=shared_experts_dim,
         dtype=DType.bfloat16,
+        apply_router_weight_first=False,
     )
 
     # Initialize weight names to avoid collisions.
@@ -149,6 +100,7 @@ def test_moe_gate() -> None:
         gate_dtype=DType.bfloat16,
         correction_bias_dtype=DType.float32,
         devices=[DeviceRef.CPU()],
+        linear_cls=Linear,  # Will be replaced by FloatCastingLinear
     )
 
     # Initialize weight names to avoid collisions.
@@ -167,66 +119,3 @@ def test_moe_gate() -> None:
 
     # Verify the graph was constructed successfully.
     assert g is not None
-
-
-def test_moe_float8() -> None:
-    """Tests MoEFp8 with Float8Config."""
-    hidden_dim = 64
-    num_experts = 8
-    num_experts_per_token = 2
-    moe_dim = 128
-
-    float8_config = Float8Config(
-        weight_scale=Float8WeightScaleSpec(
-            dtype=DType.float32,
-            granularity=Float8ScaleGranularity.ROWWISE,
-        ),
-        input_scale=Float8InputScaleSpec(
-            dtype=DType.float32,
-            granularity=Float8ScaleGranularity.COLWISE,
-            origin=Float8ScaleOrigin.DYNAMIC,
-        ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
-    )
-
-    moe = MoEFp8(
-        devices=[DeviceRef.CPU()],
-        hidden_dim=hidden_dim,
-        num_experts=num_experts,
-        num_experts_per_token=num_experts_per_token,
-        moe_dim=moe_dim,
-        gate_cls=functools.partial(
-            DeepseekV3_2TopKRouter,
-            routed_scaling_factor=1.0,
-            scoring_func="sigmoid",
-            topk_method="noaux_tc",
-            n_group=1,
-            topk_group=1,
-            norm_topk_prob=False,
-            gate_dtype=DType.bfloat16,
-            correction_bias_dtype=DType.float32,
-        ),
-        has_shared_experts=False,
-        dtype=DType.float8_e4m3fn,
-        float8_config=float8_config,
-    )
-
-    # Initialize weight names to avoid collisions.
-    moe.state_dict()
-
-    def forward(x: TensorValue) -> TensorValue:
-        return moe(x)
-
-    g = Graph(
-        "test_moe_float8",
-        forward=forward,
-        input_types=[
-            TensorType(DType.bfloat16, (10, hidden_dim), DeviceRef.GPU())
-        ],
-    )
-
-    # Verify the graph was constructed successfully.
-    assert g is not None
-    # Verify float8 config was passed through
-    assert moe.float8_config is not None

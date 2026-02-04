@@ -23,7 +23,7 @@ from max.nn.legacy import (
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.pipelines.architectures.deepseekV3_2.layers import MLP
+from max.pipelines.architectures.deepseekV3_2.layers import DeepseekV3_2MLP
 
 
 def test_mlp_bfloat16() -> None:
@@ -31,11 +31,12 @@ def test_mlp_bfloat16() -> None:
     hidden_dim = 64
     feed_forward_length = 128
 
-    mlp = MLP(
+    mlp = DeepseekV3_2MLP(
         dtype=DType.bfloat16,
+        quantization_encoding=None,
         hidden_dim=hidden_dim,
         feed_forward_length=feed_forward_length,
-        device=DeviceRef.CPU(),
+        devices=[DeviceRef.CPU()],
     )
 
     # Initialize weight names to avoid collisions.
@@ -61,11 +62,12 @@ def test_mlp_float32() -> None:
     hidden_dim = 64
     feed_forward_length = 128
 
-    mlp = MLP(
+    mlp = DeepseekV3_2MLP(
         dtype=DType.float32,
+        quantization_encoding=None,
         hidden_dim=hidden_dim,
         feed_forward_length=feed_forward_length,
-        device=DeviceRef.CPU(),
+        devices=[DeviceRef.CPU()],
     )
 
     # Initialize weight names to avoid collisions.
@@ -112,11 +114,12 @@ def test_mlp_with_float8_config() -> None:
     )
 
     # Float8 requires float8 weight dtype, not bfloat16
-    mlp = MLP(
+    mlp = DeepseekV3_2MLP(
         dtype=DType.float8_e4m3fn,
+        quantization_encoding=None,
         hidden_dim=hidden_dim,
         feed_forward_length=feed_forward_length,
-        device=DeviceRef.CPU(),
+        devices=[DeviceRef.CPU()],
         float8_config=float8_config,
     )
 
