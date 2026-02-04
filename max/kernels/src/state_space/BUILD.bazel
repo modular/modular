@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "state_space",
+    srcs = glob(
+        ["*.mojo"],
+        exclude = ["*_test.mojo"],
+    ),
+    validate_missing_docs = False,
+    deps = [
+        "//max:compiler_internal",
+        "//max:layout",
+        "//max:linalg",
+        "//max:register",
+        "//max:tensor",
+        "@mojo//:std",
+    ],
+)
