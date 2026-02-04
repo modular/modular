@@ -372,26 +372,11 @@ fn sleep(sec: Float64):
             while now < end:
                 var remaining = end - now
                 if remaining > 3000:  # > ~30us remaining
-                    inlined_assembly[
-                        "s_sleep 127",
-                        NoneType,
-                        constraints="",
-                        has_side_effect=True,
-                    ]()
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(127))
                 elif remaining > 400:  # > ~4us remaining
-                    inlined_assembly[
-                        "s_sleep 15",
-                        NoneType,
-                        constraints="",
-                        has_side_effect=True,
-                    ]()
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(15))
                 else:
-                    inlined_assembly[
-                        "s_sleep 1",
-                        NoneType,
-                        constraints="",
-                        has_side_effect=True,
-                    ]()
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
                 now = _amd_gpu_realtime()
             return
         else:
