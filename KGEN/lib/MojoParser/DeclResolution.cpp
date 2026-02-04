@@ -3299,6 +3299,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (synthesizedDtor && !hasNonTrivialDestructor)
     structOp.setDestructorAttr({});
 
+  if (conformsToTrait("RegisterType"))
+    structOp.setConvention(TypeConvention::RegisterPassable);
+
+  // TrivialRegisterType conforms to RegisterType, so should set this after
+  // setting RegisterPassable.
   if (conformsToTrait("TrivialRegisterType"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
@@ -3639,12 +3644,19 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     }
   }
 
-  bool isTrivialRegisterType =
-      traitOp.getSymName() == "TrivialRegisterType" ||
-      llvm::any_of(parentTraits, [](SymbolRefAttr symbol) {
-        return symbol.getLeafReference().getValue() == "TrivialRegisterType";
-      });
-  if (isTrivialRegisterType)
+  auto conformsToTrait = [&](StringRef traitName) {
+    return traitOp.getSymName() == traitName ||
+           llvm::any_of(parentTraits, [&](SymbolRefAttr symbol) {
+             return symbol.getLeafReference().getValue() == traitName;
+           });
+  };
+
+  if (conformsToTrait("RegisterType"))
+    traitOp.setConvention(TypeConvention::RegisterPassable);
+
+  // TrivialRegisterType conforms to RegisterType, so should set this after
+  // setting RegisterPassable.
+  if (conformsToTrait("TrivialRegisterType"))
     traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
   // Check if the trait conforms to ImplicitlyDestructible by checking the
@@ -3652,10 +3664,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // lookupBuiltinTrait here because they would trigger signature resolution
   // and cause a cycle when resolving base traits like AnyType.
   bool conformsToImplicitlyDestructible =
-      traitOp.getSymName() == "ImplicitlyDestructible" ||
-      llvm::any_of(parentTraits, [](SymbolRefAttr symbol) {
-        return symbol.getLeafReference().getValue() == "ImplicitlyDestructible";
-      });
+      conformsToTrait("ImplicitlyDestructible");
 
   // Parse @explicit_destroy decorator if present.
   std::optional<std::string> linearTypeErrorMsg;
