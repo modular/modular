@@ -131,8 +131,7 @@ struct ParamVarArg[F: Int, *I: Int](TrivialRegisterType):
         comptime BoundMore = Unbound[1, 2, 1]
 
 
-@register_passable
-struct ParamType[x: __mlir_type.index]:
+struct ParamType[x: __mlir_type.index](RegisterType):
     pass
 
 

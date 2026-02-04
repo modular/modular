@@ -186,8 +186,7 @@ fn implicit_func_conversion():
     func_arg_conversion(take_int)
 
 # CHECK-LABEL: lit.struct.decl @RegPassable
-@register_passable
-struct RegPassable(ImplicitlyCopyable):
+struct RegPassable(ImplicitlyCopyable, RegisterType):
   var value: Int
   # CHECK-LABEL: lit.fn @"__init__
   # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
@@ -417,8 +416,7 @@ trait Boolable:
     fn __bool__(self) -> Bool:
         ...
 
-@register_passable
-struct Boolish(Boolable, ImplicitlyCopyable):
+struct Boolish(Boolable, ImplicitlyCopyable, RegisterType):
   fn __copyinit__(out self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 
@@ -933,8 +931,7 @@ struct MyInlineIntInit:
         # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%value, %0)
         self.value = value
 
-@register_passable
-struct ConstDynamicObject:
+struct ConstDynamicObject(RegisterType):
     fn __init__(out self):
         return
 
@@ -991,8 +988,7 @@ struct MemoryType:
   fn __copyinit__(out self, other: Self):
     pass
 
-@register_passable
-struct RegType: pass
+struct RegType(RegisterType): pass
 
 # CHECK-LABEL: lit.struct.decl @ParamType
 # CHECK-SAME: <a: !Int>

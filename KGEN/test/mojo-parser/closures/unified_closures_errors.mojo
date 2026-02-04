@@ -54,8 +54,7 @@ fn definesClosure():
         pass
 
 
-@register_passable
-struct Bar(ImplicitlyCopyable):
+struct Bar(ImplicitlyCopyable, RegisterType):
     var x: Int
     var y: Int
 

@@ -102,8 +102,7 @@ fn testAttrConcatWithoutType[
 
 
 # CHECK-LABEL: lit.struct.decl @MyPointer<elType: type>
-@register_passable
-struct MyPointer[elType: __mlir_type.`!kgen.type`]:
+struct MyPointer[elType: __mlir_type.`!kgen.type`](RegisterType):
     comptime StorageTy = __mlir_type[`!kgen.pointer<`, Self.elType, `>`]
     # CHECK: lit.struct.field value : !kgen.param<sugar_member_alias(!lit.struct<#MyPointer <:type elType>>, "StorageTy", pointer<elType>)>
     var value: Self.StorageTy

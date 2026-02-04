@@ -11,8 +11,7 @@
 
 
 @fieldwise_init
-@register_passable
-struct RegPassable(ImplicitlyCopyable):
+struct RegPassable(ImplicitlyCopyable, RegisterType):
     pass
 
 @fieldwise_init

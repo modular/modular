@@ -7,15 +7,13 @@
 
 comptime NoneType = __mlir_type.`!kgen.none`
 
-@register_passable
-struct Optional[T: __TypeOfAllTypes]:
+struct Optional[T: __TypeOfAllTypes](RegisterType):
     @implicit
     fn __init__(out self, none: NoneType):
         pass
 
 
-@register_passable
-struct Param[x: Int]:
+struct Param[x: Int](RegisterType):
     pass
 
 # Check the TypeSignatureType attribute. This is the only memory-only
