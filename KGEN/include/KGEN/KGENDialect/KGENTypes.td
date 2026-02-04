@@ -502,7 +502,9 @@ def KGEN_BuildInfoType : KGENType<"BuildInfo", "build_info"> {
 def KGEN_StructType : KGENType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<ContextuallyEvaluatedTypeInterface,
+                                ["evaluateWithContext"]>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in

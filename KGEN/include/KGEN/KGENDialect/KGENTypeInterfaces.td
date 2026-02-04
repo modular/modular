@@ -113,6 +113,43 @@ def StructTypeInterface : TypeInterface<"StructTypeInterface"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ContextuallyEvaluatedTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ContextuallyEvaluatedTypeInterface :
+    TypeInterface<"ContextuallyEvaluatedTypeInterface"> {
+  let description = [{
+    This interface describes types whose evaluation may require additional
+    context. This is in contrast to "simple" types that can be simplified
+    context-free at construction time.
+
+    Types implementing this interface can provide an `evaluateWithContext`
+    method that performs context-dependent evaluation using the provided
+    `ParameterEvaluationContext`. The context provides hooks for struct
+    resolution, conformance lookup, and error reporting.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Evaluate this type using the provided context. Returns the evaluated
+      result on success, or failure() if evaluation cannot proceed (e.g., if
+      required information is not yet available). A null Type result with
+      success indicates async evaluation was triggered and the caller should
+      retry later.
+
+      The default implementation returns failure(), indicating the type
+      does not support generalized contextual evaluation.
+    }],
+    "FailureOr<Type>", "evaluateWithContext",
+    (ins "ParameterEvaluationContext &":$context), [{}], [{
+      return failure();
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // SugaredTypeInterface
 //===----------------------------------------------------------------------===//
 

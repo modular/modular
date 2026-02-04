@@ -149,7 +149,7 @@ public:
   /// expressions should emit errors. In non-materialization contexts
   /// (e.g., speculative partial-evaluation during lowering), ill-formed
   /// expressions simply persist unevaluated.
-  virtual bool isMaterializationContext() const { return false; }
+  virtual bool isMaterializationContext() const;
 
   /// Emit an error for an ill-formed expression during materialization.
   /// This is a no-op in non-materialization contexts, but callers can
