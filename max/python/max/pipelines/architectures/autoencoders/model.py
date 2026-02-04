@@ -171,29 +171,27 @@ class BaseAutoencoderModel(ComponentModel):
             return {"latent_dist": posterior}
         return posterior
 
-    def decode(self, *args, **kwargs) -> Tensor:
+    def decode(self, z: Tensor) -> Tensor:
         """Decode latents to images using compiled decoder.
 
         Args:
-            *args: Input arguments (typically latents as Tensor).
-            **kwargs: Additional keyword arguments.
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
 
         Returns:
             Tensor: Decoded image tensor.
         """
-        return self.model(*args, **kwargs)
+        return self.model(z)
 
-    def __call__(self, *args, **kwargs) -> Tensor:
+    def __call__(self, z: Tensor) -> Tensor:
         """Call the decoder model to decode latents to images.
 
         This method provides a consistent interface with other ComponentModel
         implementations. It is an alias for decode().
 
         Args:
-            *args: Input arguments (typically latents as Tensor).
-            **kwargs: Additional keyword arguments.
+            z: Input latent tensor of shape [N, C_latent, H_latent, W_latent].
 
         Returns:
             Tensor: Decoded image tensor.
         """
-        return self.decode(*args, **kwargs)
+        return self.decode(z)

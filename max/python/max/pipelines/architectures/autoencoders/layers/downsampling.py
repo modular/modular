@@ -122,13 +122,11 @@ class Downsample2D(Module[[Tensor], Tensor]):
                     f"Got channels={self.channels}, out_channels={self.out_channels}"
                 )
 
-    def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply 2D downsampling with optional convolution.
 
         Args:
             hidden_states: Input tensor of shape [N, C, H, W].
-            *args: Additional positional arguments (ignored, kept for compatibility).
-            **kwargs: Additional keyword arguments (ignored, kept for compatibility).
 
         Returns:
             Downsampled tensor of shape [N, C_out, H//2, W//2].

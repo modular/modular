@@ -113,13 +113,11 @@ class DownEncoderBlock2D(Module[[Tensor], Tensor]):
             )
             self.downsamplers = ModuleList([downsampler])
 
-    def forward(self, hidden_states: Tensor, *args, **kwargs) -> Tensor:
+    def forward(self, hidden_states: Tensor) -> Tensor:
         """Apply DownEncoderBlock2D forward pass.
 
         Args:
             hidden_states: Input tensor of shape [N, C_in, H, W].
-            *args: Additional positional arguments (ignored, kept for compatibility).
-            **kwargs: Additional keyword arguments (ignored, kept for compatibility).
 
         Returns:
             Output tensor of shape [N, C_out, H//2, W//2] (if downsampling) or
