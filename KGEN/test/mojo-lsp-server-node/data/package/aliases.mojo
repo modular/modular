@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import RTLD
+from ffi import RTLD
 
 comptime IntAlias = 12
 """Int alias summary
