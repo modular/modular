@@ -65,13 +65,6 @@ from memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
 from algorithm import elementwise
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from gpu.primitives.grid_controls import (
-    PDLLevel,
-    pdl_launch_attributes,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
-)
-from linalg.matmul.gpu.sm100.block_scaled_gemv import block_scaled_gemv
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -475,13 +468,9 @@ fn naive_block_scaled_matmul[
         " NVFP4 scales and MXF8F6F4 scaling kind is supported for MXFP8 input"
         " dtype with MXFP8 scales for block scaled matmul"
     )
-    __comptime_assert c_type in (
-        DType.bfloat16,
-        DType.float32,
-        DType.float16,
-    ), (
-        "Only bfloat16 or float32 or float16 is supported for output dtype for"
-        " block scaled matmul matmul"
+    __comptime_assert c_type in (DType.bfloat16, DType.float32), (
+        "Only bfloat16 or float32 is supported for output dtype for block"
+        " scaled matmul matmul"
     )
 
     var M = c.dim(0)
@@ -1207,8 +1196,6 @@ fn block_scaled_matmul[
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
     a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
@@ -1258,31 +1245,9 @@ fn block_scaled_matmul[
         sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
     ), ""
 
-    var m = c.dim(0)
-
-    if m == 1:
-        block_scaled_gemv[
-            umma_kind = UMMAKind.KIND_MXF4NVF4,
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            tensor_sf,
-            ctx,
-        )
-        return
-
     block_scaled_matmul_with_epilogue[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        pdl_level=pdl_level,
     ](
         c,
         a,
@@ -1314,7 +1279,6 @@ fn block_scaled_matmul_with_epilogue[
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1365,38 +1329,6 @@ fn block_scaled_matmul_with_epilogue[
     var n = c.dim(1)
     if m == 0 or n == 0:
         return
-
-    logger.info("Executing Block Scaled NVFP4 GEMM with epilogue")
-    logger.info("Problem Shape: MN=[", m, ", ", n, "]", sep="")
-    logger.info(
-        "A Scales Shape: [",
-        a_scales.dim(0),
-        ", ",
-        a_scales.dim(1),
-        ", ",
-        a_scales.dim(2),
-        ", ",
-        a_scales.dim(3),
-        ", ",
-        a_scales.dim(4),
-        "]",
-        sep="",
-    )
-    logger.info(
-        "B Scales Shape: [",
-        b_scales.dim(0),
-        ", ",
-        b_scales.dim(1),
-        ", ",
-        b_scales.dim(2),
-        ", ",
-        b_scales.dim(3),
-        ", ",
-        b_scales.dim(4),
-        "]",
-        sep="",
-    )
-    logger.info("Tensor SF: ", tensor_sf, sep="")
 
     @parameter
     if not elementwise_lambda_fn:
