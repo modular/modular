@@ -91,12 +91,12 @@ def test_slice[
     )
 
     for dim in range(outer_rank):
-        start_tensor[dim] = starts[dim]
-        end_tensor[dim] = stops[dim]
-        step_tensor[dim] = steps[dim]
+        start_tensor[dim] = Scalar[DType.int](starts[dim])
+        end_tensor[dim] = Scalar[DType.int](stops[dim])
+        step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.ptr[i] = i
+        in_tensor.ptr[i] = Scalar[dtype](i)
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(

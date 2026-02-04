@@ -54,7 +54,7 @@ fn test_distribute() raises:
         # Fill the fragment positions with the thread id (0..3)
         for i in range(2):
             for j in range(2):
-                frag[(Idx(i), Idx(j))] = counter
+                frag[(Idx(i), Idx(j))] = UInt32(counter)
                 counter += 1
 
     var expected = [0, 4, 1, 5, 8, 12, 9, 13, 2, 6, 3, 7, 10, 14, 11, 15]
@@ -101,7 +101,7 @@ fn test_distribute_with_swizzle() raises:
         # Write thread ID to each position in the fragment
         for i in range(2):
             for j in range(2):
-                frag[(Idx(i), Idx(j))] = th_id
+                frag[(Idx(i), Idx(j))] = UInt32(th_id)
 
     # Thread layout row_major[2, 2] has strides [2, 1]
     # Thread 0: coord (0, 0) -> base offset 0*4 + 0*1 = 0, swizzle(0) = 0
@@ -170,8 +170,8 @@ fn test_distribute_swizzle_vs_no_swizzle() raises:
 
         for i in range(2):
             for j in range(2):
-                frag_no_swizzle[(Idx(i), Idx(j))] = th_id
-                frag_with_swizzle[(Idx(i), Idx(j))] = th_id
+                frag_no_swizzle[(Idx(i), Idx(j))] = UInt32(th_id)
+                frag_with_swizzle[(Idx(i), Idx(j))] = UInt32(th_id)
 
     # Verify that the two arrays are different (swizzle changes layout)
     var differ = False
@@ -201,7 +201,7 @@ fn test_tile() raises:
 
             for i in range(2):
                 for j in range(2):
-                    current_tile[(Idx(i), Idx(j))] = counter
+                    current_tile[(Idx(i), Idx(j))] = UInt32(counter)
                     counter += 1
 
     # Expected layout after tiling:
@@ -531,7 +531,7 @@ fn test_coalesce_2d() raises:
 
     # Verify elements are accessible in order
     for i in range(16):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_3d() raises:
@@ -555,7 +555,7 @@ fn test_coalesce_3d() raises:
 
     # Verify elements are accessible in order
     for i in range(24):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_1d() raises:
@@ -577,7 +577,7 @@ fn test_coalesce_1d() raises:
 
     # Verify elements
     for i in range(8):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_coalesce_element_size() raises:
@@ -605,7 +605,7 @@ fn test_coalesce_element_size() raises:
 
     # Verify all elements accessible
     for i in range(16):
-        assert_equal(coalesced[(Idx(i),)], i)
+        assert_equal(coalesced[(Idx(i),)], Int32(i))
 
 
 fn test_to_nd_buffer_partially_dynamic() raises:

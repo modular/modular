@@ -85,7 +85,7 @@ fn test_softmax_2pass():
     var in_stack = InlineArray[Scalar[type], sz](uninitialized=True)
     var in_buf = LayoutTensor[type, Layout.row_major(sz)](in_stack)
     for i in range(sz):
-        in_buf[i] = i
+        in_buf[i] = Float32(i)
     var out_stack = InlineArray[Scalar[type], sz](uninitialized=True)
     var out_buf = LayoutTensor[type, Layout.row_major(sz)](out_stack).fill(0)
 

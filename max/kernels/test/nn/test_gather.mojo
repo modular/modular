@@ -54,7 +54,7 @@ fn test_gather() raises:
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
-            indices[i] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
         indices[0] = -1
         indices[1] = -num_rows
 
@@ -141,7 +141,7 @@ fn test_gather_3d() raises:
         ].stack_allocation[stack_alignment=64]()
 
         for i in range(num_indices):
-            indices[i, 0] = i // 2
+            indices[i, 0] = Scalar[indices_type](i // 2)
 
         # create output
         var output = LayoutTensor[
@@ -232,7 +232,7 @@ fn test_gather_empty_indices() raises:
         )
 
         for i in range(num_indices):
-            indices[i] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
 
         # create output
         var output_stack = InlineArray[Float32, num_rows * row_size](

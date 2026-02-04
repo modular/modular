@@ -208,7 +208,7 @@ struct qgemm_Q4_0(QuantizedGemm):
 
         for j in range(2):
             var idx = j * _block_Q4_0.group_size // 2
-            var q_bits = (q_packed_bits >> (j * 4)) & 15
+            var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
             b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum: Int32 = 0
@@ -336,7 +336,7 @@ struct qgemm_Q4_K(QuantizedGemm):
 
             for j in range(2):
                 var idx = i * 2 + j * 32
-                var q_bits = (q_packed_bits >> (j * 4)) & 15
+                var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
                 b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         var sum2: Int32 = 0
@@ -439,7 +439,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
             for j in range(2):
                 var idx = i * 2 + j * 64
-                var q_bits = (q_packed_bits >> (j * 4)) & 15
+                var q_bits = (q_packed_bits >> UInt8(j * 4)) & 15
                 b_quant_data.unsafe_ptr().store(idx, q_bits)
 
         # Decode the top bits of the weight data.
@@ -450,7 +450,7 @@ struct qgemm_Q6_K(QuantizedGemm):
             for j in range(4):
                 var idx = i * 4 + j * 32
                 var q_bits_lo = b_quant_data.unsafe_ptr().load[width=32](idx)
-                var q_bits_hi = ((q_packed_bits >> (j * 2)) & 3) << 4
+                var q_bits_hi = ((q_packed_bits >> UInt8(j * 2)) & 3) << 4
                 b_quant_data.unsafe_ptr().store(idx, q_bits_hi | q_bits_lo)
 
         var sum = dot_product_QK_K[

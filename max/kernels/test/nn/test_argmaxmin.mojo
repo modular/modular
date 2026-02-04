@@ -36,7 +36,7 @@ def test_argn():
     var output = TileTensor(output_stack, output_shape)
 
     for i in range(size):
-        vector[i] = i
+        vector[i] = Int32(i)
 
     argmax(
         vector.make_dynamic[DType.int64](),
@@ -78,7 +78,7 @@ def test_argn_2():
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = j
+            vector[i, j] = Float32(j)
 
     argmax(
         vector.make_dynamic[DType.int64](),
@@ -128,7 +128,7 @@ def test_argn_2_test_2():
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = i * size + j
+            vector[i, j] = Float32(i * size + j)
             if i % 2:
                 vector[i, j] *= -1
 
@@ -176,7 +176,7 @@ def test_argn_2_neg_axis():
 
     for i in range(batch_size):
         for j in range(size):
-            vector[i, j] = i * size + j
+            vector[i, j] = Float32(i * size + j)
             if i % 2:
                 vector[i, j] *= -1
 

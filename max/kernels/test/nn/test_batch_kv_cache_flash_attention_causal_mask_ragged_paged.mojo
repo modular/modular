@@ -79,14 +79,14 @@ def execute_ragged_flash_attention[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets[i] = total_length
-        cache_lengths_nd[i] = cache_lengths[i]
+        input_row_offsets[i] = UInt32(total_length)
+        cache_lengths_nd[i] = UInt32(cache_lengths[i])
         max_full_context_length = max(
             max_full_context_length, cache_lengths[i] + valid_lengths[i]
         )
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
-    input_row_offsets[batch_size] = total_length
+    input_row_offsets[batch_size] = UInt32(total_length)
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged_heap = alloc[Scalar[dtype]](
@@ -236,7 +236,7 @@ def execute_ragged_flash_attention[
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut[bs, block_idx] = randval
+            paged_lut[bs, block_idx] = UInt32(randval)
 
             for kv_idx in range(2):
                 var dest = kv_block_paged.ptr + kv_block_paged._offset(

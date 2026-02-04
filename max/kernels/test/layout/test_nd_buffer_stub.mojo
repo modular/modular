@@ -45,7 +45,7 @@ fn linspace_fill[
     dtype: DType, rank: Int, shape: DimList
 ](mut buff: NDBuffer[mut=True, dtype, rank, _, shape]):
     for i in range(buff.size()):
-        buff.data[i] = i
+        buff.data[i] = Scalar[dtype](i)
 
 
 fn print_buff[

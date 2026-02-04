@@ -138,7 +138,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
         ),
     )
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
+        input_row_offsets[i] = UInt32(i * seq_len)
     input_row_offsets[batch_size] = batch_size * seq_len
 
     q = LayoutTensor[

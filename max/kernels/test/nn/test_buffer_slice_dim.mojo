@@ -55,7 +55,7 @@ def test_slice_dim[
     print("In strides:", stride)
 
     for i in range(numelems):
-        in_tensor.ptr[i] = i
+        in_tensor.ptr[i] = Scalar[dtype](i)
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_dim_as_view[dtype, dim](

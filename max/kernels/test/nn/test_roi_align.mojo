@@ -41,7 +41,7 @@ def test_roi_align_avg[scale_type: DType]():
 
     for i in range(10):
         for j in range(10):
-            input[0, i, j, 0] = i * 10 + j
+            input[0, i, j, 0] = Float32(i * 10 + j)
 
     rois[0, 0] = 0
     rois[0, 1] = 0
@@ -112,7 +112,7 @@ def test_roi_align_max():
 
     for i in range(10):
         for j in range(10):
-            input[0, i, j, 0] = i * 10 + j
+            input[0, i, j, 0] = Float32(i * 10 + j)
 
     rois[0, 0] = 0
     rois[0, 1] = 0
@@ -183,7 +183,7 @@ def test_roi_align_KERN_692():
 
     for i in range(6):
         for j in range(6):
-            input[0, i, j, 0] = i * 6 + j + 1
+            input[0, i, j, 0] = Float32(i * 6 + j + 1)
 
     rois[0, 0] = 0
     rois[0, 1] = -2

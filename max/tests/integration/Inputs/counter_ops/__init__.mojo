@@ -78,5 +78,5 @@ struct ReadCounter:
     fn execute[
         stride: Int
     ](output: OutputTensor[dtype = DType.int32, rank=1], c: Counter[stride]):
-        output[0] = c.a
-        output[1] = c.b
+        output[0] = Int32(c.a)
+        output[1] = Int32(c.b)

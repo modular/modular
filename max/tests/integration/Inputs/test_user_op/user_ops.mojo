@@ -45,7 +45,7 @@ struct MakeSimdPair:
     @staticmethod
     fn execute[P0: Int, P1: Int]() -> SIMDPair[P0, P1]:
         return SIMDPair[P0, P1](
-            iota[DType.int32, P0](), iota[DType.int32, P1](P0)
+            iota[DType.int32, P0](), iota[DType.int32, P1](Int32(P0))
         )
 
 
