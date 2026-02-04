@@ -50,7 +50,7 @@ _EXTRA_CONSTRAINTS = {
     "test_wmma.mojo": ["//:nvidia_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
     "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
-    "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366
+    "test_print_elementwise.mojo": ["//:nvidia_gpu"],  # Times out on AMD due to 262K print statements
     "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_capture_trait_type.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_printf.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405

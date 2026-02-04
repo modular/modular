@@ -27,6 +27,13 @@ fn _verify_sleep_intrinsics_nvidia(asm: StringSlice) raises -> None:
     assert_true("nanosleep.u32" in asm)
 
 
+@always_inline
+fn _verify_sleep_intrinsics_amd(asm: StringSlice) raises -> None:
+    # AMD sleep uses s_memrealtime for timing and s_sleep for sleeping.
+    assert_true("s_memrealtime" in asm)
+    assert_true("s_sleep" in asm)
+
+
 def test_sleep_intrinsics_sm80():
     var asm = _compile_code[
         sleep_intrinsics, target = get_gpu_target["sm_80"]()
@@ -41,12 +48,19 @@ def test_sleep_intrinsics_sm90():
     _verify_sleep_intrinsics_nvidia(asm)
 
 
-# Note: AMD GPU sleep test removed because time.sleep() is not supported on
-# AMD GPUs. The s_sleep instruction only accepts values 0-15 and sleeps for
-# a hardware-dependent number of cycles, making accurate wall-clock sleep
-# impossible.
+def test_sleep_intrinsics_gfx942():
+    var asm = _compile_code[
+        sleep_intrinsics, target = get_gpu_target["gfx942"]()
+    ]().asm
+    _verify_sleep_intrinsics_amd(asm)
+
+
+def test_sleep_intrinsics_gfx950():
+    var asm = _compile_code[
+        sleep_intrinsics, target = get_gpu_target["gfx950"]()
+    ]().asm
+    _verify_sleep_intrinsics_amd(asm)
 
 
 def main():
-    test_sleep_intrinsics_sm80()
-    test_sleep_intrinsics_sm90()
+    TestSuite.discover_tests[__functions_in_module()]().run()
