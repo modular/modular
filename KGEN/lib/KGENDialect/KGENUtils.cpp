@@ -1623,12 +1623,10 @@ ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
       return failure();
     if (p.parseRParen())
       return failure();
-    // Create an IntegerAttr, which is a TypedAttr.
-    minAlignment =
-        IntegerAttr::get(IntegerType::get(p.getContext(), 64), value);
+    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), value);
   } else {
     // Default alignment is 1 (no explicit alignment).
-    minAlignment = IntegerAttr::get(IntegerType::get(p.getContext(), 64), 1);
+    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), 1);
   }
   return success();
 }

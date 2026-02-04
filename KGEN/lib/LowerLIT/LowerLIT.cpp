@@ -262,9 +262,7 @@ void LITLowerer::lowerLITOps(FnOp func) {
       TypedAttr alignment;
       if (TypedAttr minAlign =
               getStructMinAlignment(varDecl.getType().getElementType())) {
-        // Convert from i64 IntegerAttr to IndexAttr for StackAllocationOp.
-        auto intAttr = cast<IntegerAttr>(minAlign);
-        alignment = b.getIndexAttr(intAttr.getInt());
+        alignment = minAlign;
       }
 
       auto allocOp = POP::StackAllocationOp::create(
@@ -456,7 +454,7 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     info.minAlignment = minAlign;
   else
     info.minAlignment =
-        IntegerAttr::get(IntegerType::get(structDecl.getContext(), 64), 1);
+        IntegerAttr::get(IndexType::get(structDecl.getContext()), 1);
   info.loc = structDecl.getLoc();
 
   // Collect the struct fields.

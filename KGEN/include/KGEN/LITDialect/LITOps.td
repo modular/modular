@@ -409,7 +409,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     UnitAttr:$hasStableDecorator,
     OptionalAttr<SourceNameAttr>:$sourceName,
     // Explicit minimum alignment specified via @align(N) decorator.
-    OptionalAttr<I64Attr>:$minAlignment,
+    OptionalAttr<AttrOfType<Index>>:$minAlignment,
     EnumProp<LIT_TypeConvention>:$convention,
     // If definesClosure attribute is present,
     // then this is a compiler generated structure
@@ -438,13 +438,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     }
     bool isRegisterPassableTrivial() {
       return getConvention() == TypeConvention::RegisterPassableTrivial;
-    }
-
-    /// Get explicit minimum alignment if specified via @align(N).
-    std::optional<size_t> getExplicitAlignment() {
-      if (auto attr = getMinAlignmentAttr())
-        return static_cast<size_t>(attr.getInt());
-      return std::nullopt;
     }
 
     /// Return the struct name as it appears in the source code (not mangled).

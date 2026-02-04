@@ -42,9 +42,10 @@ kgen.func @memory_only_struct(
 // CHECK-LABEL: @aligned_struct
 // CHECK-SAME: %arg0: !kgen.struct<(index) align(64)>,
 // CHECK-SAME: %arg1: !kgen.struct<(index) memoryOnly align(128)>
-kgen.func @aligned_struct(
+kgen.generator @aligned_struct<param_align>(
   %arg0: !kgen.struct<(index) align(64)>,
-  %arg1: !kgen.struct<(index) memoryOnly align(128)>
+  %arg1: !kgen.struct<(index) memoryOnly align(128)>,
+  %arg2: !kgen.struct<(index) align(mul(param_align, 2))>
 ) {
   kgen.return
 }
