@@ -281,26 +281,24 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     which handles AB swap dispatch.
     """
     # ===== Static Assertions =====
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
-        sfa_dtype == sfb_dtype
-    ), "sfa_dtype and sfb_dtype must match"
+    comptime assert sfa_dtype == sfb_dtype, "sfa_dtype and sfb_dtype must match"
 
-    __comptime_assert config.cta_group in (
+    comptime assert config.cta_group in (
         1,
         2,
     ), "Only support cta_group == 1 or 2"
 
-    __comptime_assert config.k_group_size == 1, "Only support k_group_size == 1"
+    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
-    __comptime_assert config.num_split_k == 1, "Only support split_k == 1"
+    comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
-    __comptime_assert (
+    comptime assert (
         config.num_pipeline_stages % config.k_group_size == 0
     ), "num_pipeline_stages must be a multiple of k_group_size"
 
-    __comptime_assert (
+    comptime assert (
         a_tensor.rank == b_tensor.rank == c_tensor.rank
         and a_tensor.rank in (2, 3)
     ), (
@@ -331,14 +329,14 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var M_maybe_swapped = a_tensor_batched.dim[1]()
     var N_maybe_swapped = b_tensor_batched.dim[1]()
 
-    __comptime_assert (
+    comptime assert (
         a_tensor_batched.layout.shape[2].value()
         == b_tensor_batched.layout.shape[2].value()
     ), "A and B K dimension does not match"
 
     comptime K = a_tensor_batched.layout.shape[2].value()
 
-    __comptime_assert (
+    comptime assert (
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 

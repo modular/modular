@@ -40,7 +40,7 @@ fn print_tile_tensor(tensor: LayoutTensor):
 fn print_mode2_shape2_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    __comptime_assert (
+    comptime assert (
         len(layout) == 2
         and len(layout.shape[0]) == 2
         and len(layout.shape[1]) == 2

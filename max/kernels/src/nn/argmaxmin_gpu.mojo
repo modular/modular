@@ -39,8 +39,8 @@ fn argmaxmin_gpu[
         input: TileTensor[dtype] - The input tensor allocated on the device.
         output: TileTensor[dtype] - The output tensor allocated on the device.
     """
-    __comptime_assert input.rank > 0, "Input rank must be positive"
-    __comptime_assert (
+    comptime assert input.rank > 0, "Input rank must be positive"
+    comptime assert (
         input.rank == output.rank
     ), "Input and output rank must be the same"
     comptime K = 1

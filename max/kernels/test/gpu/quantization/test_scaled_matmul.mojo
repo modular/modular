@@ -137,7 +137,7 @@ fn test_matmul_dynamic_scaled_fp8[
 
     @parameter
     fn stride_from_shape[shape: DimList]() -> DimList:
-        __comptime_assert len(shape) == 2, "rank must be 2"
+        comptime assert len(shape) == 2, "rank must be 2"
         return DimList(shape.at[1](), 1)
 
     var a_ndbuffer = NDBuffer[

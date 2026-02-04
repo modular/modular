@@ -255,7 +255,7 @@ struct LegacyUnsafePointer[
             Pointer to the newly allocated uninitialized array.
         """
         comptime size_of_t = size_of[Self.type]()
-        __comptime_assert size_of_t > 0, "size must be greater than zero"
+        comptime assert size_of_t > 0, "size must be greater than zero"
         return _malloc[Self.type](size_of_t * count, alignment=alignment)
 
     # ===-------------------------------------------------------------------===#
@@ -713,10 +713,10 @@ struct LegacyUnsafePointer[
             The loaded SIMD vector.
         """
         _simd_construction_checks[dtype, width]()
-        __comptime_assert (
+        comptime assert (
             alignment > 0
         ), "alignment must be a positive integer value"
-        __comptime_assert (
+        comptime assert (
             not volatile or volatile ^ invariant
         ), "both volatile and invariant cannot be set at the same time"
 
@@ -791,7 +791,7 @@ struct LegacyUnsafePointer[
         Returns:
             The loaded value.
         """
-        __comptime_assert offset.dtype.is_integral(), "offset must be integer"
+        comptime assert offset.dtype.is_integral(), "offset must be integer"
         return (self + Int(offset)).load[
             width=width,
             alignment=alignment,
@@ -901,7 +901,7 @@ struct LegacyUnsafePointer[
             offset: The offset to store to.
             val: The value to store.
         """
-        __comptime_assert offset_type.is_integral(), "offset must be integer"
+        comptime assert offset_type.is_integral(), "offset must be integer"
         (self + Int(offset))._store[alignment=alignment, volatile=volatile](val)
 
     @always_inline("nodebug")
@@ -958,8 +958,8 @@ struct LegacyUnsafePointer[
         self: LegacyUnsafePointer[mut=True, Scalar[dtype], ...],
         val: SIMD[dtype, width],
     ):
-        __comptime_assert width > 0, "width must be a positive integer value"
-        __comptime_assert (
+        comptime assert width > 0, "width must be a positive integer value"
+        comptime assert (
             alignment > 0
         ), "alignment must be a positive integer value"
 
@@ -1070,10 +1070,10 @@ struct LegacyUnsafePointer[
         Returns:
             The SIMD vector containing the gathered values.
         """
-        __comptime_assert (
+        comptime assert (
             offset.dtype.is_integral()
         ), "offset type must be an integral type"
-        __comptime_assert (
+        comptime assert (
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
@@ -1126,10 +1126,10 @@ struct LegacyUnsafePointer[
             mask: The SIMD vector of boolean values, indicating for each
                 element whether to store at memory or not.
         """
-        __comptime_assert (
+        comptime assert (
             offset.dtype.is_integral()
         ), "offset type must be an integral type"
-        __comptime_assert (
+        comptime assert (
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
@@ -1199,7 +1199,7 @@ struct LegacyUnsafePointer[
             A pointer with the same type, origin and address space as the
             original pointer, but with the newly specified mutability.
         """
-        __comptime_assert (
+        comptime assert (
             target_mut == False or target_mut == Self.mut
         ), "Cannot safely cast an immutable pointer to mutable"
         return self.unsafe_mut_cast[target_mut]()

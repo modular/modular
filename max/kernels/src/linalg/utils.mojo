@@ -131,9 +131,9 @@ struct GemmShape(TrivialRegisterType):
         """
 
         # We only want a 2D tensor for now
-        __comptime_assert c.rank == 2
-        __comptime_assert a.rank == 2
-        __comptime_assert b.rank == 2
+        comptime assert c.rank == 2
+        comptime assert a.rank == 2
+        comptime assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
@@ -285,7 +285,7 @@ fn _get_tile_n_k[
     transpose_b: Bool,
     layout: Layout,
 ](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
-    __comptime_assert b.rank == 2
+    comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
     @parameter
@@ -807,7 +807,7 @@ fn apply_epilogue[
     # Scalar case
     # TODO: 1D vector is included, should handle it in a separate branch.
     else:
-        __comptime_assert dst_element_layout.rank() == 1
+        comptime assert dst_element_layout.rank() == 1
 
         @parameter
         for i in range(src.layout.size() * src.element_size):

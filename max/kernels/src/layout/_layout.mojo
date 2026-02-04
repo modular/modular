@@ -148,7 +148,7 @@ struct Layout[
             shape: The shape as a Coord.
             stride: The stride as a Coord.
         """
-        __comptime_assert (
+        comptime assert (
             type_of(shape).__len__() == type_of(stride).__len__()
         ), String(
             (

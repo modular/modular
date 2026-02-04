@@ -50,7 +50,7 @@ fn is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
         A bitmask filled with `1` if the value is negative, filled with `0`
         otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral() and dtype.is_signed()
     ), "This function is for signed integral types."
     return value >> SIMD[dtype, value.size](bit_width_of[dtype]() - 1)

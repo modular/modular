@@ -415,7 +415,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 ),
             )
         else:
-            __comptime_assert tensor.rank == 6, "expecting rank 3 for tensor"
+            comptime assert tensor.rank == 6, "expecting rank 3 for tensor"
             return LayoutTensor[
                 dtype, reshape_layout, address_space = tensor.address_space
             ](

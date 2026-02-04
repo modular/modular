@@ -635,7 +635,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterType):
         coord: IndexList[4, element_type=element_type],
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             width <= Self.local_window_size
         ), "SIMD width of chunked mask must be <= local window size"
 
@@ -817,7 +817,7 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask, TrivialRegisterType):
     ) -> SIMD[dtype, width]:
         comptime index_type = coord.element_type
 
-        __comptime_assert (
+        comptime assert (
             width <= Self.window_size
         ), "SIMD width of sliding window mask must be <= window size"
 
@@ -1120,7 +1120,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout](
             ]
         ] = None,
     ):
-        __comptime_assert Self.layout_.rank() in (
+        comptime assert Self.layout_.rank() in (
             3,
             4,
         ), "Expected rank 3 or 4 for mask tensor"

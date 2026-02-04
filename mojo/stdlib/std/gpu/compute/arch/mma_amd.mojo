@@ -69,9 +69,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     @parameter
     fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
-        __comptime_assert (
-            _cdna_4_or_newer()
-        ), "MMA shape requires CDNA4 or newer"
+        comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
             (32, 32, 4, 4)
@@ -139,9 +137,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
         a.size, b.size, c.size, d.size
     ):
-        __comptime_assert (
-            _cdna_4_or_newer()
-        ), "MMA shape requires CDNA4 or newer"
+        comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x32.f16", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)
@@ -150,9 +146,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
         a.size, b.size, c.size, d.size
     ):
-        __comptime_assert (
-            _cdna_4_or_newer()
-        ), "MMA shape requires CDNA4 or newer"
+        comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x16.f16", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)
@@ -210,9 +204,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
         a.size, b.size, c.size, d.size
     ):
-        __comptime_assert (
-            _cdna_4_or_newer()
-        ), "MMA shape requires CDNA4 or newer"
+        comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x32.bf16", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)
@@ -221,9 +213,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
         a.size, b.size, c.size, d.size
     ):
-        __comptime_assert (
-            _cdna_4_or_newer()
-        ), "MMA shape requires CDNA4 or newer"
+        comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x16.bf16", SIMD[d.dtype, d.size]
         ](a, b, c, zero, zero, zero)

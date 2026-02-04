@@ -574,9 +574,7 @@ struct And(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.and"
+        comptime assert dtype == DType.bool, "expected bool operands for mo.and"
         return lhs & rhs
 
 
@@ -587,9 +585,7 @@ struct Or(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.oor"
+        comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
         return lhs | rhs
 
 
@@ -600,9 +596,7 @@ struct Xor(ElementwiseBinaryOp):
         dtype: DType,
         width: Int,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.xor"
+        comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
         return lhs ^ rhs
 
 
@@ -702,7 +696,7 @@ struct Tanh(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return tanh(x)
@@ -715,7 +709,7 @@ struct ACos(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return acos(x)
@@ -728,7 +722,7 @@ struct ATanh(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return atanh(x)
@@ -741,7 +735,7 @@ struct Cos(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return cos(x)
@@ -754,7 +748,7 @@ struct Sin(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return sin(x)
@@ -767,7 +761,7 @@ struct Erf(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return erf(x)
@@ -780,7 +774,7 @@ struct Exp(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return exp(x)
@@ -850,7 +844,7 @@ struct Log(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return log(x)
@@ -863,7 +857,7 @@ struct Log1p(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return log1p(x)
@@ -877,7 +871,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
         out_dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
-        __comptime_assert (
+        comptime assert (
             out_dtype == DType.bool
         ), "expected bool output type for mo.is_nan"
         return rebind[SIMD[out_dtype, width]](isnan(x))
@@ -891,7 +885,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
         out_dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
-        __comptime_assert (
+        comptime assert (
             out_dtype == DType.bool
         ), "expected bool output type for mo.is_inf"
         return rebind[SIMD[out_dtype, width]](isinf(x))
@@ -904,9 +898,7 @@ struct Not(ElementwiseUnaryOp):
         dtype: DType,
         width: Int,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            dtype == DType.bool
-        ), "expected bool operands for mo.not"
+        comptime assert dtype == DType.bool, "expected bool operands for mo.not"
         return ~x
 
 
@@ -2816,9 +2808,7 @@ struct ReduceMinMax:
             width: Int,
             reduction_idx: Int,
         ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
-            __comptime_assert (
-                reduction_idx < num_reductions
-            ), "reduction_idx OOB"
+            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
             @parameter
             if reduction_idx == 0:
@@ -3799,7 +3789,7 @@ struct Matmul:
         b: InputTensor[rank=2],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        __comptime_assert not (packed_b and transpose_b), (
+        comptime assert not (packed_b and transpose_b), (
             "transpose_b and b_packed cannot both be true because"
             " pre-packing transposes B"
         )
@@ -4176,7 +4166,7 @@ struct RepeatInterleave:
         repeats: InputTensor[rank=1],
         axis: Scalar,
     ) raises:
-        __comptime_assert (
+        comptime assert (
             axis.dtype.is_integral()
         ), "axis value must be integer type"
 
@@ -4191,7 +4181,7 @@ struct RepeatInterleave:
     fn shape(
         input: InputTensor, repeats: InputTensor[rank=1], axis: Scalar
     ) raises -> IndexList[input.rank]:
-        __comptime_assert (
+        comptime assert (
             axis.dtype.is_integral()
         ), "axis value must be integer type"
 
@@ -4487,7 +4477,7 @@ struct Concat:
             width: Int,
             _rank: Int,
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            __comptime_assert (
+            comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
             return inputs[input_index]._lambda_load[width=width](
@@ -4712,11 +4702,11 @@ struct Conv:
                 rebind[SIMD[output.dtype, _width]](val),
             )
 
-        __comptime_assert (
+        comptime assert (
             strides.dtype.is_integral() and dilation.dtype.is_integral()
         ), "stride and dilation must have integral type"
 
-        __comptime_assert (
+        comptime assert (
             input_layout == "NHWC"
         ), "only NHWC input layout is supported"
 
@@ -4782,7 +4772,7 @@ struct Conv:
 
             @parameter
             if is_cpu[target]():
-                __comptime_assert (
+                comptime assert (
                     not filter_is_fcrs
                 ), "Filter layout FCRS is not supported on CPU"
                 conv_nhwc_direct[
@@ -4808,10 +4798,10 @@ struct Conv:
                     Int(num_groups),
                 )
             else:
-                __comptime_assert (input.rank == 4 and filter.rank == 4) or (
+                comptime assert (input.rank == 4 and filter.rank == 4) or (
                     input.rank == 5 and filter.rank == 5
                 ), "only rank 4 or 5 tensor is supported on cuda gpu"
-                __comptime_assert (
+                comptime assert (
                     filter_packed == False
                 ), "only unpacked filter is supported on cuda gpu"
 
@@ -4882,7 +4872,7 @@ struct ConvTranspose:
         output_paddings: InputTensor[rank=1],
         ctx: DeviceContextPtr,
     ) capturing raises:
-        __comptime_assert (
+        comptime assert (
             strides.dtype.is_integral()
             and dilation.dtype.is_integral()
             and output_paddings.dtype.is_integral()
@@ -4967,10 +4957,10 @@ struct ConvTranspose:
                 pad_w,
             )
         else:
-            __comptime_assert (
+            comptime assert (
                 input.rank == 4 and filter.rank == 4
             ), "only rank 4 tensor is supported on cuda gpu"
-            __comptime_assert (
+            comptime assert (
                 filter_packed == False
             ), "only unpacked filter is supported on cuda gpu"
 
@@ -5045,15 +5035,15 @@ struct Fold:
         kernel_size: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert (
+        comptime assert (
             kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
         ), "kernel_size and output_size must have integral type"
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
         var input_tensor = input.to_tile_tensor[DType.int64]()
         var output_tensor = output.to_tile_tensor[DType.int64]()
-        __comptime_assert input_tensor.rank == 3
-        __comptime_assert output_tensor.rank == 4
+        comptime assert input_tensor.rank == 3
+        comptime assert output_tensor.rank == 4
 
         fold[
             stride= (stride_h, stride_w),
@@ -5082,7 +5072,7 @@ struct Fold:
         output_size: InputTensor,
         kernel_size: InputTensor,
     ) raises -> IndexList[4]:
-        __comptime_assert (
+        comptime assert (
             kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
         ), "kernel_size and output_size must have integral type"
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
@@ -5113,7 +5103,7 @@ struct IRFFT:
         input: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         irfft(
             input.to_tile_tensor[DType.int64](),
@@ -5187,7 +5177,7 @@ struct MaskedFlashAttentionGPU:
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
         """
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         flash_attention(
             output.to_layout_tensor(),
@@ -5258,7 +5248,7 @@ struct FlashAttentionGPU:
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
         """
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_layout_tensor()
         var q_buffer = q.to_layout_tensor()
@@ -5317,7 +5307,7 @@ struct PaddedFlashAttentionGPU:
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_layout_tensor()
         var q_buffer = q.to_layout_tensor()
@@ -5392,7 +5382,7 @@ struct RaggedFlashAttentionGPU:
         The inputs q, k, v are in ragged format with shape [total_seq_len, num_heads, head_dim].
         input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
         """
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_layout_tensor()
         var q_buffer = q.to_layout_tensor()
@@ -5914,7 +5904,7 @@ struct QMatmulGPU_b4_g32:
         b: InputTensor[dtype = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -5948,7 +5938,7 @@ struct QMatmulGPU_b4_g128:
         b: InputTensor[dtype = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -5981,7 +5971,7 @@ struct QMatmulGPURepackGGUF:
         b: InputTensor[dtype = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -6010,7 +6000,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         b: InputTensor[dtype = DType.uint8, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -6040,7 +6030,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         perm_idx: InputTensor[dtype = DType.int32, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -6826,9 +6816,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             ]()
             var start_tensor = start_pos.to_tile_tensor[DType.int64]()
             var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-            __comptime_assert row_offsets_tensor.rank == 1
-            __comptime_assert start_tensor.rank == 1
-            __comptime_assert freqs_cis_tensor.rank == 2
+            comptime assert row_offsets_tensor.rank == 1
+            comptime assert start_tensor.rank == 1
+            comptime assert freqs_cis_tensor.rank == 2
 
             rope_ragged[
                 interleaved = Self.interleaved,
@@ -7036,7 +7026,7 @@ struct Struct_mla_decode_ragged_paged:
         scale: Float32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert (
+        comptime assert (
             kv_blocks.static_spec.shape.get[1]() == 1
         ), "Only support only_k=True for MLA decompress"
         var kv_collection = generic_get_paged_cache(
@@ -7132,7 +7122,7 @@ struct Struct_mla_prefill_ragged_plan:
         buffer_tok_size: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert kv_blocks.static_spec.shape.get[1]() == 1, (
+        comptime assert kv_blocks.static_spec.shape.get[1]() == 1, (
             "Expected is_mla=True for MLA decompress, but found both k and"
             " v dimensions."
         )
@@ -7266,7 +7256,7 @@ struct Struct_mla_prefill_graph_paged:
             max_lengths,
         )
 
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
@@ -7342,7 +7332,7 @@ struct Struct_mla_decode_graph_paged:
             max_lengths,
         )
 
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
@@ -7423,7 +7413,7 @@ struct Struct_mla_prefill_graph_decode_paged:
             max_lengths,
         )
 
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
@@ -7500,7 +7490,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             max_lengths,
         )
 
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "mo.mla.graph.prefill.decode.bf16.paged is only supported on GPU"
 
@@ -7693,7 +7683,7 @@ struct Struct_grouped_matmul_ragged:
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "grouped matmul only support GPUs"
+        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
         cuda_ctx = context.get_device_context()
         grouped_matmul(
             managed_tensor_slice_to_ndbuffer(c),
@@ -7765,7 +7755,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
             num_active_experts: The number of active experts.
             context: The device context pointer.
         """
-        __comptime_assert is_gpu[
+        comptime assert is_gpu[
             target
         ](), "grouped dynamic scaled NVFP4 matmul only supports GPUs"
         if num_active_experts == 0:
@@ -7827,7 +7817,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), (
+        comptime assert is_gpu[target](), (
             "grouped dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -7880,7 +7870,7 @@ struct Struct_batched_matmul_dynamic_scaled_fp8:
         b_scales: InputTensor[dtype=b_scales_type, rank=3],
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), (
+        comptime assert is_gpu[target](), (
             "batched dynamic scaled matmul only support GPUs with native"
             " FP8 support"
         )
@@ -7927,7 +7917,7 @@ struct Struct_matmul_dynamic_block_scaled:
         tensor_sf: Float32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), (
+        comptime assert is_gpu[target](), (
             "dynamic block scaled matmul only support GPUs with native"
             " block scaled support"
         )
@@ -7966,7 +7956,7 @@ struct Struct_quantize_dynamic_block_scaled:
         tensor_sf: Float32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), (
+        comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
@@ -7998,7 +7988,7 @@ struct Struct_interleave_block_scales:
         input_scales: InputTensor[dtype=scales_type, rank=2],
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), (
+        comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
@@ -8090,7 +8080,7 @@ fn layout_transform_conv_transpose_filter_common[
     packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_filter_rank],
     filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank],
 ):
-    __comptime_assert filter_rank + 1 == packed_filter_rank
+    comptime assert filter_rank + 1 == packed_filter_rank
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
@@ -8218,7 +8208,7 @@ fn layout_transform_conv_filter_common[
     packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank],
     filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank],
 ):
-    __comptime_assert packed_rank == filter_rank + 1
+    comptime assert packed_rank == filter_rank + 1
 
     # last param is num_groups which is currently not an available
     # arg for the MO level op
@@ -8694,7 +8684,7 @@ struct Struct_fused_token_sampling:
         input: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_valid_target[target](), "not a valid target"
+        comptime assert is_valid_target[target](), "not a valid target"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -8769,7 +8759,7 @@ struct Struct_min_p_sampling:
         temperature: Scalar[dtype],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_valid_target[target](), "not a valid target"
+        comptime assert is_valid_target[target](), "not a valid target"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -8813,7 +8803,7 @@ struct Struct_sampler_apply_penalties:
         repetition_penalty: InputTensor[dtype=penalty_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_valid_target[target](), "not a valid target"
+        comptime assert is_valid_target[target](), "not a valid target"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -8846,7 +8836,7 @@ struct Struct_sampler_update_frequency_data:
         new_tokens: InputTensor[dtype=token_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_valid_target[target](), "not a valid target"
+        comptime assert is_valid_target[target](), "not a valid target"
 
         with Trace[TraceLevel.OP, target=target](
             _trace_name, task_id=get_safe_task_id(ctx)
@@ -8952,7 +8942,7 @@ struct DistributedAllReduceSum:
             - Requires identical tensor shapes across all participating GPUs
         """
         comptime num_devices = inputs.size
-        __comptime_assert signal_buffers.size == num_devices, (
+        comptime assert signal_buffers.size == num_devices, (
             "expected allreduce inputs and signal buffers to have"
             " the same number of elements"
         )
@@ -9040,7 +9030,7 @@ struct DistributedReduceScatterSum:
             - Requires identical tensor shapes across all participating GPUs
         """
         comptime num_devices = inputs.size
-        __comptime_assert (
+        comptime assert (
             signal_buffers.size == num_devices
         ), "expected 1 signal buffer per device"
 
@@ -9114,7 +9104,7 @@ struct DistributedAllGather:
             dev_ctxs_input: Device contexts for participating GPUs.
         """
         comptime num_devices = inputs.size
-        __comptime_assert (
+        comptime assert (
             signal_buffers.size == num_devices
             and outputs.size == num_devices * num_devices
         ), (
@@ -9210,7 +9200,7 @@ struct DistributedBroadcast:
             - Requires P2P access between GPUs (NVLink or PCIe P2P).
         """
         comptime num_devices = signal_buffers.size
-        __comptime_assert (
+        comptime assert (
             root >= 0 and root < num_devices
         ), "root GPU index must be in range [0, ngpus)"
 
@@ -9282,7 +9272,7 @@ struct DistributedMatmulAllReduce:
             - Requires identical tensor shapes across all participating GPUs
         """
         comptime num_devices = inputs.size
-        __comptime_assert (
+        comptime assert (
             weights.size == num_devices
             and signal_buffers.size == num_devices
             and outputs.size == num_devices
@@ -9301,8 +9291,8 @@ struct DistributedMatmulAllReduce:
         # Get the static buffer dimensions
         comptime n_dim = weights.static_specs[0].shape.at[0]()
         comptime k_dim = weights.static_specs[0].shape.at[1]()
-        __comptime_assert not n_dim.is_dynamic(), "n dimension should be static"
-        __comptime_assert not k_dim.is_dynamic(), "k dimension should be static"
+        comptime assert not n_dim.is_dynamic(), "n dimension should be static"
+        comptime assert not k_dim.is_dynamic(), "k dimension should be static"
 
         comptime A_static_shape = DimList(Dim(), k_dim)
         comptime B_static_shape = DimList(n_dim, k_dim)
@@ -9351,7 +9341,7 @@ struct DistributedMatmulAllReduce:
             *,
             _alignment: Int,
         ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
-            __comptime_assert (
+            comptime assert (
                 input_index < num_devices
             ), "tensor index out of bounds"
             return outputs[input_index]._lambda_store[
@@ -9435,7 +9425,7 @@ struct AdvancedIndexingGetItem:
         ctx: DeviceContextPtr,
     ) capturing raises:
         # TODO: Uses `where` clause when emit mojo is turned on by default.
-        __comptime_assert (
+        comptime assert (
             output_rank == input_rank + index_rank - num_index_tensors
         )
 
@@ -9451,7 +9441,7 @@ struct AdvancedIndexingGetItem:
         fn indices_fn[
             indices_index: Int,
         ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-            __comptime_assert (
+            comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
             return indices[indices_index]._fused_load[width=1](coordinates)
@@ -9527,7 +9517,7 @@ struct AdvancedIndexingSetItemInplace:
         fn indices_fn[
             indices_index: Int,
         ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
-            __comptime_assert (
+            comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
             return indices[indices_index]._fused_load[width=1](coordinates)
@@ -9628,9 +9618,9 @@ struct ArgSort[*, ascending: Bool]:
     ) raises:
         var indices_tensor = indices.to_tile_tensor[DType.int64]()
         var input_tensor = input.to_tile_tensor[DType.int64]()
-        __comptime_assert indices_tensor.rank == 1
-        __comptime_assert indices.dtype.is_integral()
-        __comptime_assert input_tensor.rank == 1
+        comptime assert indices_tensor.rank == 1
+        comptime assert indices.dtype.is_integral()
+        comptime assert input_tensor.rank == 1
 
         @parameter
         if target == "cpu":
@@ -9662,8 +9652,8 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         scale: Scalar[scale_type],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
-        __comptime_assert output_type in (
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert output_type in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
@@ -9695,7 +9685,7 @@ struct QuantizeDynamicScaledFloat8:
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         @parameter
         @always_inline
@@ -9740,7 +9730,7 @@ struct BatchedQuantizeDynamicScaledFloat8:
         scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         @parameter
         @always_inline
@@ -9788,7 +9778,7 @@ struct MatmulDynamicScaledFloat8:
         b_scales: InputTensor[dtype=scales_type, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         matmul_dynamic_scaled_fp8[
             input_scale_granularity,
@@ -9825,7 +9815,7 @@ struct MatmulStaticScaledFloat8:
         weight_scale: Scalar[scale_type],
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "only valid on GPUs"
+        comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output = managed_tensor_slice_to_ndbuffer(output_tensor)
         var input = managed_tensor_slice_to_ndbuffer(input_tensor)
@@ -9925,7 +9915,7 @@ struct Struct_lora_sgmv_ragged:
         max_seq_length: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
         var a_tensor = managed_tensor_slice_to_ndbuffer(a)
 
@@ -9963,7 +9953,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
         max_seq_length: UInt32,
         context: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[target](), "SGMV only supported on GPUs"
+        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
         cuda_ctx = context.get_device_context()
         var a_tensor = managed_tensor_slice_to_ndbuffer(a)
 
@@ -10043,9 +10033,7 @@ struct SpatialMerge:
         merge_size: Int32,
         ctx: DeviceContextPtr,
     ) raises:
-        __comptime_assert is_gpu[
-            target
-        ](), "spatial_merge only supported on GPUs"
+        comptime assert is_gpu[target](), "spatial_merge only supported on GPUs"
 
         var cuda_ctx = ctx.get_device_context()
 

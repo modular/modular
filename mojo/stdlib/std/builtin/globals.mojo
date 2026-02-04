@@ -61,7 +61,7 @@ fn global_constant[
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
-    __comptime_assert T.__copyinit__is_trivial and T.__del__is_trivial, (
+    comptime assert T.__copyinit__is_trivial and T.__del__is_trivial, (
         "global_constant requires a type with trivial copy and destroy"
         " semantics. Types with heap allocations like Dict, List, or String"
         " are not supported because their internal pointers would be"

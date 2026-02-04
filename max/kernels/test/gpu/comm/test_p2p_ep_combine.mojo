@@ -672,7 +672,7 @@ def main():
     else:
         raise Error("Cannot enable P2P Mem Access!")
 
-    __comptime_assert (
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
     comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16

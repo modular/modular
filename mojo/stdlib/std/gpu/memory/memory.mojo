@@ -547,7 +547,7 @@ fn _mark_eviction[
             constraints="=l",
         ]()
     else:
-        __comptime_assert (
+        comptime assert (
             eviction_policy == CacheEviction.EVICT_FIRST
         ), "invalid eviction policy, only support normal, first, and last"
         return inlined_assembly[
@@ -601,14 +601,14 @@ fn async_copy[
         - Cannot enable both L2 prefetch and L1 bypass.
         - L2 prefetch size must be 64, 128, or 256 bytes.
     """
-    __comptime_assert (
+    comptime assert (
         not fill or size_of[dtype]() <= size_of[Int32]()
     ), "if the fill value is specified, then the dtype must be 32bit or less"
-    __comptime_assert size in (4, 8, 16)
-    __comptime_assert not (
+    comptime assert size in (4, 8, 16)
+    comptime assert not (
         l2_prefetch.__bool__() == bypass_L1_16B == True
     ), "both enable l2 prefetching and l1 bypass cannot be True"
-    __comptime_assert not l2_prefetch or l2_prefetch.value() in (
+    comptime assert not l2_prefetch or l2_prefetch.value() in (
         64,
         128,
         256,
@@ -671,7 +671,7 @@ fn async_copy[
                 Int32(Int(dst)), src, Int32(size), Int32(src_size), cache_policy
             )
     elif fill:
-        __comptime_assert (
+        comptime assert (
             size == 16
         ), "Non zero filling is supported only for 16B access."
 
@@ -865,7 +865,7 @@ fn external_memory[
     - The pointer is only valid within the GPU kernel execution context.
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
-    __comptime_assert (
+    comptime assert (
         not is_apple_gpu()
     ), "external memory is not supported on Apple GPU"
     var extern_ptr_symbol = UnsafePointer[
@@ -1024,14 +1024,14 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     - Requires NVIDIA GPU with TMA support.
     - The memory barrier should be properly initialized before use.
     """
-    __comptime_assert (
+    comptime assert (
         rank <= 5
     ), "Expecting rank-1, rank-2, rank-3, rank-4, or rank-5 tensors"
 
-    __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
-    __comptime_assert cta_group == 1 or _is_sm_100x_or_newer()
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    comptime assert cta_group == 1 or _is_sm_100x_or_newer()
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
-    __comptime_assert not cache_hint or cta_group == 1
+    comptime assert not cache_hint or cta_group == 1
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
@@ -1238,13 +1238,13 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     - The memory barrier should be properly initialized before use.
     - The multicast_mask must be properly configured based on cluster size and desired distribution.
     """
-    __comptime_assert rank in (
+    comptime assert rank in (
         1,
         2,
         3,
     ), "Expecting rank-1, rank-2, or rank-3 tensors"
 
-    __comptime_assert cta_group in (1, 2), "cta_group must be 1 or 2"
+    comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
         "cp.async.bulk.tensor.",
         rank,
@@ -1389,7 +1389,7 @@ fn cp_async_bulk_tensor_global_shared_cta[
     - The source memory must be properly aligned for TMA operations.
     - The TMA descriptor must be properly initialized before use.
     """
-    __comptime_assert rank in (
+    comptime assert rank in (
         1,
         2,
         3,
@@ -1499,9 +1499,7 @@ fn cp_async_bulk_tensor_reduce[
     - The TMA descriptor must be properly initialized before use.
     - The reduction operation is performed atomically to ensure correctness.
     """
-    __comptime_assert (
-        rank == 1 or rank == 2
-    ), "Expecting rank-1 or rank-2 tensors"
+    comptime assert rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
 
     @parameter
@@ -1579,17 +1577,17 @@ fn _load_impl[
         - Prefetch size must be 64, 128, or 256 bytes if specified.
         - Read-only not supported on AMD GPUs.
     """
-    __comptime_assert dtype.is_numeric(), "type must be numeric"
+    comptime assert dtype.is_numeric(), "type must be numeric"
 
     @parameter
     if is_amd_gpu():
         # TODO: KERN-1230
-        __comptime_assert read_only == False
+        comptime assert read_only == False
         return ptr.load[width=width]()
 
     @parameter
     if prefetch_size:
-        __comptime_assert prefetch_size.value() in (64, 128, 256)
+        comptime assert prefetch_size.value() in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
@@ -1821,24 +1819,24 @@ fn _get_multimem_ld_reduce_asm[
         - Type must be a floating point type.
         - Total bit width (count * output_width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
     """
-    __comptime_assert (
+    comptime assert (
         _is_sm_9x_or_newer()
     ), "multimem is only supported on SM90+ GPUs"
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "multimem requires floating point type"
-    __comptime_assert consistency in (
+    comptime assert consistency in (
         Consistency.WEAK,
         Consistency.RELAXED,
         Consistency.ACQUIRE,
     ), "multimem.ld_reduce consistency must be in {weak, relaxed, acquire}"
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,
     ), "total bit width must be 32, 64, or 128 bits"
-    __comptime_assert (
+    comptime assert (
         dtype != DType.float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
@@ -1900,12 +1898,12 @@ fn multimem_ld_reduce[
         - float64 requires count=1 (no .vec qualifier allowed).
     """
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,
     ), "total bit width must be 32, 64, or 128 bits"
-    __comptime_assert (
+    comptime assert (
         dtype != DType.float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
@@ -2021,19 +2019,19 @@ fn multimem_ld_reduce[
     """
     comptime output_width = 4 // size_of[dtype]()
     comptime count = simd_width // output_width
-    __comptime_assert simd_width in (
+    comptime assert simd_width in (
         1,
         2,
         4,
         8,
     ), "simd_width must be 1, 2, 4, or 8"
     comptime total_bits = count * output_width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,
     ), "total bit width must be 32, 64, or 128 bits"
-    __comptime_assert (
+    comptime assert (
         dtype != DType.float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
@@ -2068,24 +2066,24 @@ fn _get_multimem_st_asm[
     consistency: Consistency,
     width: Int = 1,
 ]() -> String:
-    __comptime_assert (
+    comptime assert (
         _is_sm_9x_or_newer()
     ), "multimem is only supported on SM90+ GPUs"
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "multimem requires floating point type"
-    __comptime_assert consistency in (
+    comptime assert consistency in (
         Consistency.WEAK,
         Consistency.RELAXED,
         Consistency.RELEASE,
     ), "multimem.st consistency must be in {weak, relaxed, release}"
     comptime total_bits = count * width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,
     ), "total bit width must be 32, 64, or 128 bits"
-    __comptime_assert (
+    comptime assert (
         dtype != DType.float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
@@ -2160,12 +2158,12 @@ fn multimem_st[
         [PTX ISA Documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-multimem-ld-reduce-multimem-st-multimem-red).
     """
     comptime total_bits = count * width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,
     ), "total bit width must be 32, 64, or 128 bits"
-    __comptime_assert (
+    comptime assert (
         dtype != DType.float64 or count == 1
     ), "float64 requires count=1 (no .vec qualifier allowed)"
 
@@ -2255,23 +2253,23 @@ fn multimem_st[
         - Total bit width (count * width * size_of[dtype] * 8) must be 32, 64, or 128 bits.
         - Type must be a floating point type.
     """
-    __comptime_assert (
+    comptime assert (
         _is_sm_9x_or_newer()
     ), "multimem is only supported on SM90+ GPUs"
-    __comptime_assert size_of[dtype]() <= 4, (
+    comptime assert size_of[dtype]() <= 4, (
         "dtype must be 4 bytes or smaller (use explicit width/count overload"
         " for float64)"
     )
     comptime width = 4 // size_of[dtype]()
     comptime count = simd_width // width
-    __comptime_assert simd_width in (
+    comptime assert simd_width in (
         1,
         2,
         4,
         8,
     ), "simd_width must be 1, 2, 4, or 8"
     comptime total_bits = count * width * size_of[dtype]() * 8
-    __comptime_assert total_bits in (
+    comptime assert total_bits in (
         32,
         64,
         128,

@@ -273,8 +273,8 @@ fn topk_mask_logits[
         TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
     ] = None,
 ) raises:
-    __comptime_assert logits.rank == 2, "logits rank must be 2"
-    __comptime_assert (
+    comptime assert logits.rank == 2, "logits rank must be 2"
+    comptime assert (
         logits.rank == masked_logits.rank
     ), "logits.rank must match masked_logits.rank"
 
@@ -513,7 +513,7 @@ fn _block_reduce_value_count[
         If broadcast=False, only thread 0 has the valid result.
     """
     comptime MAX_BLOCK_SIZE = 1024
-    __comptime_assert (
+    comptime assert (
         MAX_BLOCK_SIZE % WARP_SIZE == 0
     ), "block size must be a multiple of the warp size"
 
@@ -616,7 +616,7 @@ fn TopKSamplingFromProbKernel[
         rng_seed: Random seed for Random number generator.
         rng_offset: Random offset for Random number generator.
     """
-    __comptime_assert output.rank == 1
+    comptime assert output.rank == 1
 
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
@@ -822,8 +822,8 @@ fn topk_sampling_from_prob[
         Error: If tensor ranks or shapes are invalid.
     """
 
-    __comptime_assert probs.rank == 2, "probs rank must be 2"
-    __comptime_assert output.rank == 1, "output rank must be 1"
+    comptime assert probs.rank == 2, "probs rank must be 2"
+    comptime assert output.rank == 1, "output rank must be 1"
 
     var shape = coord_to_index_list(probs.layout.shape_coord())
     var batch_size = shape[0]
@@ -912,7 +912,7 @@ fn TopKSoftmaxSampleKernel[
     seed: UnsafePointer[UInt64, MutExternalOrigin],
     d: Int,
 ):
-    __comptime_assert sampled_indices.rank == 1
+    comptime assert sampled_indices.rank == 1
 
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
@@ -1168,10 +1168,8 @@ fn topk_softmax_sample[
             Optional per-batch seed values. If provided, overrides seed_val
             for each batch element.
     """
-    __comptime_assert logits.rank == 2, "logits rank must be 2"
-    __comptime_assert (
-        sampled_indices.rank == 1
-    ), "sampled_indices rank must be 1"
+    comptime assert logits.rank == 2, "logits rank must be 2"
+    comptime assert sampled_indices.rank == 1, "sampled_indices rank must be 1"
 
     var shape = coord_to_index_list(logits.layout.shape_coord())
     var batch_size = shape[0]

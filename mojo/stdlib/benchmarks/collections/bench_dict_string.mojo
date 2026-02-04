@@ -88,7 +88,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     var capacity: Int
 
     fn __init__(out self, capacity: Int):
-        __comptime_assert (
+        comptime assert (
             Self.KeyEndType == DType.uint8
             or Self.KeyEndType == DType.uint16
             or Self.KeyEndType == DType.uint32
@@ -199,7 +199,7 @@ struct StringDict[
     var capacity: Int
 
     fn __init__(out self, capacity: Int = 16):
-        __comptime_assert (
+        comptime assert (
             Self.KeyCountType == DType.uint8
             or Self.KeyCountType == DType.uint16
             or Self.KeyCountType == DType.uint32

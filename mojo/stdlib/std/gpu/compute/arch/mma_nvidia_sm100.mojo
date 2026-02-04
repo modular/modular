@@ -143,7 +143,7 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    __comptime_assert mma_m in mma_m_valid, String(
+    comptime assert mma_m in mma_m_valid, String(
         "Invalid MMA M: ",
         mma_m,
         " , MMA M has to be ",
@@ -178,7 +178,7 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    __comptime_assert (
+    comptime assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
         and mma_n % multiple_of == 0
@@ -619,7 +619,7 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        __comptime_assert (
+        comptime assert (
             d_type == DType.float32
             and a_type == DType.float32
             and b_type == DType.float32
@@ -658,11 +658,11 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -707,11 +707,11 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -1354,11 +1354,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1543,7 +1543,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1630,7 +1630,7 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
@@ -1718,11 +1718,11 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
@@ -1801,12 +1801,12 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1834,12 +1834,12 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

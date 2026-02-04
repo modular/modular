@@ -195,7 +195,7 @@ fn random[
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
-    __comptime_assert not is_nvidia_gpu(), "Cannot run random on the gpu"
+    comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:
@@ -319,7 +319,7 @@ fn arange[
     ):
         _filler_impl[filler, use_runtime_layout](tensor)
     else:
-        __comptime_assert tensor.rank == 2
+        comptime assert tensor.rank == 2
         var rows = Int(tensor.layout.shape[0]().value())
         var cols = Int(tensor.layout.shape[1]().value())
         for m, n in product(range(rows), range(cols)):
@@ -372,7 +372,7 @@ fn random[
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
-    __comptime_assert not is_nvidia_gpu(), "Cannot run random on the gpu"
+    comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:

@@ -46,7 +46,7 @@ fn split[
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == outputs[0].rank
     ), "Input and outputs must have the same rank."
 

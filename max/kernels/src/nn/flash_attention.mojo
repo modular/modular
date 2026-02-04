@@ -617,7 +617,7 @@ struct _FlashAttention[
         scale: Float32,
         sink_weight: Optional[Scalar[Self.dtype]] = None,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
         var qk_row_ptr = qk_block_ptr
@@ -1147,7 +1147,7 @@ fn flash_attention_split_kv[
     # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
-    __comptime_assert rank == 4
+    comptime assert rank == 4
 
     @always_inline
     @parameter
@@ -1349,7 +1349,7 @@ fn _flash_attention_kv_cache[
     comptime depth_dim = cache_t.kv_params.head_size
     comptime cache_type = cache_t.dtype
 
-    __comptime_assert cache_type == dtype, (
+    comptime assert cache_type == dtype, (
         "Expected cache dtype ("
         + String(cache_type)
         + ") to match input dtype ("

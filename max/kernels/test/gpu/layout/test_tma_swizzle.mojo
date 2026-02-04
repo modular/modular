@@ -87,7 +87,7 @@ def test_tma_swizzle[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     is_k_major: Bool = True,
 ](ctx: DeviceContext):
-    __comptime_assert (
+    comptime assert (
         shape == tile_shape
     ), "Only support same shape and tile shape."
 

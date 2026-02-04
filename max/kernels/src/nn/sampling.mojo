@@ -50,27 +50,27 @@ fn apply_penalties_to_logits[
     - frequency_data[i, 1] is the frequency of the token in the sequence
     """
 
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert repetition_penalty.rank == 1
-    __comptime_assert presence_penalty.rank == 1
-    __comptime_assert frequency_penalty.rank == 1
-    __comptime_assert logits.rank == 2
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert repetition_penalty.rank == 1
+    comptime assert presence_penalty.rank == 1
+    comptime assert frequency_penalty.rank == 1
+    comptime assert logits.rank == 2
 
     # all scalars
-    __comptime_assert frequency_offsets.element_size == 1
-    __comptime_assert compressed_frequency_data.element_size == 1
-    __comptime_assert repetition_penalty.element_size == 1
-    __comptime_assert presence_penalty.element_size == 1
-    __comptime_assert frequency_penalty.element_size == 1
-    __comptime_assert logits.element_size == 1
+    comptime assert frequency_offsets.element_size == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert repetition_penalty.element_size == 1
+    comptime assert presence_penalty.element_size == 1
+    comptime assert frequency_penalty.element_size == 1
+    comptime assert logits.element_size == 1
 
     @always_inline
     @parameter
     fn apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        __comptime_assert rank_ == 1, "apply_penalties_fn: rank must be 1"
+        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
 
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
         var token = Int(compressed_frequency_data[idx[0], 0])
@@ -132,9 +132,9 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert new_tokens.rank == 1
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert new_tokens.rank == 1
 
     comptime simd_width = simd_width_of[DType.int32]()
     comptime PADDING_TOKEN = -1
@@ -214,11 +214,11 @@ fn update_frequency_data[
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
     """
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert new_tokens.rank == 1
-    __comptime_assert compressed_frequency_data.element_size == 1
-    __comptime_assert new_tokens.element_size == 1
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert new_tokens.rank == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert new_tokens.element_size == 1
 
     @parameter
     if is_gpu[target]():
@@ -250,7 +250,7 @@ fn update_frequency_data[
         fn update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
-            __comptime_assert (
+            comptime assert (
                 rank_ == 1
             ), "update_frequency_data_fn: rank must be 1"
 

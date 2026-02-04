@@ -40,7 +40,7 @@ fn load_and_mma_16x8x32[
     mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
     mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         in_type == DType.float8_e4m3fn or in_type == DType.float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 

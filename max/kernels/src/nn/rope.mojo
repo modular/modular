@@ -74,7 +74,7 @@ fn apply_rope[
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
-    __comptime_assert rank - 1 >= 0
+    comptime assert rank - 1 >= 0
     var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
     var pos_re = idx
     var pos_im = idx
@@ -87,13 +87,13 @@ fn apply_rope[
     @parameter
     if interleaved:
         var coord = Coord(idx)
-        __comptime_assert coord.rank == x.rank
+        comptime assert coord.rank == x.rank
         val = x.load[width=width](coord)
     else:
         var re_coord = Coord(pos_re)
-        __comptime_assert re_coord.rank == x.rank
+        comptime assert re_coord.rank == x.rank
         var im_coord = Coord(pos_im)
-        __comptime_assert im_coord.rank == x.rank
+        comptime assert im_coord.rank == x.rank
         val = rebind[SIMD[dtype, width]](
             x.load[width=width_2](re_coord).interleave(
                 x.load[width=width_2](im_coord)
@@ -155,22 +155,22 @@ fn rope_ragged[
 ):
     @parameter
     for i in range(x.rank):
-        __comptime_assert x.LayoutType._shape_types[i].is_static_value, (
+        comptime assert x.LayoutType._shape_types[i].is_static_value, (
             "x.layout.shape["
             + String(i)
             + "] must be a scalar, was "
             # + String(x.layout.shape[i])
         )
-    # __comptime_assert (
+    # comptime assert (
     #     x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
     # ), (
     #     "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
     #     + String(x.layout.shape)
     # )
-    __comptime_assert (
+    comptime assert (
         input_row_offsets.all_dims_known
     ), "input_row_offsets shape must be statically shaped"
-    __comptime_assert (
+    comptime assert (
         freqs_cis.all_dims_known
     ), "freqs_cis shape must be statically shaped"
     debug_assert(
@@ -191,7 +191,7 @@ fn rope_ragged[
     fn rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
         @parameter
         if width == 1:
@@ -280,11 +280,11 @@ fn rope_ragged[
 
         @parameter
         for i in range(len(mrope_section.value())):
-            __comptime_assert (
+            comptime assert (
                 mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     @parameter
     if is_cpu[target]():

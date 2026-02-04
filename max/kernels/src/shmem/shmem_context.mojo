@@ -173,7 +173,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        __comptime_assert (
+        comptime assert (
             has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
         ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
@@ -231,7 +231,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        __comptime_assert has_nvidia_gpu_accelerator(), (
+        comptime assert has_nvidia_gpu_accelerator(), (
             "SHMEMContext in gpu-per-thread mode is currently only available on"
             " NVIDIA GPUs"
         )

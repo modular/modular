@@ -218,7 +218,7 @@ fn winograd_conv2d_gpu_nhwc[
     - NHWC input layout
     - RSCF filter layout
     """
-    __comptime_assert input.rank == filter.rank == output.rank == 4
+    comptime assert input.rank == filter.rank == output.rank == 4
 
     # Dimensions
     var C_in = input.dim[3]()  # input channels

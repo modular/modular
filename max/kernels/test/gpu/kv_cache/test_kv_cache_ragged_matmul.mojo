@@ -692,7 +692,7 @@ def generic_assert_output_equals[
     max_seq_length_batch: Int,
     ctx: DeviceContext,
 ):
-    __comptime_assert cache_t.dtype == dtype, "type mismatch"
+    comptime assert cache_t.dtype == dtype, "type mismatch"
     comptime kv_params = cache_t.kv_params
     comptime hidden_size = num_q_heads * Int(kv_params.head_size)
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size

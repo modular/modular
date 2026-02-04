@@ -117,7 +117,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     address_space = buffer.address_space,
 ]:
     comptime rank = buffer.rank
-    __comptime_assert rank >= 3, "expecting at least rank-3 NDBuffer"
+    comptime assert rank >= 3, "expecting at least rank-3 NDBuffer"
 
     var batch_size = 1
 
@@ -182,7 +182,7 @@ fn _reshape_layout_tensor_with_batch_to_3d[
     address_space = tensor.address_space,
 ]:
     comptime rank = tensor.rank
-    __comptime_assert rank >= 3, "expecting at least rank-3 NDBuffer"
+    comptime assert rank >= 3, "expecting at least rank-3 NDBuffer"
 
     var batch_size = 1
 
@@ -223,7 +223,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
     buffer.type, 2, buffer.origin, address_space = buffer.address_space
 ]:
     comptime rank = buffer.rank
-    __comptime_assert rank >= 2, "expecting at least rank-2 NDBuffer"
+    comptime assert rank >= 2, "expecting at least rank-2 NDBuffer"
 
     var batch_size = 1
 
@@ -388,7 +388,7 @@ fn batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert not transpose_a, "transpose_a not yet supported"
+    comptime assert not transpose_a, "transpose_a not yet supported"
 
     @always_inline
     @parameter
@@ -447,7 +447,7 @@ fn _batched_matmul_cpu[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ) raises:
-    __comptime_assert rank < 5, "max rank for batched matmul is currently 4"
+    comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
@@ -967,7 +967,7 @@ fn _batched_matmul_gpu[
 
     else:
         # TODO: support non-A100 transposed kernels
-        __comptime_assert (
+        comptime assert (
             not transpose_b
         ), "transpose b is not supported on non-A100 capable GPUs"
 
@@ -1017,7 +1017,7 @@ fn batched_matmul[
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert is_valid_target[target](), "unsupported target"
+    comptime assert is_valid_target[target](), "unsupported target"
 
     @parameter
     if is_cpu[target]():
@@ -1027,7 +1027,7 @@ fn batched_matmul[
             saturated_vnni=saturated_vnni,
         ](c_buf, a_buf, b_buf)
     else:
-        __comptime_assert (
+        comptime assert (
             saturated_vnni == False
         ), "saturated_vnni is not applicable on the gpu"
         _batched_matmul_gpu[
@@ -1233,19 +1233,19 @@ fn bmm_sm100_blockwise_scaled_fp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
-    __comptime_assert (
+    comptime assert (
         b_scales_type == a_scales_type == DType.float32
     ), "Only support float32 for a_scales and b_scales"
 
-    __comptime_assert c.rank == 3, "Only support rank 3 tensors"
+    comptime assert c.rank == 3, "Only support rank 3 tensors"
 
-    __comptime_assert (
+    comptime assert (
         c.rank == b.rank and c.rank == a.rank
     ), "all tensors must have the same rank"
 
@@ -1253,7 +1253,7 @@ fn bmm_sm100_blockwise_scaled_fp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    __comptime_assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
+    comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var batch_size = c.dim(0)
     var M = c.dim(1)
@@ -1402,7 +1402,7 @@ fn batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_: LayoutTensor[b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         scales_granularity_mnk[0] == 1
         and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
     ), "Only support (1,128,128) scale granularity. Extend it for other cases."
@@ -1507,22 +1507,22 @@ fn batched_matmul_dynamic_scaled_fp8[
     b_scales: LayoutTensor[b_scales_type, ...],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info == B200 or ctx.default_device_info == H100
     ), "Only support SM100 or SM90"
-    __comptime_assert (
+    comptime assert (
         m_scale_granularity == 1
         and n_scale_granularity == 128
         and k_scale_granularity == 128
     ), "Only support (1,128,128) scale granularity"
-    __comptime_assert (
+    comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type == DType.float32
     ), "input A and B scales dtype should be float32"
 
-    __comptime_assert (
+    comptime assert (
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"
     ), "Only support block-wise scale granularity"

@@ -82,14 +82,14 @@ fn moe_create_indices_kernel[
     ],
     topk_ids: TileTensor[input_type, MutAnyOrigin, TopkIdsLayoutType],
 ):
-    __comptime_assert topk_ids.rank == 1
-    __comptime_assert expert_ids.rank == 1
-    __comptime_assert indices_padded.rank == 1
-    __comptime_assert topk_ids_padded.rank == 1
-    __comptime_assert expert_start_indices.rank == 1
-    __comptime_assert token_expert_order.rank == 1
-    __comptime_assert restore_token_order.rank == 1
-    __comptime_assert expert_usage_stats.rank == 1
+    comptime assert topk_ids.rank == 1
+    comptime assert expert_ids.rank == 1
+    comptime assert indices_padded.rank == 1
+    comptime assert topk_ids_padded.rank == 1
+    comptime assert expert_start_indices.rank == 1
+    comptime assert token_expert_order.rank == 1
+    comptime assert restore_token_order.rank == 1
+    comptime assert expert_usage_stats.rank == 1
 
     comptime indices_type = DType.uint32
     var num_tokens: Int = Int(topk_ids.layout.shape[0]().value())
@@ -143,8 +143,8 @@ fn moe_create_indices_kernel[
             stage: Current stage size (power of 2), determines sort direction.
             i: Index of the current element.
         """
-        __comptime_assert input.rank == 1
-        __comptime_assert indices.rank == 1
+        comptime assert input.rank == 1
+        comptime assert indices.rank == 1
 
         if i >= n:
             return
@@ -306,8 +306,8 @@ fn _count_expert_tokens[
     smem: TileTensor[mut=True, DType.uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
-    __comptime_assert topk_ids.rank == 2
-    __comptime_assert smem.rank == 2
+    comptime assert topk_ids.rank == 2
+    comptime assert smem.rank == 2
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -415,9 +415,9 @@ fn _copy_tokens_smem_to_gmem[
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
-    __comptime_assert smem.rank == 2
-    __comptime_assert token_expert_order.rank == 1
-    __comptime_assert restore_token_order.rank == 1
+    comptime assert smem.rank == 2
+    comptime assert token_expert_order.rank == 1
+    comptime assert restore_token_order.rank == 1
 
     var g_offset_copy = g_offset
     comptime width = bg_params.width
@@ -480,9 +480,9 @@ fn _copy_tokens_to_gmem[
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
 ):
-    __comptime_assert topk_ids.rank == 2
-    __comptime_assert token_expert_order.rank == 1
-    __comptime_assert restore_token_order.rank == 1
+    comptime assert topk_ids.rank == 2
+    comptime assert token_expert_order.rank == 1
+    comptime assert restore_token_order.rank == 1
 
     comptime width = bg_params.width
     comptime MaskType = bg_params.MaskType
@@ -625,15 +625,15 @@ fn moe_create_indices_bucket_group_kernel[
     in the token_expert_order tensor. For our example the restore_token_order would be [0, 2, 1, 3, 4, 5]
     """
 
-    __comptime_assert token_expert_order.rank == 1
-    __comptime_assert lock.rank == 1
-    __comptime_assert expert_start_indices.rank == 1
-    __comptime_assert restore_token_order.rank == 1
-    __comptime_assert expert_ids.rank == 1
-    __comptime_assert expert_usage_stats.rank == 1
-    __comptime_assert topk_ids.rank == 2
+    comptime assert token_expert_order.rank == 1
+    comptime assert lock.rank == 1
+    comptime assert expert_start_indices.rank == 1
+    comptime assert restore_token_order.rank == 1
+    comptime assert expert_ids.rank == 1
+    comptime assert expert_usage_stats.rank == 1
+    comptime assert topk_ids.rank == 2
 
-    __comptime_assert num_threads in (
+    comptime assert num_threads in (
         32,
         64,
     ), "Only support 32 or 64 threads per warp"
@@ -646,7 +646,7 @@ fn moe_create_indices_bucket_group_kernel[
         row_major[1, expected_count]()
     )
 
-    __comptime_assert (
+    comptime assert (
         expected_count % BucketParamsType.width == 0
     ), "Expected count must be a multiple of the simd width"
 
@@ -718,7 +718,7 @@ fn moe_create_indices[
     topk_ids: TileTensor[input_type, ...],
     context: DeviceContextPtr,
 ) raises:
-    __comptime_assert is_gpu[
+    comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
@@ -798,9 +798,7 @@ fn _warp_bitonic_sort[
         TopK_2[T] - Sorted TopK_2 value across the warp.
     """
 
-    __comptime_assert (
-        num_lanes.is_power_of_two()
-    ), "num_lanes must be power of 2"
+    comptime assert num_lanes.is_power_of_two(), "num_lanes must be power of 2"
 
     @always_inline
     fn bitonic_sort_step(
@@ -881,32 +879,32 @@ fn group_limited_router_kernel[
     to the scores during the selection process, but the final weights will not
     include the bias.
     """
-    __comptime_assert expert_indices.rank == 2
-    __comptime_assert expert_weights.rank == 2
-    __comptime_assert expert_scores.rank == 2
-    __comptime_assert expert_bias.rank == 1
+    comptime assert expert_indices.rank == 2
+    comptime assert expert_weights.rank == 2
+    comptime assert expert_scores.rank == 2
+    comptime assert expert_bias.rank == 1
 
-    __comptime_assert (
+    comptime assert (
         expert_scores.static_shape[1] == n_routed_experts
     ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
 
-    __comptime_assert (
+    comptime assert (
         expert_indices.static_shape[1] == n_experts_per_tok
     ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
-    __comptime_assert (
+    comptime assert (
         expert_weights.static_shape[1] == n_experts_per_tok
     ), "expert_weights.static_shape[1] must be equal to n_experts_per_tok"
 
     comptime group_size = n_routed_experts // n_groups
-    __comptime_assert (
+    comptime assert (
         WARP_SIZE % group_size == 0
     ), "WARP_SIZE must be divisible by group_size"
     comptime n_groups_per_warp = WARP_SIZE // group_size
-    __comptime_assert (
+    comptime assert (
         topk_group * n_experts_per_tok <= WARP_SIZE
     ), "topk_group * n_experts_per_tok must be less than or equal to WARP_SIZE"
 
-    __comptime_assert (
+    comptime assert (
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
@@ -1080,7 +1078,7 @@ fn router_group_limited[
         routed_scaling_factor: The scaling factor for the routed expert weights.
         context: DeviceContextPtr.
     """
-    __comptime_assert is_gpu[
+    comptime assert is_gpu[
         target
     ](), "Group limited MoE router is only supported on GPU"
 

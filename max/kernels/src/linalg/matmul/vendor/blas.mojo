@@ -257,20 +257,20 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         return False
 
     fn _get_cublas(self) -> Self._cublas_type:
-        __comptime_assert Self.resolved_backend in (
+        comptime assert Self.resolved_backend in (
             Backend.CUBLAS,
             Backend.CUBLASLT,
         ), "backend must be CUBLAS/CUBLASLT"
         return self._handle[Self._cublas_type]
 
     fn _get_rocblas(self) -> Self._rocblas_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.ROCBLAS
         ), "backend must be ROCBLAS"
         return self._handle[Self._rocblas_type]
 
     fn _get_hipblaslt(self) -> Self._hipblaslt_type:
-        __comptime_assert (
+        comptime assert (
             Self.resolved_backend is Backend.HIPBLASLT
         ), "backend must be HIPBLASLT"
         return self._handle[Self._hipblaslt_type]
@@ -599,7 +599,7 @@ fn _cublas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -762,7 +762,7 @@ fn _rocblas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    __comptime_assert a_type == b_type and (
+    comptime assert a_type == b_type and (
         a_type == DType.float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
@@ -890,7 +890,7 @@ fn _cublasLt_matmul[
     var N = d.dim(1)
     var K = a.dim(1)
 
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float8_e4m3fn,
         DType.float8_e5m2,
         DType.bfloat16,
@@ -902,11 +902,11 @@ fn _cublasLt_matmul[
         " types."
     )
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @parameter
     if a_type.is_float8():
-        __comptime_assert not (a_type == b_type == DType.float8_e5m2), (
+        comptime assert not (a_type == b_type == DType.float8_e5m2), (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
         )
@@ -1310,7 +1310,7 @@ fn _hipblasLt_matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float32,
         DType.float16,
         DType.bfloat16,
@@ -1320,7 +1320,7 @@ fn _hipblasLt_matmul[
         DType.float8_e5m2fnuz,
     ), "Unsupported data type. Please extend it if you need more data types."
 
-    __comptime_assert a_type == b_type, "A and B must have the same type"
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @always_inline
     @parameter

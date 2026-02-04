@@ -56,7 +56,7 @@ fn launch_p2p_copy_kernel(
 
 def main():
     comptime log2_length = env_get_int["log2_length", 20]()
-    __comptime_assert log2_length > 0
+    comptime assert log2_length > 0
     var length = 1 << log2_length
 
     assert_true(

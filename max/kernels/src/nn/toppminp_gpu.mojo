@@ -726,11 +726,11 @@ fn _topp_minp_sampling_gpu[
     - TensorRT-LLM: https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopPKernels.cu#L199-L323
     - InternLM: https://github.com/InternLM/lmdeploy/
     """
-    __comptime_assert p_thresholds.rank == 1, "p_thresholds must be rank 1"
-    __comptime_assert (
+    comptime assert p_thresholds.rank == 1, "p_thresholds must be rank 1"
+    comptime assert (
         input_logits.rank == 2 and out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
-    __comptime_assert _is_supported_dtype[dtype](), String(
+    comptime assert _is_supported_dtype[dtype](), String(
         "Unsupported dtype: ", dtype
     )
 
@@ -871,8 +871,8 @@ fn top_p_sampling_gpu[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    __comptime_assert top_ps.rank == 1, "top_ps must be of rank 1"
-    __comptime_assert (
+    comptime assert top_ps.rank == 1, "top_ps must be of rank 1"
+    comptime assert (
         input_logits.rank == 2 and out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
     _topp_minp_sampling_gpu[is_top_p=True, _test_sort=_test_sort](

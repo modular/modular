@@ -398,7 +398,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    __comptime_assert is_valid_target[target](), "unsupported target"
+    comptime assert is_valid_target[target](), "unsupported target"
 
     for i in range(len(shape)):
         if shape[i] == 0:
@@ -671,7 +671,7 @@ fn _reduce_generator[
     fn reduce_fn_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_function[dtype, width](val, acc)

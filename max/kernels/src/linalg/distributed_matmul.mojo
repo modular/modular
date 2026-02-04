@@ -249,11 +249,11 @@ fn _matmul_allreduce_split_n[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    __comptime_assert not b_static_shape.at[
+    comptime assert not b_static_shape.at[
         0
     ]().is_dynamic(), "N dimension must be static"
     comptime n = b_static_shape.get[0]()
-    __comptime_assert (
+    comptime assert (
         n % num_partitions == 0
     ), "num_partitions doesn't split evenly N"
     comptime n_part = n // num_partitions
@@ -382,7 +382,7 @@ fn matmul_allreduce[
     This way we can perform `num_partitions` independent matmul + allreduce kernels, and overlap some of the computation.
     """
 
-    __comptime_assert partition_dim == 0 or partition_dim == 1
+    comptime assert partition_dim == 0 or partition_dim == 1
 
     @parameter
     if not num_partitions.dim.is_dynamic() and num_partitions.dim.get() == 1:
@@ -421,7 +421,7 @@ fn matmul_allreduce[
             )
 
     else:
-        __comptime_assert (
+        comptime assert (
             not num_partitions.dim.is_dynamic()
         ), "for split_n num_partitions must be a constant"
         _matmul_allreduce_split_n[

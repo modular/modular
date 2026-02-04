@@ -31,7 +31,7 @@ def test_rope_ragged_gpu[
 ](ctx: DeviceContext) -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 

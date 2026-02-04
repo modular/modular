@@ -46,7 +46,7 @@ fn cumsum[
         input: The input tensor.
         axis: The axis on which to perform the cumsum operation.
     """
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input and output should have the same rank."
 

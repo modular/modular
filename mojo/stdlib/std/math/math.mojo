@@ -203,7 +203,7 @@ fn sqrt(x: Int) -> Int:
 
 @always_inline
 fn _sqrt_nvvm(x: SIMD, out res: type_of(x)):
-    __comptime_assert x.dtype in (
+    comptime assert x.dtype in (
         DType.float32,
         DType.float64,
     ), "must be f32 or f64 type"
@@ -231,7 +231,7 @@ fn sqrt[
     Returns:
         The elementwise square root of x.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_numeric() or dtype == DType.bool
     ), "type must be arithmetic or boolean"
 
@@ -264,7 +264,7 @@ fn sqrt[
 
 @always_inline
 fn _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
-    __comptime_assert x.dtype in (
+    comptime assert x.dtype in (
         DType.float32,
         DType.float64,
     ), "must be f32 or f64 type"
@@ -291,7 +291,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal square root of x.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "rsqrt requires floating point type"
 
@@ -325,7 +325,7 @@ fn rsqrt[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
 
 @always_inline
 fn _recip_nvvm(x: SIMD, out res: type_of(x)):
-    __comptime_assert x.dtype in (
+    comptime assert x.dtype in (
         DType.float32,
         DType.float64,
     ), "must be f32 or f64 type"
@@ -352,7 +352,7 @@ fn recip[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The elementwise reciprocal of x.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "recip requires floating point type"
 
@@ -568,7 +568,7 @@ fn ldexp[
     Returns:
         Vector containing elementwise result of ldexp on x and exp.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -824,7 +824,7 @@ fn _frexp_mask1[
     elif dtype == DType.float32:
         return 0x7F800000
     else:
-        __comptime_assert dtype == DType.float64, "unhandled fp type"
+        comptime assert dtype == DType.float64, "unhandled fp type"
         return 0x7FF0000000000000
 
 
@@ -840,7 +840,7 @@ fn _frexp_mask2[
     elif dtype == DType.float32:
         return 0x3F000000
     else:
-        __comptime_assert dtype == DType.float64, "unhandled fp type"
+        comptime assert dtype == DType.float64, "unhandled fp type"
         return 0x3FE0000000000000
 
 
@@ -867,9 +867,7 @@ fn frexp[
         of the input floating point values.
     """
     # Based on the implementation in boost/simd/arch/common/simd/function/ifrexp.hpp
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
 
     comptime T = SIMD[dtype, width]
     comptime zero = T(0)
@@ -916,9 +914,7 @@ fn _log_base[
     # Based on the Cephes approximation.
     comptime sqrt2_div_2 = 0.70710678118654752440
 
-    __comptime_assert (
-        base == 2 or base == 27
-    ), "input base must be either 2 or 27"
+    comptime assert base == 2 or base == 27, "input base must be either 2 or 27"
 
     var frexp_result = frexp(x)
     var x1 = frexp_result[0]
@@ -1067,7 +1063,7 @@ fn copysign[
     Returns:
         Copies the sign from sign to magnitude.
     """
-    __comptime_assert dtype.is_numeric(), "operands must be a numeric type"
+    comptime assert dtype.is_numeric(), "operands must be a numeric type"
 
     @parameter
     if dtype.is_unsigned():
@@ -1268,7 +1264,7 @@ fn isclose[
     Returns:
         A boolean vector where `a` and `b` are equal within the given tolerance.
     """
-    __comptime_assert (
+    comptime assert (
         a.dtype.is_floating_point()
     ), "isclose only supports floating-point types"
 
@@ -1778,7 +1774,7 @@ fn cos[
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.cos"](x)
     else:
-        __comptime_assert (
+        comptime assert (
             not is_nvidia_gpu() or dtype != DType.float64
         ), "DType.float64 is not supported on NVIDIA GPU"
         return _llvm_unary_fn["llvm.cos"](x)
@@ -1823,7 +1819,7 @@ fn sin[
     elif is_apple_gpu():
         return _llvm_unary_fn["llvm.air.sin"](x)
     else:
-        __comptime_assert (
+        comptime assert (
             not is_nvidia_gpu() or dtype != DType.float64
         ), "DType.float64 is not supported on NVIDIA GPU"
         return _llvm_unary_fn["llvm.sin"](x)
@@ -2526,7 +2522,7 @@ fn hypot[
     Returns:
         The `hypot` of the inputs.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2544,7 +2540,7 @@ fn hypot[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypot", Scalar[result_type]](arg0, arg1)
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2737,7 +2733,7 @@ fn lgamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The `lgamma` of the input.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2767,7 +2763,7 @@ fn gamma[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> type_of(x):
     Returns:
         The Gamma function evaluated at the input.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2799,7 +2795,7 @@ fn remainder[
         The `remainder` of the inputs.
     """
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2821,7 +2817,7 @@ fn remainder[
             arg0, arg1
         )
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2967,7 +2963,7 @@ fn scalb[
     Returns:
         The `scalb` of the inputs.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -2985,7 +2981,7 @@ fn scalb[
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalb", Scalar[result_type]](arg0, arg1)
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input type must be floating point"
 
@@ -3202,9 +3198,7 @@ fn ulp[
         The ULP of x.
     """
 
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "the type must be floating point"
+    comptime assert dtype.is_floating_point(), "the type must be floating point"
 
     var nan_mask = isnan(x)
     var xabs = abs(x)
@@ -3355,10 +3349,10 @@ fn _call_libm[
     //,
     func_name: StaticString,
 ](arg: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "argument type must be floating point"
-    __comptime_assert (
+    comptime assert (
         not is_gpu()
     ), "libm operations are only available on CPU targets"
 
@@ -3849,7 +3843,7 @@ fn max[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
         A SIMD vector containing the elementwise maximum of x and y.
     """
 
-    __comptime_assert (
+    comptime assert (
         x.dtype == DType.bool or x.dtype.is_numeric()
     ), "the SIMD type must be numeric or boolean"
 
@@ -3917,7 +3911,7 @@ fn min[dtype: DType, //](x: SIMD[dtype, _], y: type_of(x), /) -> type_of(x):
         A SIMD vector containing the elementwise minimum of x and y.
     """
 
-    __comptime_assert (
+    comptime assert (
         x.dtype == DType.bool or x.dtype.is_numeric()
     ), "the SIMD type must be numeric or boolean"
 

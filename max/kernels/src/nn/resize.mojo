@@ -142,7 +142,7 @@ fn resize_nearest_neighbor[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
@@ -320,7 +320,7 @@ fn _resize[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
 

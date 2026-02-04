@@ -64,7 +64,7 @@ fn random_uniform[
     fn generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        __comptime_assert width <= 4
+        comptime assert width <= 4
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

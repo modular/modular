@@ -82,16 +82,16 @@ fn _print_svg_impl[
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
-    __comptime_assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
+    comptime assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
 
     if len(tensors) > 0:
-        __comptime_assert layout.rank() == 2, "Layout rank must be 2"
+        comptime assert layout.rank() == 2, "Layout rank must be 2"
 
-        __comptime_assert layout[0].size() <= (
+        comptime assert layout[0].size() <= (
             tensor_base.layout[0].size()
         ), "Layout 0 should have the largest first dimension"
 
-        __comptime_assert (
+        comptime assert (
             layout[1].size() <= tensor_base.layout[1].size()
         ), "Layout 0 should have the largest second dimension"
 

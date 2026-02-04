@@ -124,7 +124,7 @@ fn blockscaled_pair_cta_mxfp8[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert (
+    comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
 
@@ -151,7 +151,7 @@ fn blockscaled_pair_cta_mxfp8[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    __comptime_assert (
+    comptime assert (
         BK == 128 and BM == 128 and MMA_N == 128
     ), "Only support 128x128x128, 128x256x128, and 256x128x1128 block size"
 
@@ -582,9 +582,9 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -600,7 +600,7 @@ fn sm100_blockscaled_mxfp8_cta_pair[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    __comptime_assert MMA_M == 256 and MMA_N in (
+    comptime assert MMA_M == 256 and MMA_N in (
         128,
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
@@ -615,23 +615,23 @@ fn sm100_blockscaled_mxfp8_cta_pair[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE
     ), "Only support F8-UE8M0 scales"
-    __comptime_assert (
+    comptime assert (
         a_scales.rank == b_scales.rank == 5
     ), "a_scales and b_scales must be 5D tensors"
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[2].value()
         == b_scales_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[3].value()
         == b_scales_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[4].value()
         == b_scales_layout.shape[4].value()
         == SF_ATOM_K
@@ -757,7 +757,7 @@ def test_blockscaled_pair_cta_mxfp8[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value

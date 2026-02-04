@@ -1100,7 +1100,7 @@ fn matmul_kernel_tc[
     ](Int(warp_y), Int(warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    __comptime_assert (
+    comptime assert (
         WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
     ), "Warp tile should be an integer multiple of instruction shape"
 

@@ -69,10 +69,10 @@ fn calculate_symmetric_vector[
       A vector of the quantized values.
       The associated scale factor.
     """
-    __comptime_assert (
+    comptime assert (
         output_bits >= 1 and output_bits <= 8
     ), "expected a scalar type"
-    __comptime_assert (
+    comptime assert (
         input_dtype.is_floating_point()
     ), "expect accumulating over floating point only."
     var max_value = data.reduce_max()
@@ -139,15 +139,15 @@ struct Q4sym[
     @always_inline
     fn _check_constraints():
         # TODO
-        __comptime_assert (
+        comptime assert (
             Self.group_size.is_power_of_two()
         ), "`group_size` must be a power of 2."
-        __comptime_assert (
+        comptime assert (
             Self.group_size == 8
             or Self.group_size == 16
             or Self.group_size == 32
         ), "Only support some `group_sizes`"
-        __comptime_assert (
+        comptime assert (
             Self.float_dtype.is_floating_point()
         ), "Must be floating point type"
 
@@ -288,7 +288,7 @@ struct Q4sym[
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
-        __comptime_assert (
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # TODO: check contiguous inputs and outputs
@@ -362,7 +362,7 @@ struct Q4sym[
             output_tensor: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
-        __comptime_assert (
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # Read and dequantize `input_tensor` which are the bytes of the raw

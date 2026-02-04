@@ -91,7 +91,7 @@ fn elu[
     Returns:
         The result of the ELU operation.
     """
-    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
     return x.ge(0).select(x, math.expm1(x))
 
 
@@ -171,7 +171,7 @@ fn leaky_relu[
     Returns:
         The result of the Leaky ReLU operation.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "dtype must be a floating point dtype"
     return x.ge(0).select(x, negative_slope * x)

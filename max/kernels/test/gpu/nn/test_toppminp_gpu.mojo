@@ -156,7 +156,7 @@ fn sort_buf_descending[
 ](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    __comptime_assert rank == 2, "rank must be 2"
+    comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
 
     for batch_id in range(batch_size):
@@ -168,7 +168,7 @@ fn sort_buf_descending[
 fn test_is_sorted_descending[
     dtype: DType, rank: Int
 ](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int) -> Bool:
-    __comptime_assert rank == 2, "rank must be 2"
+    comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 

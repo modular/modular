@@ -65,34 +65,34 @@ fn compile_sm90_matmul_ptx[
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
 
-    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
-    __comptime_assert (
+    comptime assert (
         a_type != DType.float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    __comptime_assert (
+    comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
-    __comptime_assert BM > 64 or (
+    comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
     ), "Only support 1 consumer for BM=64"
 
     @parameter
     if schedule == MatmulSchedule.DS_SCHEDULER:
-        __comptime_assert (
+        comptime assert (
             grid_shape is not None
         ), "Grid shape must be provided for DS scheduler"
         comptime ds_grid_shape = grid_shape.value()
-        __comptime_assert (
+        comptime assert (
             ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1
         ), "Deepseek scheduler only accepts grid shape with 1 column"
 
     elif grid_shape:
-        __comptime_assert _is_valid_grid_shape[
+        comptime assert _is_valid_grid_shape[
             grid_shape.value(), config.cluster_shape
         ](ceildiv(N, BN)), String(
             "grid shape:",
@@ -175,7 +175,7 @@ fn compile_sm90_matmul_ptx[
         + (size_of[Int64]() * 2)
     ) + c_smem_layout.size() * size_of[c_type]()
 
-    __comptime_assert (
+    comptime assert (
         smem_size <= H100.shared_memory_per_multiprocessor - 1024
     ), "requested SMEM size exceeds 227KB limit."
 

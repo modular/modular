@@ -273,7 +273,7 @@ struct TileTensor[
                 )
             )
 
-        __comptime_assert linear_tuple.rank == self.rank
+        comptime assert linear_tuple.rank == self.rank
         return self.load(linear_tuple)
 
     @always_inline("nodebug")
@@ -298,7 +298,7 @@ struct TileTensor[
                 )
             )
 
-        __comptime_assert linear_tuple.rank == self.rank
+        comptime assert linear_tuple.rank == self.rank
         self.store(linear_tuple, value)
 
     @always_inline("nodebug")
@@ -1010,7 +1010,7 @@ struct TileTensor[
         Returns:
             A `DeviceBuffer` containing the tensor's data.
         """
-        __comptime_assert (
+        comptime assert (
             Self.address_space == Self.address_space.GENERIC
         ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
@@ -1136,9 +1136,9 @@ fn _distribute[
         ]
     ]
     # Since the thread layout and tensor layout have all_dims_known this is safe
-    __comptime_assert ShapeType.all_dims_known
+    comptime assert ShapeType.all_dims_known
     var shape = ShapeType()
-    __comptime_assert StrideType.all_dims_known
+    comptime assert StrideType.all_dims_known
     var stride = StrideType()
 
     var layout = Layout(shape, stride)
@@ -1296,8 +1296,8 @@ fn _vectorize[
     ]
 
     # Since all_dims_known is required, we can use compile-time values directly
-    __comptime_assert Coord[*NewShapeTypes].all_dims_known
-    __comptime_assert Coord[*NewStrideTypes].all_dims_known
+    comptime assert Coord[*NewShapeTypes].all_dims_known
+    comptime assert Coord[*NewStrideTypes].all_dims_known
     var new_shape = Coord[*NewShapeTypes]()
     var new_stride = Coord[*NewStrideTypes]()
 

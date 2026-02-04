@@ -300,18 +300,18 @@ def test_multicast_tma_wgmma[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    __comptime_assert (
+    comptime assert (
         transpose_b
     ), "multicasting is only supported for K-Major transposed B"
 
-    __comptime_assert (
+    comptime assert (
         not partitioned_multicast
         or a_swizzle.bytes() // size_of[a_type]() == BK
     ), (
         "Currently partitioned multi-casting is only supported when BK =="
         " (a_swizzle.bytes // size_of[a_type]"
     )
-    __comptime_assert (
+    comptime assert (
         not partitioned_multicast
         or b_swizzle.bytes() // size_of[b_type]() == BK
     ), (

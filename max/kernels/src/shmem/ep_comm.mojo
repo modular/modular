@@ -125,7 +125,7 @@ fn block_prefix_sum[
     """
     comptime n_elements_aligned = align_up(num_elements, WARP_SIZE)
     comptime n_warps = n_elements_aligned // WARP_SIZE
-    __comptime_assert (
+    comptime assert (
         n_warps <= WARP_SIZE
     ), "Number of warps must be less than or equal to warp size"
 
@@ -496,7 +496,7 @@ struct BlockwiseFP8TokenFormat[
     @always_inline
     @staticmethod
     fn scales_size() -> Int:
-        __comptime_assert (
+        comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by 128"
         return align_up(
@@ -534,7 +534,7 @@ struct BlockwiseFP8TokenFormat[
         ]()
 
         comptime n_threads_per_group = Self.group_size // src_width
-        __comptime_assert (
+        comptime assert (
             WARP_SIZE % n_threads_per_group == 0
         ), "Each warp must process a multiple of quantization groups"
 
@@ -693,7 +693,7 @@ struct NVFP4TokenFormat[
     @always_inline
     @staticmethod
     fn scales_size() -> Int:
-        __comptime_assert (
+        comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by group_size"
         return align_up(
@@ -790,7 +790,7 @@ struct NVFP4TokenFormat[
         comptime scales_simds_per_tok = Self.hid_dim // (
             NVFP4_SF_VECTOR_SIZE * SF_ATOM_K
         )
-        __comptime_assert (
+        comptime assert (
             Self.hid_dim % (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K) == 0
         ), "hid_dim must be divisible by (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)"
         for i in range(
@@ -875,7 +875,7 @@ struct NVFP4TokenFormat[
         # First we copy the FP4 quants.
         comptime fp4_width = simd_width_of[Self.fp4_dtype]()
         comptime quant_bytes = Self.hid_dim // 2
-        __comptime_assert (
+        comptime assert (
             quant_bytes % fp4_width == 0
         ), "quant_bytes must be divisible by fp4_width"
 
@@ -913,7 +913,7 @@ struct NVFP4TokenFormat[
 
         comptime n_scales = Self.hid_dim // NVFP4_SF_VECTOR_SIZE
         comptime n_scales_simd = n_scales // SF_ATOM_K
-        __comptime_assert (
+        comptime assert (
             n_scales % SF_ATOM_K == 0
         ), "n_scales must be divisible by SF_ATOM_K"
         comptime scale_bytes = size_of[Self.scales_dtype]() * SF_ATOM_K
@@ -1013,7 +1013,7 @@ struct EPLocalSyncCounters[n_experts: Int](DevicePassable, TrivialRegisterType):
     fn total_size() -> Int:
         """Returns the total size in Int32 elements needed for all counters."""
 
-        __comptime_assert (
+        comptime assert (
             Self.combine_async_size() == Self.dispatch_wait_size()
         ), "combine_async_size must be equal to dispatch_wait_size"
 
@@ -1195,7 +1195,7 @@ struct EPDispatchKernel[
             my_rank: The rank of the current device.
         """
 
-        __comptime_assert Self.n_local_experts <= Self.n_warps, (
+        comptime assert Self.n_local_experts <= Self.n_warps, (
             "EP dispatch_async: number of experts per rank must be less than or"
             " equal to "
             + String(Self.n_warps)
@@ -2207,7 +2207,7 @@ struct EPCombineKernel[
         """
         comptime hid_dim = input_tokens.shape[1]()
 
-        __comptime_assert (
+        comptime assert (
             Self.msg_bytes == hid_dim * size_of[Scalar[input_type]]()
         ), "EP combine_async: input shape doesn't match message size."
 
@@ -2453,10 +2453,10 @@ struct EPCombineKernel[
         comptime hid_dim = output_tokens_layout.shape[last_dim].value()
         comptime _align = align_of[SIMD[DType.uint8, byte_simd_width]]()
 
-        __comptime_assert (
+        comptime assert (
             Self.msg_bytes == hid_dim * size_of[Scalar[output_type]]()
         ), "EP combine_async: output shape doesn't match message size."
-        __comptime_assert (
+        comptime assert (
             Self.msg_bytes % byte_simd_width == 0
         ), "EP combine_async: message size must be divisible by " + String(
             byte_simd_width
@@ -2481,7 +2481,7 @@ struct EPCombineKernel[
         comptime n_chunk_bytes = WARP_SIZE * byte_simd_width
         comptime n_chunks_per_tok = hid_dim // n_chunk_elems
 
-        __comptime_assert (
+        comptime assert (
             hid_dim % n_chunk_elems == 0
         ), "EP combine_async: hid_dim must be divisible by n_chunk_elems"
 
@@ -3037,7 +3037,7 @@ fn combine_kernel[
 
     @parameter
     if fused_shared_expert:
-        __comptime_assert router_weights_wrapper, (
+        comptime assert router_weights_wrapper, (
             "EP combine_kernel: fused_shared_expert requires "
             "router_weights_wrapper to be provided. Cannot add shared expert "
             "output to non-reduced routed expert outputs."
@@ -3170,7 +3170,7 @@ fn fused_silu_kernel[
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
     comptime accum_dtype = get_accum_type[input_dtype]()
-    __comptime_assert (
+    comptime assert (
         accum_dtype.is_floating_point()
     ), "accum_dtype must be floating point"
     comptime input_dim = input_tensor.shape[1]()
@@ -3178,10 +3178,10 @@ fn fused_silu_kernel[
     comptime simd_width = simd_width_of[input_dtype]()
 
     # This should also make sure the input and output tensors has static shape.
-    __comptime_assert (
+    comptime assert (
         input_dim == output_dim * 2
     ), "Input dimension must be twice the output dimension."
-    __comptime_assert (
+    comptime assert (
         output_dim % simd_width == 0
     ), "Output dimension must be divisible by the SIMD width."
 
@@ -3253,22 +3253,22 @@ fn fused_silu_fp8_kernel[
         row_offsets: The row offsets to determine the actual number of received tokens.
     """
     comptime accum_dtype = get_accum_type[input_dtype]()
-    __comptime_assert (
+    comptime assert (
         accum_dtype.is_floating_point()
     ), "accum_dtype must be floating point"
     comptime input_dim = input_tensor.shape[1]()
     comptime output_dim = output_tensor.shape[1]()
     comptime simd_width = simd_width_of[input_dtype]()
 
-    __comptime_assert (
+    comptime assert (
         input_dim == output_dim * 2
     ), "Input dimension must be twice the output dimension."
-    __comptime_assert (
+    comptime assert (
         output_dim % simd_width == 0
     ), "Output dimension must be divisible by the SIMD width."
 
     comptime n_threads_per_group = group_size // simd_width
-    __comptime_assert (
+    comptime assert (
         WARP_SIZE % n_threads_per_group == 0
     ), "Each warp must process a multiple of quantization groups"
     comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
@@ -3378,19 +3378,19 @@ fn fused_silu_nvfp4_kernel[
     )
     comptime n_threads_per_token = hidden_size // src_width
 
-    __comptime_assert (
+    comptime assert (
         input_dim == hidden_size * 2
     ), "Input dimension must be four times the packed output dimension."
-    __comptime_assert (
+    comptime assert (
         hidden_size % (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K) == 0
     ), "Hidden size must be divisible by (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)."
 
     comptime n_groups = scales_offsets_layout.shape[0].value()
     comptime n_sms_per_group = num_sms // n_groups
-    __comptime_assert (
+    comptime assert (
         n_groups <= num_sms
     ), "num_sms must be >= number of expert groups."
-    __comptime_assert (
+    comptime assert (
         input_scales_layout.shape[0].value() == n_groups
     ), "input_scales must match number of expert groups."
 

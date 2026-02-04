@@ -201,7 +201,7 @@ fn _compute_ndbuffer_stride[
     Returns:
         The default strides of the NDBuffer.
     """
-    __comptime_assert rank > 0
+    comptime assert rank > 0
 
     @parameter
     if rank == 1:
@@ -309,7 +309,7 @@ struct NDBuffer[
         Args:
             ptr: Pointer to the data.
         """
-        __comptime_assert Self.shape.all_known[
+        comptime assert Self.shape.all_known[
             Self.rank
         ](), "dimensions must all be known"
 
@@ -341,18 +341,18 @@ struct NDBuffer[
             other: The other NDBuffer type.
         """
         # It is probably unsafe to convert between address spaces
-        __comptime_assert (
+        comptime assert (
             other.address_space == Self.address_space
         ), "cannot convert between buffer types with different address spaces"
 
         # We can only downgrade our alignment
-        __comptime_assert (
+        comptime assert (
             other.alignment2 >= Self.alignment2
             and other.alignment2 % Self.alignment2 == 0
         ), "cannot convert between buffers with incompatible alignments"
 
         # Exclusivity can only be lost
-        __comptime_assert (
+        comptime assert (
             other.exclusive == Self.exclusive or not Self.exclusive
         ), (
             "Cannot convert a non-exclusive buffer to an exclusive buffer."
@@ -364,10 +364,10 @@ struct NDBuffer[
 
         # We can lose information about shape/stride, but not gain information
         comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
-        __comptime_assert (
+        comptime assert (
             other.shape == Self.shape or Self.shape == unknown_dim_list
         ), "cannot convert between buffers with incompatible shapes"
-        __comptime_assert (
+        comptime assert (
             other.strides == Self.strides or Self.strides == unknown_dim_list
         ), "cannot convert between buffers with incompatible strides"
 
@@ -794,7 +794,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        __comptime_assert Self.rank <= _MAX_RANK
+        comptime assert Self.rank <= _MAX_RANK
         return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
@@ -805,7 +805,7 @@ struct NDBuffer[
         Self.origin,
         address_space = Self.address_space,
     ]:
-        __comptime_assert Self.rank <= _MAX_RANK
+        comptime assert Self.rank <= _MAX_RANK
         return self.data + _compute_ndbuffer_offset(self, idx.as_tuple())
 
     @always_inline
@@ -824,7 +824,7 @@ struct NDBuffer[
         Returns:
             The offset into the NDBuffer given the indices.
         """
-        __comptime_assert Self.rank <= _MAX_RANK
+        comptime assert Self.rank <= _MAX_RANK
         return self.data + _compute_ndbuffer_offset(self, idx)
 
     @always_inline
@@ -876,11 +876,11 @@ struct NDBuffer[
 
         comptime num_tile_sizes = std.builtin.Variadic.size(tile_sizes)
 
-        __comptime_assert (
+        comptime assert (
             num_tile_sizes == Self.rank
         ), "The tile should have the same rank as the buffer"
 
-        __comptime_assert DimList(tile_sizes).all_known[
+        comptime assert DimList(tile_sizes).all_known[
             Self.rank
         ](), "Static tile sizes are only supported"
 
@@ -983,7 +983,7 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        __comptime_assert idx.size == Self.rank, "invalid index size"
+        comptime assert idx.size == Self.rank, "invalid index size"
         return self.load[width=width, alignment=alignment](
             rebind[IndexList[Self.rank, element_type = idx.element_type]](
                 idx
@@ -1214,7 +1214,7 @@ struct NDBuffer[
             True if the buffer is contiguous in memory and False otherwise.
         """
 
-        __comptime_assert Self.rank > 0, "rank must be positive"
+        comptime assert Self.rank > 0, "rank must be positive"
         return self.stride[Self.rank - 1]() == 1
 
     @always_inline
@@ -1381,7 +1381,7 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
-        __comptime_assert Self.shape.all_known[Self.rank](), (
+        comptime assert Self.shape.all_known[Self.rank](), (
             "the shape of the NDBuffer must be known to allow for stack"
             " allocation"
         )

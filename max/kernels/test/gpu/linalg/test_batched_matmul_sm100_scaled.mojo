@@ -60,7 +60,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value

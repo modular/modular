@@ -317,13 +317,13 @@ fn allreduce[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not output_lambda
     ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    __comptime_assert (
+    comptime assert (
         not use_quickreduce
     ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
@@ -456,7 +456,7 @@ fn broadcast[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl broadcast does not support multimem path"
     # Determine this device's rank from its context id.

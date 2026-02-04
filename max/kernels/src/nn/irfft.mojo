@@ -161,13 +161,13 @@ fn _irfft[
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "Input and output must have the same rank"
-    __comptime_assert (
+    comptime assert (
         input_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
-    __comptime_assert (
+    comptime assert (
         output_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might

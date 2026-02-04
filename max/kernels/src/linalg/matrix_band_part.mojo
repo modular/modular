@@ -40,7 +40,7 @@ fn matrix_band_part[
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         num_lower.layout.rank()
         == num_upper.layout.rank()
         == exclude.layout.rank()
@@ -89,7 +89,7 @@ fn _matrix_band_part_impl[
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    __comptime_assert rank >= 2, "Matrix band only supports rank >=2"
+    comptime assert rank >= 2, "Matrix band only supports rank >=2"
 
     @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter

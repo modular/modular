@@ -165,7 +165,7 @@ struct ConvShape[rank: Int](TrivialRegisterType):
     fn output_flat_coord_to_input_offset(
         self, n: Int, output_flat_coord: Int
     ) -> Int:
-        __comptime_assert (
+        comptime assert (
             Self.rank == 1 or Self.rank == 2 or Self.rank == 3
         ), "Only support 1d, 2d, and 3d convolution."
 
@@ -372,11 +372,11 @@ fn get_conv2d_shape[
     dilation: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[2]:
-    __comptime_assert (
+    comptime assert (
         input.rank == 4 and output.rank == 4
     ), "Input and output must be rank 4"
-    __comptime_assert data_layout == Image2DLayout.NHWC
-    __comptime_assert (
+    comptime assert data_layout == Image2DLayout.NHWC
+    comptime assert (
         filter.rank == 4 and filter_layout == Image2DLayout.RSCF
     ) or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
 
@@ -541,7 +541,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         input_c: Int,
         filter_c: Int,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.rank == 3 or Self.rank == 2 or Self.rank == 1
         ), "Only support 1d/2d/3d/ conv attributes"
 

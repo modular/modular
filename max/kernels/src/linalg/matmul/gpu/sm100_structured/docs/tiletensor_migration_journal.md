@@ -118,8 +118,8 @@ comptime head_size = x.static_shape[2]
 comptime rope_dim = freqs_cis.static_shape[1]
 
 # Compile-time assertions
-__comptime_assert x.shape_types[i].is_static_value
-__comptime_assert freqs_cis.all_dims_known
+comptime assert x.shape_types[i].is_static_value
+comptime assert freqs_cis.all_dims_known
 ```
 
 **Load/store with Coord:**

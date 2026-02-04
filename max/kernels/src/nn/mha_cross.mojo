@@ -55,8 +55,8 @@ fn _bmm0_bs[
     group: Int,
     mask_functor: mask_t,
 ):
-    __comptime_assert q_input_row_offsets.rank == 1
-    __comptime_assert kv_input_row_offsets.rank == 1
+    comptime assert q_input_row_offsets.rank == 1
+    comptime assert kv_input_row_offsets.rank == 1
 
     # total_context_length
     var x = global_idx.x
@@ -159,8 +159,8 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    __comptime_assert q_input_row_offsets.rank == 1
-    __comptime_assert kv_input_row_offsets.rank == 1
+    comptime assert q_input_row_offsets.rank == 1
+    comptime assert kv_input_row_offsets.rank == 1
 
     comptime v_type = cache_t.dtype
     comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -261,11 +261,11 @@ fn mha_cross_gpu_naive[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    __comptime_assert rank == 3, "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert rank == 3, "only support rank 3 inputs for ragged inputs."
+    comptime assert (
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -339,7 +339,7 @@ fn mha_cross_gpu_naive[
         _simd_width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[p_type, _simd_width]:
         var p_coord = Coord(coords)
-        __comptime_assert p_coord.rank == p_buffer.rank
+        comptime assert p_coord.rank == p_buffer.rank
         return p_buffer.load[width=_simd_width](p_coord)
 
     _softmax_gpu[p_type, 1, 3, input_fn_device](

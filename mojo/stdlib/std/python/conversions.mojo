@@ -61,5 +61,5 @@ __extension SIMD(ConvertibleToPython):
         Returns:
             A PythonObject representing the value.
         """
-        __comptime_assert size == 1, "only works with scalar values"
+        comptime assert size == 1, "only works with scalar values"
         return PythonObject(self._refine[new_size=1]())

@@ -1465,7 +1465,7 @@ struct DecodeSM100QKTSS[
         c_scale: UInt32,
         elect: Int32,
     ):
-        __comptime_assert stage_idx == 0, "stage_idx should be 0"
+        comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
             kind = UMMAKind.KIND_F16,
             layout_a = Self.ALayout,
@@ -1558,7 +1558,7 @@ struct DecodeSM100PVSS[
         c_scale: UInt32,
         elect: Int32,
     ):
-        __comptime_assert stage_idx == 0, "stage_idx should be 0"
+        comptime assert stage_idx == 0, "stage_idx should be 0"
         bulk_mma_ws[
             kind = UMMAKind.KIND_F16,
             layout_a = Self.ALayout,
@@ -1947,7 +1947,7 @@ struct MLA_SM100_Decode_Common[
         max_seq_len: UInt32,  # for score_mod
     ):
         comptime MaskName: String = Self.MaskType.name()
-        __comptime_assert Self.AccumType.is_floating_point()
+        comptime assert Self.AccumType.is_floating_point()
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
@@ -2150,10 +2150,10 @@ struct MLA_SM100_Decode_Common[
         # --------------------------------------------------------------------------
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
         # --------------------------------------------------------------------------
-        __comptime_assert (
+        comptime assert (
             Self.AccumType == DType.float32
         ), "accumulator type should be float32"
-        __comptime_assert (
+        comptime assert (
             Self.output_type == DType.bfloat16
         ), "output type should be bfloat16"
 

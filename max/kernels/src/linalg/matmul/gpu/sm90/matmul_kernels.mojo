@@ -295,22 +295,20 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     fn validate_constraints():
         """Validate common constraints for all kernel variants."""
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "A and B must have the same type"
 
-        __comptime_assert (
-            Self.transpose_b
-        ), "Only support transposed B in layout"
+        comptime assert Self.transpose_b, "Only support transposed B in layout"
 
-        __comptime_assert (
+        comptime assert (
             not Self.partitioned_multicast
             or Self.a_swizzle.bytes() // size_of[Self.a_type]() == Self.BK
         ), (
             "Currently partitioned multi-casting is only supported when BK"
             " == (a_swizzle.bytes // size_of[a_type])"
         )
-        __comptime_assert (
+        comptime assert (
             not Self.partitioned_multicast
             or Self.b_swizzle.bytes() // size_of[Self.b_type]() == Self.BK
         ), (
@@ -318,11 +316,11 @@ struct HopperMatmulSM90Kernel[
             " == (b_swizzle.bytes // size_of[b_type])"
         )
 
-        __comptime_assert (
+        comptime assert (
             Self.num_pipeline_stages % Self.k_group_size == 0
         ), "num_pipeline_stages must be a multiple of k_group_size"
         comptime K = Self.b_layout.shape[1].value()
-        __comptime_assert (
+        comptime assert (
             K % Self.k_group_size == 0
         ), "K must be a multiple of k_group_size"
 

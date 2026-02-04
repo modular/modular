@@ -59,13 +59,13 @@ fn cpu_matmul_naive[
     # layout_b is K x N
     comptime layout_b = B.layout.transpose() if transpose_b else B.layout
     comptime K = layout_a[1].size()
-    __comptime_assert M == layout_a[0].size(), String(
+    comptime assert M == layout_a[0].size(), String(
         "C.M = ", M, "; A.M = ", layout_a[0].size()
     )
-    __comptime_assert N == layout_b[1].size(), String(
+    comptime assert N == layout_b[1].size(), String(
         "C.N = ", M, "; B.N = ", layout_b[1].size()
     )
-    __comptime_assert K == layout_b[0].size(), String(
+    comptime assert K == layout_b[0].size(), String(
         "A.K = ", K, "; B.K = ", layout_b[0].size()
     )
     for n in range(N):
@@ -120,8 +120,8 @@ fn tma_umma_kernel_ss[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert num_threads == 128 or num_threads == 256
-    __comptime_assert a_type == b_type and a_type in (
+    comptime assert num_threads == 128 or num_threads == 256
+    comptime assert a_type == b_type and a_type in (
         DType.float8_e4m3fn,
         DType.bfloat16,
     ), "a_type and b_type must be the same and either float8_e4m3fn or bfloat16"
@@ -177,10 +177,10 @@ fn tma_umma_kernel_ss[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
@@ -396,7 +396,7 @@ fn tma_umma_kernel_ts[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert num_threads == 128 or num_threads == 256
+    comptime assert num_threads == 128 or num_threads == 256
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -406,10 +406,10 @@ fn tma_umma_kernel_ts[
     comptime num_m_mmas = BM // MMA_M
     comptime num_n_mmas = BN // MMA_N
 
-    __comptime_assert (
+    comptime assert (
         num_m_mmas == 1 and num_n_mmas == 1
     ), "num_m_mmas and num_n_mmas must be 1"
-    __comptime_assert (
+    comptime assert (
         a_type == b_type and a_type == DType.bfloat16
     ), "a_type and b_type must be the same and bfloat16 type"
     comptime b_smem_layout = tile_layout_k_major[
@@ -441,7 +441,7 @@ fn tma_umma_kernel_ts[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 16
     ) == 0, "preserve alignment"
     # Shared memory pointer to hold tensor memory address

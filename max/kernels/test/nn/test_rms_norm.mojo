@@ -29,7 +29,7 @@ fn compute_rms[
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
 ]:
-    __comptime_assert data.rank == 1, "data.rank must be 1"
+    comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()

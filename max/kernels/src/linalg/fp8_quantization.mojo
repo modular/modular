@@ -72,12 +72,12 @@ fn quantize_static_scaled_fp8[
     scale: Float32,
     context: DeviceContext,
 ) raises:
-    __comptime_assert in_dtype in (
+    comptime assert in_dtype in (
         DType.float32,
         DType.float16,
         DType.bfloat16,
     ), "input dtype should be float16, bfloat16 or float32"
-    __comptime_assert out_dtype in (
+    comptime assert out_dtype in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
@@ -88,7 +88,7 @@ fn quantize_static_scaled_fp8[
     fn scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 2, "rank should be equal to 2"
+        comptime assert rank == 2, "rank should be equal to 2"
 
         var idx = rebind[IndexList[2]](idx_arg)
         var in_vec_f32 = in_buffer.load[width=width](idx).cast[DType.float32]()
@@ -140,18 +140,18 @@ fn quantize_dynamic_scaled_fp8[
     ctx: DeviceContext,
     num_rows: Int,
 ) raises:
-    __comptime_assert scales_dtype in (
+    comptime assert scales_dtype in (
         DType.bfloat16,
         DType.float16,
         DType.float32,
         DType.float8_e8m0fnu,
     ), "scales dtype should be bfloat16, float16 or float32"
-    __comptime_assert out_dtype in (
+    comptime assert out_dtype in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
-    __comptime_assert (scales_dtype != DType.float8_e8m0fnu) or (
+    comptime assert (scales_dtype != DType.float8_e8m0fnu) or (
         out_dtype == DType.float8_e4m3fn
     ), "float8_e8m0fnu is only supported for float8_e4m3fn output dtype"
 
@@ -163,7 +163,7 @@ fn quantize_dynamic_scaled_fp8[
     )
     comptime num_threads = warps_per_block * WARP_SIZE
 
-    __comptime_assert (
+    comptime assert (
         group_size % simd_width == 0
     ), "group size must be multiple of simd size"
 
@@ -216,7 +216,7 @@ fn quantize_fp8_kernel[
     comptime fp8_max = Scalar[out_type].MAX_FINITE
     comptime accum_type = get_accum_type[in_type]()
 
-    __comptime_assert (scales_type != DType.float8_e8m0fnu) or (
+    comptime assert (scales_type != DType.float8_e8m0fnu) or (
         accum_type == DType.float32
     ), "float8_e8m0fnu quantization is only supported for float32 accum type"
 
@@ -297,12 +297,12 @@ fn batched_quantize_dynamic_scaled_fp8[
     num_rows: Int,
     batch_size: Int,
 ) raises:
-    __comptime_assert scales_dtype in (
+    comptime assert scales_dtype in (
         DType.bfloat16,
         DType.float16,
         DType.float32,
     ), "scales dtype should be bfloat16, float16 or float32"
-    __comptime_assert out_dtype in (
+    comptime assert out_dtype in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
@@ -315,7 +315,7 @@ fn batched_quantize_dynamic_scaled_fp8[
     )
     comptime num_threads = warps_per_block * WARP_SIZE
 
-    __comptime_assert (
+    comptime assert (
         group_size % simd_width == 0
     ), "group size must be multiple of simd size"
 
@@ -449,11 +449,11 @@ fn matmul_dynamic_scaled_fp8[
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert a_scales.rank == 2
-    __comptime_assert b_scales.rank == 2
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert a_scales.rank == 2
+    comptime assert b_scales.rank == 2
     comptime dim[i: Int] = Dim(i) if i > -1 else Dim()
 
     comptime c_shape = DimList(dim[c.static_shape[0]], dim[c.static_shape[1]])
@@ -559,25 +559,25 @@ fn matmul_dynamic_scaled_fp8[
     b_scales: NDBuffer[b_scales_type, 2, _, _, _],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert a_type == b_type, "input A and B dtype should be the same"
-    __comptime_assert (
+    comptime assert a_type == b_type, "input A and B dtype should be the same"
+    comptime assert (
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be the same"
 
-    __comptime_assert a_type in (
+    comptime assert a_type in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
     ), "input A dtype should be float8_e4m3fn, float8_e4m3fnuz"
-    __comptime_assert b_type in (
+    comptime assert b_type in (
         DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
     ), "input B dtype should be float8_e4m3fn, float8_e4m3fnuz"
-    __comptime_assert a_scales_type in (
+    comptime assert a_scales_type in (
         DType.bfloat16,
         DType.float16,
         DType.float32,
     ), "input A scales dtype should be bfloat16, float16 or float32"
-    __comptime_assert b_scales_type in (
+    comptime assert b_scales_type in (
         DType.bfloat16,
         DType.float16,
         DType.float32,
@@ -754,16 +754,16 @@ fn naive_blockwise_scaled_fp8_matmul[
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert a_type == b_type == DType.float8_e4m3fn, (
+    comptime assert a_type == b_type == DType.float8_e4m3fn, (
         "Only float8_e4m3fn is supported for input dtype for blockwise"
         " scaled fp8 matmul"
     )
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be same"
 
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
@@ -865,16 +865,16 @@ fn naive_blockwise_scaled_fp8_matmul[
     b_scales_device: NDBuffer[b_scales_type, 2, _, b_scale_shape],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert a_type == b_type == DType.float8_e4m3fn, (
+    comptime assert a_type == b_type == DType.float8_e4m3fn, (
         "Only float8_e4m3fn is supported for input dtype for blockwise"
         " scaled fp8 matmul"
     )
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type
     ), "input A and B scales dtype should be same"
 
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
@@ -996,7 +996,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     # 3. a_scales should be always in M-major format
     # 4. b_scales should be in K-major format if transpose_b is True otherwise it is in N-major format
 
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
@@ -1115,22 +1115,22 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
 ) raises:
     comptime accum_type = get_accum_type[a_type]()
 
-    __comptime_assert (
+    comptime assert (
         transpose_b
     ), "Only support transposed B in grouped fp8 matmul."
-    __comptime_assert a_type == b_type == DType.float8_e4m3fn, (
+    comptime assert a_type == b_type == DType.float8_e4m3fn, (
         "Only float8_e4m3fn is supported for inputs in grouped blockwise"
         " scaled fp8 matmul"
     )
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
-    __comptime_assert a_offsets_type == DType.uint32, (
+    comptime assert a_offsets_type == DType.uint32, (
         "Only uint32 is supported for a_offsets in grouped blockwise scaled"
         " fp8 matmul"
     )
-    __comptime_assert expert_ids_type == DType.int32, (
+    comptime assert expert_ids_type == DType.int32, (
         "Only int32 is supported for expert_ids in grouped blockwise scaled"
         " fp8 matmul"
     )
@@ -1206,7 +1206,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
     b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         accum_type == DType.float32
     ), "Only float32 is supported for accumulation for scaled matmul"
 
@@ -1306,7 +1306,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
         output_buffer: Output tensor to store E4M3FNUZ format.
         context: Device context for kernel execution.
     """
-    __comptime_assert (
+    comptime assert (
         input_buffer.layout.shape == output_buffer.layout.shape
     ), "Input and output shapes must match"
 
@@ -1316,7 +1316,7 @@ fn convert_e4m3fn_to_e4m3fnuz(
     fn convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 2, "rank should be equal to 2"
+        comptime assert rank == 2, "rank should be equal to 2"
 
         var idx = rebind[IndexList[2]](idx_arg)
 

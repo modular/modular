@@ -30,7 +30,7 @@ fn _fill_strides_indexlist[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert rank > 0
+    comptime assert rank > 0
     strides[rank - 1] = 1
 
     @parameter
@@ -164,7 +164,7 @@ fn _pad_constant_impl[
     var row_length = Int(input_tensor.dim(input_tensor.rank - 1))
     var total_rows = input_tensor.numel() // row_length
 
-    __comptime_assert threads_per_row > 0 and max_threads % threads_per_row == 0
+    comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
@@ -286,9 +286,7 @@ fn get_padding_output_shape[
     input_shape: IndexList[rank],
     paddings: TileTensor[DType.int, ...],
 ) -> IndexList[rank]:
-    __comptime_assert (
-        paddings.rank == 1 and paddings.static_shape[0] == 2 * rank
-    )
+    comptime assert paddings.rank == 1 and paddings.static_shape[0] == 2 * rank
     var output_shape = IndexList[rank]()
     for i in range(rank):
         var before = paddings[2 * i]

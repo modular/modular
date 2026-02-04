@@ -90,7 +90,7 @@ fn reshape_shape[
     input_buf: TileTensor[input_type, ...],
     target_shape_buf: TileTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
-    __comptime_assert (
+    comptime assert (
         target_shape_buf.rank == 1
     ), "target_shape_buf must be rank 1"
     if output_rank != Int(target_shape_buf.dim(0)):

@@ -375,7 +375,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
         Returns:
             The exponential of the complex value.
         """
-        __comptime_assert (
+        comptime assert (
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
         var exp_re = math.exp(self.re)

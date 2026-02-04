@@ -79,7 +79,7 @@ struct ImageData[
             data: A 4d buffer containing the actual data.
             _layout: Data layout tag.
         """
-        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
+        comptime assert Self.static_image_layout == Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = _layout
 
@@ -87,7 +87,7 @@ struct ImageData[
         out self,
         data: TileTensor[Self.dtype, Self.origin, Self.LayoutType],
     ):
-        __comptime_assert Self.static_image_layout != Image2DLayout.UNKNOWN
+        comptime assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
         self.dynamic_image_layout = Self.static_image_layout
 
@@ -105,7 +105,7 @@ struct ImageData[
         Returns:
             The image data with static data layout.
         """
-        __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
+        comptime assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[
             LayoutType = Self.LayoutType,
             Self.dtype,

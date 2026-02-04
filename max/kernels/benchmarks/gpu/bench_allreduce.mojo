@@ -74,8 +74,8 @@ fn bench_reduce[
     max_num_blocks: Optional[Int],
     ragged: Bool,
 ) raises:
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](

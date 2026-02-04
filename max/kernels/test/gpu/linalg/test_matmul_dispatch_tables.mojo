@@ -18,5 +18,5 @@ from linalg.matmul.gpu.sm90.dispatch import (
 
 
 def main():
-    __comptime_assert llama_8b_fp8_table.check()
-    __comptime_assert llama_405b_fp8_table.check()
+    comptime assert llama_8b_fp8_table.check()
+    comptime assert llama_405b_fp8_table.check()

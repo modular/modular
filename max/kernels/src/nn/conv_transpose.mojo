@@ -111,12 +111,12 @@ fn conv_transpose_naive[
         pad_h: Padding in height dimension.
         pad_w: Padding in width dimension.
     """
-    __comptime_assert output.rank == 5
-    __comptime_assert input.rank == 5
-    __comptime_assert filter.rank == 5
-    __comptime_assert output.element_size == 1
-    __comptime_assert input.element_size == 1
-    __comptime_assert filter.element_size == 1
+    comptime assert output.rank == 5
+    comptime assert input.rank == 5
+    comptime assert filter.rank == 5
+    comptime assert output.element_size == 1
+    comptime assert input.element_size == 1
+    comptime assert filter.element_size == 1
 
     var N = Int(input.dim[0]())  # Number of images (num. batches)
 
@@ -217,10 +217,10 @@ fn conv_transpose_shape[
     Returns:
         The output shape.
     """
-    __comptime_assert strides.rank == 1
-    __comptime_assert pads.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert output_pads.rank == 1
+    comptime assert strides.rank == 1
+    comptime assert pads.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert output_pads.rank == 1
 
     if input.rank != 4 and input.rank != 5:
         raise Error("[conv_transpose] requires (input_rank == 4 or 5)")
@@ -460,7 +460,7 @@ struct ConvTransposedPacked[
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
     ) raises:
-        __comptime_assert input.rank - 2 == Self.conv_attr_rank
+        comptime assert input.rank - 2 == Self.conv_attr_rank
         comptime simd_size = simd_width_of[Self.output_type]()
         comptime micro_kernel_shape = get_micro_kernel_shape[
             Self.conv_attr_rank,
@@ -481,7 +481,7 @@ struct ConvTransposedPacked[
 
         @parameter
         if Self.conv_attr.num_groups != UNKNOWN_VALUE:
-            __comptime_assert (
+            comptime assert (
                 Self.conv_attr.num_groups == 1
             ), "Don't support grouped transposed conv for now."
 
@@ -1047,7 +1047,7 @@ fn update_w_tile_2d[
 
             @parameter
             if effected_by_padding:
-                __comptime_assert (
+                comptime assert (
                     micro_kernel_height == 1
                 ), "The tile must only have 1 point when effected bypadding."
                 var wo_nbr = howo[1] + s * conv_shape.dilation[1]
@@ -1145,7 +1145,7 @@ fn update_w_tile_3d[
 
                 @parameter
                 if effected_by_padding:
-                    __comptime_assert micro_kernel_height == 1
+                    comptime assert micro_kernel_height == 1
                     var wo_nbr = howo[2] + s * conv_shape.dilation[2]
                     if wo_nbr < 0 or wo_nbr >= conv_shape.wo():
                         continue
@@ -1418,7 +1418,7 @@ fn conv_transposed_cpu[
         )
         # fmt: on
 
-    __comptime_assert not filter_is_cfrs, "Filter layout CFRS is not supported"
+    comptime assert not filter_is_cfrs, "Filter layout CFRS is not supported"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",

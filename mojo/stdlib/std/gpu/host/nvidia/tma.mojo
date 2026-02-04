@@ -86,7 +86,7 @@ struct TensorMapDataType(TrivialRegisterType):
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        __comptime_assert dtype in (
+        comptime assert dtype in (
             DType.float32,
             DType.bfloat16,
             DType.uint8,

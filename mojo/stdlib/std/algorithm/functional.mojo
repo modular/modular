@@ -199,8 +199,8 @@ fn vectorize[
     exponent of 2 (2, 4, 8, 16, ...). The remainder loop will still unroll for
     performance improvements if not an exponent of 2.
     """
-    __comptime_assert simd_width > 0, "simd width must be > 0"
-    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
+    comptime assert simd_width > 0, "simd width must be > 0"
+    comptime assert unroll_factor > 0, "unroll factor must be > 0"
     debug_assert(size >= 0, "size must be >= 0")
 
     comptime unrolled_simd_width = simd_width * unroll_factor
@@ -327,8 +327,8 @@ fn vectorize[
         - If `size < simd_width`, the loop will consist of a single call:
           `closure[simd_width](0, size)`.
     """
-    __comptime_assert simd_width > 0, "simd width must be > 0"
-    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
+    comptime assert simd_width > 0, "simd width must be > 0"
+    comptime assert unroll_factor > 0, "unroll factor must be > 0"
     debug_assert(size >= 0, "size must be >= 0")
 
     comptime unrolled_simd_width = simd_width * unroll_factor
@@ -433,9 +433,9 @@ fn vectorize[
     closure[2](8)
     ```
     """
-    __comptime_assert simd_width > 0, "simd width must be > 0"
-    __comptime_assert unroll_factor > 0, "unroll factor must be > 0"
-    __comptime_assert size >= 0, "size must be >= 0"
+    comptime assert simd_width > 0, "simd width must be > 0"
+    comptime assert unroll_factor > 0, "unroll factor must be > 0"
+    comptime assert size >= 0, "size must be >= 0"
 
     comptime unrolled_simd_width = simd_width * unroll_factor
     comptime simd_end = align_down(size, simd_width)
@@ -1255,10 +1255,10 @@ fn _get_start_indices_of_nth_subvolume[
         Constructed ND-index.
     """
 
-    __comptime_assert (
+    comptime assert (
         subvolume_rank <= rank
     ), "subvolume rank cannot be greater than indices rank"
-    __comptime_assert subvolume_rank >= 0, "subvolume rank must be non-negative"
+    comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     # fast impls for common cases
     @parameter
@@ -1402,7 +1402,7 @@ fn elementwise[
         If the operation fails.
     """
 
-    __comptime_assert is_cpu[target](), (
+    comptime assert is_cpu[target](), (
         "the target must be CPU use the elementwise which takes the"
         " DeviceContext to be able to use the GPU version"
     )
@@ -1616,7 +1616,7 @@ fn _elementwise_impl_cpu_1d[
     Args:
         shape: The shape of the buffer.
     """
-    __comptime_assert rank == 1, "Specialization for 1D"
+    comptime assert rank == 1, "Specialization for 1D"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1678,7 +1678,7 @@ fn _elementwise_impl_cpu_nd[
     Args:
         shape: The shape of the buffer.
     """
-    __comptime_assert rank > 1, "Specialization for ND where N > 1"
+    comptime assert rank > 1, "Specialization for ND where N > 1"
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1784,7 +1784,7 @@ fn _elementwise_impl_gpu[
         hw_info.threads_per_multiprocessor
     )
 
-    __comptime_assert (
+    comptime assert (
         sm_count > 0 and threads_per_multiprocessor > 0
     ), "the sm_count and thread_count must be known"
 
@@ -1998,8 +1998,8 @@ fn _stencil_impl_cpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
-    __comptime_assert (
+    comptime assert rank == 4, "Only stencil of rank-4 supported"
+    comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
 
@@ -2163,8 +2163,8 @@ fn _stencil_impl_gpu[
         shape: The shape of the output buffer.
         input_shape: The shape of the input buffer.
     """
-    __comptime_assert rank == 4, "Only stencil of rank-4 supported"
-    __comptime_assert (
+    comptime assert rank == 4, "Only stencil of rank-4 supported"
+    comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
 

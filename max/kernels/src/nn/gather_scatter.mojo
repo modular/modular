@@ -68,7 +68,7 @@ fn normalize_neg_index[
 
     Returns val + dim if val < 0 else val
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_integral()
     ), "normalize_neg_index expects index to be an integral dtype"
 
@@ -128,10 +128,10 @@ fn gather_reduce[
     context, i is the batch dimension, j is the multi-hot dimension, and k is
     the embedding dimension.
     """
-    __comptime_assert input.rank == 2
-    __comptime_assert indices.rank == 2
-    __comptime_assert gather_axis == 0
-    __comptime_assert reduce_axis == 1
+    comptime assert input.rank == 2
+    comptime assert indices.rank == 2
+    comptime assert gather_axis == 0
+    comptime assert reduce_axis == 1
 
     # Short-circuit for trivial cases, and to avoid divide-by-zero
     if input.size() == 0 or indices.size() == 0:
@@ -1281,7 +1281,7 @@ fn scatter_elements[
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
     """
-    __comptime_assert (
+    comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in scatter_elements must be int32 or int64"
 
@@ -1404,7 +1404,7 @@ fn gather_elements[
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
     """
-    __comptime_assert (
+    comptime assert (
         indices_type == DType.int32 or indices_type == DType.int64
     ), "indices in gather_elements must be int32 or int64"
 
@@ -1584,7 +1584,7 @@ fn _gather_nd_impl[
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
@@ -1657,7 +1657,7 @@ fn _gather_nd_impl[
     var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
-    __comptime_assert data.rank - 1 != UNKNOWN_VALUE
+    comptime assert data.rank - 1 != UNKNOWN_VALUE
     var use_simd = (
         data.stride[data.rank - 1]() == 1
         and (slice_last_dim % target_simd_width) == 0
@@ -1744,13 +1744,13 @@ fn scatter_set_constant[
         fill_value: The value to fill the data with.
         ctx: The device context.
     """
-    __comptime_assert (
+    comptime assert (
         index_type.is_integral()
     ), "index_type must be an integer dtype"
-    __comptime_assert (
+    comptime assert (
         data.layout.rank() == 2
     ), "scatter_set: data must have rank 2"
-    __comptime_assert (
+    comptime assert (
         indices.layout.rank() == 2
     ), "scatter_set: indices must have rank 2"
     debug_assert(
@@ -1763,7 +1763,7 @@ fn scatter_set_constant[
     fn scatter_set_constant_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        __comptime_assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
+        comptime assert rank_ == 1, "scatter_set_constant_fn: rank must be 1"
 
         data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
 

@@ -186,7 +186,7 @@ struct Element[
             A new `Element` containing the loaded data.
         """
         comptime flat_layout = coalesce(Self.layout)
-        __comptime_assert flat_layout.rank() <= 2, "Only supports rank <= 2"
+        comptime assert flat_layout.rank() <= 2, "Only supports rank <= 2"
 
         var element_data = Self.element_data_type()
 
@@ -279,7 +279,7 @@ struct Element[
             beyond the runtime dimensions.
         """
         # TODO: Use partial_simd_load after closing KERN-729.
-        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
+        comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
         var element_data = Self.element_data_type()
 
         @parameter
@@ -421,7 +421,7 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
+        comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
         @parameter
         if Self.layout.rank() == 1:
@@ -500,7 +500,7 @@ struct Element[
             This method is constrained to layouts with rank <= 2. For higher-rank
             tensors, consider decomposing the operation.
         """
-        __comptime_assert Self.layout.rank() <= 2, "Only supports rank <= 2"
+        comptime assert Self.layout.rank() <= 2, "Only supports rank <= 2"
 
         @parameter
         if Self.layout.rank() == 1:

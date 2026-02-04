@@ -42,8 +42,8 @@ fn _transpose_inplace_4x4[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 4
-    __comptime_assert cols == 4
+    comptime assert rows == 4
+    comptime assert cols == 4
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -80,8 +80,8 @@ fn _transpose_inplace_4x4[
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
 
-    __comptime_assert rows == 4
-    __comptime_assert cols == 4
+    comptime assert rows == 4
+    comptime assert cols == 4
     var buf = bufloat0.reshape[Layout.row_major(4, 4)]()
 
     var idx0 = buf.runtime_layout(
@@ -130,8 +130,8 @@ fn _transpose_inplace_8x8[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 8
-    __comptime_assert cols == 8
+    comptime assert rows == 8
+    comptime assert cols == 8
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -228,8 +228,8 @@ fn _transpose_inplace_8x8[
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
-    __comptime_assert rows == 8
-    __comptime_assert cols == 8
+    comptime assert rows == 8
+    comptime assert cols == 8
 
     var buf = bufloat0.reshape[Layout.row_major(8, 8)]()
 
@@ -360,8 +360,8 @@ fn _transpose_inplace_16x16[
     cols: Int,
     dtype: DType,
 ](bufloat0: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
-    __comptime_assert rows == 16
-    __comptime_assert cols == 16
+    comptime assert rows == 16
+    comptime assert cols == 16
     var buf = rebind[
         NDBuffer[
             dtype,
@@ -543,8 +543,8 @@ fn _transpose_inplace_16x16[
 ](bufloat0: LayoutTensor[mut=True, dtype, ...]):
     comptime rows = Int(bufloat0.layout.shape[0])
     comptime cols = Int(bufloat0.layout.shape[1])
-    __comptime_assert rows == 16
-    __comptime_assert cols == 16
+    comptime assert rows == 16
+    comptime assert cols == 16
 
     var buf = bufloat0.reshape[Layout.row_major(16, 16)]()
 
@@ -826,7 +826,7 @@ fn transpose_inplace[
     dtype: DType,
 ](buf: NDBuffer[mut=True, dtype, 2, _, DimList(rows, cols)]):
     # Reject sizes covered by specialized implementations
-    __comptime_assert rows == cols
+    comptime assert rows == cols
 
     @parameter
     if rows == 4:
@@ -845,10 +845,10 @@ fn transpose_inplace[
     dtype: DType,
 ](buf: LayoutTensor[mut=True, dtype, ...]):
     # Reject sizes covered by specialized implementations
-    __comptime_assert buf.rank == 2
-    __comptime_assert rows == cols
-    __comptime_assert rows == Int(buf.layout.shape[0])
-    __comptime_assert cols == Int(buf.layout.shape[1])
+    comptime assert buf.rank == 2
+    comptime assert rows == cols
+    comptime assert rows == Int(buf.layout.shape[0])
+    comptime assert cols == Int(buf.layout.shape[1])
 
     @parameter
     if rows == 4:
@@ -911,7 +911,7 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert rank > 0
+    comptime assert rank > 0
     strides[rank - 1] = 1
 
     @parameter
@@ -934,8 +934,8 @@ fn _fill_strides[
 
     Note that `buf` is only used for querying its dimensions.
     """
-    __comptime_assert buf.rank > 0
-    __comptime_assert strides.rank == 1 and strides.static_shape[0] == buf.rank
+    comptime assert buf.rank > 0
+    comptime assert strides.rank == 1 and strides.static_shape[0] == buf.rank
     strides[buf.rank - 1] = 1
 
     @parameter

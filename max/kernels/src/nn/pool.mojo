@@ -134,13 +134,11 @@ fn pool_shape_impl[
     Returns:
         The output shape.
     """
-    __comptime_assert (
-        input_buf.rank == 4
-    ), "[pooling] requires (input_rank == 4)"
-    __comptime_assert filter_buf.rank == 1
-    __comptime_assert strides_buf.rank == 1
-    __comptime_assert dilations_buf.rank == 1
-    __comptime_assert paddings_buf.rank == 1
+    comptime assert input_buf.rank == 4, "[pooling] requires (input_rank == 4)"
+    comptime assert filter_buf.rank == 1
+    comptime assert strides_buf.rank == 1
+    comptime assert dilations_buf.rank == 1
+    comptime assert paddings_buf.rank == 1
 
     if (
         filter_buf.dim(0) != input_buf.rank - 2
@@ -208,10 +206,10 @@ fn max_pool_cpu[
         output: Pre-allocated output tensor space.
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.rank == 1
+    comptime assert strides.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert paddings.rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -384,10 +382,10 @@ fn max_pool_gpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.rank == 1
+    comptime assert strides.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert paddings.rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -547,10 +545,10 @@ fn avg_pool_cpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert filter.rank == 1
-    __comptime_assert strides.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert paddings.rank == 1
+    comptime assert filter.rank == 1
+    comptime assert strides.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert paddings.rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):
@@ -825,10 +823,10 @@ fn avg_pool_gpu[
         ceil_mode: Ceiling mode defines the output shape and implicit padding.
     """
 
-    __comptime_assert paddings.rank == 1
-    __comptime_assert filter.rank == 1
-    __comptime_assert dilations.rank == 1
-    __comptime_assert strides.rank == 1
+    comptime assert paddings.rank == 1
+    comptime assert filter.rank == 1
+    comptime assert dilations.rank == 1
+    comptime assert strides.rank == 1
 
     var empty_padding = True
     for i in range(paddings.numel()):

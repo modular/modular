@@ -97,7 +97,7 @@ fn _init_dylib() -> OwnedDLHandle:
 fn _get_dylib_function[
     func_name: StaticString, result_type: __TypeOfAllTypes
 ]() raises -> result_type:
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "operating system must be macOS"
     return _ffi_get_dylib_function[

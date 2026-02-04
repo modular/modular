@@ -562,9 +562,9 @@ fn outer_product_acc(
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
-    __comptime_assert lhs.element_size == res.element_size
-    __comptime_assert lhs.element_size == rhs.element_size
-    __comptime_assert res.rank == 2
+    comptime assert lhs.element_size == res.element_size
+    comptime assert lhs.element_size == rhs.element_size
+    comptime assert res.rank == 2
 
     comptime dtype = res.dtype
     comptime M = res.static_shape[0]

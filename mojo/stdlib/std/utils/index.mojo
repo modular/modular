@@ -208,7 +208,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             data: The StaticTuple to construct the IndexList from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = data
@@ -224,11 +224,11 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             elems: The tuple to copy from.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         comptime num_elements = type_of(elems).__len__()
-        __comptime_assert (
+        comptime assert (
             Self.size == num_elements
         ), "[IndexList] mismatch in the number of elements"
 
@@ -249,7 +249,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             __list_literal__: Specifies that this constructor can be used for
                list literals.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
 
@@ -262,7 +262,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             fill: The elem to splat into the tuple.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
@@ -274,7 +274,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Args:
             values: The list of values.
         """
-        __comptime_assert (
+        comptime assert (
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         var num_elements = len(values)
@@ -692,9 +692,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The list casted to the target type.
         """
-        __comptime_assert (
-            dtype.is_integral()
-        ), "the target type must be integral"
+        comptime assert dtype.is_integral(), "the target type must be integral"
         result = {}
 
         @parameter

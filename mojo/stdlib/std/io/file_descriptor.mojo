@@ -108,7 +108,7 @@ struct FileDescriptor(TrivialRegisterType, Writer):
             If the operation fails.
         """
 
-        __comptime_assert (
+        comptime assert (
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
