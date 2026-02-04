@@ -17,7 +17,17 @@ _MODELS_ALREADY_REGISTERED = False
 
 
 def register_all_models() -> None:
-    """Imports model architectures, thus registering the architecture in the shared :obj:`~max.pipelines.registry.PipelineRegistry`."""
+    """Register all built-in model architectures with the global registry.
+
+    This function imports each supported model architecture module (Llama, Mistral,
+    Qwen, Gemma, DeepSeek, etc.) and registers their :class:`~max.pipelines.SupportedArchitecture`
+    definitions with :obj:`~max.pipelines.PIPELINE_REGISTRY`.
+
+    This function is called automatically when :mod:`max.pipelines` is imported,
+    so you typically don't need to call it manually. It uses an internal flag to
+    ensure architectures are only registered once, making repeated calls safe but
+    unnecessary.
+    """
     global _MODELS_ALREADY_REGISTERED
 
     if _MODELS_ALREADY_REGISTERED:

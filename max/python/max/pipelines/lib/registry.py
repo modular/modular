@@ -290,6 +290,28 @@ class SupportedArchitecture:
 
 
 class PipelineRegistry:
+    """Registry for managing supported model architectures and their pipelines.
+
+    This class maintains a collection of :class:`SupportedArchitecture`
+    instances, each defining how a particular model architecture should be
+    loaded, configured, and executed.
+
+    .. note::
+
+        Do not instantiate this class directly. Always use the global
+        :obj:`PIPELINE_REGISTRY` singleton, which is automatically populated
+        with all built-in architectures when you import :mod:`max.pipelines`.
+
+    Use :obj:`PIPELINE_REGISTRY` when you want to:
+
+    - **Register a custom architectures**: Call :meth:`register` to add a new
+      MAX model architecture to the registry before loading it.
+    - **Query supported models**: Call :meth:`retrieve_architecture` to check
+      if a Hugging Face model repository is supported before attempting to load it.
+    - **Access cached configs**: Methods like :meth:`get_active_huggingface_config` and
+      :meth:`get_active_tokenizer` provide cached access to model configurations and tokenizers.
+    """
+
     def __init__(self, architectures: list[SupportedArchitecture]) -> None:
         # Primary lookup by architecture name
         self.architectures = {arch.name: arch for arch in architectures}
