@@ -60,7 +60,7 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   Operation *conformanceOp =
       context.resolveConformanceForStruct(resolved, getTraitName());
   if (!conformanceOp) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct '" +
         SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
         "' does not have witness table for trait '" +
@@ -75,9 +75,9 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
                           result = simplify(conformance, &evaluator);
                         });
   if (failed(result)) {
-    context.emitEvaluationError("failed to locate witness entry '" +
-                                getWitnessName().getValue() + "' for trait '" +
-                                getTraitName().getValue() + "'");
+    context.emitMaterializationError(
+        "failed to locate witness entry '" + getWitnessName().getValue() +
+        "' for trait '" + getTraitName().getValue() + "'");
   }
   return result;
 }
@@ -161,7 +161,8 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError("struct_field_types requires a struct type");
+    context.emitMaterializationError(
+        "struct_field_types requires a struct type");
     return failure();
   }
   ResolvedStructHandle resolved = *resolvedOr;
@@ -203,7 +204,8 @@ FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError("struct_field_names requires a struct type");
+    context.emitMaterializationError(
+        "struct_field_names requires a struct type");
     return failure();
   }
   ResolvedStructHandle resolved = *resolvedOr;
@@ -228,14 +230,14 @@ FailureOr<TypedAttr> StructFieldIndexByNameAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct_field_index_by_name requires a struct type");
     return failure();
   }
   ResolvedStructHandle resolved = *resolvedOr;
   auto index = resolved.decl.findFieldIndex(fieldNameAttr.getValue());
   if (!index) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct '" +
         SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
         "' has no field named '" + fieldNameAttr.getValue() + "'");
@@ -253,7 +255,7 @@ FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct_field_type_by_name requires a struct type");
     return failure();
   }
@@ -267,7 +269,7 @@ FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
     for (StructDefFieldAttr field : structType.getFields())
       if (field.getName().getValue() == fieldName)
         return field.getTypeValue();
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct '" +
         SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
         "' has no field named '" + fieldName + "'");
@@ -282,7 +284,7 @@ FailureOr<TypedAttr> StructFieldTypeByNameAttr::evaluateWithContext(
   // Otherwise, use generator's field type and rebind.
   TypedAttr fieldType = resolved.decl.getFieldType(fieldName);
   if (!fieldType) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct '" +
         SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
         "' has no field named '" + fieldName + "'");
@@ -312,7 +314,7 @@ FailureOr<TypedAttr> StructFieldOffsetByIndexAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct_field_offset_by_index requires a struct type");
     return failure();
   }
@@ -322,7 +324,7 @@ FailureOr<TypedAttr> StructFieldOffsetByIndexAttr::evaluateWithContext(
   MLIRContext *ctx = getType().getContext();
 
   auto emitError = [&context](const Twine &msg) {
-    context.emitEvaluationError(msg);
+    context.emitMaterializationError(msg);
   };
 
   // If concrete instance is available, use its field types directly.
@@ -378,7 +380,7 @@ FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
   if (failed(resolvedOr)) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct_field_offset_by_name requires a struct type");
     return failure();
   }
@@ -388,7 +390,7 @@ FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
   MLIRContext *ctx = getType().getContext();
 
   auto emitError = [&context](const Twine &msg) {
-    context.emitEvaluationError(msg);
+    context.emitMaterializationError(msg);
   };
 
   // Helper to find field index by name and emit error if not found.
@@ -400,8 +402,8 @@ FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
         return idx;
       ++idx;
     }
-    context.emitEvaluationError("struct '" + structName +
-                                "' has no field named '" + fieldName + "'");
+    context.emitMaterializationError(
+        "struct '" + structName + "' has no field named '" + fieldName + "'");
     return std::nullopt;
   };
 
@@ -436,7 +438,7 @@ FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
   std::optional<uint64_t> fieldIndexOpt =
       resolved.decl.findFieldIndex(fieldName);
   if (!fieldIndexOpt) {
-    context.emitEvaluationError(
+    context.emitMaterializationError(
         "struct '" +
         SymbolTable::getSymbolName(resolved.decl.getOperation()).getValue() +
         "' has no field named '" + fieldName + "'");

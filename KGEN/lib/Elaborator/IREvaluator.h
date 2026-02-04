@@ -67,8 +67,11 @@ protected:
       ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
       llvm::function_ref<void(ParameterEvaluator &)> callback) override;
 
-  /// Emit an evaluation error using the elaborator's error infrastructure.
-  void emitEvaluationError(const Twine &message) override;
+  /// Returns true since elaboration is a materialization context.
+  bool isMaterializationContext() const override { return true; }
+
+  /// Emit an error using the elaborator's error infrastructure.
+  void emitMaterializationError(const Twine &message) override;
 
 public:
   /// Given a generic parameter expression, substitute known values for

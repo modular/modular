@@ -363,7 +363,7 @@ void IREvaluator::withEvaluator(
   callback(nestedEvaluator);
 }
 
-void IREvaluator::emitEvaluationError(const Twine &message) {
+void IREvaluator::emitMaterializationError(const Twine &message) {
   // Use the ErrorTree-based emitError from IREvaluatorContext.
   IREvaluatorContext::emitError({*errorLoc, message.str()});
 }
