@@ -399,7 +399,7 @@ for simple cases, but they become important as generic code grows.
 ## Generics and explicit destruction
 
 Explicitly destroyed types sometimes don't work well with some generic
-code. The problem with this combination isn't generics, it's _lifetime
+code. The problem with this combination isn't generics, it's _lifetime
 management_.
 
 Explicit destruction exists so you can control
@@ -429,5 +429,5 @@ Think comparisons, predicates, and pure operations.
 
 As a working rule of thumb,
 if your generic code needs to own, copy, or decide when a value dies,
-avoid explicitly destroyed types. Add `ImplicitlyDestroyed` bounds to
+avoid explicitly destroyed types. Add `ImplicitlyDestroyed` bounds to
 bypass any issues.
