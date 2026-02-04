@@ -160,18 +160,6 @@ struct BlockScaledSmem[
     comptime SFATileArray = Self.Tiles.SFATileArray
     comptime SFBTileArray = Self.Tiles.SFBTileArray
 
-    # Swizzled tile types for .to_layout_tensor() at TMA/MMA boundaries.
-    # These use internal Layout that preserves swizzle structure, enabling
-    # TileTensor.to_layout_tensor() to produce correctly swizzled LayoutTensors.
-    # Note: Currently assumes 128B swizzle (most common for SM100).
-    # TODO: Enable usage once compilation time issue with .to_layout_tensor() is resolved.
-    comptime ATile = SMemTile[
-        Self.a_type, internal_k_major_128B[Self.a_type, Self.BM, Self.BK]
-    ]
-    comptime BTile = SMemTile[
-        Self.b_type, internal_k_major_128B[Self.b_type, Self.BN, Self.BK]
-    ]
-
     # ========== Tile Storage Field ==========
     var tiles: Self.Tiles
 

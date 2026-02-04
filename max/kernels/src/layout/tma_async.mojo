@@ -3088,6 +3088,177 @@ def create_tensor_tile[
         )
 
 
+@always_inline
+def create_tensor_tile[
+    dtype: DType,
+    rank: Int,
+    //,
+    tile_shape: IndexList[rank],
+    /,
+    k_major_tma: Bool = True,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    *,
+    __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
+    __desc_layout: Layout = _tma_desc_tile_layout[
+        dtype, rank, tile_shape, swizzle_mode
+    ](),
+](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) -> TMATensorTile[
+    dtype,
+    __tile_layout,
+    __desc_layout,
+    is_k_major=k_major_tma,
+]:
+    """
+    Creates a `TMATensorTile` from a TileTensor.
+
+    This overload accepts a TileTensor instead of LayoutTensor, enabling use
+    with the new coordinate-based tensor abstraction.
+
+    Parameters:
+        dtype: The data type of the tensor elements.
+        rank: The dimensionality of the tensor (must be 2, 3, 4, or 5).
+        tile_shape: The shape of the tile to be transferred.
+        k_major_tma: Whether the TMA should use column-major pattern.
+        swizzle_mode: The swizzling mode for memory access optimization.
+        __tile_layout: Internal parameter for the tile layout.
+        __desc_layout: Internal parameter for the descriptor layout.
+
+    Args:
+        ctx: The CUDA device context.
+        tensor: The source TileTensor.
+
+    Returns:
+        A `TMATensorTile` configured for the given tensor.
+    """
+    __comptime_assert rank in (2, 3, 4, 5), "Only support 2D/3D/4D/5D TMA"
+
+    comptime desc_bytes_size = __desc_layout.size() * size_of[dtype]()
+    comptime layout_size = __tile_layout.size() * size_of[dtype]()
+
+    @parameter
+    if desc_bytes_size < layout_size:
+        __comptime_assert desc_bytes_size % 128 == 0, (
+            "desc layout byte size has to be align to 128 bytes for"
+            " multiple TMA copies."
+        )
+
+    # Swizzle constraint applies to all ranks - check once here
+    @parameter
+    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+        __comptime_assert (
+            tile_shape[rank - 1] * size_of[dtype]()
+        ) % swizzle_mode.bytes() == 0, (
+            String(swizzle_mode)
+            + " mode requires K dim multiple of "
+            + String(swizzle_mode.bytes())
+            + "B."
+        )
+
+    @parameter
+    if rank == 2:
+        return create_tma_descriptor[dtype, 2, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                1,
+                owning=False,
+            ),
+            (
+                tensor.layout.shape[0].value(),
+                tensor.layout.shape[1].value(),
+            ),
+            (
+                tensor.layout.stride[0].value(),
+                tensor.layout.stride[1].value(),
+            ),
+            (__desc_layout.shape[0].value(), __desc_layout.shape[1].value()),
+        )
+
+    elif rank == 3:
+        return create_tma_descriptor[dtype, 3, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                1,
+                owning=False,
+            ),
+            IndexList[3](
+                tensor.layout.shape[0].value(),
+                tensor.layout.shape[1].value(),
+                tensor.layout.shape[2].value(),
+            ),
+            IndexList[3](
+                tensor.layout.stride[0].value(),
+                tensor.layout.stride[1].value(),
+                tensor.layout.stride[2].value(),
+            ),
+            IndexList[3](
+                __desc_layout.shape[0].value(),
+                __desc_layout.shape[1].value(),
+                __desc_layout.shape[2].value(),
+            ),
+        )
+
+    elif rank == 4:
+        return create_tma_descriptor[dtype, 4, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                1,
+                owning=False,
+            ),
+            IndexList[4](
+                tensor.layout.shape[0].value(),
+                tensor.layout.shape[1].value(),
+                tensor.layout.shape[2].value(),
+                tensor.layout.shape[3].value(),
+            ),
+            IndexList[4](
+                tensor.layout.stride[0].value(),
+                tensor.layout.stride[1].value(),
+                tensor.layout.stride[2].value(),
+                tensor.layout.stride[3].value(),
+            ),
+            IndexList[4](
+                __desc_layout.shape[0].value(),
+                __desc_layout.shape[1].value(),
+                __desc_layout.shape[2].value(),
+                __desc_layout.shape[3].value(),
+            ),
+        )
+
+    else:  # rank == 5
+        return create_tma_descriptor[dtype, 5, swizzle_mode](
+            DeviceBuffer(
+                ctx,
+                tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                1,
+                owning=False,
+            ),
+            IndexList[5](
+                tensor.layout.shape[0].value(),
+                tensor.layout.shape[1].value(),
+                tensor.layout.shape[2].value(),
+                tensor.layout.shape[3].value(),
+                tensor.layout.shape[4].value(),
+            ),
+            IndexList[5](
+                tensor.layout.stride[0].value(),
+                tensor.layout.stride[1].value(),
+                tensor.layout.stride[2].value(),
+                tensor.layout.stride[3].value(),
+                tensor.layout.stride[4].value(),
+            ),
+            IndexList[5](
+                __desc_layout.shape[0].value(),
+                __desc_layout.shape[1].value(),
+                __desc_layout.shape[2].value(),
+                __desc_layout.shape[3].value(),
+                __desc_layout.shape[4].value(),
+            ),
+        )
+
+
 fn _split_last_layout[
     rank: Int, //, dtype: DType
 ](

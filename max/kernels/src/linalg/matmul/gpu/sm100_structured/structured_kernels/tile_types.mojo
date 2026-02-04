@@ -80,9 +80,9 @@ Returns:
 # tile_layout_k_major. Using internal Layout allows passing through struct
 # parameters while preserving type information for .to_layout_tensor().
 #
-# The key insight: internal Layout (from _layout.mojo) has compile-time type
+# The key insight: new Layout (from _layout.mojo) has compile-time type
 # parameters (shape_types, stride_types) that are preserved through struct
-# chains, unlike public Layout (from layout.mojo) which uses runtime IntTuple.
+# chains, unlike old Layout (from layout.mojo) which uses runtime IntTuple.
 
 # Internal swizzled layout for K-major access with configurable swizzle
 # Matches tile_layout_k_major[dtype, BM, BK, TensorMapSwizzle.SWIZZLE_*]()

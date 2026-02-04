@@ -38,7 +38,8 @@ from layout import (
 )
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
-from layout.runtime_tuple import idx2crd
+from layout._layout import row_major
+from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 
@@ -977,11 +978,6 @@ struct TileWriter[
         comptime output_threads = Self.num_output_warps * WARP_SIZE
         comptime c_smem_M = Self.c_smem_dim0
         comptime TMA_BM = 64 if Self.cta_group == 1 else 128
-        comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-            layout,
-            element_type = DType.uint32,
-            linear_idx_type = DType.uint32,
-        ]
         comptime simd_size = simd_width_of[Self.c_type]()
         comptime alignment = align_of[SIMD[Self.c_type, simd_size]]()
         comptime thread_n = Self.stageN // simd_size
@@ -1004,11 +1000,11 @@ struct TileWriter[
         for i in range(c_smem_M // TMA_BM):
             var c_smem_split = c_smem_tile.tile[TMA_BM, Self.stageN](i, 0)
             comptime split_layout = c_smem_split.layout
-            var split_rt = RLayout32Bits[split_layout]()
             comptime zipped = zipped_divide(
                 upcast(split_layout, simd_size), thread_layout
             )
-            var zipped_rt = RLayout32Bits[zipped]()
+            # Use new Layout for idx2crd
+            comptime split_layout_new = row_major[TMA_BM, Self.stageN]()
 
             @parameter
             for j in range(zipped.shape[1][0].value()):
@@ -1016,15 +1012,23 @@ struct TileWriter[
                     IntTuple(UNKNOWN_VALUE, j),
                     element_type = DType.uint32,
                 ](Int(thread_idx.x), j)
-                var linear_idx = zipped_rt(input_crd) * UInt32(simd_size)
-                var linear_tup = RuntimeTuple[
-                    IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
-                ](Int(linear_idx))
-                var cmem_crd = idx2crd(
-                    linear_tup, split_rt.shape, split_rt.stride
+                var linear_idx = rt_crd2idx[
+                    IntTuple(UNKNOWN_VALUE, j),
+                    zipped.shape,
+                    zipped.stride,
+                    DType.uint32,
+                ](
+                    input_crd,
+                    RuntimeTuple[zipped.shape](),
+                    RuntimeTuple[zipped.stride](),
+                ) * UInt32(
+                    simd_size
                 )
-                var local_i = cmem_crd[0].get_int()
-                var local_j = cmem_crd[1].get_int()
+                var cmem_crd = split_layout_new.idx2crd[
+                    out_dtype = DType.uint32
+                ](Int(linear_idx))
+                var local_i = cmem_crd[0].value()
+                var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)
                 var global_i = coord_m + local_i
                 var global_j = n_abs + local_j
