@@ -138,7 +138,9 @@ class MoEQuantized(MoE):
         else:
             shard = ops.stack(interleaved, axis=0)
 
-        return shard.reshape([len(gate_scales), -1, scale_k_dim])
+        return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
+            self.devices[0]
+        )
 
     @property
     def down_proj_scales(self) -> TensorValue:
@@ -153,7 +155,7 @@ class MoEQuantized(MoE):
             return ops.shard_and_stack(scales, devices=devices, axis=-1)[
                 self.shard_index
             ].to(self.devices[0])
-        return ops.stack(scales, axis=0)
+        return ops.stack(scales, axis=0).to(self.devices[0])
 
     @property
     def _is_nvfp4(self) -> bool:
