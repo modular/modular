@@ -236,6 +236,7 @@ def _handle_static_broadcast_to(
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
     _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
@@ -273,6 +274,7 @@ def _handle_broadcast_to(
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
     _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
@@ -465,6 +467,7 @@ def _reshape_common(
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
     _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
@@ -504,6 +507,7 @@ def _handle_transpose(
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
     _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
     input_np = inputs[0].to_numpy()
@@ -530,6 +534,7 @@ def _handle_slice(
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
     _check_cpu_only(op, target_device)
+    _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
