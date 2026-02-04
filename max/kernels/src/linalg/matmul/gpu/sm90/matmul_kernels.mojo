@@ -1130,7 +1130,7 @@ struct HopperMatmulSM90Kernel[
             if warp_id == 0 and lane_predicate and not skip_matmul:
                 var m_coord = block_idx.y * UInt(
                     Self.BM
-                ) if CLUSTER_N > 1 else UInt(Int(a_start_row)) + UInt(
+                ) if CLUSTER_N > 1 else UInt(a_start_row) + UInt(
                     block_idx_swizzle[1]
                 ) * UInt(
                     Self.BM
@@ -1138,7 +1138,7 @@ struct HopperMatmulSM90Kernel[
 
                 var n_coord = block_idx.x * UInt(
                     Self.BN
-                ) if CLUSTER_M > 1 else UInt(Int(b_start_row)) + UInt(
+                ) if CLUSTER_M > 1 else UInt(b_start_row) + UInt(
                     block_idx_swizzle[0]
                 ) * UInt(
                     Self.BN

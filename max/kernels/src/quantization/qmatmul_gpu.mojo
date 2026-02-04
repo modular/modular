@@ -240,13 +240,11 @@ fn multistage_mma_q[
                                 target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
-                            .distribute[async_copy_scales_layout](
-                                UInt(Int(tid))
-                            )
+                            .distribute[async_copy_scales_layout](UInt(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
-                        ]().distribute[async_copy_scales_layout](UInt(Int(tid)))
+                        ]().distribute[async_copy_scales_layout](UInt(tid))
 
                         dst_fragments.copy_from_async[](src_fragments)
 
@@ -341,7 +339,7 @@ fn multistage_mma_q[
     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
-        ](UInt(Int(lane_id)))
+        ](UInt(lane_id))
     )
 
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
@@ -378,7 +376,7 @@ fn multistage_mma_q[
                     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
-                        ](UInt(Int(lane_id)))
+                        ](UInt(lane_id))
                     )
 
             mma_op.load_a[swizzle_a_pattern](
@@ -466,13 +464,13 @@ fn multistage_mma_q[
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
-                                        UInt(Int(tid))
+                                        UInt(tid)
                                     )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
                                 ]().distribute[async_copy_scales_layout](
-                                    UInt(Int(tid))
+                                    UInt(tid)
                                 )
 
                                 dst_fragments.copy_from_async[](
