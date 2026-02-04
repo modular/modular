@@ -14,6 +14,7 @@
 #include "mlir/IR/Types.h"
 
 namespace M::KGEN {
+class ParameterEvaluationContext;
 class SymTabEvaluationContext;
 enum class SugarKind : uint32_t;
 } // namespace M::KGEN

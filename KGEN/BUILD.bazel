@@ -231,6 +231,7 @@ mlir_nanobind(
         "KGEN_CallOp",  # Can't bind CallOp::setCalleeAttr for some reason
         # These classes use internally defined evaluation context type
         "ContextuallyEvaluatedAttrInterface",
+        "ContextuallyEvaluatedTypeInterface",
         "DeclRefAttrInterface",
         "StructTypeInterface",
         "KGEN_BindParamsAttr",

@@ -1449,6 +1449,51 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
 }
 
+FailureOr<Type>
+StructType::evaluateWithContext(ParameterEvaluationContext &context) const {
+  // Perform validation only in materialization contexts.
+  if (!context.isMaterializationContext())
+    return failure();
+
+  // Validate the alignment value if it's a concrete integer.
+  TypedAttr minAlign = getMinAlignment();
+  auto intAttr = dyn_cast<IntegerAttr>(minAlign);
+  if (!intAttr) {
+    // Parametric alignment is not expected in materialization contexts.
+    context.emitMaterializationError(
+        "alignment did not fold to a concrete integer by materialization");
+    return failure();
+  }
+
+  int64_t alignVal = intAttr.getInt();
+
+  // Shortcut for default alignment of 1.
+  if (alignVal == 1)
+    return failure();
+
+  // Validate: must be positive power of 2.
+  if (alignVal <= 0 || !llvm::isPowerOf2_64(alignVal)) {
+    context.emitMaterializationError(
+        "struct alignment must be a positive power of 2, got " +
+        Twine(alignVal));
+    return failure();
+  }
+
+  // Validate: must not exceed reasonable upper bound (2^29 bytes = 512MB).
+  // This matches common compiler limits and avoids overflow issues.
+  constexpr int64_t kMaxAlignment = 1LL << 29;
+  if (alignVal > kMaxAlignment) {
+    context.emitMaterializationError(
+        "struct alignment exceeds maximum alignment (2^29), got " +
+        Twine(alignVal));
+    return failure();
+  }
+
+  // Validation passed, no folding needed. Return failure to indicate
+  // no change was made.
+  return failure();
+}
+
 TypedAttr KGEN::createUninitializedValueOf(Type type) {
   // If the value being allocated is an aggregate, initialize the aggregate
   // with undef subelements.

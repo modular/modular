@@ -398,3 +398,31 @@ kgen.generator @test_non_struct_type() {
   kgen.param.constant: variadic<type> = <#kgen.struct_field_types<i32>>
   kgen.return
 }
+
+// -----
+
+// Test struct type with illegal alignment (not a power of 2).
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @test_illegal_struct_alignment<my_align>() {
+  // expected-note @below {{struct alignment must be a positive power of 2, got 3}}
+  %0 = pop.stack_allocation 1 x !kgen.struct<(index) align(my_align)>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @main() {
+  // expected-note @below {{call expansion failed with parameter value(s): ("my_align": 3)}}
+  kgen.call @test_illegal_struct_alignment<3>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+// Test struct type with alignment exceeding maximum (2^29).
+
+// expected-error @below {{function instantiation failed}}
+// expected-note @below {{struct alignment exceeds maximum alignment (2^29), got 1073741824}}
+kgen.generator @test_excessive_struct_alignment(%arg0: !kgen.pointer<!kgen.struct<(index) align(1073741824)>>) {
+  kgen.return
+}

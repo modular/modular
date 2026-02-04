@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "Support/ErrorOr.h"
@@ -123,6 +124,10 @@ void ParameterEvaluationContext::emitMaterializationError(
   // will persist and be used. In non-materialization contexts (e.g.,
   // speculative partial-evaluation during lowering), ill-formed expressions
   // simply persist unevaluated.
+}
+
+bool ParameterEvaluationContext::isMaterializationContext() const {
+  return false;
 }
 
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
@@ -449,6 +454,17 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
   if (auto newType = tryReplaceVariadicSplat(result))
     result = newType;
+
+  // If an evaluatable type persists, try to simplify it with additional
+  // context.
+  if (evaluationContext) {
+    if (auto evalType = dyn_cast<ContextuallyEvaluatedTypeInterface>(result)) {
+      FailureOr<Type> foldedType =
+          evalType.evaluateWithContext(*evaluationContext);
+      if (succeeded(foldedType))
+        result = *foldedType;
+    }
+  }
   return result;
 }
 
