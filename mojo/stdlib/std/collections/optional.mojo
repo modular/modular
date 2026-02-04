@@ -467,11 +467,10 @@ struct Optional[T: Movable](
             writer.write(trait_downcast[Representable](self.value()).__repr__())
         else:
             writer.write("None")
-
     
-        fn write_repr_to(self: Self, mut writer: Some[Writer]):
-        FormatStruct(writer, "Optional").fields(self)
-        
+    fn write_repr_to(self: Self, mut writer: Some[Writer]):
+    FormatStruct(writer, "Optional").fields(self)
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
