@@ -27,7 +27,7 @@ from . import weight_adapters
 from .model import EagleLlama3Model
 
 eagle_llama_arch = SupportedArchitecture(
-    name="EagleLlamaForCausalLM_Legacy",
+    name="LlamaForCausalLMEagle_Legacy",
     example_repo_ids=[
         "lmsys/sglang-EAGLE-LLaMA3-Instruct-8B",
     ],
