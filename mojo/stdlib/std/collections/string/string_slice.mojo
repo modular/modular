@@ -2821,8 +2821,8 @@ fn _memmem_count[
 ) -> Int:
     """Counts all non-overlapping occurrences of needle in haystack.
 
-    This is a single-pass SIMD-optimized algorithm that avoids the overhead
-    of repeated find() calls.
+    This is the same approach used by `_memmem_impl`, extended to count
+    all non-overlapping matches in a single pass.
 
     Args:
         haystack_span: The span to search in.
