@@ -301,7 +301,9 @@ fn allreduce[
     use_multimem: Bool = False,
     use_quickreduce: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[
         RealUnsafePointer[comm.Signal, MutAnyOrigin], MAX_GPUS
@@ -326,10 +328,14 @@ fn allreduce[
     ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
-    var count = input_buffer.num_elements()
+    var count = input_buffers[0].num_elements()
     var dtype_ccl = _dtype_to_ccl[dtype]()
     var op = ncclRedOp_t.ncclSum
     var comms = _get_global_comms(ngpus)
+
+    var input_buffer = input_buffers[0] if use_multimem else input_buffers[
+        device_rank
+    ]
 
     _check_ccl_ok(
         _ccl_allreduce(

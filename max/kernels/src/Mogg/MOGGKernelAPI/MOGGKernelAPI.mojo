@@ -8925,7 +8925,7 @@ struct DistributedAllReduceSum:
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
-        input: InputTensor[dtype=dtype, rank=rank],
+        inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, ...
         ],
@@ -8939,15 +8939,13 @@ struct DistributedAllReduceSum:
 
         Args:
             output: Output tensor for this device to store reduced result.
-            input: Input tensor for this device. Peer input addresses are obtained
-                via signal buffer payloads (P2P access required).
+            inputs: Input tensors (one per GPU) containing values to reduce.
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-                Each GPU stores its input & output buffer addresses in its signal payload for peers.
             device_ctx: The device context for this specific op instance.
 
         Implementation Notes:
             1. Each op instance only launches kernels on its assigned device.
-            2. Peer I/O addresses are exchanged via signal buffer payloads at runtime.
+            2. Still requires all inputs/signal_buffers for coordination.
             3. The output is only for the assigned device.
 
         Limitations:
@@ -8955,13 +8953,23 @@ struct DistributedAllReduceSum:
             - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
             - Requires identical tensor shapes across all participating GPUs
         """
-        comptime num_devices = signal_buffers.size
+        comptime num_devices = inputs.size
+        __comptime_assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
 
-        # TODO(jtodd): 2 64bit addresses, fix magic no
-        _check_signal_buffer_size(signal_buffers[0].size(), 2 * 8)
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensor
-        var in_buf = managed_tensor_slice_to_ndbuffer(input)
+        # Marshal input tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
+        ](fill={})
+
+        @parameter
+        for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         # Marshal output tensor
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -8991,7 +8999,7 @@ struct DistributedAllReduceSum:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce[ngpus=num_devices, output_lambda=output_lambda](
-                in_buf, out_buf, rank_sigs, device_ctx[]
+                in_bufs, out_buf, rank_sigs, device_ctx[]
             )
 
 

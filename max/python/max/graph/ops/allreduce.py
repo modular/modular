@@ -72,14 +72,14 @@ def sum(
     graph = Graph.current
     for input_tensor, device in zip(inputs, devices, strict=True):
         in_chain = graph.device_chains[device]
-        # Each op takes only its own input; peer addresses shared via signals.
+        # Each op takes all inputs but only produces output for its device.
         result, out_chain = Graph.current._add_op_generated(
             mo.DistributedAllreduceSumOp,
             # Single output tensor type.
             input_tensor.type,
             # Output chain type.
             _ChainType(),
-            input_tensor,
+            inputs,
             signal_buffers,
             in_chain,
             device,

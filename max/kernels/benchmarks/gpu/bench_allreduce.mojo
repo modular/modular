@@ -249,15 +249,12 @@ fn bench_reduce[
                 )
             # Run allreduce
             comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce
-            # For multimem, all GPUs share the same multicast buffer (in_bufs[0]).
-            # For non-multimem, each GPU uses its own input buffer (in_bufs[ctx_idx]).
-            var input_idx = 0 if use_multimem else ctx_idx
             allreduce_kernel[
                 ngpus=ngpus,
                 use_multimem=use_multimem,
                 use_quickreduce=use_quickreduce,
             ](
-                in_bufs[input_idx],
+                in_bufs,
                 out_bufs[ctx_idx],
                 rank_sigs,
                 ctx_inner,
