@@ -24,6 +24,7 @@ from sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
+    env_get_int,
     CompilationTarget,
 )
 
@@ -107,6 +108,7 @@ from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from gpu.host.info import B200, GPUInfo
 from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -1318,6 +1320,7 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1458,6 +1461,7 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1484,6 +1488,7 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1601,6 +1606,7 @@ fn flare_mla_prefill[
             cache_depth=cache_depth,
             config=mha_config,
             _ndbuffer_mha_operand=True,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1637,6 +1643,7 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -1694,10 +1701,10 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime is_sm100_available = ctx.default_device_info == B200
+    comptime fa4_enabled = ctx.default_device_info == B200 and use_fa4
 
     @parameter
-    if is_sm100_available:
+    if fa4_enabled:
         mla_sm100_prefill[
             config=config,
             group = Int(group),
