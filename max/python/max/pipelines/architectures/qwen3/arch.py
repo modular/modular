@@ -49,6 +49,7 @@ qwen3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Qwen3Config,
+    multi_gpu_supported=True,
 )
 
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
@@ -75,4 +76,5 @@ qwen3_moe_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_qwen3_moe_state_dict,
     },
     config=Qwen3Config,
+    multi_gpu_supported=True,
 )

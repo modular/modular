@@ -138,19 +138,13 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    # Qwen3 (non-VL) models don't support multi-GPU yet
-    is_single_gpu_only = "qwen3" in model.lower() and "vl" not in model.lower()
-
     is_huge_model = is_deepseek(model)
     if is_huge_model and framework != "sglang":
         MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
         VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
         # Have not been successful in getting SGLang to work with R1 yet
     elif gpu_count > 1:
-        if not is_single_gpu_only:
-            MAX += (
-                f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
-            )
+        MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
         VLLM += f" --tensor-parallel-size={gpu_count}"
         SGLANG += f" --tp-size={gpu_count}"
 

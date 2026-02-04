@@ -17,12 +17,10 @@ import logging
 from typing import Any, Literal
 
 from max._core.engine import Model
-from max.driver import Buffer
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import Module
+from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Qwen3Config
@@ -31,14 +29,16 @@ from .qwen3 import Qwen3
 logger = logging.getLogger("max.pipelines")
 
 
-class Qwen3Model(LlamaModelBase):
-    """Base Llama pipeline model implementation."""
+class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
+    """Qwen3 pipeline model implementation.
+
+    Supports both single and multi-GPU inference through the unified Qwen3 class.
+    Uses AlwaysSignalBuffersMixin since it uses VocabParallelEmbedding and
+    ColumnParallelLinear which always require signal buffers for allreduce.
+    """
 
     model: Model
     """Compiled and initialized model ready for inference."""
-
-    signal_buffers: list[Buffer]
-    """Device buffers used for synchronization in communication collectives."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     """Normalization layer."""
@@ -68,8 +68,7 @@ class Qwen3Model(LlamaModelBase):
             attention_bias=self.attention_bias,
         )
 
-        # Build Graph
-        nn_model: Module
+        # Build the unified Qwen3 model (works for single and multi-GPU)
         nn_model = Qwen3(model_config)
 
         # Get Graph Inputs
@@ -91,21 +90,27 @@ class Qwen3Model(LlamaModelBase):
 
         self.state_dict = nn_model.state_dict()
 
+        num_devices = len(self.devices)
+
         with Graph("qwen3", input_types=graph_inputs) as graph:
-            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+            tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs
             )
-            kv_collection = PagedCacheValues(
-                kv_blocks=kv_cache_inputs[0].buffer,
-                cache_lengths=kv_cache_inputs[1].tensor,
-                lookup_table=kv_cache_inputs[2].tensor,
-                max_lengths=kv_cache_inputs[3].tensor,
-            )
+
+            # Extract signal buffers (always present, even for single GPU)
+            signal_buffers = [v.buffer for v in variadic_args[:num_devices]]
+
+            # Unmarshal KV cache inputs for each device
+            kv_cache_inputs = variadic_args[num_devices:]
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+
             outputs = nn_model(
                 tokens.tensor,
-                kv_collection,
+                kv_collections,
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
+                signal_buffers,
             )
+
             graph.output(*outputs)
             return graph
