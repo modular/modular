@@ -25,7 +25,6 @@ from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
 from test_common.graph_utils import is_h100_h200
 from test_common.mocks import (
     mock_estimate_memory_footprint,
-    mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
 )
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
@@ -399,7 +398,7 @@ class TestPipelineConfigUtilityMethods:
     ) -> None:
         """Test that the KVCache dtype is set correctly."""
         kwargs = {
-            "model_path": "test/model",
+            "model_path": "trl-internal-testing/tiny-random-LlamaForCausalLM",
             # Draft model config
             "draft_model_path": "/draft/model",
             "draft_quantization_encoding": "float8_e4m3fn",
@@ -426,7 +425,6 @@ def test_validate_model_path__bad_repo_provided() -> None:
         )
 
 
-@mock_pipeline_config_hf_dependencies
 def test_config_init__raises_with_no_model_path() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
@@ -434,7 +432,6 @@ def test_config_init__raises_with_no_model_path() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
@@ -472,7 +469,6 @@ def test_config_post_init__other_repo_weights(
     assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
-@mock_pipeline_config_hf_dependencies
 def test_config_init__reformats_with_str_weights_path(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -494,7 +490,6 @@ def test_config_init__reformats_with_str_weights_path(
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
-@mock_pipeline_config_hf_dependencies
 def test_validate_model_path__correct_repo_id_provided(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -510,7 +505,6 @@ def test_validate_model_path__correct_repo_id_provided(
 
 @prepare_registry
 @mock_estimate_memory_footprint
-@mock_pipeline_config_hf_dependencies
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -549,7 +543,6 @@ def test_config__test_incompatible_quantization_encoding(
 
 @prepare_registry
 @mock_estimate_memory_footprint
-@mock_pipeline_config_hf_dependencies
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -657,7 +650,6 @@ class LimitedPickler(pickle.Unpickler):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
-@mock_pipeline_config_hf_dependencies
 def test_config_is_picklable(
     tmp_path: Path, modular_ai_llama_3_1_local_path: str
 ) -> None:
@@ -683,7 +675,6 @@ def test_config_is_picklable(
 
 @pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_config__validates_supported_device(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
