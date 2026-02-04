@@ -30,6 +30,7 @@ DTYPE_TO_TORCH = {
     DType.int64: torch.int64,
     DType.uint32: torch.uint32,
     DType.uint64: torch.uint64,
+    DType.bool: torch.bool,
 }
 
 
@@ -124,6 +125,153 @@ class TestConstantGPU:
         assert isinstance(result, Buffer)
         assert not result.device.is_host
         assert result.dtype == dtype
+
+
+class TestBinaryComparisonOpsGPU:
+    """Tests for GPU binary comparison operations in the interpreter."""
+
+    @pytest.mark.parametrize(
+        "op_func,torch_func",
+        [
+            (ops.equal, torch.eq),
+            (ops.not_equal, torch.ne),
+            (ops.greater, torch.gt),
+            (ops.greater_equal, torch.ge),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_comparison_ops_gpu(
+        self, op_func: Any, torch_func: Any, dtype: DType
+    ) -> None:
+        """Test comparison ops on GPU with various dtypes."""
+        gpu = Accelerator()
+        shape = [4]
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        input_type = TensorType(dtype, shape, gpu)
+
+        with Graph(
+            f"gpu_comparison_op_{dtype}", input_types=[input_type, input_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = op_func(a, b)
+            graph.output(c)
+
+        # Use test data that exercises both equal and unequal cases
+        # For greater/greater_equal, use values that test ordering
+        if op_func in (ops.greater, ops.greater_equal):
+            a_torch = torch.tensor(
+                [1, 5, 3, 6], dtype=torch_dtype, device="cuda"
+            )
+            b_torch = torch.tensor(
+                [2, 3, 3, 4], dtype=torch_dtype, device="cuda"
+            )
+        else:
+            a_torch = torch.tensor(
+                [1, 2, 3, 4], dtype=torch_dtype, device="cuda"
+            )
+            b_torch = torch.tensor(
+                [1, 5, 3, 6], dtype=torch_dtype, device="cuda"
+            )
+
+        a_gpu = Buffer.from_dlpack(a_torch)
+        b_gpu = Buffer.from_dlpack(b_torch)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [a_gpu, b_gpu])[0]
+
+        assert isinstance(result, Buffer)
+        assert not result.device.is_host
+        assert result.dtype == DType.bool
+
+        expected = torch_func(a_torch, b_torch)
+        result_torch = torch.from_dlpack(result)
+        torch.testing.assert_close(result_torch, expected)
+
+
+class TestBooleanLogicOpsGPU:
+    """Tests for GPU boolean logic operations in the interpreter."""
+
+    @pytest.mark.parametrize(
+        "op_func,torch_func",
+        [
+            (ops.logical_and, torch.logical_and),
+            (ops.logical_or, torch.logical_or),
+            (ops.logical_xor, torch.logical_xor),
+        ],
+    )
+    def test_binary_logical_ops_gpu(
+        self, op_func: Any, torch_func: Any
+    ) -> None:
+        """Test binary logical ops on GPU."""
+        gpu = Accelerator()
+        shape = [4]
+        input_type = TensorType(DType.bool, shape, gpu)
+
+        with Graph(
+            f"gpu_logical_op_{op_func.__name__}",
+            input_types=[input_type, input_type],
+        ) as graph:
+            a, b = graph.inputs
+            c = op_func(a, b)
+            graph.output(c)
+
+        # Test data covers all truth table combinations
+        a_torch = torch.tensor(
+            [True, True, False, False], dtype=torch.bool, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [True, False, True, False], dtype=torch.bool, device="cuda"
+        )
+
+        a_gpu = Buffer.from_dlpack(a_torch)
+        b_gpu = Buffer.from_dlpack(b_torch)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [a_gpu, b_gpu])[0]
+
+        assert isinstance(result, Buffer)
+        assert not result.device.is_host
+        assert result.dtype == DType.bool
+
+        expected = torch_func(a_torch, b_torch)
+        result_torch = torch.from_dlpack(result)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_logical_not_gpu(self) -> None:
+        """Test logical not op on GPU."""
+        gpu = Accelerator()
+        shape = [4]
+        input_type = TensorType(DType.bool, shape, gpu)
+
+        with Graph("gpu_logical_not", input_types=[input_type]) as graph:
+            (a,) = graph.inputs
+            c = ops.logical_not(a)
+            graph.output(c)
+
+        a_torch = torch.tensor(
+            [True, False, True, False], dtype=torch.bool, device="cuda"
+        )
+        a_gpu = Buffer.from_dlpack(a_torch)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [a_gpu])[0]
+
+        assert isinstance(result, Buffer)
+        assert not result.device.is_host
+        assert result.dtype == DType.bool
+
+        expected = torch.logical_not(a_torch)
+        result_torch = torch.from_dlpack(result)
+        torch.testing.assert_close(result_torch, expected)
 
 
 class TestElementwiseGPU:
