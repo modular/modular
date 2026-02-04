@@ -18,7 +18,7 @@ from testing import (
     assert_true,
     assert_false,
 )
-from sys.ffi import CStringSlice
+from ffi import CStringSlice
 
 
 def test_default_slice():

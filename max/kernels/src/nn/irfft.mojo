@@ -13,7 +13,7 @@
 """Inverse real FFT kernel using cuFFT."""
 
 
-from sys.ffi import external_call
+from ffi import external_call
 
 from _cufft.cufft import (
     cufftCreate,

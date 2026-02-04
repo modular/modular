@@ -19,7 +19,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import has_amd_gpu_accelerator, size_of
-from sys.ffi import _get_global_or_null, external_call
+from ffi import _get_global_or_null, external_call
 
 import _rocblas
 from _cublas.cublas import (

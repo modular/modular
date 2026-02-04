@@ -36,7 +36,8 @@ from math import (
     tanh,
 )
 from random import randn, seed
-from sys import align_of, external_call, llvm_intrinsic
+from ffi import external_call
+from sys import align_of, llvm_intrinsic
 from sys.info import simd_width_of, size_of, _current_target
 from sys.intrinsics import _type_is_eq
 

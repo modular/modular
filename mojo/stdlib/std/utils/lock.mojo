@@ -19,7 +19,7 @@ shared resources in multi-threaded code.
 """
 
 from os import Atomic
-from sys import external_call
+from ffi import external_call
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter

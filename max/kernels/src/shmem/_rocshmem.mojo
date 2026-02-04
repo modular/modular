@@ -14,7 +14,7 @@ from collections.string.string_slice import get_static_string
 from os import abort, getenv
 from pathlib import Path
 from sys import argv, size_of
-from sys.ffi import (
+from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,

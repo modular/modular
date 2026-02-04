@@ -13,7 +13,7 @@
 
 from pathlib import Path
 from os import getenv, abort
-from sys.ffi import (
+from ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,

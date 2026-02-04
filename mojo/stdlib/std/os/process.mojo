@@ -35,7 +35,7 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from sys.ffi import c_char, c_int, c_pid_t, get_errno
+from ffi import c_char, c_int, c_pid_t, get_errno
 from sys.os import abort, sep
 
 

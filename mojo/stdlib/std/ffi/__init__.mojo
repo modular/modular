@@ -10,7 +10,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements a foreign functions interface (FFI)."""
+"""Foreign function interface (FFI) for calling C code and loading libraries.
+
+This module provides tools for interfacing Mojo with C libraries and other
+foreign code. It includes:
+
+- **C type aliases**: `c_int`, `c_char`, `c_long`, `c_size_t`, etc. for
+  portable type definitions that match C's type sizes on each platform.
+- **Dynamic library loading**: `OwnedDLHandle` for loading shared libraries
+  at runtime and calling their functions.
+- **External function calls**: `external_call()` for calling C functions
+  by name with compile-time resolution.
+- **String interop**: `CStringSlice` for working with null-terminated C strings.
+
+Example:
+
+```mojo
+from ffi import c_int, external_call
+
+fn get_random() -> c_int:
+    return external_call["rand", c_int]()
+```
+
+For loading dynamic libraries:
+
+```mojo
+from ffi import OwnedDLHandle
+
+fn main() raises:
+    var lib = OwnedDLHandle("libm.so")
+    var sqrt = lib.get_function[fn(Float64) -> Float64]("sqrt")
+    print(sqrt(4.0))  # 2.0
+```
+"""
 
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from os import PathLike, abort
@@ -20,8 +52,8 @@ from sys._libc_errno import ErrNo, get_errno, set_errno
 
 from memory import OwnedPointer
 
-from ..info import CompilationTarget, is_32bit, is_64bit
-from ..intrinsics import _mlirtype_is_eq
+from sys.info import CompilationTarget, is_32bit, is_64bit
+from sys.intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 
 # ===-----------------------------------------------------------------------===#
@@ -171,7 +203,7 @@ struct OwnedDLHandle(Movable):
 
     Example usage:
     ```mojo
-    from sys.ffi import OwnedDLHandle
+    from ffi import OwnedDLHandle
 
     fn main() raises:
         var lib = OwnedDLHandle("libm.so")

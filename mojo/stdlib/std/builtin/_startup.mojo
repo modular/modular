@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from sys import external_call
-from sys.ffi import _get_global
+from ffi import external_call
+from ffi import _get_global
 from sys.compile import SanitizeAddress
 
 

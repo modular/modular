@@ -31,7 +31,7 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import (
+from ffi import (
     c_ssize_t,
     c_int,
     external_call,

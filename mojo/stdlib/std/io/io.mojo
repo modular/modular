@@ -18,8 +18,8 @@ These are Mojo built-ins, so you don't need to import them.
 from collections.string.string_slice import get_static_string
 from format._utils import _WriteBufferHeap, _WriteBufferStack
 from sys import _libc as libc
+from ffi import c_char, external_call
 from sys import (
-    external_call,
     is_amd_gpu,
     is_compile_time,
     is_gpu,
@@ -29,7 +29,6 @@ from sys import (
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
-from sys.ffi import c_char
 from sys.info import CompilationTarget
 from sys.intrinsics import _type_is_eq
 

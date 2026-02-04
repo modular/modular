@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call, size_of
+from ffi import external_call
+from sys import size_of
 from gpu.host import DeviceBuffer
 from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
 from utils import IndexList, StaticTuple

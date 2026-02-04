@@ -17,8 +17,8 @@ C standard library counterparts. These are used to implement higher level
 functionality in the rest of the Mojo standard library.
 """
 
+from ffi import c_char, c_int, c_size_t, c_pid_t, external_call, get_errno
 from sys import CompilationTarget
-from sys.ffi import c_char, c_int, c_size_t, c_pid_t, get_errno
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations

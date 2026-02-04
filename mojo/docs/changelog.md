@@ -87,6 +87,11 @@ what we publish.
 
 ### Library changes
 
+- The `ffi` module is now a top-level module in the standard library, rather
+  than being nested under `sys`. This improves discoverability of FFI
+  functionality. Update your imports from `from sys.ffi import ...` to
+  `from ffi import ...`.
+
 - The `itertools` module now includes three new iterator combinators:
   - `cycle(iterable)`: Creates an iterator that cycles through elements
     indefinitely

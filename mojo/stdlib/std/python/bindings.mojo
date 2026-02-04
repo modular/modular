@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from sys.ffi import _Global, c_int
+from ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
@@ -612,7 +612,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,

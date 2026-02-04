@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys.ffi import _Global
+from ffi import _Global
 
 from test_utils import (
     MoveCopyCounter,

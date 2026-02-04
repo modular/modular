@@ -23,17 +23,16 @@ from collections.optional import OptionalReg
 from math import align_up
 from os import abort
 from pathlib import Path
+from ffi import c_char, c_int, c_uint, external_call
 from sys import (
     bit_width_of,
     env_get_bool,
     env_get_string,
-    external_call,
     is_defined,
     is_gpu,
     size_of,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char, c_int, c_uint
 from sys.info import (
     CompilationTarget,
     _accelerator_arch,

@@ -32,7 +32,7 @@ from sys import (
     size_of,
 )
 from sys._assembly import inlined_assembly
-from sys.ffi import _external_call_const
+from ffi import _external_call_const
 from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize

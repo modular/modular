@@ -22,7 +22,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from os import abort
 from shmem import *
-from sys.ffi import c_int
+from ffi import c_int
 from sys.info import size_of
 from gpu.host import DeviceBuffer
 

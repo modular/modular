@@ -20,10 +20,10 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from memory import UnsafePointer as RealUnsafePointer
 from sys import has_amd_gpu_accelerator
 from pathlib import Path
-from sys.ffi import _get_global_or_null, external_call
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import OwnedDLHandle, _Global
+from ffi import _get_global_or_null, external_call
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import OwnedDLHandle, _Global
 from collections.optional import Optional
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer

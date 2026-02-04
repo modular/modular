@@ -31,8 +31,8 @@ print(p)  # a/b/c.txt
 import os
 from hashlib.hasher import Hasher
 from os import PathLike, listdir, stat_result
-from sys import CompilationTarget, external_call
-from sys.ffi import c_char
+from ffi import c_char, external_call
+from sys import CompilationTarget
 
 from reflection import call_location
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
+from ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
 from sys.info import CompilationTarget, is_64bit
 
 from testing import assert_equal, assert_true

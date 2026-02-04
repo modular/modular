@@ -13,7 +13,7 @@
 
 from utils import StaticTuple
 from sys import size_of
-from sys.ffi import _Global, external_call
+from ffi import _Global, external_call
 
 from gpu.host import DeviceContext
 from gpu import (

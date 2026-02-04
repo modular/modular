@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call
+from ffi import external_call
 
 from builtin.simd import _simd_apply
 from testing import assert_equal, assert_true

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_char
+from ffi import c_char
 
 from testing import (
     assert_equal,

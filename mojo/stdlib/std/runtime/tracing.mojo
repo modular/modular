@@ -15,7 +15,8 @@
 
 from collections.list import List
 from collections.optional import Optional, OptionalReg
-from sys import external_call, stderr
+from ffi import external_call
+from sys import stderr
 from sys.param_env import env_get_int, is_defined
 
 import gpu.host._tracing as gpu_tracing

@@ -21,7 +21,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu import WARP_SIZE
 from gpu.primitives.grid_controls import PDLLevel

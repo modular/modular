@@ -18,7 +18,7 @@ from sys import (
     has_amd_gpu_accelerator,
     size_of,
 )
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr

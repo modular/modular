@@ -21,7 +21,7 @@ from python import Python
 
 from collections.dict import OwnedKwargsDict
 from os import abort
-from sys.ffi import _Global
+from ffi import _Global
 
 from ._cpython import (
     CPython,

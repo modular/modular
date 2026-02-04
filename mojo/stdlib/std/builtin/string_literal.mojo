@@ -22,7 +22,7 @@ from collections.string.string_slice import (
     StaticString,
 )
 from os import PathLike
-from sys.ffi import c_char, CStringSlice
+from ffi import c_char, CStringSlice
 
 from python import ConvertibleToPython, PythonObject
 

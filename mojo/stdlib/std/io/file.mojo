@@ -35,9 +35,9 @@ from format._utils import _WriteBufferStack
 from os import PathLike, abort, makedirs, remove
 from os import SEEK_END
 from os.path import dirname
-from sys import external_call, size_of
+from ffi import c_int, c_ssize_t, external_call
+from sys import size_of
 from sys._libc_errno import ErrNo, get_errno
-from sys.ffi import c_int, c_ssize_t
 from sys.info import platform_map
 
 from memory import Span

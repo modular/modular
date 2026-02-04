@@ -21,9 +21,9 @@ from time import perf_counter_ns
 
 from math import floor
 from os import abort
+from ffi import external_call
 from sys import (
     CompilationTarget,
-    external_call,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,

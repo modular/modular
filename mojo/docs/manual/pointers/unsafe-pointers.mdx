@@ -479,7 +479,7 @@ be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
-from sys.ffi import external_call
+from ffi import external_call
 
 def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[

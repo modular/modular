@@ -23,7 +23,8 @@ from memory import (
     alloc,
     memcpy,
 )
-from sys import external_call, is_gpu
+from ffi import external_call
+from sys import is_gpu
 from sys.info import size_of, align_of
 
 

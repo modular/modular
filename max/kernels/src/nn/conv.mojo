@@ -21,7 +21,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from os import abort
-from sys.ffi import _get_global_or_null, external_call
+from ffi import _get_global_or_null, external_call
 from sys.info import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
