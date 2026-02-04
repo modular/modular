@@ -1104,15 +1104,9 @@ Type StructType::parse(AsmParser &p) {
   // Parse optional `align(N)` for minAlignment.
   TypedAttr minAlignment;
   if (succeeded(p.parseOptionalKeyword("align"))) {
-    if (p.parseLParen())
+    if (p.parseLParen() || parseIndexParamValue(p, minAlignment) ||
+        p.parseRParen())
       return {};
-    int64_t alignValue;
-    if (p.parseInteger(alignValue))
-      return {};
-    if (p.parseRParen())
-      return {};
-    mlir::Builder b(p.getContext());
-    minAlignment = b.getIntegerAttr(b.getIntegerType(64), alignValue);
   }
 
   if (p.parseGreater())
@@ -1157,7 +1151,7 @@ void StructType::print(AsmPrinter &p) const {
   } else if (minAlign) {
     // Parametric alignment expression.
     p << " align(";
-    printParamValue(p, minAlign);
+    printIndexParamValue(p, minAlign);
     p << ")";
   }
 
@@ -1170,7 +1164,11 @@ void StructType::print(AsmPrinter &p) const {
 /// expression.
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  TypedAttr variadic, bool /*isMemoryOnly*/,
-                                 TypedAttr /*minAlignment*/) {
+                                 TypedAttr minAlignment) {
+  // Alignment must have index type.
+  if (!sugarIsa<IndexType>(minAlignment.getType()))
+    return emitError() << "alignment must have index type, but got "
+                       << minAlignment.getType();
   // Accept any VariadicType (for concrete cases).
   if (llvm::isa<VariadicType>(variadic.getType()))
     return success();
@@ -1395,10 +1393,8 @@ static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
 /// If minAlignment is null, uses the default value of 1.
 StructType StructType::get(MLIRContext *context, TypedAttr variadic,
                            bool isMemoryOnly, TypedAttr minAlignment) {
-  if (!minAlignment) {
-    mlir::Builder b(context);
-    minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
-  }
+  if (!minAlignment)
+    minAlignment = IntegerAttr::get(IndexType::get(context), 1);
   // Normalize the variadic to ensure consistent uniquing.
   TypedAttr normalizedVariadic =
       normalizeVariadicForUniquing(context, variadic);
@@ -1432,8 +1428,7 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, ArrayRef<Type> types,
                                   bool isMemoryOnly) {
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
-  mlir::Builder b(context);
-  TypedAttr minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
+  TypedAttr minAlignment = IntegerAttr::get(IndexType::get(context), 1);
   // Verify before calling get() to ensure proper error reporting.
   if (failed(verify(emitError, variadic, isMemoryOnly, minAlignment)))
     return {};
@@ -1443,10 +1438,8 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
 StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, TypedAttr variadic,
                                   bool isMemoryOnly, TypedAttr minAlignment) {
-  if (!minAlignment) {
-    mlir::Builder b(context);
-    minAlignment = b.getIntegerAttr(b.getIntegerType(64), 1);
-  }
+  if (!minAlignment)
+    minAlignment = IntegerAttr::get(IndexType::get(context), 1);
   // Normalize the variadic to ensure consistent uniquing.
   TypedAttr normalizedVariadic =
       normalizeVariadicForUniquing(context, variadic);

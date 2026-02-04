@@ -2761,8 +2761,8 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
             return success();
           }
 
-          structOp.setMinAlignmentAttr(IntegerAttr::get(
-              IntegerType::get(shared.getContext(), 64), alignVal));
+          structOp.setMinAlignmentAttr(
+              IntegerAttr::get(IndexType::get(shared.getContext()), alignVal));
           return success();
         }
 

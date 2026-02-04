@@ -551,9 +551,9 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // Explicit minimum alignment specified via @align(N). A value of 1 means
     // no explicit alignment (the default). Uses TypedAttr to support future
     // parametric alignment (e.g., @align(n) where n is a struct parameter).
-    // For now, this will always be an IntegerAttr.
+    // For now, this will always be an IntegerAttr with index type.
     DefaultValuedParameter<"TypedAttr",
-                           "$_builder.getIntegerAttr($_builder.getIntegerType(64), 1)">:$minAlignment
+                           "$_builder.getIndexAttr(1)">:$minAlignment
   );
   // Use hasCustomAssemblyFormat since we need to handle empty struct specially.
   let hasCustomAssemblyFormat = 1;
