@@ -2018,8 +2018,14 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         @parameter
-        if Self.dtype.is_integral() or Self.dtype == DType.bool:
+        if Self.dtype == DType.bool:
             return self
+
+        @parameter
+        if Self.dtype.is_integral():
+            if ndigits >= 0:
+                return self
+            return self - (self % Self(10) ** -(ndigits))
 
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
