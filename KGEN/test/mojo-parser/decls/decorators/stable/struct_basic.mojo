@@ -29,6 +29,5 @@ struct UnstableStruct:
 # CHECK: lit.struct.decl @StableWithOtherDecorators
 # CHECK-SAME: hasStableDecorator
 @stable
-@register_passable
-struct StableWithOtherDecorators:
+struct StableWithOtherDecorators(RegisterType):
     pass

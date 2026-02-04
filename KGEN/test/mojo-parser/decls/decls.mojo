@@ -267,8 +267,7 @@ fn ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     a.x = 4
 
 
-@register_passable
-struct RPStructWithInit:
+struct RPStructWithInit(RegisterType):
     var x: Int
     var y: Int
 
@@ -742,8 +741,7 @@ fn forward_ref(x: EmptyStruct):
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyStruct({{.*}}) register_passable
-@register_passable
-struct EmptyStruct:
+struct EmptyStruct(RegisterType):
     pass
 
 
@@ -795,8 +793,7 @@ struct StructWithInit:
 
 
 # CHECK-LABEL: lit.struct.decl @StructExample
-@register_passable
-struct StructExample(ImplicitlyCopyable):
+struct StructExample(ImplicitlyCopyable, RegisterType):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -996,8 +993,7 @@ async fn capture_byref(mut x: Awaitable, y: Awaitable):
 
 
 @fieldwise_init
-@register_passable
-struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`]:
+struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`](RegisterType):
     pass
 
 
@@ -1153,8 +1149,7 @@ trait CapturingTrait:
 
 
 # CHECK-LABEL: lit.struct.decl @CapturingStructTrait
-@register_passable
-struct CapturingStructTrait(CapturingTrait):
+struct CapturingStructTrait(CapturingTrait, RegisterType):
     # CHECK: lit.fn @"takeClosure{{.*}}:*(0,0):
     fn takeClosure[
         origins: OriginSet, //,
@@ -1379,8 +1374,7 @@ struct BarSelf(BarTrait):
 
 
 # CHECK-LABEL: lit.struct.decl @RegPassableInitSelfInit
-@register_passable
-struct RegPassableInitSelfInit(ImplicitlyCopyable):
+struct RegPassableInitSelfInit(ImplicitlyCopyable, RegisterType):
     var a: Int
 
     # CHECK: lit.fn @"__init__

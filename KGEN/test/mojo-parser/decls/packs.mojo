@@ -19,8 +19,7 @@ struct SomeMem(ImplicitlyCopyable, SomeTrait):
     pass
 
 
-@register_passable
-struct SomeReg(SomeTrait):
+struct SomeReg(RegisterType, SomeTrait):
     fn __init__(out self):
         pass
 

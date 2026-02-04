@@ -45,8 +45,7 @@ struct MemType:
         return MemType(self.a + self.a)
 
 
-@register_passable
-struct NoCopyType:
+struct NoCopyType(RegisterType):
     var a: Int
 
     @implicit

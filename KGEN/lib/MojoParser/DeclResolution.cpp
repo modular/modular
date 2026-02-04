@@ -3162,13 +3162,17 @@ static void processRegisterPassableDecorator(
     if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
         structPassability) {
       StringRef trivialSuffix;
-      if (isTrivial)
+      StringRef regTypeName = "RegisterType";
+      if (isTrivial) {
         trivialSuffix = "(\"trivial\")";
+        regTypeName = "TrivialRegisterType";
+      }
 
       auto diag = resolver.emitError(structOp.getLoc())
                   << "all members of '@register_passable" << trivialSuffix
-                  << "' struct must themselves be '@register_passable"
-                  << trivialSuffix << "'";
+                  << "' (" << regTypeName
+                  << ") struct must themselves be '@register_passable"
+                  << trivialSuffix << "' (" << regTypeName << ")";
       diag.attachNote(fieldDecl->getLoc())
           << fieldOp.getNameAttr() << " declared with type " << fieldType;
 

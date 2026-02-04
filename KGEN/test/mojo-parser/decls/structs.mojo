@@ -39,8 +39,7 @@ struct DtorExample2(TrivialRegisterType, AnyType):
 # Should have a registered destructor because it's explicit.
 # CHECK-NEXT: destructor :!lit.generator
 # CHECK: lit.fn @"__del__
-@register_passable
-struct DtorExample3(AnyType):
+struct DtorExample3(AnyType, RegisterType):
     var a: Int
 
     fn __del__(deinit self):
@@ -177,8 +176,7 @@ fn testFieldwiseInitExample2(a: Int):
 # Register passable example.
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample3
 @fieldwise_init("implicit")
-@register_passable
-struct FieldwiseInitExample3:
+struct FieldwiseInitExample3(RegisterType):
     var x: Int
 
 
