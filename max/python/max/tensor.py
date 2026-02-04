@@ -1593,7 +1593,26 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns a tensor with its dimensions reordered according to the
         specified permutation. This is useful for changing the layout of
-        multi-dimensional data.
+        multi-dimensional data, such as converting between different tensor
+        layout conventions (e.g., from ``[batch, channels, height, width]``
+        to ``[batch, height, width, channels]``).
+
+        .. code-block:: python
+
+            from max.tensor import Tensor
+            from max.dtype import DType
+
+            # Create a 3D tensor (batch_size=2, channels=3, length=4)
+            x = Tensor.constant([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+                                 [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]],
+                                dtype=DType.int32)
+            print(f"Original shape: {x.shape}")
+            # Output: Original shape: [Dim(2), Dim(3), Dim(4)]
+
+            # Rearrange to (batch, length, channels)
+            y = x.permute([0, 2, 1])
+            print(f"Permuted shape: {y.shape}")
+            # Output: Permuted shape: [Dim(2), Dim(4), Dim(3)]
 
         Args:
             dims: A list specifying the new order of dimensions. For example,
@@ -1601,35 +1620,67 @@ class Tensor(DLPackArray, HasTensorValue):
                 position 1, and dimension 1 to position 2.
 
         Returns:
-            Tensor: A tensor with permuted dimensions.
+            A tensor with permuted dimensions.
         """
         return F.permute(self, dims)
 
     def transpose(self, dim1: int, dim2: int) -> Tensor:
-        """Transposes two dimensions of the tensor.
+        """Returns a tensor that is a transposed version of input.
 
-        Returns a tensor with the specified dimensions swapped. This is a
-        special case of permutation that swaps exactly two dimensions.
+        The given dimensions ``dim1`` and ``dim2`` are swapped.
+
+        .. code-block:: python
+
+            from max.tensor import Tensor
+            from max.dtype import DType
+
+            # Create a 2x3 matrix
+            x = Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            print(f"Original shape: {x.shape}")
+            # Output: Original shape: [Dim(2), Dim(3)]
+            print(x)
+
+            # Transpose dimensions 0 and 1 to get a 3x2 matrix
+            y = x.transpose(0, 1)
+            print(f"Transposed shape: {y.shape}")
+            # Output: Transposed shape: [Dim(3), Dim(2)]
+            print(y)
 
         Args:
-            dim1: The first dimension to swap.
-            dim2: The second dimension to swap.
+            dim1: The first dimension to be transposed.
+            dim2: The second dimension to be transposed.
 
         Returns:
-            Tensor: A tensor with the specified dimensions transposed.
+            A tensor with dimensions ``dim1`` and ``dim2`` swapped.
         """
         return F.transpose(self, dim1, dim2)
 
     @property
     def T(self) -> Tensor:
-        """Gets the transposed tensor.
+        """Returns a tensor with the last two dimensions transposed.
 
-        Returns a tensor with the last two dimensions transposed. This is
-        equivalent to calling ``transpose(-1, -2)`` and is commonly used for
-        matrix operations.
+        This is equivalent to calling :obj:`transpose(-1, -2)`, which swaps
+        the last two dimensions of the tensor. For a 2D matrix, this produces
+        the standard matrix transpose.
+
+        .. code-block:: python
+
+            from max.tensor import Tensor
+            from max.dtype import DType
+
+            # Create a 2x3 matrix
+            x = Tensor.constant([[1, 2, 3], [4, 5, 6]], dtype=DType.int32)
+            print(f"Original shape: {x.shape}")
+            # Output: Original shape: [Dim(2), Dim(3)]
+
+            # Use .T property (equivalent to transpose(-1, -2))
+            y = x.T
+            print(f"Transposed shape: {y.shape}")
+            # Output: Transposed shape: [Dim(3), Dim(2)]
+            print(y)
 
         Returns:
-            Tensor: A tensor with the last two dimensions swapped.
+            A tensor with the last two dimensions transposed.
         """
         return self.transpose(-1, -2)
 
