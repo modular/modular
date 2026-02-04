@@ -104,6 +104,7 @@ def defaultArgumentUntyped(a=1):
 
 # COM: Issue https://github.com/modular/mojo/issues/1091
 fn missing_arg_type_or_default(
+    # expected-error @+1 {{number of arguments does not match number of argument names: 5 != 6}}
     a: Int = 9,
     # expected-error @+2 {{required positional argument follows optional positional argument}}
     # expected-error @+1 {{argument type must be specified}}
