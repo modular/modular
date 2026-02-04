@@ -29,7 +29,7 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt NEWLINE)
+decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt NEWLINE | comptime_stmt NEWLINE)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
@@ -103,7 +103,8 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt | comptime_assert_stmt | alias_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt |
+             old_comptime_assert_stmt | comptime_stmt | alias_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -136,11 +137,14 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-comptime_assert_stmt: '__comptime_assert' test [',' test]
+old_comptime_assert_stmt: '__comptime_assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
 alias_target: NAME | '(' alias_target_list ')'
 alias_target_list: alias_target (',' alias_target)*
-alias_stmt: (ALIAS|COMPTIME) alias_target_list [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
+alias_stmt_body: alias_target_list [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
+alias_stmt: ALIAS alias_stmt_body
+comptime_assert_stmt_body: 'assert' test [',' test]
+comptime_stmt: COMPTIME (comptime_assert_stmt_body|alias_stmt_body)
 
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt

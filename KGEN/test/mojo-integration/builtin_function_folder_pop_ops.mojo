@@ -604,7 +604,7 @@ fn unfoldable_function() -> Bool:
 
 @always_inline("builtin")
 fn kgen_assert() -> Bool:
-    __comptime_assert unfoldable_function(), "Ignore this"
+    comptime assert unfoldable_function(), "Ignore this"
     return True
 
 

@@ -8,7 +8,7 @@
 
 
 fn use_positive_int[x: Int]():
-    __comptime_assert x > 0, "expected positive number, got " + String(x)
+    comptime assert x > 0, "expected positive number, got " + String(x)
 
 
 fn main():

@@ -1831,13 +1831,22 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
             None, otherwise.
         """
         # If this line is part of an assert or comptime_assert statement and the first leaf
-        # contains the "assert" or "__comptime_assert" keyword...
-        if (
+        # contains the "assert" or "__comptime_assert" or "comptime" keyword...
+        is_assert_stmt = (
             parent_type(LL[0]) == syms.assert_stmt and LL[0].value == "assert"
-        ) or (
-            parent_type(LL[0]) == syms.comptime_assert_stmt
+        )
+        is_old_comptime_assert = (
+            parent_type(LL[0]) == syms.old_comptime_assert_stmt
             and LL[0].value == "__comptime_assert"
-        ):
+        )
+        # New "comptime assert" syntax: first leaf is "comptime", second is "assert"
+        is_new_comptime_assert = (
+            parent_type(LL[0]) == syms.comptime_stmt
+            and LL[0].value == "comptime"
+            and len(LL) > 1
+            and LL[1].value == "assert"
+        )
+        if is_assert_stmt or is_old_comptime_assert or is_new_comptime_assert:
             is_valid_index = is_valid_index_factory(LL)
 
             for i, leaf in enumerate(LL):

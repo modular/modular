@@ -73,7 +73,7 @@ fn test_comptime_assert():
 @no_inline
 fn parametric_assert[param: Int]():
     # expected-note @below {{constraint failed: param must be 2}}
-    __comptime_assert param == 2, "param must be 2"
+    comptime assert param == 2, "param must be 2"
 
 
 # This creates recursive cycles: foo[D] -> bar[D] -> foo[D] and foo[D] -> baz[D] -> foo[D]

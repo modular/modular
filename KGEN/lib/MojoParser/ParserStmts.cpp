@@ -305,9 +305,13 @@ struct StmtParser : public ParserBase {
   handleRaisingFinallyRegion(TryOp tryOp, SMLoc loc,
                              function_ref<ParseResult()> populateFinallyBody);
 
-  // Simple statements.
-  ParseResult parseComptimeAssertStmt(LexerCursor startCursor,
-                                      size_t curIndent);
+  // Comptime statements.
+  // Handles 'comptime <keyword>' statements and 'comptime' variable decls.
+  ParseResult parseComptimeCompoundStmt(LexerCursor startCursor,
+                                        size_t curIndent, bool hadDecorators);
+  // Parses 'comptime assert' after keywords are consumed.
+  ParseResult parseComptimeAssertStmtBody(LexerCursor startCursor,
+                                          size_t curIndent, SMLoc kwLoc);
   ParseResult parseReturnStmt(size_t returnIndent);
   ParseResult parseRaiseStmt(size_t raiseIndent);
   ParseResult parseBreakOrContinueStmt(Token::Kind kind, StringRef name,
@@ -325,7 +329,10 @@ struct StmtParser : public ParserBase {
   ParseResult parseExtensionStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseVarStmt(LexerCursor startCursor, size_t stmtIndent);
-  ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
+  // Parse an alias/comptime declaration. The keyword ('alias' or 'comptime')
+  // must be consumed before calling this, and its location passed as kwLoc.
+  ParseResult parseAliasDeclStmtBody(LexerCursor startCursor, size_t stmtIndent,
+                                     SMLoc kwLoc);
   ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
   // Helper invoked during parseDefFnStmt, meant to mark defaulted trait method
@@ -568,7 +575,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///               | yield_stmt [TODO]
 ///               | raise_stmt [TODO]
 ///               | break_stmt [TODO]
-///               | comptime_assert_stmt
+///               | comptime_stmt
 ///               | continue_stmt [TODO]
 ///               | import_stmt
 ///               | future_stmt [TODO]
@@ -583,19 +590,6 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   // This is the cursor for the start of the declaration, that will be used in
   // the signature resolution phase.
   LexerCursor startCursor = getLexer().getCursor();
-
-  // This emits an error message if we parsed a decorator, because this
-  // statement doesn't support them.
-  auto rejectDecorator = [&](bool inFunctionBody = false,
-                             bool printToken = true) {
-    if (startCursor == getLexer().getCursor())
-      return;
-    auto diag = emitTokenError();
-    if (printToken)
-      diag << "'" << getToken().getSpelling() << "' ";
-    diag << "statement " << (inFunctionBody ? "in function body " : "")
-         << "does not allow decorators";
-  };
 
   // This lambda is used to generate an error when a compound statement is used
   // in a scenario that expects simple statements.
@@ -650,6 +644,20 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
       return success();
     }
   }
+
+  // This emits an error message if we parsed a decorator, because this
+  // statement doesn't support them.
+  bool hadDecorators = (startCursor != getLexer().getCursor());
+  auto rejectDecorator = [&](bool inFunctionBody = false,
+                             bool printToken = true) {
+    if (!hadDecorators)
+      return;
+    auto diag = emitTokenError();
+    if (printToken)
+      diag << "'" << getToken().getSpelling() << "' ";
+    diag << "statement " << (inFunctionBody ? "in function body " : "")
+         << "does not allow decorators";
+  };
 
   switch (getToken().getKind()) {
     //===------------------------------------------------------------------===//
@@ -712,12 +720,17 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       break;
     return parseVarStmt(startCursor, stmtIndent);
-  case Token::kw_alias:
-  case Token::kw_comptime:
+  case Token::kw_alias: {
     // Decorators on aliases are not allowed inside function bodies.
     if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
       rejectDecorator(/*inFunctionBody=*/true);
-    return parseAliasDeclStmt(startCursor, stmtIndent);
+    SMLoc kwLoc = consumeToken(Token::kw_alias).getLoc();
+    shared.emitWarning(kwLoc, "'alias' is deprecated, use 'comptime' instead")
+        << FixIt::replaceToken(kwLoc, "comptime");
+    return parseAliasDeclStmtBody(startCursor, stmtIndent, kwLoc);
+  }
+  case Token::kw_comptime:
+    return parseComptimeCompoundStmt(startCursor, stmtIndent, hadDecorators);
   case Token::kw___mlir_region:
     rejectDecorator();
     rejectSimpleStmt();
@@ -728,9 +741,12 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_raise:
     rejectDecorator(); // Decorators not allowed.
     return parseRaiseStmt(stmtIndent);
-  case Token::kw___comptime_assert:
+  case Token::kw___comptime_assert: {
     rejectDecorator(); // Decorators not allowed.
-    return parseComptimeAssertStmt(startCursor, stmtIndent);
+    SMLoc kwLoc = consumeToken(Token::kw___comptime_assert).getLoc();
+    // TODO: Emit deprecation warning.
+    return parseComptimeAssertStmtBody(startCursor, stmtIndent, kwLoc);
+  }
   case Token::kw_continue:
     rejectDecorator(); // Decorators not allowed.
     return parseBreakOrContinueStmt(Token::kw_continue, "continue",
@@ -787,10 +803,66 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 // Simple statements.
 //===----------------------------------------------------------------------===//
 
-/// comptime_assert_stmt ::= "__comptime_assert" expression ["," string_literal]
-ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
-                                                size_t curIndent) {
-  auto smLoc = consumeToken(Token::kw___comptime_assert).getLoc();
+/// Handles statements starting with the 'comptime' keyword.
+///
+/// 'comptime' can introduce either:
+///   1. Compound statements like 'comptime assert expr [, msg]'
+///   2. Variable declarations like 'comptime x = 4'
+///
+/// This function consumes 'comptime', checks what follows, and dispatches
+/// accordingly. It is extensible for future 'comptime <keyword>' statements.
+///
+/// The hadDecorators parameter indicates whether decorators were parsed before
+/// the 'comptime' keyword (used for decorator rejection since we can't use the
+/// standard rejectDecorator lambda after consuming tokens).
+ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
+                                                  size_t curIndent,
+                                                  bool hadDecorators) {
+  SMLoc kwLoc = consumeToken(Token::kw_comptime).getLoc();
+
+  auto rejectDecorator = [&](bool inFunctionBody = false,
+                             bool isCompoundStmt = true) {
+    if (!hadDecorators)
+      return;
+    auto diag = emitTokenError();
+    diag << "'comptime";
+    if (isCompoundStmt)
+      diag << " " << getToken().getSpelling();
+    diag << "' statement " << (inFunctionBody ? "in function body " : "")
+         << "does not allow decorators";
+  };
+
+  // Dispatch based on the current keyword (after 'comptime').
+  switch (getToken().getKind()) {
+  case Token::kw_assert:
+    rejectDecorator();
+    consumeToken(Token::kw_assert);
+    return parseComptimeAssertStmtBody(startCursor, curIndent, kwLoc);
+  default:
+    break;
+  }
+
+  // This is a comptime variable declaration (e.g., 'comptime x = 4').
+  // Decorators on aliases are not allowed inside function bodies.
+  if (isa_and_present<FnOp>(getParentDecl().getIfOperation()))
+    rejectDecorator(/*inFunctionBody=*/true, /*isCompoundStmt=*/false);
+  return parseAliasDeclStmtBody(startCursor, curIndent, kwLoc);
+}
+
+/// Parses a comptime assert statement after the keywords have been consumed.
+///
+/// Grammar:
+///   comptime_assert_stmt ::= "comptime" "assert" expression ["," message]
+///                          | "__comptime_assert" expression ["," message]
+///
+/// The caller must consume the keyword(s) before calling this function:
+///   - For 'comptime assert': both 'comptime' and 'assert' are consumed
+///   - For '__comptime_assert': the single keyword is consumed
+///
+/// kwLoc is the location of the first keyword, used for error reporting.
+ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
+                                                    size_t curIndent,
+                                                    SMLoc kwLoc) {
   ExprNode *expr = nullptr;
   if (parseExpression(expr, curIndent))
     return failure();
@@ -803,8 +875,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis. First ensure we're in a function. This may be relaxed later.
   if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
-    emitError(smLoc,
-              "'__comptime_assert' statements must be inside a function");
+    emitError(kwLoc, "'comptime assert' statements must be inside a function");
     return success();
   }
 
@@ -822,7 +893,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   if (messageExpr) {
     // Parse the message into an expression with std "StringSlice" type.
     auto stringSliceType =
-        shared.getBuiltinStringSliceType(*curDeclScope, smLoc)
+        shared.getBuiltinStringSliceType(*curDeclScope, kwLoc)
             .getWithoutParameters(emitter.shared);
 
     IREmitter paramEmitter = emitter.getParamEmitter(EC_ComptimeAssert);
@@ -863,7 +934,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   // immediately to the user rather than waiting until elaboration.
   if (auto boolAttr = sugarDynCast<BoolAttr>(propVal.get())) {
     if (!boolAttr.getValue()) {
-      emitError(smLoc, "failed __comptime_assert: condition is always False");
+      emitError(kwLoc, "failed comptime assert: condition is always False");
       return success();
     }
     // If the condition is always True, the assertion is redundant and adds no
@@ -871,7 +942,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
     return success();
   }
 
-  Location loc = translateLocation(smLoc);
+  Location loc = translateLocation(kwLoc);
   auto assertOp =
       KGEN::ParamAssertOp::create(builder, loc, propVal.get(), message);
 
@@ -879,7 +950,7 @@ ParseResult StmtParser::parseComptimeAssertStmt(LexerCursor startCursor,
   // scope. This scope completely takes over as the new `curDeclScope` and the
   // old scope is not restored.
   curDeclScope = &getDeclResolver().addFullyResolvedDecl(assertOp, StringAttr(),
-                                                         smLoc, curDeclScope);
+                                                         kwLoc, curDeclScope);
   // Inject this assumption into the newly created context.
   // Convert `x and y` to `x & y` so we get better canonicalization.
   TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(propVal.get());
@@ -3222,18 +3293,10 @@ parseAliasDeclTargetsExpr(ParserBase &p,
   return ret;
 }
 
-ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
-                                           size_t stmtIndent) {
-  // Accept either 'alias' or 'comptime' keyword
-  SMLoc smLoc;
-  if (getToken().is(Token::kw_comptime)) {
-    smLoc = consumeToken(Token::kw_comptime).getLoc();
-  } else {
-    smLoc = consumeToken(Token::kw_alias).getLoc();
-    shared.emitWarning(smLoc, "'alias' is deprecated, use 'comptime' instead")
-        << FixIt::replaceToken(smLoc, "comptime");
-  }
-  Location loc = translateLocation(smLoc);
+ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
+                                               size_t stmtIndent, SMLoc kwLoc) {
+  // The 'alias' or 'comptime' keyword was already consumed by the caller.
+  Location loc = translateLocation(kwLoc);
 
   SmartVariant<StringRef, ExprNode *> parseResult;
   if (failed(parseAliasDeclTargetsExpr(*this, parseResult, stmtIndent)))
@@ -3241,7 +3304,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   if (auto targetExpr = dyn_cast<ExprNode *>(parseResult)) {
     if (!consumeIf(Token::equal)) {
-      emitError(smLoc, "expected '=' after comptime declaration");
+      emitError(kwLoc, "expected '=' after comptime declaration");
       return failure();
     }
 
@@ -3250,7 +3313,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
     if (isa_and_nonnull<StructDeclOp, TraitDeclOp>(
             parentDecl.getIfOperation())) {
       emitError(
-          smLoc,
+          kwLoc,
           "only comptime declarations with a single name are allowed inside a ")
           << (isa<StructDeclOp>(parentDecl.getIfOperation()) ? "struct"
                                                              : "trait");
@@ -3310,7 +3373,7 @@ ParseResult StmtParser::parseAliasDeclStmt(LexerCursor startCursor,
 
   // Remember that we parsed this declaration so we can finish type checking it
   // when it gets referenced.
-  getDeclResolver().addDecl(declOp, smLoc, name, curDeclScope, startCursor,
+  getDeclResolver().addDecl(declOp, kwLoc, name, curDeclScope, startCursor,
                             getLexer().getCursor(), stmtIndent);
   return success();
 }
