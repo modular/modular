@@ -459,7 +459,9 @@ class DeepseekV3(Module):
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
-        input_row_offsets_ = distribute_value(input_row_offsets, devices)
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets, signal_buffers
+        )
 
         if len(devices) > 1:
             # Split batch across devices for data-parallel attention.
