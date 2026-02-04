@@ -69,7 +69,7 @@ fn noop(a: Int):
 # CHECK-LABEL: lit.fn @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR)
+    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
     # CHECK-NEXT: %val = lit.var.decl "val"
@@ -87,7 +87,7 @@ fn testWithNonRaising(a: ExampleCM):
     # Test a with with no target.
 
     # CHECK: %$CONTEXTMGR_0 = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR_0)
+    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR_0
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
     # CHECK: lit.call {{.*}}__enter__{{.*}}([[IMMREF]]
     # CHECK: lit.try
@@ -124,7 +124,7 @@ fn testWithNonRaising(a: ExampleCM):
 # CHECK-LABEL: lit.fn @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
     # CHECK: %$CONTEXTMGR = lit.var.decl
-    # CHECK-NEXT: ExampleCM::@"__copyinit__
+    # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
     # CHECK: %val = lit.var.decl "val"
@@ -172,7 +172,7 @@ fn testWithInTry(a: ExampleCM):
     # CHECK-NEXT: lit.try %e
     try:
         # CHECK: %$CONTEXTMGR = lit.var.decl
-        # CHECK-NEXT: ExampleCM::@"__copyinit__
+        # CHECK-NEXT: lit.memcpy %a, %$CONTEXTMGR
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
         # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
         # CHECK: %cm = lit.var.decl "cm"

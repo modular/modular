@@ -140,9 +140,17 @@ struct MemExample(ImplicitlyCopyable):
         pass
 
 
+struct MemExampleTriviallyCopyable(ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+
 fn mutateMem(mut a: MemExample):
     pass
 
+
+fn mutateMemTC(mut a: MemExampleTriviallyCopyable):
+    pass
 
 fn mutateInt(mut a: Int):
     pass
@@ -164,10 +172,15 @@ fn mutate_in_addrspace(
     memptr: UnsafePointer[
         MemExample, MutAnyOrigin, address_space = AddressSpace(1)
     ],
+    memtcptr: UnsafePointer[
+        MemExampleTriviallyCopyable, MutAnyOrigin, address_space = AddressSpace(1)
+    ],
     regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
-    # expected-error @+1 {{non-trivial value cannot be copied from a non-default address space}}
+    # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
+    # ok
+    mutateMemTC(memtcptr[])
     # ok
     mutateInt(regptr[])
 
@@ -178,7 +191,7 @@ fn variadic_addr_space(
     ],
     regptr: UnsafePointer[Int, MutAnyOrigin, address_space = AddressSpace(1)],
 ):
-    # expected-error @below {{non-trivial value cannot be copied from a non-default address space}}
+    # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     pack_func(memptr[])
     # Ok.
     pack_func(regptr[])

@@ -87,9 +87,8 @@ fn test_variadic_kwargs_param_inference():
 
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[Y_KEY]], %[[M]])
 
-    # CHECK: %[[S_REF:.*]] = lit.ref.immut %s
-    # CHECK: %[[S:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!MemOnly,
-    # CHECK: lit.call {{.*}}@MemOnly::@"__copyinit__{{.*}}(%[[S_REF]], %[[S]])
+    # CHECK: %[[S:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,
+    # CHECK: lit.memcpy %s, %[[S]] : <!MemOnly,
     # CHECK: %[[Z_KEY:.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "z">
     # CHECK: lit.call {{.*}}@OwnedKwargsDict::@"_insert{{.*}}(%[[DICT_VAR]], %[[Z_KEY]], %[[S]])
     infers_param_from_kwargs(y=MemOnly(), z=s)

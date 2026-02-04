@@ -1083,12 +1083,13 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
     # CHECK: %v0 = lit.var.decl
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B1REF]], %v0)
+    # CHECK: lit.memcpy [[B1REF]], %v0
+
     var v0 = b[1]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B2REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
     # CHECK: %v1 = lit.var.decl
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B2REF]], %v1)
+    # CHECK: lit.memcpy [[B2REF]], %v1
     var v1 = b[2]
 
 fn testTransferWarning():

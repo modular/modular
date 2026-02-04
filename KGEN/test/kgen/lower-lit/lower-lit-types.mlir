@@ -263,11 +263,13 @@ lit.fn @takes_val_after_origin<life: origin<1>, type: type>(%a: !lit.ref<type, m
 
 // CHECK-LABEL: kgen.generator @does_memcpy
 lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
-  (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: !lit.ref<@PairStruct, mut l>, %arg2: si32) -> si32 {
+  (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: !lit.ref<@PairStruct, mut l>, %arg2: !lit.ref<@PairStruct, mut l, 3>) -> si32 {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(si32, ui32) memoryOnly>>
   %0 = lit.ref.struct.ger %arg0[x] : <@PairStruct, mut l> -> si32
   // CHECK-NEXT: %1 = kgen.struct.gep %arg1[0] : <struct<(si32, ui32) memoryOnly>>
   %1 = lit.ref.struct.ger %arg1[x] : <@PairStruct, mut l> -> si32
+  // CHECK-NEXT: %2 = kgen.struct.gep %arg2[0] : <struct<(si32, ui32) memoryOnly>, 3>
+  %2 = lit.ref.struct.ger %arg2[x] : <@PairStruct, mut l, 3> -> si32
 
   // This rebind should be removed entirely by lower types.
   %rb = kgen.rebind %0 : !lit.ref<si32, mut l->x> to !lit.ref<si32, mut l2>
@@ -276,10 +278,14 @@ lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
   // CHECK-NEXT: pop.memcpy %0, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32>
   lit.memcpy %1, %rb : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l2>
 
-  // CHECK-NEXT: %2 = pop.load %0 : !kgen.pointer<si32>
+  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(si32, current_target())>
+  // CHECK-NEXT: pop.memcpy %2, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32, 3>
+  lit.memcpy %1, %2 : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l->x, 3>
+
+  // CHECK-NEXT: [[RET:%.*]] = pop.load %0 : !kgen.pointer<si32>
   %a = lit.ref.load %0 : !lit.ref<si32, mut l->x>
 
-  // CHECK-NEXT: kgen.return %2
+  // CHECK-NEXT: kgen.return [[RET]]
   kgen.return %a : si32
 }
 
