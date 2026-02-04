@@ -507,7 +507,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         import json
 
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, list_repo_files
 
         # Extract class name and version
         class_name = model_index.get("_class_name")
@@ -515,6 +515,25 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Build components dict with loaded configs
         components = {}
+        repo_files = list_repo_files(
+            repo_id=self.huggingface_model_repo.repo_id,
+            revision=self.huggingface_model_repo.revision,
+        )
+        component_configs = {}
+        for file_name in repo_files:
+            if file_name.endswith("config.json") and "/" in file_name:
+                try:
+                    component_name = file_name.split("/")[0]
+                    cfg_path = hf_hub_download(
+                        repo_id=self.huggingface_model_repo.repo_id,
+                        filename=file_name,
+                        revision=self.huggingface_model_repo.revision,
+                    )
+                    with open(cfg_path) as f:
+                        component_configs[component_name] = json.load(f)
+                except Exception as e:
+                    logger.debug(f"Could not load config for {file_name}: {e}")
+
         for component_name, component_info in model_index.items():
             if component_name.startswith("_"):
                 continue
@@ -524,23 +543,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             library, class_type = component_info
 
-            # Try to load the component's config file
-            component_config = {}
-            try:
-                config_file_path = hf_hub_download(
-                    repo_id=self.huggingface_model_repo.repo_id,
-                    filename=f"{component_name}/config.json",
-                    revision=self.huggingface_model_repo.revision,
-                )
-                with open(config_file_path) as f:
-                    component_config = json.load(f)
-            except Exception as e:
-                logger.debug(f"Could not load config for {component_name}: {e}")
-
             components[component_name] = {
                 "library": library,
                 "class_name": class_type,
-                "config_dict": component_config,
+                "config_dict": component_configs.get(component_name, {}),
             }
 
         # Build the final config structure
