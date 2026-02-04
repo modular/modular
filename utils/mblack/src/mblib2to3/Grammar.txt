@@ -209,7 +209,7 @@ testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|
 lambdef: 'lambda' [varargslist] ':' test
 trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
-subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' test] | '**' test
+subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' [test] ':' [test] [sliceop]] | test ['=' test] | '**' test
 sliceop: ':' [test]
 exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
 testlist: test (',' test)* [',']
