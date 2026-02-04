@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,9 +29,13 @@ from state_space.selective_scan import (
     selective_scan_update_cpu,
     selective_scan_update_gpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 fn run_selective_scan_gpu[
@@ -969,127 +973,181 @@ fn run_selective_scan_update_gpu[
     dt_bias_h.free()
 
 
-def main():
-    with DeviceContext() as ctx:
-        # Test basic selective scan
+# =============================================================================
+# Test functions for selective scan forward (GPU)
+# =============================================================================
+
+
+fn test_selective_scan_gpu_basic() raises:
+    """Test basic selective scan GPU kernel."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_gpu_without_D() raises:
+    """Test selective scan GPU without D tensor."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_gpu_without_z() raises:
+    """Test selective scan GPU without z tensor."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_gpu_with_delta_softplus() raises:
+    """Test selective scan GPU with delta softplus activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_gpu_longer_sequence() raises:
+    """Test selective scan GPU with longer sequence."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_gpu_edge_case_seqlen() raises:
+    """Test selective scan GPU with edge case sequence lengths."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # CPU uses TILE_SIZE=4, so test edge cases around multiples of 4
+    for seqlen in [5, 7]:
         run_selective_scan_gpu[
             DType.float32,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Basic selective scan GPU test passed")
+        ](batch=1, dim=2, seqlen=seqlen, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test without D
-        run_selective_scan_gpu[
-            DType.float32,
-            has_D=False,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan GPU without D test passed")
 
-        # Test without z
-        run_selective_scan_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=False,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan GPU without z test passed")
+fn test_selective_scan_gpu_realistic_dimensions() raises:
+    """Test selective scan GPU with realistic dimensions."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=1, dim=64, seqlen=7, dstate=8, n_groups=1, ctx=ctx)
 
-        # Test with delta_softplus
-        run_selective_scan_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=True,
-        ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan GPU with delta_softplus test passed")
 
-        # Test longer sequence (reduced dimensions for speed)
-        run_selective_scan_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1, ctx=ctx)
-        print("✓ Selective scan GPU longer sequence test passed")
+# =============================================================================
+# Test functions for selective scan update (GPU)
+# =============================================================================
 
-        # Test specific sequence lengths that might expose CPU tiling bugs
-        # CPU uses TILE_SIZE=4, so test edge cases around multiples of 4
-        # Reduced from 6 tests to 2 key edge cases for speed
-        for seqlen in [5, 7]:
-            run_selective_scan_gpu[
-                DType.float32,
-                has_D=True,
-                has_z=True,
-                has_delta_bias=True,
-                delta_softplus=False,
-            ](batch=1, dim=2, seqlen=seqlen, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test with realistic dimensions (reduced for speed - keep one test)
-        # dim=1536, dstate=16, n_groups=1
-        run_selective_scan_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=True,
-        ](batch=1, dim=64, seqlen=7, dstate=8, n_groups=1, ctx=ctx)
-        print("✓ Selective scan GPU realistic dimensions test passed")
+fn test_selective_scan_update_gpu_basic() raises:
+    """Test basic selective scan update GPU kernel."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test selective scan update
-        run_selective_scan_update_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Basic selective scan update GPU test passed")
 
-        # Test update without D
-        run_selective_scan_update_gpu[
-            DType.float32,
-            has_D=False,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan update GPU without D test passed")
+fn test_selective_scan_update_gpu_without_D() raises:
+    """Test selective scan update GPU without D tensor."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test update without z
-        run_selective_scan_update_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=False,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan update GPU without z test passed")
 
-        # Test update with delta_softplus
-        run_selective_scan_update_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=True,
-        ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
-        print("✓ Selective scan update GPU with delta_softplus test passed")
+fn test_selective_scan_update_gpu_without_z() raises:
+    """Test selective scan update GPU without z tensor."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
 
-        # Test update with larger dimensions (reduced for speed)
-        run_selective_scan_update_gpu[
-            DType.float32,
-            has_D=True,
-            has_z=True,
-            has_delta_bias=True,
-            delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
-        print("✓ Selective scan update GPU larger dimensions test passed")
+
+fn test_selective_scan_update_gpu_with_delta_softplus() raises:
+    """Test selective scan update GPU with delta softplus activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
+
+
+fn test_selective_scan_update_gpu_larger_dimensions() raises:
+    """Test selective scan update GPU with larger dimensions."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_selective_scan_update_gpu[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)

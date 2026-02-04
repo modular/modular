@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Qwerky AI Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,7 @@ from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
@@ -355,108 +355,6 @@ fn run_selective_scan_fwd[
     z_heap.free()
     delta_bias_heap.free()
     output_ref_heap.free()
-
-
-def main():
-    # Test basic selective scan
-    run_selective_scan_fwd[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
-    print("✓ Basic selective scan test passed")
-
-    # Test without D
-    run_selective_scan_fwd[
-        DType.float32,
-        has_D=False,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
-    print("✓ Selective scan without D test passed")
-
-    # Test without z
-    run_selective_scan_fwd[
-        DType.float32,
-        has_D=True,
-        has_z=False,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
-    print("✓ Selective scan without z test passed")
-
-    # Test with delta_softplus
-    run_selective_scan_fwd[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=True,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
-    print("✓ Selective scan with delta_softplus test passed")
-
-    # Test longer sequence (reduced dimensions for speed)
-    run_selective_scan_fwd[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1)
-    print("✓ Selective scan longer sequence test passed")
-
-    # Test selective scan update
-    run_selective_scan_update[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
-    print("✓ Basic selective scan update test passed")
-
-    # Test update without D
-    run_selective_scan_update[
-        DType.float32,
-        has_D=False,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
-    print("✓ Selective scan update without D test passed")
-
-    # Test update without z
-    run_selective_scan_update[
-        DType.float32,
-        has_D=True,
-        has_z=False,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
-    print("✓ Selective scan update without z test passed")
-
-    # Test update with delta_softplus
-    run_selective_scan_update[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=True,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
-    print("✓ Selective scan update with delta_softplus test passed")
-
-    # Test update with larger dimensions (reduced for speed)
-    run_selective_scan_update[
-        DType.float32,
-        has_D=True,
-        has_z=True,
-        has_delta_bias=True,
-        delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
-    print("✓ Selective scan update larger dimensions test passed")
 
 
 fn run_selective_scan_update[
@@ -804,3 +702,127 @@ fn run_selective_scan_update[
     dt_bias_heap.free()
     state_out_ref_heap.free()
     output_ref_heap.free()
+
+
+# =============================================================================
+# Test functions for selective scan forward
+# =============================================================================
+
+
+fn test_selective_scan_fwd_basic() raises:
+    """Test basic selective scan forward."""
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_fwd_without_D() raises:
+    """Test selective scan forward without D tensor."""
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_fwd_without_z() raises:
+    """Test selective scan forward without z tensor."""
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_fwd_with_delta_softplus() raises:
+    """Test selective scan forward with delta softplus activation."""
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_fwd_longer_sequence() raises:
+    """Test selective scan forward with longer sequence."""
+    run_selective_scan_fwd[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1)
+
+
+# =============================================================================
+# Test functions for selective scan update
+# =============================================================================
+
+
+fn test_selective_scan_update_basic() raises:
+    """Test basic selective scan update."""
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_update_without_D() raises:
+    """Test selective scan update without D tensor."""
+    run_selective_scan_update[
+        DType.float32,
+        has_D=False,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_update_without_z() raises:
+    """Test selective scan update without z tensor."""
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=False,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=1, dim=2, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_update_with_delta_softplus() raises:
+    """Test selective scan update with delta softplus activation."""
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=True,
+    ](batch=1, dim=2, dstate=2, n_groups=1)
+
+
+fn test_selective_scan_update_larger_dimensions() raises:
+    """Test selective scan update with larger dimensions."""
+    run_selective_scan_update[
+        DType.float32,
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, dstate=4, n_groups=1)
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
