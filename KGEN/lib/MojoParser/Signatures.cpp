@@ -2524,16 +2524,21 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
                                    paramList.shared, captureOrigins),
       isNestedOriginExclusivityCheckingDisabled, fnConstraints);
 
-  /// Silence internal verifier errors when constructing types from the parser.
-  /// We don't want to show these to the user.
-  auto silenceErrors = [ctx] {
-    InFlightDiagnostic diag = mlir::emitError(UnknownLoc::get(ctx));
-    diag.abandon();
-    return diag;
+  /// We shouldn't have internal verifier errors here, but if we do, try to
+  /// emit them at some location of merit because something snuck through
+  /// semantic analysis.  We should treat these as bugs in the parser.
+  auto emitError = [&] {
+    // Find some loc to use.
+    Location loc = UnknownLoc::get(ctx);
+    if (!argList.parsedArgs.empty())
+      loc = paramList.shared.translateLocation(argList.parsedArgs[0].loc);
+    else if (!paramList.locations.empty())
+      loc = paramList.shared.translateLocation(paramList.locations.back());
+    return mlir::emitError(loc);
   };
 
   FunctionType functionType = getFunctionType();
   return FuncTypeGeneratorType::remapToFuncTypeGenerator(
       paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
-      metadata, paramListAttr, silenceErrors);
+      metadata, paramListAttr, emitError);
 }
