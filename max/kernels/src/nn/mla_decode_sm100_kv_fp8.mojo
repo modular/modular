@@ -11,162 +11,59 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp2, recip, align_up, align_down, gcd
-from math.constants import log2e
-from sys import align_of, simd_width_of, size_of, env_get_int, _RegisterPackType
+from math import ceildiv
+from sys import size_of
 import gpu.primitives.warp as warp
-from algorithm.functional import unswitch
-from bit import prev_power_of_two, pop_count
-from collections import Optional
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx,
     block_idx,
-    block_dim,
     warp_id,
 )
-from nn.mha_utils import DynamicInt, NoPartition
-from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from gpu.globals import WARPGROUP_SIZE
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc, Scope
+from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.compute.mma import MMAOperandDescriptor
-from gpu.compute.arch.mma_nvidia_sm100 import (
-    MMASmemDescriptor,
-    UMMAInsDescriptor,
-    UMMAKind,
-    mma,
-    mma_arrive,
-)
-
 from gpu.sync import (
     named_barrier,
-    mbarrier_arrive,
-    mbarrier_try_wait_parity_shared,
-    mbarrier_init,
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
 )
 from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
-    tcgen05_fence_after,
     tcgen05_fence_before,
-    tcgen05_ld,
-    tcgen05_load_wait,
     tcgen05_release_allocation_lock,
-    tcgen05_st,
-    tcgen05_store_wait,
 )
-from gpu.primitives.warp import _vote_nvidia_helper
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import (
     Layout,
-    blocked_product,
-    composition,
-    logical_divide,
-    logical_product,
-    make_layout,
 )
 from logger import Logger
 
-from layout.layout_tensor import (
-    LayoutTensor,
-    LayoutTensorIter,
-    copy_local_to_shared,
-    copy_sram_to_dram,
-    ThreadScope,
-)
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    _CM_NUM_ROWS,
-    _CM_ROW_BYTES,
-    tile_to_descriptor,
-)
+from layout.swizzle import make_swizzle
 from layout.tma_async import (
-    create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
-    SplitLastDimTMATensorTile,
-    create_split_tma,
-    create_tma_tile,
-    _tma_desc_tile_layout,
-    TMATensorTile,
 )
-from layout.runtime_layout import RuntimeLayout
 from memory import bitcast
 from nn.mha_fa3_utils import (
-    _get_position,
-    MHAPosition,
-    NonNullPointer,
-    NullPointer,
     OptionalPointer,
-    output_reg_to_smem,
-    output_reg_to_smem_st_matrix,
-    Pack,
-    produce,
-    QTMATile,
 )
-from nn.mha_mask import MHAMask, TileMaskStatus
+from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from nn.mha_tile_scheduler import (
-    MHASchedulerSynchronization,
-    MHATileScheduler,
-    MHATileState,
-    MHATileSummary,
-    SeqInfo,
-    TransientScheduler,
-)
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from nn.mha_utils import (
-    FlashAttentionAlgorithm,
-    MHAConfig,
-    MHAPartitionScheme,
-    OptionallyStaticInt,
-    _is_decoding,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
-from nn.softmax import (
-    _online_softmax_correction,
-    _rowmax_online_softmax,
-    _rowsum,
-)
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from linalg.arch.sm100.mma import smem_descriptor, _create_mma_desc_pair
 
-from pathlib import Path
 from nn.mha_sm100_2q import (
-    FA4MiscMBars,
     elect,
-    KVPipeline,
     TMemTile,
-    bulk_mma,
     LocalTensor,
     elect_mma_arrive,
-    ProducerPipeline,
-    ConsumerPipeline,
-    MBarPipeline,
-    sub_ftz,
 )
-from nn.mha_fa3_utils import q_gmem_shape, KVTMATile
-from nn.mha import q_num_matrix_view_rows
-from builtin.device_passable import DevicePassable
-from sys._assembly import inlined_assembly
-from nn.mha_mask import NullMask, MaterializedMask, CausalMask
+from nn.mha_fa3_utils import KVTMATile
 
 comptime logger = Logger()
-from nn.mla_decode_utils import (
+from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -198,323 +95,9 @@ from nn.mla_decode_utils import (
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding implementation for SM100
-# ------------------------------------------------------------------------------
-fn mla_decode_sm100_kv_fp8[
-    q_type: DType,
-    q_layout: Layout,
-    k_t: MHAOperand,
-    output_type: DType,
-    mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
-    valid_layout: Layout,
-    config: MHAConfig,
-    depth: Int,
-    num_heads: Int,
-    group: Int = 1,
-    *,
-    use_score_mod: Bool = False,
-    ragged: Bool = False,
-    _is_cache_length_accurate: Bool = False,
-    decoding_warp_split_k: Bool = False,
-](
-    q: LayoutTensor[
-        q_type, q_layout, address_space = AddressSpace.GENERIC, ...
-    ],
-    k: k_t,
-    output: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    scale: Float32,
-    batch_size: Int,
-    num_partitions: Int,
-    max_cache_valid_length: Int,  # longest KV cache entry
-    q_max_seq_len: Int,
-    valid_length: LayoutTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
-    ],
-    mask: mask_t,
-    score_mod: score_mod_t,
-    ctx: DeviceContext,
-) raises:
-    # bar_q → 1           producer pipeline - load consumer - mma
-    # bar_kv_reay[2] → 2  consumer pipeline - mma
-    # bar_kv_free[2] → 2   producer pipeline - load
-    # bar_s_done[2] → 2  producer pipeline - mma
-    # bar_s_ready[2] → 2  consumer pipeline - softmax
-    # bar_p_done[2] → 2  producer pipeline- softmax
-    # bar_p_ready[2] → 2  consumer pipeline - mma
-    # bar_correction_done[1] → 1  producer pipeline- softmax
-    # bar_correction_ready[1] → 1  consumer pipeline - correction
-    # bar_o_done[1] → 1  producer pipeline- MMA PV
-    # bar_o_ready[1] → 1  consumer pipeline - Correction
-    # bar_output_done[1] → 1  producer pipeline- correction
-    # bar_output_ready[1] → 1  consumer pipeline - softmax
-    # bar_convert_done[2] → 2  producer pipeline- Convert fp8 to bf16
-    # bar_convert_ready[2] → 2  consumer pipeline - mma
-    # Hence fixed_transaction_barriers: 1 + 2 + 2 + 2 + 2  +2 + 2  + 1 + 1 + 1 + 1 +2 + 2 = 23.
-    comptime mla_config = MLA_SM100_Decode_Config(
-        num_q_heads=num_heads,
-        group=group,  # num_q_heads/h_k(1)
-        depth=(depth - 64),  # 512
-        q_depth=depth,  # 576
-        dtype_size=size_of[q_type](),
-        swizzle_mode=config.swizzle_mode,
-        kv_swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        page_size=k_t.page_size,
-        decoding_warp_split_k=decoding_warp_split_k,
-        fixed_transaction_barriers=23,
-        num_threads=128 * 4,
-    )
-    var num_rows_qo = num_matrix_view_rows_decode(q)
-    q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
-        q.to_device_buffer(ctx).unsafe_ptr()
-    )
-    q_tma_op = tma_tile_qo[
-        swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.BM,  # tile_m =64
-        BK = mla_config.BK0,  # tile_n =576
-        depth = mla_config.q_depth,
-    ](ctx, q_ptr, num_rows_qo)
-
-    k_tma_op = k.create_tma_tile[
-        BN = mla_config.BK1,  # tile_m =64
-        depth = mla_config.q_depth,
-        BK = mla_config.BK0,  # tile_n =576
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
-    ](ctx)
-    comptime output_tile_width = (mla_config.BN // 2) * (
-        4 // size_of[output_type]()
-    )
-    o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
-        output.to_device_buffer(ctx).unsafe_ptr()
-    )
-    o_tma_op = tma_tile_qo[
-        swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.out_rows,
-        BK = mla_config.BN,
-        depth = mla_config.depth,
-    ](ctx, o_ptr, num_rows_qo)
-
-    if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
-        var valid_len: ValidLengthType = {
-            valid_length.to_device_buffer(ctx).unsafe_ptr()
-        }
-        launch_mla_sm100_decode_enqueue_kernel[
-            q_type=q_type,
-            KVLUTType=k_t,
-            output_type=output_type,
-            MaskType=mask_t,
-            ScoreModType=score_mod_t,
-            config=mla_config,
-            use_score_mod=use_score_mod,
-            ValidLengthType=ValidLengthType,
-            ragged=True,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-        ](
-            q_tma_op,
-            k_tma_op,
-            o_tma_op,
-            k,
-            scale,
-            batch_size,
-            num_partitions,
-            max_cache_valid_length,
-            q_max_seq_len,
-            valid_len,
-            mask,
-            score_mod,
-            ctx,
-        )
-    else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
-        var valid_len: ValidLengthType = {}
-        launch_mla_sm100_decode_enqueue_kernel[
-            q_type=q_type,
-            KVLUTType=k_t,
-            output_type=output_type,
-            MaskType=mask_t,
-            ScoreModType=score_mod_t,
-            config=mla_config,
-            use_score_mod=use_score_mod,
-            ValidLengthType=ValidLengthType,
-            ragged=False,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-        ](
-            q_tma_op,
-            k_tma_op,
-            o_tma_op,
-            k,
-            scale,
-            batch_size,
-            num_partitions,
-            max_cache_valid_length,
-            q_max_seq_len,
-            valid_len,
-            mask,
-            score_mod,
-            ctx,
-        )
-
-
-@always_inline
-fn launch_mla_sm100_decode_enqueue_kernel[
-    q_type: DType,
-    KVLUTType: MHAOperand,
-    output_type: DType,
-    MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
-    config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
-    ValidLengthType: OptionalPointer,
-    _is_cache_length_accurate: Bool = False,
-    ragged: Bool = False,
-](
-    q_tma: QOTMATile[
-        dtype=q_type,
-        BM = config.BM,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
-        swizzle_mode = config.swizzle_mode,
-    ],
-    k_tma: KVTMATile[
-        dtype = KVLUTType.dtype,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
-        BN = config.BK1,  # tile_m =64
-        BK = config.BK0,  # tile_n =576
-    ],
-    o_tma: QOTMATile[
-        dtype=output_type,
-        BM = config.out_rows,
-        BK = config.BN,
-        swizzle_mode = config.swizzle_mode,
-    ],
-    kv_lut: KVLUTType,
-    scale: Float32,
-    batch_size: Int,
-    num_partitions: Int,
-    max_cache_valid_length: Int,  # longest KV cache entry,
-    q_max_seq_len: Int,
-    valid_len: ValidLengthType,
-    mask: MaskType,
-    score_mod: ScoreModType,
-    ctx: DeviceContext,
-) raises:
-    var mla_decode_pack = MLA_Decode_Pack[
-        ValidLengthType=ValidLengthType,
-        MaskType=MaskType,
-        ScoreModType=ScoreModType,
-    ](mask, score_mod, valid_len)
-    var block_x = ceildiv(config.num_q_heads, config.BM)
-    # TODO: this should be seq_len and batch to be distributed across the grid
-    var block_y = q_max_seq_len
-    # TODO: # currently this is fixed for batch size, Next step is to modify it
-    # to support the split k when the KVcachesize is varrable length per batch so
-    # the num_partitions would create more load balanced work per block based on
-    # the KV cache size per batch.
-    var block_z = batch_size
-    var grid_dim = (block_x, block_y, block_z)
-    # we have 3 warp groups:
-    # - one for load/store/2xMMA
-    # - one for compute softmax
-    # - one for compute correction
-    var block_dim = (config.num_threads, 1, 1)
-    logger.info(
-        "block_dim:",
-        block_dim[0],
-        block_dim[1],
-        block_dim[2],
-        "grid_dim:",
-        grid_dim[0],
-        grid_dim[1],
-        grid_dim[2],
-        "config.smem_used:",
-        config.smem_used,
-        "config.num_q_heads:",
-        config.num_q_heads,
-        "config.num_kv_heads:",
-        config.num_kv_heads,
-        "config.num_threads:",
-        config.num_threads,
-        "config.num_kv_stages:",
-        config.num_kv_stages,
-        "config.BM:",
-        config.BM,
-        "config.BN:",
-        config.BN,
-        "config.BK0:",
-        config.BK0,
-        "config.BK1:",
-        config.BK1,
-        "config.q_depth:",
-        config.q_depth,
-        "config.depth:",
-        config.depth,
-        "config.padded_depth:",
-        config.padded_depth,
-        "config.padded_q_depth:",
-        config.padded_q_depth,
-        "config.rope_depth:",
-        config.rope_depth,
-        "config.swizzle_mode:",
-        config.swizzle_mode,
-        "max_cache_valid_length:",
-        max_cache_valid_length,
-        "output_tile_width:",
-        (config.BN // 2) * (4 // size_of[output_type]()),
-    )
-
-    logger.info("------ Dispatching to SM100 MLA-SM100-DECODE ------")
-    logger.info(
-        "QK Type:",
-        KVLUTType.dtype,
-        "Q Depth:",
-        config.q_depth,
-        "Number of Q // KV Heads:",
-        config.num_q_heads,
-        "//",
-        config.num_kv_heads,
-        "Batch Size:",
-        batch_size,
-        "Num Partitions:",
-        num_partitions,
-        "Max Cache Valid Length:",
-        max_cache_valid_length,
-    )
-    comptime kernel = MLA_SM100_Decode[
-        q_type=q_type,
-        KVLUTType=KVLUTType,
-        output_type=output_type,
-        MaskType=MaskType,
-        ScoreModType=ScoreModType,
-        config=config,
-        use_score_mod=use_score_mod,
-        ValidLengthType=ValidLengthType,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-        ragged=ragged,
-    ].kernel
-    ctx.enqueue_function[kernel, kernel](
-        q_tma,
-        k_tma,
-        o_tma,
-        kv_lut,
-        scale,
-        batch_size,
-        q_max_seq_len,
-        num_partitions,
-        max_cache_valid_length,
-        mla_decode_pack,
-        grid_dim=grid_dim,
-        block_dim=block_dim,
-        shared_mem_bytes=config.smem_used,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.smem_used
-        ),
-    )
-
-
-# ------------------------------------------------------------------------------
 # MLA decoding kernel struct for SM100
 # ------------------------------------------------------------------------------
-struct MLA_SM100_Decode[
+struct MLA_SM100_Decode_KV_FP8[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -597,20 +180,20 @@ struct MLA_SM100_Decode[
     #           |                          |
     #           |                          |
     #           V---- Coorection WG  ------|
-    #                                      |
-    #                                  UMMA WP → O
-    #                               arrive mbar_0
-    #                                      |
-    #                                 Coorection WG1 → O
-    #                                      |
-    #                                    wait_O_filled
-    #                                     C_WG
-    #                                      |
-    #                                     wair_out
-    #                                       |
-    #                                    Write WG
-    #                                      |
-    #                                     W_WG
+    #           |                          |
+    #       UMMA WP → O                UMMA WP → 1
+    #    arrive mbar_0              arrive mbar_1
+    #           |                          |
+    #    Coorection WG1 → O           Coorection WG1 → 1
+    #         |                            |
+    #       wait_O_filled                wait_O_filled
+    #        C_WG                         C_WG
+    #          |                            |
+    #        wair_out                     wair_out
+    #          |                            |
+    #       Write WG                     Write WG
+    #         |                            |
+    #        W_WG                         W_WG
     #
     #
 
@@ -636,7 +219,7 @@ struct MLA_SM100_Decode[
         ],
         k_tma: KVTMATile[
             dtype = Self.kv_type,
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode = Self.config.kv_tma_swizzle_mode,
             BN = Self.config.BK1,  # tile_m =64
             BK = Self.config.BK0,  # tile_n =576
         ],
@@ -756,11 +339,11 @@ struct MLA_SM100_Decode[
         )  # P uses 9 .. 12
         mbar_base = p_bars.end()  # barrier total [13]
         var o_bars = DecodeSM100MiscMBars[
-            num_stages=1, num_producer=1, num_consumer=WARPGROUP_SIZE
+            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ](
             mbar_base
-        )  # O uses 13 and 14
-        mbar_base = o_bars.end()  # barrier total [15]
+        )  # O uses 13..16
+        mbar_base = o_bars.end()  # barrier total [17]
         # C pipeline, Softmax -> Correction
         var c_bars = DecodeSM100MiscMBars[
             num_stages=1,
@@ -768,19 +351,20 @@ struct MLA_SM100_Decode[
             num_consumer=WARPGROUP_SIZE,
         ](
             mbar_base
-        )  # C uses 15 and 16
-        mbar_base = c_bars.end()  # barrier total [17]
+        )  # C uses 17..18
+        mbar_base = c_bars.end()  # barrier total [19]
 
         # Correction done barrier: Correction -> Softmax direction
         # Signals when Correction exits its while loop (all corrections done)
+        # 2-stage pipeline to overlap correction with next softmax iteration
         var corr_done_bars = DecodeSM100MiscMBars[
-            num_stages=1,
+            num_stages=2,
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
         ](
             mbar_base
-        )  # corr_done uses 17 and 18
-        mbar_base = corr_done_bars.end()  # barrier total [19]
+        )  # corr_done uses 19..22
+        mbar_base = corr_done_bars.end()  # barrier total [23]
         # This is used for the pipeline between Load and convert fp8 to bf16
         var kv_load2cvt_pipe = KVPipelineGeneric[
             num_kv_stages = Self.config.num_kv_stages,  # 2
@@ -789,9 +373,9 @@ struct MLA_SM100_Decode[
             num_consumer = WARPGROUP_SIZE + 2,  # 128 + 2 mma
         ](
             mbar_base
-        )  # kv_load2cvt_pipe uses 19 .. 22
-        mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [23]
-        # we need to add ((Depth/BN) -1) x2 = 8x2 =16 +23 =39
+        )  # kv_load2cvt_pipe uses 23..26
+        mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [27]
+        # we need to add ((Depth/BN) -1) x2 = 8x2 =16 +27 =43
         # more barriers. for the splitk the two added is enough for now.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
@@ -800,10 +384,10 @@ struct MLA_SM100_Decode[
             num_consumer=1,
         ](
             mbar_base
-        )  # Write uses  (num_out_stages-1)*2
+        )  # Write uses 27 + (num_out_stages)*2
         mbar_base += out_pipeline.num_mbars()
 
-        # barrier total [24 + (num_out_stages-1)*2]
+        # barrier total [27 + (num_out_stages)*2]
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
 
         var warp_idx = UInt32(warp.broadcast(warp_id()))
@@ -911,52 +495,6 @@ struct MLA_SM100_Decode[
                 ptr_tmem_addr[0], Self.config.sm100_tmem_cols
             )
 
-    # --------------------------------------------------------------------------
-    # MLA decoding load_q and load_kv function
-    # --------------------------------------------------------------------------
-    @staticmethod
-    @always_inline
-    fn load_kv(
-        tma: KVTMATile[
-            dtype = Self.kv_type,
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-        ],
-        smem: SharedMemPointer[Scalar[Self.kv_type]],
-        mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
-    ):
-        var block_smem = smem
-        var smem_tensor = SharedMemTensor[
-            Self.kv_type, type_of(tma).layout  # 64x576 swizzled tile
-        ](block_smem)
-        tma.async_copy_3d(
-            smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
-        )
-
-    @staticmethod
-    @always_inline
-    fn load_q(
-        tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
-        ],
-        smem: SharedMemPointer[Scalar[Self.q_type]],
-        mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
-    ):
-        var block_smem = smem
-        var smem_tensor = SharedMemTensor[
-            Self.q_type, type_of(tma).layout  # 64x576 swizzled tile
-        ](block_smem)
-
-        tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
-
     @staticmethod
     @always_inline
     fn load(
@@ -968,7 +506,7 @@ struct MLA_SM100_Decode[
         ],
         k_tma_fp8: KVTMATile[
             dtype = Self.kv_type,
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode = Self.config.kv_tma_swizzle_mode,
             BN = Self.config.BK1,  # tile_m =64
             BK = Self.config.BK0,  # tile_n =576
         ],
@@ -1006,7 +544,7 @@ struct MLA_SM100_Decode[
             mbar_q[].expect_bytes(
                 Self.config.BM * Self.config.q_depth * size_of[Self.q_type]()
             )
-            Self.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
+            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
 
         var k0_bar: MBarType = kv_load_prod.producer_mbar[qk_stage=0]()
 
@@ -1015,7 +553,7 @@ struct MLA_SM100_Decode[
                 Self.config.BN * Self.config.q_depth * size_of[Self.kv_type]()
             )
             var stage_ptr = kv_load_prod.stage_base_ptr[qk_stage=0]()
-            Self.load_kv(
+            Self.Common_MLA_Op.load_kv(
                 k_tma_fp8, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
             )
 
@@ -1046,7 +584,7 @@ struct MLA_SM100_Decode[
                     * Self.config.q_depth
                     * size_of[Self.kv_type]()
                 )
-                Self.load_kv(
+                Self.Common_MLA_Op.load_kv(
                     k_tma_fp8, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
                 )
 
@@ -1076,11 +614,9 @@ struct MLA_SM100_Decode[
         num_k_tiles: Int,
     ):
         comptime sw_fp8 = make_swizzle[
-            Self.kv_type, TensorMapSwizzle.SWIZZLE_64B
+            Self.kv_type, Self.config.kv_tma_swizzle_mode
         ]()
-        comptime sw_bf16 = make_swizzle[
-            Self.q_type, TensorMapSwizzle.SWIZZLE_128B
-        ]()
+        comptime sw_bf16 = make_swizzle[Self.q_type, Self.config.swizzle_mode]()
 
         comptime BN: Int = Self.config.BN
         comptime BK: Int = Self.config.q_depth
@@ -1353,7 +889,7 @@ struct MLA_SM100_Decode[
             num_stages=2, num_producer=WARPGROUP_SIZE, num_consumer=1
         ],
         o_bars: DecodeSM100MiscMBars[
-            num_stages=1, num_producer=1, num_consumer=WARPGROUP_SIZE
+            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_cvt2mma_pipe: KVPipelineGeneric[
             num_kv_stages = Self.config.num_kv_stages,  # 2
@@ -1407,11 +943,10 @@ struct MLA_SM100_Decode[
             var p_slot_index = p_cons.wait()
             var v_slot_index = kv_cons.stage_index[qk_stage=0]()
 
-            o_prod.acquire()
-
             # PV does not have the k-rope so we don't need to do the last block
             @parameter
             for block in range(0, Self.NumVOBlocks, block_step):
+                o_prod.acquire()
                 Self.UMMAPVSS.mma[stage_idx=0](
                     a=p_descriptor + p_slot_index * stage_stride_in_bytes,
                     b=v_descriptor
@@ -1421,6 +956,7 @@ struct MLA_SM100_Decode[
                     c_scale=c_scale,
                     elect=elect_mask,
                 )
+                o_prod.commit_mma(elect_mask)
             # Signal P-consumer mbar and advance P pipeline state
             p_cons.release_mma(elect_mask)
 
@@ -1429,7 +965,6 @@ struct MLA_SM100_Decode[
                 kv_load2cvt_pipe.consumer_mbar[0](v_slot_index), elect_mask
             )
             tcgen05_fence_before()
-            o_prod.commit_mma(elect_mask)
             if tile_idx == 0:
                 c_scale = 1
             tile_idx += 1

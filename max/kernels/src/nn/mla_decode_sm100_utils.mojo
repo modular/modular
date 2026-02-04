@@ -11,147 +11,76 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp2, recip, align_up, align_down, gcd
+from math import exp2, recip, align_up
 from math.constants import log2e
-from sys import align_of, simd_width_of, size_of, env_get_int, _RegisterPackType
+from sys import size_of, _RegisterPackType
 import gpu.primitives.warp as warp
-from algorithm.functional import unswitch
-from bit import prev_power_of_two, pop_count
-from collections import Optional
 from gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     thread_idx,
     block_idx,
-    block_dim,
     warp_id,
 )
-from nn.mha_utils import DynamicInt, NoPartition
-from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from gpu.globals import WARPGROUP_SIZE
+from gpu.host import DeviceContext
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc, Scope
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.compute.mma import MMAOperandDescriptor
+from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.compute.arch.mma_nvidia_sm100 import (
-    MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
-    mma,
-    mma_arrive,
 )
 
 from gpu.sync import (
     named_barrier,
-    mbarrier_arrive,
-    mbarrier_try_wait_parity_shared,
-    mbarrier_init,
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
 )
 from gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_after,
-    tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
-    tcgen05_store_wait,
 )
 from gpu.primitives.warp import _vote_nvidia_helper
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import (
     Layout,
-    blocked_product,
-    composition,
-    logical_divide,
-    logical_product,
-    make_layout,
 )
 from logger import Logger
 
 from layout.layout_tensor import (
     LayoutTensor,
-    LayoutTensorIter,
-    copy_local_to_shared,
-    copy_sram_to_dram,
-    ThreadScope,
 )
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
-    _CM_NUM_ROWS,
-    _CM_ROW_BYTES,
-    tile_to_descriptor,
 )
 from layout.tma_async import (
     create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
-    SplitLastDimTMATensorTile,
-    create_split_tma,
-    create_tma_tile,
     _tma_desc_tile_layout,
     TMATensorTile,
 )
 from layout.runtime_layout import RuntimeLayout
 from memory import bitcast
 from nn.mha_fa3_utils import (
-    _get_position,
-    MHAPosition,
-    NonNullPointer,
-    NullPointer,
     OptionalPointer,
-    output_reg_to_smem,
-    output_reg_to_smem_st_matrix,
     Pack,
-    produce,
-    QTMATile,
 )
-from nn.mha_mask import MHAMask, TileMaskStatus
+from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait
-from nn.mha_tile_scheduler import (
-    MHASchedulerSynchronization,
-    MHATileScheduler,
-    MHATileState,
-    MHATileSummary,
-    SeqInfo,
-    TransientScheduler,
-)
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from nn.mha_utils import (
-    FlashAttentionAlgorithm,
-    MHAConfig,
-    MHAPartitionScheme,
-    OptionallyStaticInt,
-    _is_decoding,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
-from nn.softmax import (
-    _online_softmax_correction,
-    _rowmax_online_softmax,
-    _rowsum,
-)
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
-from linalg.arch.sm100.mma import smem_descriptor, _create_mma_desc_pair
+from linalg.arch.sm100.mma import smem_descriptor
 
-from pathlib import Path
 from nn.mha_sm100_2q import (
-    FA4MiscMBars,
     elect,
     KVPipeline,
     TMemTile,
-    bulk_mma,
     LocalTensor,
     elect_mma_arrive,
     ProducerPipeline,
@@ -159,11 +88,9 @@ from nn.mha_sm100_2q import (
     MBarPipeline,
     sub_ftz,
 )
-from nn.mha_fa3_utils import q_gmem_shape, KVTMATile
-from nn.mha import q_num_matrix_view_rows
+from nn.mha_fa3_utils import KVTMATile
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly
-from nn.mha_mask import NullMask, MaterializedMask, CausalMask
 
 comptime logger = Logger()
 
@@ -316,7 +243,8 @@ struct MLA_SM100_Decode_Config:
     var dtype_size: Int
     var num_threads: Int  # 1x softmax, 1x correction, 1x other
     var swizzle_mode: TensorMapSwizzle
-    var kv_swizzle_mode: TensorMapSwizzle
+    var kv_mma_swizzle_mode: TensorMapSwizzle
+    var kv_tma_swizzle_mode: TensorMapSwizzle
     comptime MMA_K = 16
     comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
     comptime sm100_tmem_cols = 512
@@ -333,14 +261,12 @@ struct MLA_SM100_Decode_Config:
         depth: Int,
         q_depth: Int,
         dtype_size: Int,
+        kv_type_size: Int,
         swizzle_mode: TensorMapSwizzle,
-        kv_swizzle_mode: TensorMapSwizzle,
+        kv_mma_swizzle_mode: TensorMapSwizzle,
         page_size: Int,
         decoding_warp_split_k: Bool,
-        fixed_transaction_barriers: Int,
-        num_threads: Int,
     ):
-        self.num_threads = num_threads
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
@@ -356,10 +282,16 @@ struct MLA_SM100_Decode_Config:
 
         self.dtype_size = dtype_size
         self.swizzle_mode = swizzle_mode
-        self.kv_swizzle_mode = kv_swizzle_mode
+        self.kv_mma_swizzle_mode = kv_mma_swizzle_mode
         swizzle_elems = swizzle_mode.bytes() // dtype_size
         self.padded_depth = align_up(depth, swizzle_elems)
         self.padded_q_depth = align_up(q_depth, swizzle_elems)
+
+        self.kv_tma_swizzle_mode = (
+            TensorMapSwizzle.SWIZZLE_64B if kv_type_size
+            == 1 else TensorMapSwizzle.SWIZZLE_128B
+        )
+        self.num_threads = 128 * Int(4 if kv_type_size == 1 else 3)
 
         # 4 bytes for the TMEM base pointer
         var smem_use = 4
@@ -409,8 +341,26 @@ struct MLA_SM100_Decode_Config:
         # bar_write_ready[1] → 8  consumer pipeline - write
         var num_out_barrier = (self.depth // self.BN) * 2
         # total number of barriers is fixed_transaction_barriers + num_out_barrier
+        # bar_q → 1           producer pipeline - load consumer - mma
+        # bar_kv_reay[2] → 2  consumer pipeline - mma
+        # bar_kv_free[2] → 2   producer pipeline - load
+        # bar_s_done[2] → 2  producer pipeline - mma
+        # bar_s_ready[2] → 2  consumer pipeline - softmax
+        # bar_p_done[2] → 2  producer pipeline- softmax
+        # bar_p_ready[2] → 2  consumer pipeline - mma
+        # bar_correction_done[1] → 1  producer pipeline- softmax
+        # bar_correction_ready[1] → 1  consumer pipeline - correction
+        # bar_o_done[1] → 2  producer pipeline- MMA PV
+        # bar_o_ready[1] → 2  consumer pipeline - Correction
+        # corr_done_bars[2] → 2  producer pipeline- correction consumer softmax
+
+        # Hence fixed_transaction_barriers: 1 + 2 + 2 + 2 + 2  +2 + 2  + 2 + 2 + 2 + 2 + 2 + 1 = 23.
+        # If fp8, then add 4 more barriers for the convert fp8 to bf16 pipeline
+        # bar_convert_done[2] → 2  producer pipeline- Convert fp8 to bf16
+        # bar_convert_ready[2] → 2  consumer pipeline - mma
+        # Hence fixed_transaction_barriers +2 + 2 = 27.
         smem_use += (
-            fixed_transaction_barriers + num_out_barrier
+            (27 if kv_type_size == 1 else 23) + num_out_barrier
         ) * Self.mbar_size + (
             ((self.depth // self.BN) - 1) * 2 * Self.mbar_size
         )
@@ -1065,7 +1015,7 @@ struct DecodePConsumer(TrivialRegisterType):
 # ------------------------------------------------------------------------------
 ########## Producer of the O slot ##########
 struct DecodeOProducer(TrivialRegisterType):
-    comptime ONumStages = 1
+    comptime ONumStages = 2
     var pipe: ProducerPipeline[Self.ONumStages]
 
     @always_inline
@@ -1092,7 +1042,7 @@ struct DecodeOProducer(TrivialRegisterType):
 
 ########## Consumer of the O slot ##########
 struct DecodeOConsumer(TrivialRegisterType):
-    comptime ONumStages = 1
+    comptime ONumStages = 2
     var pipe: ConsumerPipeline[Self.ONumStages]
 
     @always_inline
@@ -1463,7 +1413,7 @@ struct DecodeSM100QKTSS[
         Self.operand_type,
         Self.config.BN,  # 64 rows
         Self.BK,  # 576 cols
-        Self.config.kv_swizzle_mode,
+        Self.config.kv_mma_swizzle_mode,
     ]()
 
     # ----- Instruction descriptor -----
@@ -1499,7 +1449,7 @@ struct DecodeSM100QKTSS[
         return smem_descriptor[
             BMN = Self.config.BN,  # 64 rows
             BK = Self.BK,  # 576 columns
-            swizzle_mode = Self.config.kv_swizzle_mode,
+            swizzle_mode = Self.config.kv_mma_swizzle_mode,
             is_k_major=True,
         ](base)
 
@@ -1556,7 +1506,7 @@ struct DecodeSM100PVSS[
         Self.operand_type,
         Self.BN,  # 256 as this is the max number of column accepted for mma
         Self.BK,  # 64
-        Self.config.kv_swizzle_mode,
+        Self.config.kv_mma_swizzle_mode,
     ]()
 
     # ----- Instruction descriptor -----
@@ -1578,7 +1528,7 @@ struct DecodeSM100PVSS[
         return smem_descriptor[
             BMN = Self.BN,
             BK = Self.BK,  # 64 rows
-            swizzle_mode = Self.config.kv_swizzle_mode,
+            swizzle_mode = Self.config.kv_mma_swizzle_mode,
             is_k_major=False,
         ](base)
 
@@ -1813,6 +1763,52 @@ struct MLA_SM100_Decode_Common[
         config = Self.config,
     ]
 
+    # --------------------------------------------------------------------------
+    # MLA decoding load_q and load_kv function
+    # --------------------------------------------------------------------------
+    @staticmethod
+    @always_inline
+    fn load_kv(
+        tma: KVTMATile[
+            dtype = Self.kv_type,
+            swizzle_mode = Self.config.kv_tma_swizzle_mode,
+            BN = Self.config.BK1,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
+        ],
+        smem: SharedMemPointer[Scalar[Self.kv_type]],
+        mbar: MBarType,
+        col_start: UInt,
+        row_start: UInt,
+    ):
+        var block_smem = smem
+        var smem_tensor = SharedMemTensor[
+            Self.kv_type, type_of(tma).layout  # 64x576 swizzled tile
+        ](block_smem)
+        tma.async_copy_3d(
+            smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
+        )
+
+    @staticmethod
+    @always_inline
+    fn load_q(
+        tma: QOTMATile[
+            dtype = Self.q_type,
+            BM = Self.config.BM,  # tile_m =64
+            BK = Self.config.BK0,  # tile_n =576
+            swizzle_mode = Self.config.swizzle_mode,
+        ],
+        smem: SharedMemPointer[Scalar[Self.q_type]],
+        mbar: MBarType,
+        col_start: UInt,
+        row_start: UInt,
+    ):
+        var block_smem = smem
+        var smem_tensor = SharedMemTensor[
+            Self.q_type, type_of(tma).layout  # 64x576 swizzled tile
+        ](block_smem)
+
+        tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
+
     @staticmethod
     @always_inline
     fn apply_mask[
@@ -1925,7 +1921,7 @@ struct MLA_SM100_Decode_Common[
             num_consumer=WARPGROUP_SIZE,
         ],
         corr_done_bars: DecodeSM100MiscMBars[
-            num_stages=1,
+            num_stages=2,
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
         ],
@@ -2151,9 +2147,6 @@ struct MLA_SM100_Decode_Common[
         named_barrier[WARPGROUP_SIZE](2)
         li += li_Smem_Tensor[lane_id ^ 64][0]
 
-        # Wait for Correction to finish all corrections
-        corr_done_bars.mbar_base[0].wait(0)
-
         # --------------------------------------------------------------------------
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
         # --------------------------------------------------------------------------
@@ -2169,9 +2162,6 @@ struct MLA_SM100_Decode_Common[
         ]
         comptime blocks_per_stage = DecodeOutProducerType.blocks_per_stage
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
-
-        # Fence to ensure all MMA writes to O TMEM are visible before we read
-        tcgen05_fence_after()
 
         # By the time we reach to epilogue the KV is free.
         # So we can safely use the KV buffer for writing the output and have more async write.
@@ -2198,45 +2188,70 @@ struct MLA_SM100_Decode_Common[
             warp_pair * epi_half_load * ((blocks_per_stage >> 1) ^ 1)
         )
 
+        # Number of MMA PV rounds (outer loop) and iterations within each round (inner loop)
+        # MMA_PV_N=256 processes 4 blocks (256/64=4) at a time
+        # depth=512 has 8 blocks total, so 2 MMA PV rounds (512/256=2)
+        # Each round has (MMA_PV_N/BN)/blocks_per_stage = (256/64)/2 = 2 iterations
+        # corr_done_bars has 2 slots matching the 2 MMA PV rounds
+        #   0       64     128     192      256      320      384     448     512
+        #   |-------|-------|-------|--------|--------|--------|-------|-------|
+        #     w0/1    w0/1     w2/3    w2/3     w0/1     w0/1     w2/3    w2/3
+        # The pattern repeats every MMA_PV_N (256) columns
+        comptime num_mma_pv_rounds = Self.config.depth // Self.config.MMA_PV_N
+        comptime iters_per_mma_round = (
+            Self.config.MMA_PV_N // Self.config.BN
+        ) // blocks_per_stage
+
         @parameter
-        for i in range(0, num_store_tiles // blocks_per_stage):
-            var o_tmem_base: UInt32 = (
-                o_tmem + UInt32(i) * epi_half_load * blocks_per_stage
-            )
+        for mma_round in range(num_mma_pv_rounds):
+            # Wait for Correction to finish corrections for this MMA PV round
+            corr_done_bars.mbar_base[mma_round].wait(0)
 
-            # Load all data for this tile into a LocalTensor
-            var o_row_subtile = LocalTensor[
-                Self.AccumType, Layout.row_major(total_elems)
-            ].stack_allocation()
-            o_row_subtile.ptr.store(
-                0,
-                tcgen05_ld[
-                    datapaths=32,
-                    bits=32,
-                    repeat=total_elems,
-                    dtype = Self.AccumType,
-                    pack=False,
-                ](o_tmem_base),
-            )
-            tcgen05_load_wait()
+            # Fence to ensure all MMA writes to O TMEM are visible before we read
+            tcgen05_fence_after()
 
-            out_prod.acquire()
-            var stage_ptr = out_prod.stage_base_ptr(
-                Int(warp_pair * (blocks_per_stage >> 1))
-            )
+            @parameter
+            for slot in range(iters_per_mma_round):
+                # Global iteration index combining mma_round and slot
+                comptime i = mma_round * iters_per_mma_round + slot
 
-            # Write O to shared memory with scaling
-            write_bf16x2_row_to_smem_chunked[
-                layout = Layout.row_major(total_elems),
-                out_dtype = Self.output_type,
-                in_dtype = Self.AccumType,
-                config = Self.config,
-                local_tile_size=total_elems,
-                chunk_size=chunk_size,
-                scale_needed=True,
-            ](stage_ptr, o_row_subtile, epi_col0, row, o_scale_li)
+                var o_tmem_base: UInt32 = (
+                    o_tmem + UInt32(i) * epi_half_load * blocks_per_stage
+                )
 
-            out_prod.commit_step()
+                # Load all data for this tile into a LocalTensor
+                var o_row_subtile = LocalTensor[
+                    Self.AccumType, Layout.row_major(total_elems)
+                ].stack_allocation()
+                o_row_subtile.ptr.store(
+                    0,
+                    tcgen05_ld[
+                        datapaths=32,
+                        bits=32,
+                        repeat=total_elems,
+                        dtype = Self.AccumType,
+                        pack=False,
+                    ](o_tmem_base),
+                )
+                tcgen05_load_wait()
+
+                out_prod.acquire()
+                var stage_ptr = out_prod.stage_base_ptr(
+                    Int(warp_pair * (blocks_per_stage >> 1))
+                )
+
+                # Write O to shared memory with scaling
+                write_bf16x2_row_to_smem_chunked[
+                    layout = Layout.row_major(total_elems),
+                    out_dtype = Self.output_type,
+                    in_dtype = Self.AccumType,
+                    config = Self.config,
+                    local_tile_size=total_elems,
+                    chunk_size=chunk_size,
+                    scale_needed=True,
+                ](stage_ptr, o_row_subtile, epi_col0, row, o_scale_li)
+
+                out_prod.commit_step()
 
     # --------------------------------------------------------------------------
     # MLA decoding Correction kernel
@@ -2246,7 +2261,7 @@ struct MLA_SM100_Decode_Common[
     fn Correction(
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
-            num_stages=1, num_producer=1, num_consumer=WARPGROUP_SIZE
+            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         c_bars: DecodeSM100MiscMBars[
             num_stages=1,
@@ -2254,7 +2269,7 @@ struct MLA_SM100_Decode_Common[
             num_consumer=WARPGROUP_SIZE,
         ],
         corr_done_bars: DecodeSM100MiscMBars[
-            num_stages=1,
+            num_stages=2,
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
         ],
@@ -2280,63 +2295,76 @@ struct MLA_SM100_Decode_Common[
             # 3) Ensure the loads are complete before using li/scale
             tcgen05_load_wait()
             c_cons.release()
-            o_cons.wait()
             change = _vote_nvidia_helper(scale_value < 1.0) != 0
             if change:
-                comptime num_o_tiles = Self.config.depth // (
+                comptime num_o_tiles = Self.config.MMA_PV_N // (
                     Self.output_tile_width * 2
                 )
+                comptime o_range = Self.config.depth // Self.config.MMA_PV_N
+                # the MNNA.ws split the output accross two warps
+                comptime o_stride = Self.config.MMA_PV_N // 2
 
                 @parameter
-                for i in range(0, num_o_tiles):
-                    # Here we load from o_tmem. it is 32 bit float and we load 64 fp32 element per tile
-                    var o_tmem_subtile: UInt32 = o_tmem + UInt32(i) * UInt32(
-                        Self.config.BN
-                    )
-                    var o_row_subtile = LocalTensor[
-                        Self.AccumType, Layout.row_major(Self.config.BN)
-                    ].stack_allocation()
-                    o_row_subtile.ptr.store(
-                        0,
-                        tcgen05_ld[
+                for slot_idx in range(o_range):
+                    o_cons.wait()
+
+                    @parameter
+                    for i in range(0, num_o_tiles):
+                        # Here we load from o_tmem. it is 32 bit float and we load 64 fp32 element per tile
+                        var o_tmem_subtile: UInt32 = (
+                            o_tmem
+                            + UInt32(i) * UInt32(Self.config.BN)
+                            + UInt32(slot_idx) * o_stride
+                        )
+                        var o_row_subtile = LocalTensor[
+                            Self.AccumType, Layout.row_major(Self.config.BN)
+                        ].stack_allocation()
+                        o_row_subtile.ptr.store(
+                            0,
+                            tcgen05_ld[
+                                datapaths=32,
+                                bits=32,
+                                repeat = Self.config.BN,
+                                dtype = Self.AccumType,
+                                pack=False,
+                            ](o_tmem_subtile),
+                        )
+                        tcgen05_load_wait()
+
+                        var float2_register = o_row_subtile.vectorize[2]()
+
+                        @parameter
+                        for j in range(0, Self.config.BN // 2):
+                            var element = rebind[SIMD[Self.AccumType, 2]](
+                                float2_register[j]
+                            )
+                            float2_register[j] = rebind[
+                                type_of(float2_register[j])
+                            ](element * SIMD[Self.AccumType, 2](scale_value[0]))
+                        tcgen05_st[
                             datapaths=32,
                             bits=32,
                             repeat = Self.config.BN,
-                            dtype = Self.AccumType,
                             pack=False,
-                        ](o_tmem_subtile),
-                    )
-                    tcgen05_load_wait()
-
-                    var float2_register = o_row_subtile.vectorize[2]()
-
-                    @parameter
-                    for j in range(0, Self.config.BN // 2):
-                        var element = rebind[SIMD[Self.AccumType, 2]](
-                            float2_register[j]
+                        ](
+                            o_tmem_subtile,
+                            o_row_subtile.ptr.load[width = Self.config.BN](),
                         )
-                        float2_register[j] = rebind[
-                            type_of(float2_register[j])
-                        ](element * SIMD[Self.AccumType, 2](scale_value[0]))
-                    tcgen05_st[
-                        datapaths=32,
-                        bits=32,
-                        repeat = Self.config.BN,
-                        pack=False,
-                    ](
-                        o_tmem_subtile,
-                        o_row_subtile.ptr.load[width = Self.config.BN](),
-                    )
-            o_cons.release()
-
+                    o_cons.release()
+            else:
+                o_cons.release()
+                o_cons.release()
             tiles_done += 1
 
         # Wait on the final O from MMA before signaling Softmax
         o_cons.wait()
-
-        # Signal to Softmax that all corrections are done and O is ready
+        # Signal to Softmax that first 4 blocks are ready (slot 0)
         _ = corr_done_bars.mbar_base[0].arrive()
-
+        o_cons.release()
+        # second stage of the correction pipeline
+        o_cons.wait()
+        # Signal to Softmax that all corrections are done and O is ready (slot 1)
+        _ = corr_done_bars.mbar_base[1].arrive()
         # Release the final O barrier
         o_cons.release()
 
