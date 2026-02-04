@@ -104,13 +104,11 @@ fn bench_string_count_multi[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count(sequence)
+    fn call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box(sequence))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 @parameter
@@ -128,13 +126,11 @@ fn bench_string_count_long_needle[
     var needle = String("Nations")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count(needle)
+    fn call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box(needle))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 @parameter
@@ -152,13 +148,11 @@ fn bench_string_count_not_found[
     var needle = String("xyz123xyz")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count(needle)
+    fn call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box(needle))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 @parameter
@@ -176,13 +170,11 @@ fn bench_string_count_high_frequency[
     items = String(items[:length])
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count("abc")
+    fn call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box("abc"))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
