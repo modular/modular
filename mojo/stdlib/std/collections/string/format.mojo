@@ -70,7 +70,9 @@ methods.
 """
 
 
+from builtin.globals import global_constant
 from builtin.variadics import Variadic
+from collections.string.string_slice import get_static_string
 from compile import get_type_name
 from utils import Variant
 
@@ -80,30 +82,76 @@ from utils import Variant
 
 
 @fieldwise_init
-struct _PrecompiledEntries[origin: ImmutOrigin, //, *Ts: AnyType](Movable):
-    var entries: List[_FormatCurlyEntry[Self.origin]]
+struct _PrecompiledEntries[
+    format_origin: ImmutOrigin, entry_origin: ImmutOrigin, //, *Ts: Writable
+](ImplicitlyCopyable):
+    """Holds a non-owning view of precompiled format string entries.
+
+    This struct stores the parsed replacement fields from a format string along
+    with metadata for efficient formatting. It uses a `Span` to reference the
+    entries without owning them, allowing it to work with both static (compile-
+    time) and runtime-allocated entries:
+
+    - **Static origins**: When used with `compile_entries_comptime()`, both the
+      format string and entries have static storage duration (stored in global
+      constants), enabling zero-allocation formatting.
+    - **Runtime origins**: When converted from `_PrecompiledEntriesRuntime`, it
+      provides a non-owning view of runtime-allocated entries via `Span`.
+
+    Parameters:
+        format_origin: The origin of the format string data (can be static or runtime).
+        entry_origin: The origin of the entries array (can be static or runtime).
+        Ts: The types of the arguments that will be formatted.
+    """
+
+    var entries: Span[_FormatCurlyEntry[Self.format_origin], Self.entry_origin]
     var size_hint: Int
-    var format: StringSlice[Self.origin]
+    var format: StringSlice[Self.format_origin]
+
+
+@fieldwise_init
+struct _PrecompiledEntriesRuntime[
+    format_origin: ImmutOrigin, //, *Ts: Writable
+](Movable):
+    """Holds precompiled format string entries with owned runtime-allocated storage.
+
+    This struct is similar to `_PrecompiledEntries` but uses a `List` to own
+    the dynamically-allocated entries. It's used by `compile_entries_runtime()`
+    when parsing format strings at runtime. The entries can then be converted
+    to a `_PrecompiledEntries` (via `Span`) for use with `format_precompiled()`.
+
+    Parameters:
+        format_origin: The origin of the format string data (runtime).
+        Ts: The types of the arguments that will be formatted.
+    """
+
+    var entries: List[_FormatCurlyEntry[Self.format_origin]]
+    var size_hint: Int
+    var format: StringSlice[Self.format_origin]
+
+
+@always_inline
+fn _comptime_list_to_span[
+    T: ImplicitlyDestructible & Copyable, //, list: List[T]
+]() -> Span[T, StaticConstantOrigin]:
+    """Convert a comptime list to a runtime span of static constant origin."""
+
+    fn list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
+        var array = InlineArray[T, len(list)](uninitialized=True)
+
+        @parameter
+        for i in range(len(list)):
+            UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
+        return array^
+
+    comptime array = list_to_array[list]()
+    return Span(global_constant[array]())
 
 
 comptime _FormatArgs = VariadicPack[element_trait=Writable, ...]
 
 
 struct _FormatUtils:
-    # TODO: Have this return a `Result[_PrecompiledEntries, Error]`
-    @staticmethod
-    fn compile_entries[
-        *Ts: Writable
-    ](format: StringSlice) -> Variant[
-        _PrecompiledEntries[origin = ImmutOrigin(format.origin), *Ts],
-        Error,
-    ]:
-        """Precompile the entries using the given format string."""
-        try:
-            return Self._compile_entries[*Ts](format)
-        except e:
-            return e^
-
     # TODO: Allow a way to provide a `comptime _PrecompiledEntries` to avoid
     # allocations in the `_PrecompiledEntries` struct.
     @staticmethod
@@ -129,7 +177,8 @@ struct _FormatUtils:
 
         var auto_arg_index = 0
         for e in compiled.entries:
-            debug_assert(offset < fmt_len, "offset >= format.byte_length()")
+            # offset can equal fmt_len when format ends with a replacement field
+            debug_assert(offset <= fmt_len, "offset > format.byte_length()")
             writer.write(_build_slice(ptr, offset, e.first_curly))
             e._format_entry[len_pos_args](writer, args, auto_arg_index)
             offset = e.last_curly + 1
@@ -141,22 +190,140 @@ struct _FormatUtils:
         format: StringSlice, args: VariadicPack[element_trait=Writable, ...]
     ) raises -> String:
         """Format the arguments using the given format string."""
-        comptime PackType = type_of(args)
-        var compiled = Self._compile_entries[*PackType.element_types](format)
-
-        var res = String(capacity=format.byte_length() + compiled.size_hint)
-        Self.format_precompiled(writer=res, compiled=compiled, args=args)
-        return res^
+        var buffer = String()
+        Self.format_to_runtime(buffer, format, args)
+        return buffer^
 
     @staticmethod
-    fn _compile_entries[
+    fn format_to_runtime(
+        mut writer: Some[Writer],
+        format: StringSlice,
+        args: VariadicPack[_, Writable, ...],
+    ) raises:
+        """Format arguments into a writer using a runtime format string.
+
+        This function parses and compiles the format string at runtime, then
+        writes the formatted output to the provided writer. Use this when the
+        format string is not known at compile time.
+
+        For compile-time format strings, prefer `format_to_comptime()` which
+        parses the format string at compile time and can catch format errors
+        during compilation.
+
+        Args:
+            writer: The writer to write the formatted output to.
+            format: The format string to parse.
+            args: The arguments to format into the replacement fields.
+
+        Raises:
+            An error if the format string is invalid or if replacement fields
+            don't match the provided arguments.
+        """
+        comptime Ts = type_of(args).element_types
+        var compiled = Self.compile_entries_runtime[*Ts](format)
+        Self.format_precompiled(
+            writer=writer,
+            compiled=_PrecompiledEntries[*Ts](
+                Span(compiled.entries), compiled.size_hint, compiled.format
+            ),
+            args=args,
+        )
+
+    @staticmethod
+    fn format_to_comptime[
+        format: StaticString
+    ](mut writer: Some[Writer], args: VariadicPack[_, Writable, ...]):
+        """Format arguments into a writer using a compile-time format string.
+
+        This function parses and compiles the format string at compile time,
+        enabling zero-allocation formatting and catching format errors during
+        compilation rather than at runtime.
+
+        This is more efficient than `format_to_runtime()` because:
+        - Format string parsing happens once at compile time
+        - Format errors are caught during compilation
+        - The compiled entries are stored in static memory
+        - No runtime allocations for parsing the format string
+
+        Parameters:
+            format: The format string to parse at compile time. Must be a
+                string literal or StaticString.
+
+        Args:
+            writer: The writer to write the formatted output to.
+            args: The arguments to format into the replacement fields.
+        """
+        comptime Ts = type_of(args).element_types
+
+        comptime result = _FormatUtils.compile_entries_runtime_no_raises[*Ts](
+            format
+        )
+
+        @parameter
+        if result.isa[Error]():
+            __comptime_assert not result.isa[Error](), String(result[Error])
+        else:
+            comptime entries = result[type_of(result).Ts[0]]
+            _FormatUtils.format_precompiled[*Ts](
+                writer,
+                _PrecompiledEntries[*Ts](
+                    _comptime_list_to_span[entries.entries](),
+                    entries.size_hint,
+                    get_static_string[format](),
+                ),
+                args,
+            )
+
+    @staticmethod
+    fn compile_entries_runtime_no_raises[
         *Ts: Writable
     ](
         format: StringSlice,
-    ) raises -> _PrecompiledEntries[
-        origin = ImmutOrigin(format.origin), *Ts
+    ) -> Variant[
+        _PrecompiledEntriesRuntime[
+            format_origin = ImmutOrigin(format.origin), *Ts
+        ],
+        Error,
     ]:
-        """Returns a list of entries and its total estimated entry byte width.
+        """Parses and compiles a format string without raising an error.
+
+        Instead of raising an error, this function returns a `Variant`. This is
+        useful if you are trying to call `compile_entries` at comptime which
+        does not support raising functions.
+        """
+        try:
+            return Self.compile_entries_runtime[*Ts](format)
+        except e:
+            return e^
+
+    @staticmethod
+    fn compile_entries_runtime[
+        *Ts: Writable
+    ](
+        format: StringSlice,
+    ) raises -> _PrecompiledEntriesRuntime[
+        format_origin = ImmutOrigin(format.origin), *Ts
+    ]:
+        """Parses and compiles a format string at runtime.
+
+        This function analyzes a format string, parses all replacement fields
+        (e.g., `{}`, `{0}`, `{!r}`), and validates them against the provided
+        argument types. The parsed entries are stored in a dynamically-allocated
+        `List` for later use in formatting.
+
+        Parameters:
+            Ts: The types of the arguments that will be formatted.
+
+        Args:
+            format: The format string to parse.
+
+        Returns:
+            A `_PrecompiledEntriesRuntime` struct containing the parsed format
+            entries and metadata.
+
+        Raises:
+            An error if the format string is invalid or if replacement fields
+            don't match the provided argument types.
         """
         comptime FormatOrigin = ImmutOrigin(format.origin)
         comptime EntryType = _FormatCurlyEntry[FormatOrigin]
@@ -194,14 +361,14 @@ struct _FormatUtils:
                 start = None
                 continue
             elif fmt_ptr[i] == `}`:
-                if not start and (i + 1) < fmt_len:
+                if not start:
                     # python escapes double curlies
-                    if fmt_ptr[i + 1] == `}`:
+                    if (i + 1) < fmt_len and fmt_ptr[i + 1] == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
                         continue
-                elif not start:  # if it is not an escaped one, it is an error
+                    # if it is not an escaped one, it is an error
                     raise Error(r_err)
 
                 var start_value = start.value()

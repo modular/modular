@@ -177,6 +177,10 @@ what we publish.
 - `String`, `StringSlice`, and `StringLiteral`'s `.format()` method now require
   their arguments to be `Writable`.
 
+- Formatting compile-time format strings (`StringLiteral`s) no longer allocates
+  memory! It uses `global_constant` to store what would be heap allocated
+  parsed formatting data.
+
 - The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
   casting the operands to Float64 before dividing. This deprecation is to help
   prepare to migrate `Int.__truediv__` to return `Int`, which could be a quietly

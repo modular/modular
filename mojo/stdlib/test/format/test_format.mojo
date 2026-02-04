@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from testing import *
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
+from benchmark import keep
+from compile import compile_info
+from collections.string.format import _FormatUtils
 from format._utils import write_sequence_to
 
 
@@ -151,6 +154,40 @@ def test_write_sequence_to_custom_delimiters():
     assert_equal(output, "{item0; item1; item2}")
 
     _ = index
+
+
+struct NullWriter(Writer):
+    fn write_string(mut self, string: StringSlice):
+        keep(string)
+
+
+comptime ALLOC_FUNC = "KGEN_CompilerRT_AlignedAlloc"
+
+
+def test_format_runtime_does_allocate():
+    def runtime_format[
+        *Ts: Writable,
+    ](mut writer: NullWriter, *args: *Ts):
+        _FormatUtils.format_to_runtime(writer, "Hello, {}, {}, {}", args)
+
+    var info = compile_info[
+        runtime_format[Int, String, List[Float32]],
+        emission_kind="llvm-opt",
+    ]()
+    assert_true(ALLOC_FUNC in info, info.asm)
+
+
+def test_format_comptime_does_not_allocate():
+    fn comptime_format[
+        *Ts: Writable,
+    ](mut writer: NullWriter, *args: *Ts):
+        _FormatUtils.format_to_comptime["Hello, {}, {}, {}"](writer, args)
+
+    var info = compile_info[
+        comptime_format[Int, String, List[Float32]],
+        emission_kind="llvm-opt",
+    ]()
+    assert_false(ALLOC_FUNC in info)
 
 
 def main():

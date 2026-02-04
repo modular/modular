@@ -816,20 +816,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
-        comptime result = _FormatUtils.compile_entries[*Ts](Self())
-
-        @parameter
-        if result.isa[Error]():
-            __comptime_assert not result.isa[Error](), String(result[Error])
-            return {}
-        else:
-            var buffer = String()
-            _FormatUtils.format_precompiled[*Ts](
-                buffer,
-                result[type_of(result).Ts[0]],
-                args,
-            )
-            return buffer^
+        var buffer = String()
+        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, args)
+        return buffer^
 
     fn join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.
