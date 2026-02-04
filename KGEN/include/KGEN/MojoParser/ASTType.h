@@ -134,8 +134,13 @@ public:
   /// specified input value.  Note: this resolves the body of a struct type.
   bool isMovableFrom(ASTExprAnd<CValue> value, SharedState &shared) const;
 
-  /// Return true if this type is trivial register passable because
-  /// is trivial or conforms to TrivialRegisterType trait.
+  /// Return true if this type is register passable or conforms to
+  /// RegisterType trait.
+  /// Note: this resolves the body of a struct type.
+  bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
+
+  /// Return true if this type is trivial register passable
+  /// or conforms to TrivialRegisterType trait.
   /// Note: this resolves the body of a struct type.
   bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 

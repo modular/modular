@@ -495,6 +495,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     if (type.isTrivialRegisterType(decl->getLoc(), shared))
       return TypeConvention::RegisterPassableTrivial;
 
+    if (type.isRegisterType(decl->getLoc(), shared))
+      return TypeConvention::RegisterPassable;
+
     TypeConvention convention = trait.getConvention();
     if (convention == TypeConvention::Unspecified)
       return genericDefault;
@@ -525,6 +528,9 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   assert(structOp && "only one user-defined type so far");
   if (type.isTrivialRegisterType(decl->getLoc(), shared))
     return TypeConvention::RegisterPassableTrivial;
+
+  if (type.isRegisterType(decl->getLoc(), shared))
+    return TypeConvention::RegisterPassable;
 
   return structOp.getConvention();
 }
@@ -664,28 +670,25 @@ bool ASTType::isMovableFrom(ASTExprAnd<CValue> value,
   return isMovable(value.expr->getLoc(), shared);
 }
 
-bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
-                                    SharedState &shared) const {
-  ASTDecl *typeDecl = getDecl(shared);
+template <typename CheckFnT>
+bool isRegisterTypeHelper(const ASTType &asttype, llvm::SMLoc loc,
+                          SharedState &shared, StringRef traitName,
+                          CheckFnT &&checkFn) {
+
+  ASTDecl *typeDecl = asttype.getDecl(shared);
   if (!typeDecl)
     return true; // MLIR Types are trivial register passable.
 
   // TODO: probably no need to check this
   // once we deprecate @register_passable("trivial")
   if (auto *declOp = typeDecl->getIfOperation()) {
-    bool isRPTAlreadySet = false;
-    TypeSwitch<Operation &>(*declOp).Case<StructDeclOp, TraitDeclOp>(
-        [&](auto op) {
-          if (op.isRegisterPassableTrivial())
-            isRPTAlreadySet = true;
-        });
-    if (isRPTAlreadySet)
+    if (checkFn(declOp))
       return true;
   }
 
   // Check whether the type conforms to `TrivialRegisterType` trait.
-  ASTDecl *traitDecl = shared.lookupBuiltinTrait("TrivialRegisterType",
-                                                 typeDecl, typeDecl->getLoc());
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait(traitName, typeDecl, typeDecl->getLoc());
 
   if (!traitDecl)
     return false;
@@ -693,6 +696,27 @@ bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
   if (!trait)
     return false;
   return typeDecl->doesNominalTypeConformTo(trait.bindReference());
+}
+
+bool ASTType::isRegisterType(llvm::SMLoc loc, SharedState &shared) const {
+  return isRegisterTypeHelper(
+      *this, loc, shared, "RegisterType", [](Operation *op) {
+        bool result = false;
+        TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
+            [&](auto op) { result = op.isRegisterPassable(); });
+        return result;
+      });
+}
+
+bool ASTType::isTrivialRegisterType(llvm::SMLoc loc,
+                                    SharedState &shared) const {
+  return isRegisterTypeHelper(
+      *this, loc, shared, "TrivialRegisterType", [](Operation *op) {
+        bool result = false;
+        TypeSwitch<Operation &>(*op).Case<StructDeclOp, TraitDeclOp>(
+            [&](auto op) { result = op.isRegisterPassableTrivial(); });
+        return result;
+      });
 }
 
 /// Given a reference, return the element as an ASTType.  This aborts
