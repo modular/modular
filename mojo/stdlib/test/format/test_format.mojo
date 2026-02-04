@@ -190,5 +190,12 @@ def test_format_comptime_does_not_allocate():
     assert_false(ALLOC_FUNC in info)
 
 
+def test_estimate_bytes_to_write():
+    var size = "SimplePoint(x=0, y=9)".byte_length()
+    assert_equal(SimplePoint(0, 9).estimate_bytes_to_write(), size)
+    size = "SimplePoint(x=100, y=999)".byte_length()
+    assert_equal(SimplePoint(100, 999).estimate_bytes_to_write(), size)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1040,6 +1040,42 @@ struct VariadicPack[
                 self[i].write_to(writer)
         writer.write_string(end)
 
+    fn _estimate_bytes_to_write[
+        O1: ImmutOrigin = StaticConstantOrigin,
+        O2: ImmutOrigin = StaticConstantOrigin,
+        O3: ImmutOrigin = StaticConstantOrigin,
+    ](
+        self: VariadicPack[_, Writable, ...],
+        start: StringSlice[O1] = rebind[StringSlice[O1]](StaticString("")),
+        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString("")),
+        sep: StringSlice[O3] = rebind[StringSlice[O3]](StaticString(", ")),
+    ) -> Int:
+        """Estimate the total bytes to write the type into a writer.
+
+        Parameters:
+            O1: The origin of the open `StringSlice`.
+            O2: The origin of the close `StringSlice`.
+            O3: The origin of the separator `StringSlice`.
+
+        Args:
+            start: The starting delimiter.
+            end: The ending delimiter.
+            sep: The separator between items.
+
+        Returns:
+            The estimated bytes needed to write the type into a writer.
+        """
+        var res = start.byte_length()
+
+        @parameter
+        if self.__len__() > 1:
+            res += (self.__len__() - 1) * sep.byte_length()
+
+        @parameter
+        for i in range(self.__len__()):
+            res += self[i].estimate_bytes_to_write()
+        return res + end.byte_length()
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicReduce

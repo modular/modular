@@ -24,11 +24,7 @@ from collections.string.string_slice import (
 )
 from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
-from format._utils import (
-    STACK_BUFFER_BYTES,
-    _TotalWritableBytes,
-    _WriteBufferStack,
-)
+from format._utils import STACK_BUFFER_BYTES, _WriteBufferStack
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
@@ -475,15 +471,13 @@ struct String(
         print(string) # "1, 2.0, three"
         ```
         """
-        comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
+        var total_bytes = args._estimate_bytes_to_write(end=end, sep=sep)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             self = String()
             args._write_to(self, end=end, sep=sep)
         else:
-            self = String(capacity=total_bytes.size)
+            self = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
@@ -523,15 +517,13 @@ struct String(
         %# assert_equal(string, "1, 2.0, three")
         ```
         """
-        comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
+        var total_bytes = args._estimate_bytes_to_write(end=end, sep=sep)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             self = String()
             args._write_to(self, end=end, sep=sep)
         else:
-            self = String(capacity=total_bytes.size)
+            self = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
@@ -553,16 +545,14 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
-        comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
+        var total_bytes = args._estimate_bytes_to_write(end=end, sep=sep)
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             var result = String()
             args._write_to(result, end=end, sep=sep)
             return result^
         else:
-            var result = String(capacity=total_bytes.size)
+            var result = String(capacity=total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
@@ -577,15 +567,14 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
-        comptime length = args.__len__()
-        var total_bytes = _TotalWritableBytes()
-        total_bytes.size += self.byte_length()
-        args._write_to(total_bytes, sep="")
+        var total_bytes = self.byte_length() + args._estimate_bytes_to_write(
+            sep=""
+        )
 
-        if total_bytes.size <= Self.INLINE_CAPACITY:
+        if total_bytes <= Self.INLINE_CAPACITY:
             args._write_to(self, sep="")
         else:
-            self.reserve(total_bytes.size)
+            self.reserve(total_bytes)
             var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
             args._write_to(buffer, sep="")
             buffer.flush()
@@ -614,7 +603,7 @@ struct String(
         Returns:
             A new `String` containing the written value.
         """
-        var result = String()
+        var result = String(capacity=value.estimate_bytes_to_write())
         value.write_to(result)
         return result^
 

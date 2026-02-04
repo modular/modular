@@ -113,7 +113,8 @@ fn bitcast[
 
 
 @always_inline("builtin")
-fn _uint(n: Int) -> DType:
+fn _uint[n: Int]() -> DType:
+    __comptime_assert n <= 256, "No dtype bigger than 256 is available"
     # fmt: off
     return (
         DType._uint1 if n == 1 else
@@ -151,7 +152,7 @@ fn _llvm_bitwidth(dtype: DType) -> Int:
 fn pack_bits[
     src_width: Int,
     //,
-    dtype: DType = _uint(src_width),
+    dtype: DType = _uint[src_width](),
     width: Int = 1,
 ](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
