@@ -358,24 +358,11 @@ modular_py_test(
         ["multi_gpu_tests/**/*.py"],
         exclude = ["multi_gpu_tests/test_engine_device_graph.py"],
     ),
-    data = [
-        "//max/tests/integration:test_user_op",
-        "//max/tests/integration/API:inputs",
-        "//max/tests/integration/API:pytest_inputs",
-        "//max/tests/tests/graph/testdata",
-    ],
-    env = {
-        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
-        "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
-    tags = [
-        "gpu",
-    ],
+    tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -392,17 +379,6 @@ modular_py_test(
     srcs = [
         "multi_gpu_tests/test_engine_device_graph.py",
     ],
-    data = [
-        "//max/tests/integration:test_user_op",
-        "//max/tests/integration/API:inputs",
-        "//max/tests/integration/API:pytest_inputs",
-        "//max/tests/tests/graph/testdata",
-    ],
-    env = {
-        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
-        "MODULAR_PATH": ".",
-        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -412,9 +388,7 @@ modular_py_test(
         # back into the other multi-GPU tests once we have more broad support.
         "//:nvidia_gpu",
     ],
-    tags = [
-        "gpu",
-    ],
+    tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
