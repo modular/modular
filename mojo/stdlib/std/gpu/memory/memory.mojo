@@ -835,7 +835,7 @@ fn async_copy_wait_all():
 
 @always_inline
 fn external_memory[
-    dtype: __TypeOfAllTypes,
+    dtype: TrivialRegisterType,
     *,
     address_space: AddressSpace,
     alignment: Int,
