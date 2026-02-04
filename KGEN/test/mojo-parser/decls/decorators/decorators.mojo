@@ -268,8 +268,7 @@ struct DecoratorOrder4(TrivialRegisterType):
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.struct.decl @StructExample
-@register_passable
-struct StructExample(ImplicitlyCopyable):
+struct StructExample(ImplicitlyCopyable, RegisterType):
     fn __copyinit__(out self, other: Self):
         pass
 
@@ -366,8 +365,7 @@ struct ValueRegTrivial(TrivialRegisterType, Copyable):
 
 # CHECK-LABEL: lit.struct.decl @ValueReg
 @fieldwise_init
-@register_passable
-struct ValueReg(ImplicitlyCopyable):
+struct ValueReg(ImplicitlyCopyable, RegisterType):
     var a: Int
     var b: StructExample
 
@@ -479,4 +477,3 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
     fn __init__(out self, x: Int) raises:
         pass
-

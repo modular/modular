@@ -7,8 +7,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@register_passable
-struct BoxedInt:
+struct BoxedInt(RegisterType):
     var value: Int
 
     @implicit

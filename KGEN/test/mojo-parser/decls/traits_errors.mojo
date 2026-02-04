@@ -103,15 +103,9 @@ trait MemTraitViolation(TrivialTrait):
         ...
 
 
-@register_passable
-trait NonTrivialRGTrait:
+trait NonTrivialRGTrait(RegisterType):
     fn bar(self):
         ...
-
-
-# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
-struct StructViolation1(NonTrivialRGTrait):
-    pass
 
 
 # expected-error @+1 {{does not implement all requirements for}}
