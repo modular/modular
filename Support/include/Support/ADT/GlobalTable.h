@@ -47,7 +47,7 @@ struct OverflowGlobalEntry {
 }; // struct OverflowGlobalEntry
 
 /// GlobalTable is a generic typeless storage used by Mojo's CompilerRT
-/// interface to sys.ffi._Globals.
+/// interface to ffi._Globals.
 //
 /// This implementation uses a hybrid approach with fixed size lock-free hash
 /// map for the main table and a mutex-protected overflow container when the

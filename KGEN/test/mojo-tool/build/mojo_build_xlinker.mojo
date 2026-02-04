@@ -24,7 +24,7 @@
 
 # HELP: OVERVIEW: {{(lld|LLVM Linker)}}
 
-from sys.ffi import external_call
+from ffi import external_call
 
 # CHECK: hello from foo: 0
 def main():
