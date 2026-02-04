@@ -63,13 +63,12 @@ fn test_owned_trait():
 
     # Argument expressions emitted first
     # CHECK-NEXT: lit.ownership.use %value1
-    # CHECK-NEXT: [[V2I:%.*]] = lit.ref.immut %value2
-    # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "__call_result_tmp__"
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[V2I]], [[ANONSLOT]])
+    # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous*"
+    # CHECK-NEXT: lit.memcpy %value2, [[ANONSLOT]]
 
     # Coerce to common origin
-    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"__call_result_tmp__`2", *"value1`"}>
-    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"{{.*}}> to !lit.ref<!SomeMem, mut {*"__call_result_tmp__`2", *"value1`"}>
+    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
+    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"{{.*}}> to !lit.ref<!SomeMem, mut {*"anonymous*`2", *"value1`"}>
 
     # Form pack and call
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])

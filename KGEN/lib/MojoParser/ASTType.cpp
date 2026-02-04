@@ -13,6 +13,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "ParserEvaluationContext.h"
+#include "Support/Compiler/OperationUtils.h"
 
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -549,6 +550,96 @@ TypeConvention ASTType::getRegisterPassability(llvm::SMLoc loc,
 bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
   return getRegisterPassability(loc, shared) ==
          TypeConvention::RegisterPassableTrivial;
+}
+
+FnTriviality ASTType::getSpecialFunctionTriviality(llvm::SMLoc loc,
+                                                   SpecialFunctionKind kind,
+                                                   SharedState &shared) const {
+  assert((kind == SpecialFunctionKind::kDel ||
+          kind == SpecialFunctionKind::kCopyInit ||
+          kind == SpecialFunctionKind::kMoveInit) &&
+         "Invalid special function kind");
+
+  // MLIR types and types conforming to AnyTrivialRegType are assumed to be
+  // trivial for all purposes
+  if (isTrivialRegisterType(loc, shared))
+    return FnTriviality::ProvablyTrivial;
+
+  StringRef traitName = [kind] {
+    if (kind == SpecialFunctionKind::kDel)
+      return "ImplicitlyDestructible";
+    else if (kind == SpecialFunctionKind::kCopyInit)
+      return "Copyable";
+    return "Movable";
+  }();
+
+  ASTDecl *typeDecl = getDecl(shared);
+  assert(typeDecl && "MLIR types shouldn't reach here");
+
+  ASTDecl *traitDecl =
+      shared.lookupBuiltinTrait(traitName, typeDecl->getParentDecl(), loc);
+  if (!traitDecl)
+    return FnTriviality::Unknown;
+
+  auto trait = dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
+  if (!trait)
+    return FnTriviality::Unknown;
+
+  // Doesn't conform to the coresponding trait
+  if (!typeDecl->doesNominalTypeConformTo(trait.bindReference()))
+    return FnTriviality::ProvablyNonTrivial;
+
+  if (!typeDecl->getParentDecl())
+    return FnTriviality::Unknown;
+
+  auto info = SpecialFunctionInfo::get(kind);
+  auto trivialFnName = (llvm::Twine(info.name) + "is_trivial").str();
+
+  auto witnessName = StringAttr::get(shared.getContext(), trivialFnName);
+  auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
+
+  ASTType boolType = shared.getBuiltinBoolType(*typeDecl->getParentDecl(), loc);
+  TypedAttr fieldIsTrivial =
+      shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
+          PValue(*this),
+          StringAttr::get(shared.getContext(), witnessSymbolName), witnessName,
+          boolType);
+
+  auto structAttr = dyn_cast_if_present<LITStructAttr>(fieldIsTrivial);
+  if (!structAttr)
+    return FnTriviality::Unknown;
+
+  assert(structAttr.getType() == boolType);
+  auto structVals = structAttr.getValues();
+  if (structVals.size() != 1)
+    return FnTriviality::Unknown;
+
+  if (auto &[name, boolVal] = structVals.front(); name == "_mlir_value") {
+    if (auto boolAttr = dyn_cast<BoolAttr>(boolVal))
+      return boolAttr.getValue() ? FnTriviality::ProvablyTrivial
+                                 : FnTriviality::ProvablyNonTrivial;
+  }
+
+  return FnTriviality::Unknown;
+}
+
+bool ASTType::isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
+                                                    SharedState &shared) const {
+  return isImplicitlyCopyable(loc, shared) &&
+         getSpecialFunctionTriviality(loc, SpecialFunctionKind::kCopyInit,
+                                      shared) == FnTriviality::ProvablyTrivial;
+}
+
+bool ASTType::isProvablyTriviallyMoveable(llvm::SMLoc loc,
+                                          SharedState &shared) const {
+  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kMoveInit,
+                                      shared) == FnTriviality::ProvablyTrivial;
+}
+
+bool ASTType::isProvablyTriviallyDeletable(llvm::SMLoc loc,
+                                           SharedState &shared) const {
+  return getSpecialFunctionTriviality(loc, SpecialFunctionKind::kDel, shared) ==
+         FnTriviality::ProvablyTrivial;
 }
 
 /// Return true if this type is a register-passable type that can be passed

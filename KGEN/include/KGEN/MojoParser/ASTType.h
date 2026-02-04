@@ -12,6 +12,7 @@
 #define KGEN_MOJOPARSER_ASTTYPE_H
 
 #include "KGEN/KGENDialect/KGENEnums.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
@@ -21,6 +22,13 @@ class InflightDiag;
 
 namespace KGEN {
 class ParamDeclAttr;
+
+enum class FnTriviality {
+  ProvablyTrivial,
+  ProvablyNonTrivial,
+  Unknown,
+};
+
 } // namespace KGEN
 
 namespace KGEN::LIT {
@@ -112,6 +120,25 @@ public:
   /// Return true if this type is a 'trivial' type, that is one that can be
   /// passed around by copying the bits, and whose destructor is a noop.
   bool isTrivial(llvm::SMLoc loc, SharedState &shared) const;
+
+  /// Return the 'kind' of triviality this type possesses for the given
+  /// function: '__copyinit__', '__moveinit__', or '__del__'. Returns either
+  /// provably trivial, provably non-trivial, or unprovable (unfolded member).
+  FnTriviality getSpecialFunctionTriviality(llvm::SMLoc loc,
+                                            SpecialFunctionKind kind,
+                                            SharedState &shared) const;
+
+  /// Return true if this type is provably implicitly 'trivially' copyable, as
+  /// defined by its '__copyinit__is_trivial' member and whether or not it
+  /// adheres to the ImplicitlyCopyable trait.
+  bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
+                                             SharedState &shared) const;
+  /// Return true if this type is provably 'trivially' moveable, as defined by
+  /// its '__moveinit__is_trivial' member.
+  bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
+  /// Return true if this type is provably 'trivially' deletable, as defined by
+  /// its '__del__is_trivial' member.
+  bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type needs to be destroyed.  This is false for trivial
   /// types like Int.  Note: this resolves the body of a struct type.

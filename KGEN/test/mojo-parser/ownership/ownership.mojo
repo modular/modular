@@ -460,10 +460,10 @@ fn test_result_consume_mem(cond: __mlir_type.i1) -> MemExample:
   var example = MemExample()
 
   # This doesn't consume example, so it must copy it. It does consume the copy.
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %example
-  # CHECK-NEXT: [[MEMTMP:%.*]] = lit.var.decl "__call_result_tmp__"
+  # COM: [[IMMREF:%.*]] = lit.ref.immut %example
+  # CHECK-NEXT: [[MEMTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lifetime.start [[MEMTMP]]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[MEMTMP]])
+  # CHECK-NEXT: lit.memcpy %example, [[MEMTMP]]
   # CHECK-NEXT: lit.call {{.*}}consumeMem{{.*}}([[MEMTMP]])
   # CHECK-NEXT: lifetime.end [[MEMTMP]]
   consumeMem(example)
@@ -711,9 +711,9 @@ struct RegExampleValue(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"test_or
 fn test_or(a: MemExample) -> MemExample:
   # CHECK: hlcf.if {{.*}} {
-  # CHECK:   lit.call {{.*}}__copyinit__{{.*}}(%a, {{.*}})
+  # CHECK:   lit.memcpy %a,
   # CHECK: } else {
-  # CHECK:   lit.call {{.*}}__copyinit__{{.*}}(%a, {{.*}})
+  # CHECK:   lit.memcpy %a,
   # CHECK: }
   return a or a
 
@@ -743,7 +743,7 @@ fn call_variadic_mems(a: MemExample, b: MemExample):
   # Variadic use keeps the memory value alive.
   # CHECK-NEXT: %c = lit.var.decl "c"
   # CHECK-NEXT: lifetime.start %c
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %c)
+  # CHECK-NEXT: lit.memcpy %a, %c
   var c = a
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %c
   # CHECK-NEXT: [[VAR:%.*]] = pop.variadic.splat 1, [[IMMREF]]
@@ -1268,11 +1268,12 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
   # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
   # CHECK-NEXT:   lit.call {{.*}}__moveinit__{{.*}}([[TMP]], [[IF]])
+
   # CHECK-NEXT:   lit.var.lifetime.end [[TMP]]
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%b, [[IF]])
+  # CHECK-NEXT:   lit.memcpy %b, [[IF]]
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
@@ -1289,7 +1290,7 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %b
   # CHECK-NEXT:   hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[IF]], %__result__)
+  # CHECK-NEXT:   lit.memcpy [[IF]], %__result__
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
   return a if cond else b
 

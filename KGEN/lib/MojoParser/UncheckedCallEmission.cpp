@@ -811,24 +811,27 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // now __copyinit__ requires the source to be borrowed (it doesn't allow a
     // `ref ` existing so there is no way to define a
     // non-@register_passable("trivial") type in another address space. Diagnose
-    // this error with a specific message, and copy RPTrivial types into address
-    // space 0 implicitly.
+    // this error with a specific message, and copy trivially-copyable types
+    // into address space 0 implicitly.
     auto refType = someMValue.getMValueType();
 
     if (!refType.isDefaultAddrSpace()) {
       auto *expr = argValAndExpr.expr;
-      // Non-trivial types cannot be copied.
+      // Non-trivially copyable types cannot be copied.
       // TODO: If there is a reason to, we could generalize copyinit.
       if (!ASTType(refType.getElementType())
-               .isTrivial(expr->getLoc(), emitter.shared)) {
-        emitter.emitError(expr->getLoc(),
-                          "non-trivial value cannot be copied from a "
-                          "non-default address space")
+               .isProvablyImplicitlyTriviallyCopyable(expr->getLoc(),
+                                                      emitter.shared)) {
+        emitter.emitError(
+            expr->getLoc(),
+            "non-implicitly trivially copyable value cannot be copied from a "
+            "non-default address space")
             << expr->getRange();
         return {};
       }
 
-      // If this is a trivial value, then we can do a copy by doing a load.
+      // If this is a trivially copyable value, then we can do a copy by doing a
+      // load.
       auto srVal = emitter.emitSRValue({someMValue, expr}, ctx);
       someMValue = emitter.emitMRValue({srVal, expr}, ctx);
       if (!someMValue)

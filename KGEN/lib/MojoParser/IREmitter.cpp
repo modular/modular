@@ -454,15 +454,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
                                    emitter.shared)) {
       // If the client accepts any sort of LValue, then we succeed.
-      if (!requireMLValue) {
-        representation = LValueBufferTaken(); // Buffer taken!
-        return lValue;
-      }
-
-      // Otherwise, we can only work if we have an MLValue in the correct
-      // address space.
-      if (auto mlVal = lValue.getIfMLValue();
-          mlVal && lValue.getMValueType().isDefaultAddrSpace()) {
+      if (!requireMLValue || lValue.getIfMLValue()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
@@ -1294,10 +1286,12 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitLoad(dest, *this);
 
+  bool isRegisterPassable = valueType.isRegisterPassable(exprLoc, shared);
+
   // If the value is PValue and register passable, then we can materialize a
   // unique value directly into a register.
   if (auto pValue = value.ir.getIfPValue()) {
-    if (valueType.isRegisterPassable(exprLoc, shared)) {
+    if (isRegisterPassable) {
       value.ir = emitPValueToSRValue({pValue, value.expr}, dest.context);
       return emitCResult(value.ir, value.expr, dest);
     }
@@ -1326,12 +1320,33 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(value.ir, value.expr, dest);
   }
 
-  // Otherwise, we'll need to invoke the copyinit method which will take the
-  // destination by reference, so we're dealing with a memory case.
+  // Otherwise, we'll need to memcpy or invoke the copyinit method which will
+  // take the destination by reference, so we're dealing with a memory case.
+  bool isNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
+
+  // If the value's type is trivially copyable, emit a memcpy. This allows
+  // us to handle values residing in the non-default address space.
+  // Only use memcpy for non-register passable types, unless we're forced to by
+  // address space constraints.
+  if (value.ir.isMValue() &&
+      valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared) &&
+      (!isRegisterPassable || isNonDefaultAddressSpace)) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    Value address = value.ir.getMValueReference();
+    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+    if (!destBuffer)
+      return {};
+    MemcpyOp::create(*builder, translateLocation(exprLoc), address, destBuffer);
+    value.ir = MRValue(destBuffer);
+    return emitCResult(value.ir, value.expr, dest);
+  }
 
   // Memory-only copyinit will take the destination as address space zero, so
   // we need to reject ValueDest's expecting it in GPU memory.
-  if (dest.isNonDefaultAddressSpace()) {
+  if (isNonDefaultAddressSpace) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
         << value.expr->getRange();
@@ -1502,11 +1517,13 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
 
+  bool isRegisterPassable = valueType.isRegisterPassable(exprLoc, shared);
+  bool isDefaultAS = cast<RefType>(destRef.getType()).isDefaultAddrSpace();
+
   // Verify that the result MLValue is in the right address space for a
-  // __copyinit__/__moveinit__ call.
-  if (!cast<RefType>(destRef.getType()).isDefaultAddrSpace() &&
-      valueType.getRegisterPassability(exprLoc, shared) !=
-          TypeConvention::RegisterPassableTrivial) {
+  // __copyinit__/__moveinit__ call, if it would come down to that.
+  if (!isDefaultAS &&
+      !valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared)) {
     emitError(exprLoc, "value of type ")
         << valueType
         << " cannot be copied or moved into a non-default address space"
@@ -1515,9 +1532,10 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   }
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
-  // has no __moveinit__, then copy it into the destination.
+  // has no __moveinit__, or it's invalid to use its __moveinit__, then copy it
+  // into the destination.
   if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared) ||
-      value.ir.getIfPValue()) {
+      value.ir.getIfPValue() || (!isDefaultAS && !isRegisterPassable)) {
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     if (!result)
@@ -1527,7 +1545,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // Otherwise this is a movable RValue that we own.
   // If it is a register passable, assign with a store.
-  if (valueType.isRegisterPassable(exprLoc, shared)) {
+  if (isRegisterPassable) {
     // Materialize a PValue or load a MRValue if present.
     SRValue val = emitSRValue(value, context, valueType);
     if (!val)

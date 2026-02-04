@@ -86,7 +86,7 @@ struct IntPairWrapper(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth
 fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
-    # CHECK: lit.call {{.*}}IntPair::@"__copyinit__{{.*}}({{.*}}, %aCopy)
+    # CHECK: lit.memcpy %a, %aCopy
     var aCopy = a
 
     # CHECK: lit.call {{.*}}IntPair::@"__moveinit__{{.*}}({{.*}}, %aMove)
@@ -95,13 +95,44 @@ fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
     # CHECK: lit.call {{.*}}IntPair::@"copy{{.*}}({{.*}}, %aExCopy)
     var aExCopy = a.copy()
 
-    # CHECK: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}({{.*}}, %bCopy)
+    # CHECK: lit.memcpy %b, %bCopy
     var bCopy = b
 
     # CHECK: lit.call {{.*}}IntPairWrapper::@"__moveinit__{{.*}}({{.*}}, %bMove)
     var bMove = b^
 
     # CHECK: lit.call {{.*}}IntPairWrapper::@"copy{{.*}}({{.*}}, %bExCopy)
+    var bExCopy = b.copy()
+
+
+struct IntPairNT(ImplicitlyCopyable):
+    var x: Int
+    var y: Int
+    comptime __copyinit__is_trivial = False
+
+
+struct IntPairWrapperNT(ImplicitlyCopyable):
+    var value: IntPairNT
+
+
+# CHECK-LABEL: lit.fn @"testCopyMoveSynthNonTrivial
+fn testCopyMoveSynthNonTrivial(var a: IntPairNT, var b: IntPairWrapperNT):
+    # CHECK: lit.call {{.*}}IntPairNT::@"__copyinit__{{.*}}({{.*}}, %aCopy)
+    var aCopy = a
+
+    # CHECK: lit.call {{.*}}IntPairNT::@"__moveinit__{{.*}}({{.*}}, %aMove)
+    var aMove = a^
+
+    # CHECK: lit.call {{.*}}IntPairNT::@"copy{{.*}}({{.*}}, %aExCopy)
+    var aExCopy = a.copy()
+
+    # CHECK: lit.call {{.*}}IntPairWrapperNT::@"__copyinit__{{.*}}({{.*}}, %bCopy)
+    var bCopy = b
+
+    # CHECK: lit.call {{.*}}IntPairWrapperNT::@"__moveinit__{{.*}}({{.*}}, %bMove)
+    var bMove = b^
+
+    # CHECK: lit.call {{.*}}IntPairWrapperNT::@"copy{{.*}}({{.*}}, %bExCopy)
     var bExCopy = b.copy()
 
 
