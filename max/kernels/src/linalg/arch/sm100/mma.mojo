@@ -301,22 +301,22 @@ struct MmaOpSM100_SS[
         comptime a_layout = Layout(
             IntTuple(
                 IntTuple(
-                    a.shape_types[0].VariadicType[0].static_value,
-                    a.shape_types[0].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.shape_types[1].VariadicType[0].static_value,
-                    a.shape_types[1].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    a.stride_types[0].VariadicType[0].static_value,
-                    a.stride_types[0].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.stride_types[1].VariadicType[0].static_value,
-                    a.stride_types[1].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -324,22 +324,22 @@ struct MmaOpSM100_SS[
         comptime b_layout = Layout(
             IntTuple(
                 IntTuple(
-                    b.shape_types[0].VariadicType[0].static_value,
-                    b.shape_types[0].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.shape_types[1].VariadicType[0].static_value,
-                    b.shape_types[1].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    b.stride_types[0].VariadicType[0].static_value,
-                    b.stride_types[0].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.stride_types[1].VariadicType[0].static_value,
-                    b.stride_types[1].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -635,44 +635,44 @@ struct MmaOpSM100_BlockScaled_SS[
         comptime a_layout = Layout(
             IntTuple(
                 IntTuple(
-                    a.shape_types[0].VariadicType[0].static_value,
-                    a.shape_types[0].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.shape_types[1].VariadicType[0].static_value,
-                    a.shape_types[1].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    a.stride_types[0].VariadicType[0].static_value,
-                    a.stride_types[0].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.stride_types[1].VariadicType[0].static_value,
-                    a.stride_types[1].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
         comptime b_layout = Layout(
             IntTuple(
                 IntTuple(
-                    b.shape_types[0].VariadicType[0].static_value,
-                    b.shape_types[0].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.shape_types[1].VariadicType[0].static_value,
-                    b.shape_types[1].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    b.stride_types[0].VariadicType[0].static_value,
-                    b.stride_types[0].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.stride_types[1].VariadicType[0].static_value,
-                    b.stride_types[1].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -682,80 +682,104 @@ struct MmaOpSM100_BlockScaled_SS[
         comptime sfa_layout = Layout(
             IntTuple(
                 IntTuple(
-                    sfa_smem.shape_types[0].VariadicType[0].static_value,
-                    sfa_smem.shape_types[0].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfa_smem.shape_types[1]
+                        sfa_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfa_smem.shape_types[1]
+                        sfa_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfa_smem.shape_types[1].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    sfa_smem.stride_types[0].VariadicType[0].static_value,
-                    sfa_smem.stride_types[0].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfa_smem.stride_types[1]
+                        sfa_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfa_smem.stride_types[1]
+                        sfa_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfa_smem.stride_types[1].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
         )
         comptime sfb_layout = Layout(
             IntTuple(
                 IntTuple(
-                    sfb_smem.shape_types[0].VariadicType[0].static_value,
-                    sfb_smem.shape_types[0].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfb_smem.shape_types[1]
+                        sfb_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfb_smem.shape_types[1]
+                        sfb_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfb_smem.shape_types[1].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    sfb_smem.stride_types[0].VariadicType[0].static_value,
-                    sfb_smem.stride_types[0].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfb_smem.stride_types[1]
+                        sfb_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfb_smem.stride_types[1]
+                        sfb_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfb_smem.stride_types[1].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
         )

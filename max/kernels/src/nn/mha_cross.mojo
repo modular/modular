@@ -18,8 +18,8 @@ from algorithm.functional import vectorize
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
+from layout._coord import Coord, Idx
+from layout._layout import Layout, TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
@@ -31,10 +31,8 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn _bmm0_bs[
-    q_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_stride_types: Variadic.TypesOfTrait[CoordLike],
-    kv_shape_types: Variadic.TypesOfTrait[CoordLike],
-    kv_stride_types: Variadic.TypesOfTrait[CoordLike],
+    QLayoutType: TensorLayout,
+    KVLayoutType: TensorLayout,
     //,
     cache_t: KVCacheT,
     mask_t: MHAMask,
@@ -44,18 +42,8 @@ fn _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
-    q_input_row_offsets: TileTensor[
-        shape_types=q_shape_types,
-        stride_types=q_shape_types,
-        DType.uint32,
-        MutAnyOrigin,
-    ],
-    kv_input_row_offsets: TileTensor[
-        shape_types=kv_shape_types,
-        stride_types=kv_shape_types,
-        DType.uint32,
-        MutAnyOrigin,
-    ],
+    q_input_row_offsets: TileTensor[DType.uint32, MutAnyOrigin, QLayoutType],
+    kv_input_row_offsets: TileTensor[DType.uint32, MutAnyOrigin, KVLayoutType],
     scale: Float32,
     batch_size: Int,
     q_max_seq_len: Int,
@@ -152,10 +140,8 @@ fn _bmm0_bs[
 
 @always_inline
 fn _bmm1_bs[
-    q_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_stride_types: Variadic.TypesOfTrait[CoordLike],
-    kv_shape_types: Variadic.TypesOfTrait[CoordLike],
-    kv_stride_types: Variadic.TypesOfTrait[CoordLike],
+    QLayoutType: TensorLayout,
+    KVLayoutType: TensorLayout,
     //,
     cache_t: KVCacheT,
     p_type: DType,
@@ -164,18 +150,8 @@ fn _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
-    q_input_row_offsets: TileTensor[
-        shape_types=q_shape_types,
-        stride_types=q_shape_types,
-        DType.uint32,
-        MutAnyOrigin,
-    ],
-    kv_input_row_offsets: TileTensor[
-        shape_types=kv_shape_types,
-        stride_types=kv_shape_types,
-        DType.uint32,
-        MutAnyOrigin,
-    ],
+    q_input_row_offsets: TileTensor[DType.uint32, MutAnyOrigin, QLayoutType],
+    kv_input_row_offsets: TileTensor[DType.uint32, MutAnyOrigin, KVLayoutType],
     q_max_seq_len: Int,
     kv_max_seq_len: Int,
     max_cache_size: Int,
@@ -327,10 +303,8 @@ fn mha_cross_gpu_naive[
     var q_device = DeviceBuffer[q_type](ctx, q.ptr, q.numel(), owning=False)
 
     comptime kernel_0 = _bmm0_bs[
-        q_shape_types = q.shape_types,
-        q_stride_types = q.stride_types,
-        kv_shape_types = kv_input_row_offsets.shape_types,
-        kv_stride_types = kv_input_row_offsets.stride_types,
+        QLayoutType = q.LayoutType,
+        KVLayoutType = kv_input_row_offsets.LayoutType,
         type_of(k),
         mask_t,
         q_type,
@@ -379,10 +353,8 @@ fn mha_cross_gpu_naive[
     )
 
     comptime kernel_1 = _bmm1_bs[
-        q_shape_types = q.shape_types,
-        q_stride_types = q.stride_types,
-        kv_shape_types = kv_input_row_offsets.shape_types,
-        kv_stride_types = kv_input_row_offsets.stride_types,
+        QLayoutType = q.LayoutType,
+        KVLayoutType = kv_input_row_offsets.LayoutType,
         type_of(v),
         p_type,
         output.dtype,

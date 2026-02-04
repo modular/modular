@@ -644,8 +644,8 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     # Test with 64x64 output which would exceed 1024 threads/block limit.
     comptime input_dim = row_major[1, 3, 32, 32]()
     comptime output_dim = row_major[1, 3, 64, 64]()
-    comptime input_dim_flattened = input_dim.shape.static_product
-    comptime output_dim_flattened = output_dim.shape.static_product
+    comptime input_dim_flattened = input_dim.product()
+    comptime output_dim_flattened = output_dim.product()
 
     var input_host_ptr = alloc[Scalar[dtype]](input_dim_flattened)
     var output_host_ptr = alloc[Scalar[dtype]](output_dim_flattened)
@@ -679,11 +679,9 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     comptime kernel = gpu_bicubic_kernel[
         dtype,
         output_origin = output_dev_nd.origin,
-        output_shape_types = output_dev_nd.shape_types,
-        output_stride_types = output_dev_nd.stride_types,
+        OutputLayoutType = output_dev_nd.LayoutType,
         input_origin = ImmutOrigin(input_dev_nd.origin),
-        input_shape_types = input_dev_nd.shape_types,
-        input_stride_types = input_dev_nd.stride_types,
+        InputLayoutType = input_dev_nd.LayoutType,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.

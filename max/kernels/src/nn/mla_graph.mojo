@@ -29,7 +29,7 @@ from gpu import (
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import Layout as TileLayout, row_major
+from layout._layout import TensorLayout, Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
@@ -63,52 +63,25 @@ fn fused_rope_rmsnorm_kernel[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
-    q_rope_output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_output_stride_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_stride_types: Variadic.TypesOfTrait[CoordLike],
-    input_row_offsets_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_row_offsets_stride_types: Variadic.TypesOfTrait[CoordLike],
-    freqs_cis_shape_types: Variadic.TypesOfTrait[CoordLike],
-    freqs_cis_stride_types: Variadic.TypesOfTrait[CoordLike],
-    gamma_shape_types: Variadic.TypesOfTrait[CoordLike],
-    gamma_stride_types: Variadic.TypesOfTrait[CoordLike],
+    QRopeOutputLayoutType: TensorLayout,
+    QRopeLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    FreqsCisLayoutType: TensorLayout,
+    GammaLayoutType: TensorLayout,
     cache_t: KVCacheT,
     block_size: Int,
     n_rope_blocks: Int,
     n_rms_blocks: Int,
 ](
     q_rope_output: TileTensor[
-        mut=True,
-        shape_types=q_rope_output_shape_types,
-        stride_types=q_rope_output_stride_types,
-        dtype,
-        MutExternalOrigin,
+        mut=True, dtype, MutExternalOrigin, QRopeOutputLayoutType
     ],
-    q_rope: TileTensor[
-        shape_types=q_rope_shape_types,
-        stride_types=q_rope_stride_types,
-        dtype,
-        ImmutExternalOrigin,
-    ],
+    q_rope: TileTensor[dtype, ImmutExternalOrigin, QRopeLayoutType],
     input_row_offsets: TileTensor[
-        shape_types=input_row_offsets_shape_types,
-        stride_types=input_row_offsets_stride_types,
-        DType.uint32,
-        ImmutExternalOrigin,
+        DType.uint32, ImmutExternalOrigin, InputRowOffsetsLayoutType
     ],
-    freqs_cis: TileTensor[
-        shape_types=freqs_cis_shape_types,
-        stride_types=freqs_cis_stride_types,
-        freq_dtype,
-        ImmutExternalOrigin,
-    ],
-    gamma: TileTensor[
-        shape_types=gamma_shape_types,
-        stride_types=gamma_stride_types,
-        gamma_dtype,
-        ImmutExternalOrigin,
-    ],
+    freqs_cis: TileTensor[freq_dtype, ImmutExternalOrigin, FreqsCisLayoutType],
+    gamma: TileTensor[gamma_dtype, ImmutExternalOrigin, GammaLayoutType],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -125,16 +98,11 @@ fn fused_rope_rmsnorm_kernel[
         dtype: Data type of query tensors.
         freq_dtype: Data type of frequency cosine/sine values.
         gamma_dtype: Data type of RMSNorm gamma weights.
-        q_rope_output_shape_types: Shape types of the output query rope tensor.
-        q_rope_output_stride_types: Stride types of the output query rope tensor.
-        q_rope_shape_types: Shape types of the input query rope tensor.
-        q_rope_stride_types: Stride types of the input query rope tensor.
-        input_row_offsets_shape_types: Shape types of the row offset indices tensor.
-        input_row_offsets_stride_types: Stride types of the row offset indices tensor.
-        freqs_cis_shape_types: Shape types of the frequency tensor.
-        freqs_cis_stride_types: Stride types of the frequency tensor.
-        gamma_shape_types: Shape types of the gamma weights tensor.
-        gamma_stride_types: Stride types of the gamma weights tensor.
+        QRopeOutputLayoutType: Layout types of the output query rope tensor.
+        QRopeLayoutType: Layout types of the input query rope tensor.
+        InputRowOffsetsLayoutType: Layout types of the row offset indices tensor.
+        FreqsCisLayoutType: Layout types of the frequency tensor.
+        GammaLayoutType: Layout types of the gamma weights tensor.
         cache_t: Type of the KV cache.
         block_size: Number of threads per block.
         n_rope_blocks: Number of blocks allocated for RoPE computation.
@@ -343,16 +311,11 @@ fn mla_fused_rope_rmsnorm[
         dtype,
         freq_dtype,
         gamma_dtype,
-        q_rope_output.shape_types,
-        q_rope_output.stride_types,
-        q_rope.shape_types,
-        q_rope.stride_types,
-        input_row_offsets.shape_types,
-        input_row_offsets.stride_types,
-        freqs_cis.shape_types,
-        freqs_cis.stride_types,
-        gamma.shape_types,
-        gamma.stride_types,
+        q_rope_output.LayoutType,
+        q_rope.LayoutType,
+        input_row_offsets.LayoutType,
+        freqs_cis.LayoutType,
+        gamma.LayoutType,
         type_of(k_cache),
         block_size,
         n_rope_blocks,

@@ -51,7 +51,7 @@ fn test_index_tensor_DLRM() raises:
 
     # dim_0 x dim_1 x dim_2 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_2]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack, input_layout)
@@ -84,7 +84,7 @@ fn test_index_tensor_DLRM() raises:
 
     # Reference output of shape dim_0 x index_len.
     comptime ref_layout = row_major[dim_0, index_len]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
         uninitialized=True
     )
     var ref_output = TileTensor(ref_stack, ref_layout)
@@ -145,7 +145,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # dim_0 x dim_1 x dim_3 x dim_4 input tensor.
     comptime input_layout = row_major[dim_0, dim_1, dim_3, dim_4]()
-    var input_stack = InlineArray[Scalar[input_type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[input_type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack, input_layout)
@@ -177,7 +177,7 @@ fn test_index_tensor_DLRM_batch() raises:
 
     # Reference output of shape dim_0 x index_len
     comptime ref_layout = row_major[dim_0, dim_1, index_len]()
-    var ref_stack = InlineArray[Scalar[input_type], ref_layout.size()](
+    var ref_stack = InlineArray[Scalar[input_type], ref_layout.product()](
         uninitialized=True
     )
     var ref_output = TileTensor(ref_stack, ref_layout)

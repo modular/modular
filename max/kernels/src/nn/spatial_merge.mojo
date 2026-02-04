@@ -13,8 +13,8 @@
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import Layout, row_major
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout, Layout, row_major
 from layout._tile_tensor import TileTensor
 from utils.index import Index, IndexList
 
@@ -22,33 +22,15 @@ from utils.index import Index, IndexList
 fn spatial_merge_kernel[
     dtype: DType,
     input_origin: ImmutOrigin,
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
     output_origin: MutOrigin,
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     grid_thw_origin: ImmutOrigin,
-    grid_thw_shape_types: Variadic.TypesOfTrait[CoordLike],
-    grid_thw_stride_types: Variadic.TypesOfTrait[CoordLike],
+    GridThwLayoutType: TensorLayout,
 ](
-    output: TileTensor[
-        shape_types=output_shape_types,
-        stride_types=output_stride_types,
-        dtype,
-        output_origin,
-    ],
-    input: TileTensor[
-        shape_types=input_shape_types,
-        stride_types=input_stride_types,
-        dtype,
-        input_origin,
-    ],
-    grid_thw: TileTensor[
-        shape_types=grid_thw_shape_types,
-        stride_types=grid_thw_stride_types,
-        DType.int64,
-        grid_thw_origin,
-    ],
+    output: TileTensor[dtype, output_origin, OutputLayoutType],
+    input: TileTensor[dtype, input_origin, InputLayoutType],
+    grid_thw: TileTensor[DType.int64, grid_thw_origin, GridThwLayoutType],
     batch_size: Int,
     hidden_size: Int,
     merge_size: Int,
@@ -198,14 +180,11 @@ fn spatial_merge[
     comptime kernel = spatial_merge_kernel[
         dtype,
         ImmutOrigin(input.origin),
-        input.shape_types,
-        input.stride_types,
+        input.LayoutType,
         output.origin,
-        output.shape_types,
-        output.stride_types,
+        output.LayoutType,
         ImmutOrigin(grid_thw.origin),
-        grid_thw.shape_types,
-        grid_thw.stride_types,
+        grid_thw.LayoutType,
     ]
 
     ctx.enqueue_function_experimental[kernel](

@@ -59,7 +59,7 @@ fn cumsum[
     )
     var axis_pos = axis if axis >= 0 else axis + input.rank
 
-    var shape = coord_to_index_list(input.layout.shape)
+    var shape = coord_to_index_list(input.layout.shape_coord())
 
     var inner = 1
     var outer = 1

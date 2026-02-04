@@ -40,7 +40,7 @@ from .tile_types import SMemTile2D
 
 # Import variadic types for TileTensor load overload
 from builtin.variadics import Variadic
-from layout._coord import CoordLike
+from layout._layout import TensorLayout
 from layout._tile_tensor import TileTensor
 
 
@@ -145,15 +145,13 @@ struct TileLoaderTMA[
 
     @always_inline
     fn load[
-        shape_types: Variadic.TypesOfTrait[CoordLike],
-        stride_types: Variadic.TypesOfTrait[CoordLike],
+        LayoutType: TensorLayout
     ](
         self,
         dest: TileTensor[
-            shape_types=shape_types,
-            stride_types=stride_types,
             Self.dtype,
             MutAnyOrigin,
+            LayoutType,
             address_space = AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,

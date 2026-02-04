@@ -37,7 +37,7 @@ from algorithm import (
 from gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE
 from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
@@ -383,12 +383,9 @@ struct ConvTransposedPacked[
     filter_linear_idx_type: DType,
     output_element_shape_types: Variadic.TypesOfTrait[CoordLike],
     output_linear_idx_type: DType,
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    filter_shape_types: Variadic.TypesOfTrait[CoordLike],
-    filter_stride_types: Variadic.TypesOfTrait[CoordLike],
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
+    FilterLayoutType: TensorLayout,
+    OutputLayoutType: TensorLayout,
     conv_attr_rank: Int,
     //,
     input_origin: Origin[mut=input_mut],
@@ -401,26 +398,23 @@ struct ConvTransposedPacked[
     elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
 ](ImplicitlyCopyable):
     var output: TileTensor[
-        shape_types = Self.output_shape_types,
-        stride_types = Self.output_stride_types,
         Self.output_type,
         Self.output_origin,
+        Self.OutputLayoutType,
         element_shape_types = Self.output_element_shape_types,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
-        shape_types = Self.input_shape_types,
-        stride_types = Self.input_stride_types,
         Self.input_type,
         Self.input_origin,
+        Self.InputLayoutType,
         element_shape_types = Self.input_element_shape_types,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
-        shape_types = Self.filter_shape_types,
-        stride_types = Self.filter_stride_types,
         Self.filter_type,
         Self.filter_origin,
+        Self.FilterLayoutType,
         element_shape_types = Self.filter_element_shape_types,
         linear_idx_type = Self.filter_linear_idx_type,
     ]
@@ -438,30 +432,27 @@ struct ConvTransposedPacked[
     fn run(
         output: TileTensor[
             mut=True,
-            shape_types = Self.output_shape_types,
-            stride_types = Self.output_stride_types,
             Self.output_type,
             Self.output_origin,
+            Self.OutputLayoutType,
             element_shape_types = Self.output_element_shape_types,
             linear_idx_type = Self.output_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
         ],
         input: TileTensor[
-            shape_types = Self.input_shape_types,
-            stride_types = Self.input_stride_types,
             Self.input_type,
             Self.input_origin,
+            Self.InputLayoutType,
             element_shape_types = Self.input_element_shape_types,
             linear_idx_type = Self.input_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
         ],
         filter: TileTensor[
-            shape_types = Self.filter_shape_types,
-            stride_types = Self.filter_stride_types,
             Self.filter_type,
             Self.filter_origin,
+            Self.FilterLayoutType,
             element_shape_types = Self.filter_element_shape_types,
             linear_idx_type = Self.filter_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -473,8 +464,8 @@ struct ConvTransposedPacked[
         comptime simd_size = simd_width_of[Self.output_type]()
         comptime micro_kernel_shape = get_micro_kernel_shape[
             Self.conv_attr_rank,
-            Int(Self.output_shape_types[output.rank - 2].static_value),  # WO
-            Int(Self.output_shape_types[output.rank - 1].static_value),  # F
+            Int(Self.OutputLayoutType.static_shape[output.rank - 2]),  # WO
+            Int(Self.OutputLayoutType.static_shape[output.rank - 1]),  # F
             Self.conv_attr,
             simd_size,
         ]()
@@ -740,7 +731,7 @@ struct ConvTransposedPacked[
         # print("pad effect", left_pad_impact_end, right_pad_impact_start)
 
         @parameter
-        if Variadic.size(Self.input_shape_types) == 4:
+        if Self.InputLayoutType.rank == 4:
             self.input_space_loop_2d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -759,7 +750,7 @@ struct ConvTransposedPacked[
                 left_pad_impact_end,
                 right_pad_impact_start,
             )
-        elif Variadic.size(Self.input_shape_types) == 5:
+        elif Self.InputLayoutType.rank == 5:
             self.input_space_loop_3d[
                 micro_kernel_height,
                 micro_kernel_width,
@@ -968,7 +959,7 @@ struct ConvTransposedPacked[
             var output_ptr = output_base
 
             @parameter
-            if Variadic.size(Self.input_shape_types) == 4:  # 2D ConvTransposed.
+            if Self.InputLayoutType.rank == 4:  # 2D ConvTransposed.
                 for ho in range(self.conv_shape.ho()):
                     for wo in range(self.conv_shape.wo()):
                         epilogue(
@@ -976,9 +967,7 @@ struct ConvTransposedPacked[
                         )
                         output_ptr += self.conv_shape.f
 
-            elif (
-                Variadic.size(Self.input_shape_types) == 5
-            ):  # 3D ConvTransposed.
+            elif Self.InputLayoutType.rank == 5:  # 3D ConvTransposed.
                 for do in range(self.conv_shape.do()):
                     for ho in range(self.conv_shape.ho()):
                         for wo in range(self.conv_shape.wo()):
@@ -1418,9 +1407,9 @@ fn conv_transposed_cpu[
     fn description_fn() -> String:
         # fmt: off
         return String(
-            trace_arg("input", coord_to_index_list(input.layout.shape)),
-            ";", trace_arg("filter", coord_to_index_list(filter.layout.shape)),
-            ";", trace_arg("output", coord_to_index_list(output.layout.shape)),
+            trace_arg("input", coord_to_index_list(input.layout.shape_coord())),
+            ";", trace_arg("filter", coord_to_index_list(filter.layout.shape_coord())),
+            ";", trace_arg("output", coord_to_index_list(output.layout.shape_coord())),
             ";group=1",
             ";stride=", stride,
             ";padding_d=", Index(0, 0),
@@ -1455,7 +1444,7 @@ fn conv_transposed_cpu[
 
             @parameter
             for i in range(packed_filter_rank):
-                packed_filter_shape[i] = filter.layout.shape[i].value()
+                packed_filter_shape[i] = filter.layout.shape[i]().value()
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
@@ -1579,7 +1568,7 @@ fn conv_transposed_gpu[
 
         elementwise[
             epilogue_wrapper, simd_width_of[output_type](), target="gpu"
-        ](coord_to_index_list(output.layout.shape), ctx)
+        ](coord_to_index_list(output.layout.shape_coord()), ctx)
 
         _ = output_tmp_data^
 

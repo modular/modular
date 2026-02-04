@@ -225,8 +225,8 @@ def test_tensor_span_constructor():
 def test_fill():
     var stack = InlineArray[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
-    for i in range(tensor.layout.shape[0].value()):
-        for j in range(tensor.layout.shape[1].value()):
+    for i in range(tensor.layout.shape[0]().value()):
+        for j in range(tensor.layout.shape[1]().value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
@@ -234,8 +234,8 @@ def test_fill_large():
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = InlineArray[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
-    for i in range(tensor.layout.shape[0].value()):
-        for j in range(tensor.layout.shape[1].value()):
+    for i in range(tensor.layout.shape[0]().value()):
+        for j in range(tensor.layout.shape[1]().value()):
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
@@ -261,8 +261,8 @@ fn test_slice() raises:
     var sliced = tensor_2d.slice[1:3, 1:3]()
 
     # Verify slice dimensions
-    assert_equal(sliced.layout.shape[0].value(), 2)
-    assert_equal(sliced.layout.shape[1].value(), 2)
+    assert_equal(sliced.layout.shape[0]().value(), 2)
+    assert_equal(sliced.layout.shape[1]().value(), 2)
 
     # Verify slice values - use runtime indices since slice returns runtime shapes
     assert_equal(sliced[0, 0], 5)
@@ -283,8 +283,8 @@ fn test_slice() raises:
 
     # Test slice with start=0 (should work with default)
     var first_row = tensor_2d.slice[0:1, 0:4]()
-    assert_equal(first_row.layout.shape[0].value(), 1)
-    assert_equal(first_row.layout.shape[1].value(), 4)
+    assert_equal(first_row.layout.shape[0]().value(), 1)
+    assert_equal(first_row.layout.shape[1]().value(), 4)
     assert_equal(first_row[0, 0], 0)
     assert_equal(first_row[0, 3], 3)
 
@@ -303,9 +303,9 @@ fn test_slice_3d() raises:
     var sliced_3d = tensor_3d.slice[1:3, 1:3, 1:3]()
 
     # Verify dimensions
-    assert_equal(sliced_3d.layout.shape[0].value(), 2)
-    assert_equal(sliced_3d.layout.shape[1].value(), 2)
-    assert_equal(sliced_3d.layout.shape[2].value(), 2)
+    assert_equal(sliced_3d.layout.shape[0]().value(), 2)
+    assert_equal(sliced_3d.layout.shape[1]().value(), 2)
+    assert_equal(sliced_3d.layout.shape[2]().value(), 2)
 
     # Verify some values - use runtime indices
     # Original tensor[1][1][1] = 1*16 + 1*4 + 1 = 21
@@ -372,14 +372,14 @@ fn test_vectorize() raises:
     var vectorized = tensor.vectorize[4, 4]()
 
     # Verify vectorized tensor shape: 16/4 x 16/4 = 4x4
-    assert_equal(vectorized.layout.shape[0].value(), 4)
-    assert_equal(vectorized.layout.shape[1].value(), 4)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
+    assert_equal(vectorized.layout.shape[1]().value(), 4)
 
     # Verify vectorized tensor strides: original_stride * vector_shape
     # Original row-major 16x16 has strides [16, 1]
     # Vectorized strides should be [16*4, 1*4] = [64, 4]
-    assert_equal(vectorized.layout.stride[0].value(), 64)
-    assert_equal(vectorized.layout.stride[1].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 64)
+    assert_equal(vectorized.layout.stride[1]().value(), 4)
 
     # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
     # Block (0, 0) starts at element 0 - check first element of the SIMD vector
@@ -412,12 +412,12 @@ fn test_vectorize_non_square() raises:
     var vectorized = tensor.vectorize[2, 4]()
 
     # Shape should be 8/2 x 8/4 = 4x2
-    assert_equal(vectorized.layout.shape[0].value(), 4)
-    assert_equal(vectorized.layout.shape[1].value(), 2)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
+    assert_equal(vectorized.layout.shape[1]().value(), 2)
 
     # Strides should be [8*2, 1*4] = [16, 4]
-    assert_equal(vectorized.layout.stride[0].value(), 16)
-    assert_equal(vectorized.layout.stride[1].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 16)
+    assert_equal(vectorized.layout.stride[1]().value(), 4)
 
     # Verify block positions - check first element of each SIMD vector
     assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)  # Block (0,0) at element 0
@@ -444,10 +444,10 @@ fn test_vectorize_1d() raises:
     var vectorized = tensor.vectorize[4]()
 
     # Shape should be 16/4 = 4
-    assert_equal(vectorized.layout.shape[0].value(), 4)
+    assert_equal(vectorized.layout.shape[0]().value(), 4)
 
     # Stride should be 1*4 = 4
-    assert_equal(vectorized.layout.stride[0].value(), 4)
+    assert_equal(vectorized.layout.stride[0]().value(), 4)
 
     # Verify block positions - check first element of each SIMD vector
     assert_equal(vectorized[(Idx(0),)][0], 0)
@@ -524,10 +524,10 @@ fn test_coalesce_2d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced tensor shape: 4*4 = 16
-    assert_equal(coalesced.layout.shape[0].value(), 16)
+    assert_equal(coalesced.layout.shape[0]().value(), 16)
 
     # Verify coalesced tensor stride: 1
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements are accessible in order
     for i in range(16):
@@ -548,10 +548,10 @@ fn test_coalesce_3d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced tensor shape: 2*3*4 = 24
-    assert_equal(coalesced.layout.shape[0].value(), 24)
+    assert_equal(coalesced.layout.shape[0]().value(), 24)
 
     # Verify coalesced tensor stride: 1
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements are accessible in order
     for i in range(24):
@@ -572,8 +572,8 @@ fn test_coalesce_1d() raises:
     var coalesced = tensor.coalesce()
 
     # Verify shape and stride unchanged
-    assert_equal(coalesced.layout.shape[0].value(), 8)
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.shape[0]().value(), 8)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify elements
     for i in range(8):
@@ -597,8 +597,8 @@ fn test_coalesce_element_size() raises:
     var coalesced = tensor.coalesce()
 
     # Verify coalesced shape: 4*4 = 16
-    assert_equal(coalesced.layout.shape[0].value(), 16)
-    assert_equal(coalesced.layout.stride[0].value(), 1)
+    assert_equal(coalesced.layout.shape[0]().value(), 16)
+    assert_equal(coalesced.layout.stride[0]().value(), 1)
 
     # Verify element_size is still 1 (coalesced from 1)
     assert_equal(coalesced.element_size, 1)

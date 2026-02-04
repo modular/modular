@@ -73,11 +73,11 @@ fn index_tensor_shape[
 
     @parameter
     for i in range(batch_dims):
-        indices_shape[i] = input_buf.layout.shape[i].value()
+        indices_shape[i] = input_buf.layout.shape[i]().value()
 
     @parameter
     for i in range(indices_buf.rank):
-        indices_shape[batch_dims + i] = indices_buf.layout.shape[i].value()
+        indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
 
     var index_size = indices_shape[combined_indices_rank - 1]
     # TODO: Revisit when we generalize (see above TODO).
@@ -96,7 +96,7 @@ fn index_tensor_shape[
     var output_shape = IndexList[output_rank]()
     var next_out_dim = 0
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape)
+    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
 
     @parameter
     for i in range(batch_dims):
@@ -220,7 +220,7 @@ fn _index_tensor_1d[
         "kernel doesn't support slicing after specified dims",
     )
 
-    var data_shape = coord_to_index_list(data.layout.shape)
+    var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
 
     @parameter
@@ -364,14 +364,14 @@ fn _index_tensor_impl[
                 target_simd_width,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape))
+            ](coord_to_index_list(output.layout.shape_coord()))
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape))
+            ](coord_to_index_list(output.layout.shape_coord()))
     else:
         debug_assert(
             Bool(ctx), "Must provide DeviceContext if executing on GPU."
@@ -383,14 +383,14 @@ fn _index_tensor_impl[
                 target_simd_width,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape), cuda_ctx)
+            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape), cuda_ctx)
+            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -558,7 +558,7 @@ fn advanced_indexing_getitem[
         start_axis, num_index_tensors, input_rank
     ](
         read_strides=in_tensor_strides,
-        write_strides=coord_to_index_list(out_tensor.layout.stride),
+        write_strides=coord_to_index_list(out_tensor.layout.stride_coord()),
     )
     if use_simd:
         elementwise[
@@ -567,7 +567,7 @@ fn advanced_indexing_getitem[
             use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape), ctx)
+        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
@@ -575,7 +575,7 @@ fn advanced_indexing_getitem[
             use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape), ctx)
+        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
 
 
 @always_inline
@@ -729,11 +729,11 @@ fn advanced_indexing_setitem_inplace[
 
         @parameter
         if i < start_axis:
-            iteration_shape[i] = input_tensor.layout.shape[i].value()
+            iteration_shape[i] = input_tensor.layout.shape[i]().value()
         elif i >= start_axis + index_rank:
             iteration_shape[i] = input_tensor.layout.shape[
                 i - index_rank + num_index_tensors
-            ].value()
+            ]().value()
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 
@@ -790,7 +790,7 @@ fn advanced_indexing_setitem_inplace[
         start_axis, num_index_tensors, input_tensor.rank
     ](
         read_strides=updates_tensor_strides,
-        write_strides=coord_to_index_list(input_tensor.layout.stride),
+        write_strides=coord_to_index_list(input_tensor.layout.stride_coord()),
     )
     if use_simd:
         elementwise[

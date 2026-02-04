@@ -44,10 +44,8 @@ from layout._coord import (
     RuntimeInt,
     coord_to_index_list,
 )
-from layout._layout import row_major
+from layout._layout import Layout, TensorLayout, _RowMajor, row_major
 from layout._tile_tensor import TileTensor
-from layout._coord import DynamicCoord, RuntimeInt, coord_to_index_list
-from layout._layout import Layout
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
@@ -89,7 +87,7 @@ fn top_k_shape_impl[
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
     var shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape)
+        coord_to_index_list(input.layout.shape_coord())
     )
     shape[normalize_neg_index(axis, input.rank)] = bound_max_k
 
@@ -127,12 +125,6 @@ fn top_k[
     //,
     largest: Bool = True,
     target: StaticString = "cpu",
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
 ](
     input: TileTensor[dtype, ...],
     max_k: Int,
@@ -143,11 +135,13 @@ fn top_k[
     ctx: DeviceContextPtr,
     k: Optional[
         TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
             DType.int64,
             ImmutAnyOrigin,
-        ]
+            Layout[
+                Variadic.types[RuntimeInt[DType.int64]],
+                _RowMajor[*Variadic.types[ComptimeInt[1]]],
+            ],
+        ],
     ] = None,
 ) raises:
     """
@@ -159,8 +153,6 @@ fn top_k[
         out_idx_type: The data dtype of the output indices (default == DType.int64).
         largest: Whether to find the maximum (top k) or minimum value (bottom k).
         target: The target to run on.
-        k_shape_types: The shape of the k tensor.
-        k_stride_types: The stride of the k tensor.
 
     Args:
         input: The input tensor.
@@ -224,11 +216,9 @@ fn _top_k_cpu[
     dtype: DType,
     out_idx_type: DType,
     largest: Bool,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     input: TileTensor[dtype, ...],
@@ -238,14 +228,7 @@ fn _top_k_cpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
 ):
     __comptime_assert (
         input.rank == out_vals.rank
@@ -254,7 +237,7 @@ fn _top_k_cpu[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
     __comptime_assert k.T.rank == 1
-    var shape = coord_to_index_list(input.layout.shape)
+    var shape = coord_to_index_list(input.layout.shape_coord())
 
     @__copy_capture(shape)
     @parameter
@@ -354,65 +337,35 @@ fn _top_k_cpu[
 fn fused_token_sampling_cpu[
     dtype: DType,
     out_idx_type: DType,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopPLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    top_p_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_p_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            shape_types=top_p_shape_types,
-            stride_types=top_p_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TopPLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """
@@ -423,14 +376,10 @@ fn fused_token_sampling_cpu[
     Parameters:
         dtype: Data type of the input buffer.
         out_idx_type: Data type of the output indices.
-        k_shape_types: The shape of the k tensor.
-        k_stride_types: The stride of the k tensor.
-        temperature_shape_types: The shape of the temperature tensor.
-        temperature_stride_types: The stride of the temperature tensor.
-        top_p_shape_types: The shape of the top_p tensor.
-        top_p_stride_types: The stride of the top_p tensor.
-        seed_shape_types: The shape of the seed tensor.
-        seed_stride_types: The stride of the seed tensor.
+        KLayoutType: Layout type of the k buffer.
+        TemperatureLayoutType: Layout type of the temperature buffer.
+        TopPLayoutType: Layout type of the top_p buffer.
+        SeedLayoutType: Layout type of the seed buffer.
 
     Args:
         max_k: Largest number of top elements.
@@ -449,7 +398,7 @@ fn fused_token_sampling_cpu[
     bound_max_k = 255 if max_k == -1 else max_k
 
     # materialize the out_vals which is of shape [input[:-1]] + [k]
-    var out_vals_shape = coord_to_index_list(input.layout.shape)
+    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
     out_vals_shape[input.rank - 1] = bound_max_k
     var out_vals = TileTensor(
         alloc[Scalar[dtype]](out_vals_shape.flattened_length()),
@@ -472,66 +421,36 @@ fn fused_token_sampling_cpu[
 
 fn _top_k_sampling[
     dtype: DType,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopPLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    top_p_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_p_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     max_k: Int,
     input: TileTensor[dtype, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, DType.int64, ...],
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            shape_types=top_p_shape_types,
-            stride_types=top_p_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TopPLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """
@@ -541,14 +460,10 @@ fn _top_k_sampling[
 
     Parameters:
         dtype: Data type of the input buffer.
-        k_shape_types: The shape of the k tensor.
-        k_stride_types: The stride of the k tensor.
-        temperature_shape_types: The shape of the temperature tensor.
-        temperature_stride_types: The stride of the temperature tensor.
-        top_p_shape_types: The shape of the top_p tensor.
-        top_p_stride_types: The stride of the top_p tensor.
-        seed_shape_types: The shape of the seed tensor.
-        seed_stride_types: The stride of the seed tensor.
+        KLayoutType: Layout type of the k buffer.
+        TemperatureLayoutType: Layout type of the temperature buffer.
+        TopPLayoutType: Layout type of the top_p buffer.
+        SeedLayoutType: Layout type of the seed buffer.
 
     Args:
         max_k: Largest number of top elements.
@@ -574,7 +489,7 @@ fn _top_k_sampling[
 
     # Now reshape for sampling
     var orig_in_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape)
+        coord_to_index_list(input.layout.shape_coord())
     )
     var last_dim = orig_in_shape[input.rank - 1]
 
@@ -1327,29 +1242,21 @@ fn _topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopPLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    top_p_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_p_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     ctx: DeviceContext,
@@ -1359,39 +1266,17 @@ fn _topk_gpu[
     device_local_topk_idxs: TileTensor[out_idx_type, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     block_size: Int = 256,
     num_blocks_per_input: Optional[Int] = None,
     top_p: Optional[
-        TileTensor[
-            shape_types=top_p_shape_types,
-            stride_types=top_p_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TopPLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """Computes the Top-K elements from the input tensor using a GPU-accelerated two-stage algorithm.
@@ -1406,14 +1291,10 @@ fn _topk_gpu[
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         _force_old_impl: Bool - Whether to force use the old implementation.
-        k_shape_types: The shape of the k tensor.
-        k_stride_types: The stride of the k tensor.
-        temperature_shape_types: The shape of the temperature tensor.
-        temperature_stride_types: The stride of the temperature tensor.
-        top_p_shape_types: The shape of the top_p tensor.
-        top_p_stride_types: The stride of the top_p tensor.
-        seed_shape_types: The shape of the seed tensor.
-        seed_stride_types: The stride of the seed tensor.
+        KLayoutType: Layout type of the k buffer.
+        TemperatureLayoutType: Layout type of the temperature buffer.
+        TopPLayoutType: Layout type of the top_p buffer.
+        SeedLayoutType: Layout type of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1623,29 +1504,21 @@ fn topk_gpu[
     sampling: Bool = True,
     largest: Bool = True,
     _force_old_impl: Bool = False,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopPLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    top_p_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_p_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     ctx: DeviceContext,
@@ -1655,37 +1528,15 @@ fn topk_gpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            shape_types=top_p_shape_types,
-            stride_types=top_p_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TopPLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """
@@ -1699,14 +1550,10 @@ fn topk_gpu[
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
         _force_old_impl: Bool - Whether to force use the old implementation.
-        k_shape_types: The shape of the k tensor.
-        k_stride_types: The stride of the k tensor.
-        temperature_shape_types: The shape of the temperature tensor.
-        temperature_stride_types: The stride of the temperature tensor.
-        top_p_shape_types: The shape of the top_p tensor.
-        top_p_stride_types: The stride of the top_p tensor.
-        seed_shape_types: The shape of the seed tensor.
-        seed_stride_types: The stride of the seed tensor.
+        KLayoutType: Layout type of the k buffer.
+        TemperatureLayoutType: Layout type of the temperature buffer.
+        TopPLayoutType: Layout type of the top_p buffer.
+        SeedLayoutType: Layout type of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1734,7 +1581,7 @@ fn topk_gpu[
     """
     __comptime_assert input.rank > 0, "Input rank must be positive"
     var orig_in_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape)
+        coord_to_index_list(input.layout.shape_coord())
     )
     var N = orig_in_shape[input.rank - 1]
     var last_idx_dim = 1 if sampling else max_k
@@ -1756,24 +1603,30 @@ fn topk_gpu[
     var internal_bs: Int  # Internal batch size
     comptime internal_rank = 2  # We always reshape to 2D for internal processing
     var internal_input: TileTensor[
-        shape_types = DynamicCoord[DType.int64, 2].element_types,
-        stride_types = DynamicCoord[DType.int64, 2].element_types,
         dtype,
         input.origin,
+        Layout[
+            shape_types = DynamicCoord[DType.int64, 2].element_types,
+            stride_types = DynamicCoord[DType.int64, 2].element_types,
+        ],
         address_space = input.address_space,
     ]
     var internal_out_idxs: TileTensor[
-        shape_types = DynamicCoord[DType.int64, 2].element_types,
-        stride_types = DynamicCoord[DType.int64, 2].element_types,
         out_idx_type,
         out_idxs.origin,
+        Layout[
+            shape_types = DynamicCoord[DType.int64, 2].element_types,
+            stride_types = DynamicCoord[DType.int64, 2].element_types,
+        ],
         address_space = out_idxs.address_space,
     ]
     var internal_out_vals: TileTensor[
-        shape_types = DynamicCoord[DType.int64, 2].element_types,
-        stride_types = DynamicCoord[DType.int64, 2].element_types,
         dtype,
         out_vals.origin,
+        Layout[
+            shape_types = DynamicCoord[DType.int64, 2].element_types,
+            stride_types = DynamicCoord[DType.int64, 2].element_types,
+        ],
         address_space = out_vals.address_space,
     ]
 
@@ -1880,29 +1733,21 @@ fn fused_token_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    k_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    KLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    k_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopPLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    top_p_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_p_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     ctx: DeviceContext,
@@ -1912,37 +1757,15 @@ fn fused_token_sampling_gpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
-    k: Optional[
-        TileTensor[
-            shape_types=k_shape_types,
-            stride_types=k_stride_types,
-            DType.int64,
-            ImmutAnyOrigin,
-        ]
-    ] = None,
+    k: Optional[TileTensor[DType.int64, ImmutAnyOrigin, KLayoutType]] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            shape_types=top_p_shape_types,
-            stride_types=top_p_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TopPLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """
@@ -1969,7 +1792,7 @@ fn fused_token_sampling_gpu[
 
     var bound_max_k = 255 if max_k == -1 else max_k
 
-    var out_vals_shape = coord_to_index_list(input.layout.shape)
+    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
     out_vals_shape[input.rank - 1] = bound_max_k
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
@@ -2003,25 +1826,13 @@ fn fused_token_sampling_gpu[
 
 fn apply_gumbel_noise_kernel[
     dtype: DType,
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
+    InputLayoutType: TensorLayout,
     num_sms: Int,
     num_threads: Int,
 ](
-    output: TileTensor[
-        shape_types=output_shape_types,
-        stride_types=output_stride_types,
-        dtype,
-        MutAnyOrigin,
-    ],
-    input: TileTensor[
-        shape_types=input_shape_types,
-        stride_types=input_stride_types,
-        dtype,
-        ImmutAnyOrigin,
-    ],
+    output: TileTensor[mut=True, dtype, MutAnyOrigin, OutputLayoutType],
+    input: TileTensor[dtype, ImmutAnyOrigin, InputLayoutType],
     temperature: UnsafePointer[Float32, ImmutAnyOrigin],
     seed: UnsafePointer[UInt64, ImmutAnyOrigin],
 ):
@@ -2121,37 +1932,23 @@ fn gumbel_sampling_gpu[
     dtype: DType,
     out_idx_type: DType,
     //,
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TemperatureLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        Variadic.types[RuntimeInt[DType.int64]],
+        _RowMajor[*Variadic.types[RuntimeInt[DType.int64]]],
     ],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.float32, ImmutAnyOrigin, TemperatureLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            ImmutAnyOrigin,
-        ]
+        TileTensor[DType.uint64, ImmutAnyOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """
@@ -2196,10 +1993,8 @@ fn gumbel_sampling_gpu[
     comptime hw_info = ctx.default_device_info
     comptime gumbel_kernel = apply_gumbel_noise_kernel[
         dtype,
-        noised_input.shape_types,
-        noised_input.stride_types,
-        input.shape_types,
-        input.stride_types,
+        noised_input.LayoutType,
+        input.LayoutType,
         hw_info.sm_count,
         hw_info.max_thread_block_size,
     ]
@@ -2215,7 +2010,7 @@ fn gumbel_sampling_gpu[
     )
 
     # Extract argmax after Gumbel noise application.
-    var out_vals_shape = coord_to_index_list(input.layout.shape)
+    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
     out_vals_shape[input.rank - 1] = 1
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()

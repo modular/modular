@@ -27,14 +27,14 @@ fn test_size_cosize() raises:
         shape=(Idx[3](), Idx[4]()),
         stride=(Idx[4](), Idx[1]()),
     )
-    assert_equal(layout1.size(), 12)
+    assert_equal(layout1.product(), 12)
     assert_equal(layout1.cosize(), 12)
 
     # Layout with gaps: last element (1,1) -> 11, cosize = 12
     var layout2 = Layout(
         shape=(Idx[2](), Idx[2]()), stride=(Idx[10](), Idx[1]())
     )
-    assert_equal(layout2.size(), 4)
+    assert_equal(layout2.product(), 4)
     assert_equal(layout2.cosize(), 12)
 
 
@@ -54,44 +54,44 @@ fn test_crd2idx() raises:
     assert_equal(layout(Coord(Idx[2](), Idx[1]())), 6)
     assert_equal(layout(Coord(Idx[3](), Idx[1]())), 7)
 
-    assert_equal(layout.size(), 8)
+    assert_equal(layout.product(), 8)
 
 
 def test_row_major():
     var shape = Coord(Idx[3](), Idx(4))
     var layout = row_major(shape)
-    assert_true(layout.shape == shape)
-    assert_true(layout.stride == Coord(Idx(4), Idx[1]()))
+    assert_true(layout.shape_coord() == shape)
+    assert_true(layout.stride_coord() == Coord(Idx(4), Idx[1]()))
 
     var shape3 = Coord(Idx[3](), Idx(4), Idx(5))
     var layout3 = row_major(shape3)
-    assert_true(layout3.shape == shape3)
-    assert_true(layout3.stride == Coord(Idx(20), Idx(5), Idx[1]()))
+    assert_true(layout3.shape_coord() == shape3)
+    assert_true(layout3.stride_coord() == Coord(Idx(20), Idx(5), Idx[1]()))
 
     var shape3_static = Coord(
         ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]()
     )
     var layout3_static = row_major(shape3_static)
-    assert_true(layout3_static.shape == shape3_static)
+    assert_true(layout3_static.shape_coord() == shape3_static)
     assert_true(
-        layout3_static.stride
+        layout3_static.stride_coord()
         == Coord(ComptimeInt[20](), ComptimeInt[5](), ComptimeInt[1]())
     )
 
 
 def test_row_major_static_constructor_empty():
     var layout = row_major[]()
-    assert_equal(len(layout.shape), 0)
-    assert_equal(len(layout.stride), 0)
+    assert_equal(len(layout.shape_coord()), 0)
+    assert_equal(len(layout.stride_coord()), 0)
 
 
 def test_row_major_static_constructor_():
     var layout = row_major[1, 2, 3]()
-    assert_equal(len(layout.shape), 3)
-    assert_equal(len(layout.stride), 3)
-    assert_equal(layout.shape[0].value(), 1)
-    assert_equal(layout.shape[1].value(), 2)
-    assert_equal(layout.shape[2].value(), 3)
-    assert_equal(layout.stride[0].value(), 6)
-    assert_equal(layout.stride[1].value(), 3)
-    assert_equal(layout.stride[2].value(), 1)
+    assert_equal(len(layout.shape_coord()), 3)
+    assert_equal(len(layout.stride_coord()), 3)
+    assert_equal(layout.shape[0]().value(), 1)
+    assert_equal(layout.shape[1]().value(), 2)
+    assert_equal(layout.shape[2]().value(), 3)
+    assert_equal(layout.stride[0]().value(), 6)
+    assert_equal(layout.stride[1]().value(), 3)
+    assert_equal(layout.stride[2]().value(), 1)

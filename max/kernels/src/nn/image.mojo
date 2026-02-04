@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._coord import Coord, CoordLike, Idx, coord
-from layout._layout import row_major
+from layout._coord import Coord, Idx, coord
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 
 from utils.index import IndexList
@@ -56,8 +56,7 @@ struct Image2DLayout(TrivialRegisterType):
 
 
 struct ImageData[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     //,
     dtype: DType,
     static_image_layout: Image2DLayout,
@@ -66,22 +65,12 @@ struct ImageData[
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: TileTensor[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
-        Self.dtype,
-        Self.origin,
-    ]
+    var data: TileTensor[Self.dtype, Self.origin, Self.LayoutType]
     var dynamic_image_layout: Image2DLayout
 
     fn __init__(
         out self,
-        data: TileTensor[
-            shape_types = Self.shape_types,
-            stride_types = Self.stride_types,
-            Self.dtype,
-            Self.origin,
-        ],
+        data: TileTensor[Self.dtype, Self.origin, Self.LayoutType],
         _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
@@ -96,12 +85,7 @@ struct ImageData[
 
     fn __init__(
         out self,
-        data: TileTensor[
-            shape_types = Self.shape_types,
-            stride_types = Self.stride_types,
-            Self.dtype,
-            Self.origin,
-        ],
+        data: TileTensor[Self.dtype, Self.origin, Self.LayoutType],
     ):
         __comptime_assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
@@ -110,8 +94,7 @@ struct ImageData[
     fn to_static_layout[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
+        LayoutType = Self.LayoutType,
         Self.dtype,
         new_static_image_layout,
         Self.origin,
@@ -124,8 +107,7 @@ struct ImageData[
         """
         __comptime_assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[
-            shape_types = Self.shape_types,
-            stride_types = Self.stride_types,
+            LayoutType = Self.LayoutType,
             Self.dtype,
             new_static_image_layout,
         ](self.data)

@@ -143,7 +143,9 @@ fn bench_topk_batched[
                 device_local_topk_idxs,
                 device_out_vals,
                 device_out_idxs,
-                k=k.as_any_origin().as_immut(),
+                k=TileTensor(k.ptr, row_major(Idx(Int64(batch_size))))
+                .as_any_origin()
+                .as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -317,7 +319,9 @@ fn bench_topk_multi_rank[
                 device_in,
                 device_out_vals,
                 device_out_idxs,
-                k=k.as_any_origin().as_immut(),
+                k=TileTensor(k.ptr, row_major(Idx(Int64(batch_size))))
+                .as_any_origin()
+                .as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -412,7 +416,10 @@ fn fill_constant[
 fn fill_iota[
     rank: Int, dtype: DType
 ](mut buf: TileTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, coord_to_index_list(buf.layout.shape).flattened_length())
+    iota(
+        buf.ptr,
+        coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
+    )
 
 
 fn fill_buffer[

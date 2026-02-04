@@ -91,8 +91,8 @@ fn pool[
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[2, 5, 7, 2]()
     comptime out_layout = row_major[2, 2, 2, 2]()
-    comptime in_size = in_layout.size()
-    comptime out_size = out_layout.size()
+    comptime in_size = in_layout.product()
+    comptime out_size = out_layout.product()
 
     # Create host buffers
     var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
@@ -199,8 +199,8 @@ fn pool_ceil_test[
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[1, 4, 4, 1]()
     comptime out_layout = row_major[1, 2, 2, 1]()
-    comptime in_size = in_layout.size()
-    comptime out_size = out_layout.size()
+    comptime in_size = in_layout.product()
+    comptime out_size = out_layout.product()
 
     # Create host buffers
     var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
@@ -313,8 +313,8 @@ fn test_avg_pool_2d_with_padding_gpu[
 
     comptime in_layout = row_major[1, 7, 7, 1]()
     comptime out_layout = row_major[1, 7, 7, 1]()
-    comptime in_size = in_layout.size()
-    comptime out_size = out_layout.size()
+    comptime in_size = in_layout.product()
+    comptime out_size = out_layout.product()
 
     # Create host buffers
     var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
@@ -402,8 +402,8 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
 
     comptime in_layout = row_major[1, 4, 4, 1]()
     comptime out_layout = row_major[1, 1, 3, 1]()
-    comptime in_size = in_layout.size()
-    comptime out_size = out_layout.size()
+    comptime in_size = in_layout.product()
+    comptime out_size = out_layout.product()
 
     # Create host buffers
     var in_host_buffer = ctx.enqueue_create_host_buffer[DType.float32](in_size)
@@ -493,7 +493,7 @@ fn assert_allclose[
     h_output_gpu: TileTensor[dtype, ...],
 ) raises:
     try:
-        for i in range(h_output_ref.layout.size()):
+        for i in range(h_output_ref.layout.product()):
             assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
     except e:
         print(e)

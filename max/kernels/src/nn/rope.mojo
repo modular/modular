@@ -19,8 +19,8 @@ from algorithm.functional import elementwise
 from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, RuntimeInt, Idx, coord
-from layout._layout import _RowMajor
+from layout._coord import Coord, CoordLike, ComptimeInt, RuntimeInt, Idx, coord
+from layout._layout import Layout, _RowMajor
 from layout._tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -125,12 +125,6 @@ fn rope_ragged[
         CoordLike
     ],
     mrope_section: Optional[Coord[*mrope_types]] = None,
-    position_ids_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
-    position_ids_stride_types: Variadic.TypesOfTrait[CoordLike] = _RowMajor[
-        *position_ids_shape_types
-    ],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
@@ -139,10 +133,18 @@ fn rope_ragged[
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
         TileTensor[
-            shape_types=position_ids_shape_types,
-            stride_types=position_ids_stride_types,
             DType.uint32,
             MutAnyOrigin,
+            Layout[
+                Variadic.types[
+                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+                ],
+                _RowMajor[
+                    *Variadic.types[
+                        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+                    ]
+                ],
+            ],
         ]
     ] = None,
 ) raises where (
@@ -153,7 +155,7 @@ fn rope_ragged[
 ):
     @parameter
     for i in range(x.rank):
-        __comptime_assert x.shape_types[i].is_static_value, (
+        __comptime_assert x.LayoutType._shape_types[i].is_static_value, (
             "x.layout.shape["
             + String(i)
             + "] must be a scalar, was "

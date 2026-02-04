@@ -69,8 +69,8 @@ from kv_cache.types import (
 )
 from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import DynamicCoord, RuntimeInt, coord_to_index_list
-from layout._layout import _RowMajor, row_major
+from layout._coord import DynamicCoord, RuntimeInt, Idx, coord_to_index_list
+from layout._layout import _RowMajor, Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -1920,10 +1920,10 @@ struct StaticReshape:
         return {
             view_buffer.ptr,
             rebind[IndexList[output_rank]](
-                coord_to_index_list(view_buffer.layout.shape)
+                coord_to_index_list(view_buffer.layout.shape_coord())
             ),
             rebind[IndexList[output_rank]](
-                coord_to_index_list(view_buffer.layout.stride)
+                coord_to_index_list(view_buffer.layout.stride_coord())
             ),
         }
 
@@ -2139,10 +2139,10 @@ struct Slice:
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.shape)
+                coord_to_index_list(view_buffer.layout.shape_coord())
             ),
             rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.stride)
+                coord_to_index_list(view_buffer.layout.stride_coord())
             ),
         }
 
@@ -2329,10 +2329,10 @@ struct SliceDim:
         result = {
             view_buffer.ptr,
             rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.shape)
+                coord_to_index_list(view_buffer.layout.shape_coord())
             ),
             rebind[IndexList[rank]](
-                coord_to_index_list(view_buffer.layout.stride)
+                coord_to_index_list(view_buffer.layout.stride_coord())
             ),
         }
 
@@ -4598,10 +4598,9 @@ struct Split:
 
         var output_bufs = StaticTuple[
             TileTensor[
-                shape_types=shape_types,
-                stride_types=stride_types,
                 output.dtype,
                 MutAnyOrigin,
+                TileLayout[shape_types=shape_types, stride_types=stride_types],
             ],
             output.size,
         ]()
@@ -8746,11 +8745,9 @@ struct Struct_fused_token_sampling:
                     top_p=top_p.to_tile_tensor[DType.int64]()
                     .as_any_origin()
                     .as_immut(),
-                    seed=Optional(
-                        seed.to_tile_tensor[DType.int64]()
-                        .as_any_origin()
-                        .as_immut()
-                    ),
+                    seed=seed.to_tile_tensor[DType.int64]()
+                    .as_any_origin()
+                    .as_immut(),
                 )
 
 

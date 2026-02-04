@@ -77,10 +77,10 @@ fn repeat_interleave[
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
     var collapsed_input_shape = _collapse_dims_around_axis(
-        coord_to_index_list(input.layout.shape), axis
+        coord_to_index_list(input.layout.shape_coord()), axis
     )
     var collapsed_output_shape = _collapse_dims_around_axis(
-        coord_to_index_list(output.layout.shape), axis
+        coord_to_index_list(output.layout.shape_coord()), axis
     )
 
     debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
@@ -131,7 +131,7 @@ fn repeat_interleave[
         collapsed_output.ptr.store(output_idx, input_value)
 
     elementwise[func, simd_width_of[output.dtype]()](
-        coord_to_index_list(collapsed_output.layout.shape)
+        coord_to_index_list(collapsed_output.layout.shape_coord())
     )
 
 
@@ -157,7 +157,7 @@ fn repeat_interleave_shape[
     for i in range(repeats_size):
         total_repeats += Int(repeats[i])
 
-    var result = coord_to_index_list(input.layout.shape)
+    var result = coord_to_index_list(input.layout.shape_coord())
 
     # If the repeats is size 1, the repeat is treated as a broadcast
     if repeats_size == 1:
@@ -165,4 +165,4 @@ fn repeat_interleave_shape[
     else:
         result[axis] = total_repeats
 
-    return result
+    return rebind[IndexList[input.rank]](result)

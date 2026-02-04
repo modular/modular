@@ -46,7 +46,7 @@ from layout._coord import (
     RuntimeInt,
 )
 from layout._tile_tensor import TileTensor
-from layout._layout import Layout as TileLayout, row_major
+from layout._layout import TensorLayout, Layout, row_major
 from memory import stack_allocation
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -263,8 +263,7 @@ fn welford_block_all_reduce[
 fn layer_norm_gpu_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     dtype: DType,
     //,
     simd_width: UInt,
@@ -279,9 +278,7 @@ fn layer_norm_gpu_warp_tiling[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    beta: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
 ):
     __comptime_assert beta.rank == 1, "beta must have rank 1"
@@ -343,8 +340,7 @@ fn layer_norm_gpu_warp_tiling[
 fn layer_norm_gpu_block[
     mut: Bool,
     origin: Origin[mut=mut],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     dtype: DType,
     //,
     simd_width: UInt,
@@ -359,9 +355,7 @@ fn layer_norm_gpu_block[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    beta: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
 ):
     __comptime_assert beta.rank == 1, "beta must have rank 1"
@@ -517,8 +511,7 @@ fn layer_norm_gpu[
             comptime kernel = layer_norm_gpu_warp_tiling[
                 mut = beta.mut,
                 origin = beta.origin,
-                shape_types = beta.shape_types,
-                stride_types = beta.stride_types,
+                LayoutType = beta.LayoutType,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -536,8 +529,7 @@ fn layer_norm_gpu[
             comptime kernel = layer_norm_gpu_block[
                 mut = beta.mut,
                 origin = beta.origin,
-                shape_types = beta.shape_types,
-                stride_types = beta.stride_types,
+                LayoutType = beta.LayoutType,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -555,8 +547,7 @@ fn layer_norm_gpu[
         comptime kernel = layer_norm_gpu_block[
             mut = beta.mut,
             origin = beta.origin,
-            shape_types = beta.shape_types,
-            stride_types = beta.stride_types,
+            LayoutType = beta.LayoutType,
             1,
             input_fn_2d,
             gamma_fn,
@@ -769,7 +760,7 @@ fn layer_norm[
     if gamma_shape[0] != shape[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if beta.layout.shape[0].value() != shape[rank - 1]:
+    if beta.layout.shape[0]().value() != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
 
     @always_inline
@@ -831,7 +822,9 @@ fn layer_norm_shape[
     __comptime_assert gamma.rank == 1 and gamma.static_shape[0] == 1
     __comptime_assert beta.rank == 1 and beta.static_shape[0] == 1
 
-    return coord_to_index_list(input.layout.shape)
+    return rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
 
 
 @always_inline
@@ -892,8 +885,7 @@ fn _rms_norm_warp_tiling_subkernel[
 fn rms_norm_gpu_warp_tiling_128[
     mut: Bool,
     origin: Origin[mut=mut],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     dtype: DType,
     //,
     simd_width: Int,
@@ -906,9 +898,7 @@ fn rms_norm_gpu_warp_tiling_128[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    gamma: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_rows: Int,
@@ -957,8 +947,7 @@ fn rms_norm_gpu_warp_tiling_128[
 fn rms_norm_gpu_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     dtype: DType,
     //,
     simd_width: Int,
@@ -971,9 +960,7 @@ fn rms_norm_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    gamma: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1091,8 +1078,7 @@ fn _rms_norm_gpu_block_subkernel[
 fn rms_norm_gpu_block[
     mut: Bool,
     origin: Origin[mut=mut],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     dtype: DType,
     //,
     simd_width: Int,
@@ -1105,9 +1091,7 @@ fn rms_norm_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    gamma: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1198,8 +1182,7 @@ fn rms_norm_gpu[
             comptime kernel = rms_norm_gpu_warp_tiling_128[
                 mut = gamma.mut,
                 origin = gamma.origin,
-                shape_types = gamma.shape_types,
-                stride_types = gamma.stride_types,
+                LayoutType = gamma.LayoutType,
                 simd_width,
                 warps_per_block,
                 input_fn_2d,
@@ -1220,8 +1203,7 @@ fn rms_norm_gpu[
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut = gamma.mut,
                 origin = gamma.origin,
-                shape_types = gamma.shape_types,
-                stride_types = gamma.stride_types,
+                LayoutType = gamma.LayoutType,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1244,8 +1226,7 @@ fn rms_norm_gpu[
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut = gamma.mut,
                 origin = gamma.origin,
-                shape_types = gamma.shape_types,
-                stride_types = gamma.stride_types,
+                LayoutType = gamma.LayoutType,
                 simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1265,8 +1246,7 @@ fn rms_norm_gpu[
             comptime kernel = rms_norm_gpu_block[
                 mut = gamma.mut,
                 origin = gamma.origin,
-                shape_types = gamma.shape_types,
-                stride_types = gamma.stride_types,
+                LayoutType = gamma.LayoutType,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1286,8 +1266,7 @@ fn rms_norm_gpu[
         comptime kernel = rms_norm_gpu_block[
             mut = gamma.mut,
             origin = gamma.origin,
-            shape_types = gamma.shape_types,
-            stride_types = gamma.stride_types,
+            LayoutType = gamma.LayoutType,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -1467,10 +1446,10 @@ fn _rms_norm_impl[
     __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
-    if gamma.layout.shape[0].value() != shape[rank - 1]:
+    if gamma.layout.shape[0]().value() != shape[rank - 1]:
         raise Error(
             "Gamma size "
-            + String(gamma.layout.shape[0].value())
+            + String(gamma.layout.shape[0]().value())
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
@@ -1502,12 +1481,10 @@ fn _rms_norm_impl[
 fn rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
     origin1: Origin[mut=mut1],
-    shape_types1: Variadic.TypesOfTrait[CoordLike],
-    stride_types1: Variadic.TypesOfTrait[CoordLike],
+    LayoutType1: TensorLayout,
     mut2: Bool,
     origin2: Origin[mut=mut2],
-    shape_types2: Variadic.TypesOfTrait[CoordLike],
-    stride_types2: Variadic.TypesOfTrait[CoordLike],
+    LayoutType2: TensorLayout,
     dtype: DType,
     //,
     simd_width: Int,
@@ -1526,14 +1503,10 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[
-        shape_types=shape_types1, stride_types=stride_types1, dtype, origin1
-    ],
+    gamma1: TileTensor[dtype, origin1, LayoutType1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[
-        shape_types=shape_types1, stride_types=stride_types1, dtype, origin2
-    ],
+    gamma2: TileTensor[dtype, origin2, LayoutType2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -1593,12 +1566,10 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
 fn rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
     origin1: Origin[mut=mut1],
-    shape_types1: Variadic.TypesOfTrait[CoordLike],
-    stride_types1: Variadic.TypesOfTrait[CoordLike],
+    LayoutType1: TensorLayout,
     mut2: Bool,
     origin2: Origin[mut=mut2],
-    shape_types2: Variadic.TypesOfTrait[CoordLike],
-    stride_types2: Variadic.TypesOfTrait[CoordLike],
+    LayoutType2: TensorLayout,
     dtype: DType,
     //,
     simd_width: Int,
@@ -1617,14 +1588,10 @@ fn rms_norm_fused_residual_add_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[
-        shape_types=shape_types1, stride_types=stride_types1, dtype, origin1
-    ],
+    gamma1: TileTensor[dtype, origin1, LayoutType1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[
-        shape_types=shape_types2, stride_types=stride_types2, dtype, origin2
-    ],
+    gamma2: TileTensor[dtype, origin2, LayoutType2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -1779,12 +1746,10 @@ fn rms_norm_fused_residual_add_gpu[
             comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
                 mut1 = gamma1.mut,
                 origin1 = gamma1.origin,
-                shape_types1 = gamma1.shape_types,
-                stride_types1 = gamma1.stride_types,
+                LayoutType1 = gamma1.LayoutType,
                 mut2 = gamma2.mut,
                 origin2 = gamma2.origin,
-                shape_types2 = gamma2.shape_types,
-                stride_types2 = gamma2.stride_types,
+                LayoutType2 = gamma2.LayoutType,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1813,12 +1778,10 @@ fn rms_norm_fused_residual_add_gpu[
             comptime kernel = rms_norm_fused_residual_add_gpu_block[
                 mut1 = gamma1.mut,
                 origin1 = gamma1.origin,
-                shape_types1 = gamma1.shape_types,
-                stride_types1 = gamma1.stride_types,
+                LayoutType1 = gamma1.LayoutType,
                 mut2 = gamma2.mut,
                 origin2 = gamma2.origin,
-                shape_types2 = gamma2.shape_types,
-                stride_types2 = gamma2.stride_types,
+                LayoutType2 = gamma2.LayoutType,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1850,12 +1813,10 @@ fn rms_norm_fused_residual_add_gpu[
         comptime kernel = rms_norm_fused_residual_add_gpu_block[
             mut1 = gamma1.mut,
             origin1 = gamma1.origin,
-            shape_types1 = gamma1.shape_types,
-            stride_types1 = gamma1.stride_types,
+            LayoutType1 = gamma1.LayoutType,
             mut2 = gamma2.mut,
             origin2 = gamma2.origin,
-            shape_types2 = gamma2.shape_types,
-            stride_types2 = gamma2.stride_types,
+            LayoutType2 = gamma2.LayoutType,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -2042,19 +2003,19 @@ fn _rms_norm_fused_residual_add_impl[
     __comptime_assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     # Note: we only support reduction along the last dimension
-    if gamma1.layout.shape[0].value() != shape[rank - 1]:
+    if gamma1.layout.shape[0]().value() != shape[rank - 1]:
         raise Error(
             "Gamma1 size "
-            + String(gamma1.layout.shape[0].value())
+            + String(gamma1.layout.shape[0]().value())
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
         )
 
-    if gamma2.layout.shape[0].value() != shape[rank - 1]:
+    if gamma2.layout.shape[0]().value() != shape[rank - 1]:
         raise Error(
             "Gamma2 size "
-            + String(gamma2.layout.shape[0].value())
+            + String(gamma2.layout.shape[0]().value())
             + " does not match dimension of reduction "
             + String(shape[rank - 1])
             + "."
@@ -2191,7 +2152,9 @@ fn rms_norm_shape[
 ) -> IndexList[input.rank]:
     __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
-    return coord_to_index_list(input.layout.shape)
+    return rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )
 
 
 fn group_norm_reshape[
@@ -2203,10 +2166,12 @@ fn group_norm_reshape[
     channels_per_group: Int,
     spatial: Int,
     out result: TileTensor[
-        shape_types = DynamicCoord[DType.int64, 2].element_types,
-        stride_types = DynamicCoord[DType.int64, 2].element_types,
         dtype,
         buf.origin,
+        Layout[
+            shape_types = DynamicCoord[DType.int64, 2].element_types,
+            stride_types = DynamicCoord[DType.int64, 2].element_types,
+        ],
         address_space = buf.address_space,
     ],
 ):
@@ -2229,8 +2194,7 @@ fn group_norm_reshape[
 
 fn group_norm_gpu_warp_tiling[
     origin: MutOrigin,
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     //,
     dtype: DType,
     simd_width: Int,
@@ -2240,9 +2204,7 @@ fn group_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    output: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
@@ -2306,8 +2268,7 @@ fn group_norm_gpu_warp_tiling[
 
 fn group_norm_gpu_block[
     origin: MutOrigin,
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     //,
     dtype: DType,
     simd_width: UInt,
@@ -2317,9 +2278,7 @@ fn group_norm_gpu_block[
     gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: TileTensor[
-        shape_types=shape_types, stride_types=stride_types, dtype, origin
-    ],
+    output: TileTensor[dtype, origin, LayoutType],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
@@ -2494,8 +2453,7 @@ fn group_norm_gpu[
         if num_cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = group_norm_gpu_warp_tiling[
                 origin = output_rs.origin,
-                shape_types = output_rs.shape_types,
-                stride_types = output_rs.stride_types,
+                LayoutType = output_rs.LayoutType,
                 dtype=dtype,
                 simd_width=simd_width,
                 input_fn=input_fn_2d,
@@ -2515,8 +2473,7 @@ fn group_norm_gpu[
         else:
             comptime kernel = group_norm_gpu_block[
                 origin = output_rs.origin,
-                shape_types = output_rs.shape_types,
-                stride_types = output_rs.stride_types,
+                LayoutType = output_rs.LayoutType,
                 dtype=dtype,
                 simd_width = UInt(simd_width),
                 input_fn=input_fn_2d,
@@ -2536,8 +2493,7 @@ fn group_norm_gpu[
     else:
         comptime kernel = group_norm_gpu_block[
             origin = output_rs.origin,
-            shape_types = output_rs.shape_types,
-            stride_types = output_rs.stride_types,
+            LayoutType = output_rs.LayoutType,
             dtype=dtype,
             simd_width=1,
             input_fn=input_fn_2d,
@@ -2585,7 +2541,7 @@ fn group_norm[
     ](), "group_norm only supports GPU targets at this point"
 
     if shape.canonicalize() != rebind[IndexList[rank]](
-        coord_to_index_list(output.layout.shape)
+        coord_to_index_list(output.layout.shape_coord())
     ):
         raise Error(
             "Input/output shape mismatch: input = {shape}, output ="
@@ -2640,4 +2596,6 @@ fn group_norm_shape[
     __comptime_assert beta.rank == 1, "beta must have rank 1"
     __comptime_assert gamma.rank == 1, "gamma must have rank 1"
 
-    return coord_to_index_list(input.layout.shape)
+    return rebind[IndexList[input.rank]](
+        coord_to_index_list(input.layout.shape_coord())
+    )

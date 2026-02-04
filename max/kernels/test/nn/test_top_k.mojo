@@ -16,7 +16,7 @@ from math import iota
 from random import rand, seed
 
 from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
-from layout._layout import row_major
+from layout._layout import Layout, row_major
 from layout._tile_tensor import TileTensor
 
 from nn.topk import _top_k_cpu, _top_k_sampling
@@ -37,21 +37,25 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
     fn to_tile_tensor(
         ref self,
     ) -> TileTensor[
-        shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
-        stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
         Self.dtype,
         origin_of(self.storage),
+        Layout[
+            shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
+        ],
     ]:
         return rebind[
             TileTensor[
-                shape_types = DynamicCoord[
-                    DType.int64, Self.rank
-                ].element_types,
-                stride_types = DynamicCoord[
-                    DType.int64, Self.rank
-                ].element_types,
                 Self.dtype,
                 origin_of(self.storage),
+                Layout[
+                    shape_types = DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                    stride_types = DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                ],
             ]
         ](
             TileTensor(
@@ -113,7 +117,7 @@ fn test_case_sampling[
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
     var temperature_buf = Optional(
-        TileTensor(temperature_ptr, row_major(Idx(batch_size)))
+        TileTensor(temperature_ptr, row_major(Idx(Int64(batch_size))))
         .as_any_origin()
         .as_immut()
     )
@@ -122,7 +126,7 @@ fn test_case_sampling[
     for i in range(batch_size):
         seed_ptr[i] = 12
     var seed_buf = Optional(
-        TileTensor(seed_ptr, row_major(Idx(batch_size)))
+        TileTensor(seed_ptr, row_major(Idx(Int64(batch_size))))
         .as_any_origin()
         .as_immut()
     )
@@ -201,7 +205,7 @@ def main():
     ](buf: TileTensor[mut=True, dtype, ...]):
         iota(
             buf.ptr,
-            coord_to_index_list(buf.layout.shape).flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     @parameter
@@ -210,7 +214,7 @@ def main():
     ](buf: TileTensor[mut=True, dtype, ...]):
         rand(
             buf.ptr,
-            coord_to_index_list(buf.layout.shape).flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     fn test_1d_sorted():
@@ -378,7 +382,7 @@ def main():
     @parameter
     fn ones[rank: Int, dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
         for i in range(
-            coord_to_index_list(buf.layout.shape).flattened_length()
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):
             buf.ptr[i] = 1
 

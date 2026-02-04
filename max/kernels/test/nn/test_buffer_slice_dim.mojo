@@ -22,8 +22,8 @@ from utils.index import IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
-    var shape = coord_to_index_list(tensor.layout.shape)
-    var stride = coord_to_index_list(tensor.layout.stride)
+    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var stride = coord_to_index_list(tensor.layout.stride_coord())
     print("New shape:", shape)
     print("New strides:", stride)
 
@@ -49,8 +49,8 @@ def test_slice_dim[
         row_major(Coord(dims)),
     )
 
-    var shape = coord_to_index_list(in_tensor.layout.shape)
-    var stride = coord_to_index_list(in_tensor.layout.stride)
+    var shape = coord_to_index_list(in_tensor.layout.shape_coord())
+    var stride = coord_to_index_list(in_tensor.layout.stride_coord())
     print("In shape:", shape)
     print("In strides:", stride)
 

@@ -48,7 +48,7 @@ fn fill_random_for_test[
         normalized: If True, normalize each row to sum to 1.0 (probabilities).
                    If False, use raw random values (logits).
     """
-    var shape = coord_to_index_list(buffer.layout.shape)
+    var shape = coord_to_index_list(buffer.layout.shape_coord())
     var batch_size = shape[0]
     var vocab_size = shape[1]
 
@@ -384,8 +384,8 @@ fn extract_topk_from_masked[
         topk_vals_out: Output buffer for top-K values (batch_size, K).
         topk_idxs_out: Output buffer for top-K indices (batch_size, K).
     """
-    var batch_size = masked_logits.layout.shape[0].value()
-    var N = masked_logits.layout.shape[1].value()
+    var batch_size = masked_logits.layout.shape[0]().value()
+    var N = masked_logits.layout.shape[1]().value()
 
     for b in range(batch_size):
         var values = List[Scalar[dtype]]()

@@ -254,23 +254,23 @@ fn non_max_suppression[
     __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
     __comptime_assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = boxes.layout.shape[0].value()
-    var num_boxes = boxes.layout.shape[1].value()
-    var num_classes = scores.layout.shape[1].value()
+    var batch_size = boxes.layout.shape[0]().value()
+    var num_boxes = boxes.layout.shape[1]().value()
+    var num_classes = scores.layout.shape[1]().value()
 
     debug_assert(
-        boxes.layout.shape[2].value() == 4,
+        boxes.layout.shape[2]().value() == 4,
         (
             "boxes must be specified with the 2D coords representing the"
             " diagonal corners"
         ),
     )
     debug_assert(
-        boxes.layout.shape[0].value() == scores.layout.shape[0].value(),
+        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value(),
         "dim 0 of boxes and scores must be equal",
     )
     debug_assert(
-        boxes.layout.shape[1].value() == scores.layout.shape[2].value(),
+        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value(),
         "boxes and scores must contain the same number of boxes",
     )
 

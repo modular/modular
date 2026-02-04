@@ -39,7 +39,7 @@ fn test_convtranspose_pads():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
@@ -47,14 +47,14 @@ fn test_convtranspose_pads():
         input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
+    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 7, 3, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.size()](
+    var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
@@ -111,7 +111,7 @@ fn test_convtranspose():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
@@ -119,14 +119,14 @@ fn test_convtranspose():
         input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
+    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 5, 5, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.size()](
+    var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
@@ -178,7 +178,7 @@ fn test_convtranspose_dilation():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
@@ -193,7 +193,7 @@ fn test_convtranspose_dilation():
     input.ptr[8] = 6
 
     comptime filter_layout = row_major[1, 2, 2, 1, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
+    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
@@ -203,7 +203,7 @@ fn test_convtranspose_dilation():
     filter.ptr[3] = 9
 
     comptime output_layout = row_major[1, 1, 5, 5, 1]()
-    var output_stack = InlineArray[Scalar[type], output_layout.size()](
+    var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
@@ -269,7 +269,7 @@ fn test_convtranspose_attributes():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.size()](
+    var input_stack = InlineArray[Scalar[type], input_layout.product()](
         uninitialized=True
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
@@ -277,14 +277,14 @@ fn test_convtranspose_attributes():
         input.ptr[i] = Float32(i)
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.size()](
+    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 10, 8, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.size()](
+    var output_stack = InlineArray[Scalar[type], output_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack.unsafe_ptr(), output_layout)

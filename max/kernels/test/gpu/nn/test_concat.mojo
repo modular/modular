@@ -46,19 +46,19 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     # Create host buffers
     var input_0_host_buffer = ctx.enqueue_create_host_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_1_host_buffer = ctx.enqueue_create_host_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_2_host_buffer = ctx.enqueue_create_host_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_3_host_buffer = ctx.enqueue_create_host_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var output_host_buffer = ctx.enqueue_create_host_buffer[dtype](
-        output_layout.size()
+        output_layout.product()
     )
     ctx.synchronize()
 
@@ -69,7 +69,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var input_3_host = TileTensor(input_3_host_buffer, input_layout)
 
     # Fill with arange pattern
-    for i in range(input_layout.size()):
+    for i in range(input_layout.product()):
         input_0_host_buffer[i] = i
         input_1_host_buffer[i] = i
         input_2_host_buffer[i] = i
@@ -77,19 +77,19 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     # Create device buffers
     var input_0_device_buffer = ctx.enqueue_create_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_1_device_buffer = ctx.enqueue_create_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_2_device_buffer = ctx.enqueue_create_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var input_3_device_buffer = ctx.enqueue_create_buffer[dtype](
-        input_layout.size()
+        input_layout.product()
     )
     var output_device_buffer = ctx.enqueue_create_buffer[dtype](
-        output_layout.size()
+        output_layout.product()
     )
 
     # Copy host to device
@@ -137,11 +137,9 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     comptime kernel = _concat_inner_most_single_dim[
         output_origin=MutAnyOrigin,
-        output_shape_types = output_dyn.shape_types,
-        output_stride_types = output_dyn.stride_types,
+        OutputLayoutType = output_dyn.LayoutType,
         input_origin=ImmutAnyOrigin,
-        input_shape_types = input_0_dyn.shape_types,
-        input_stride_types = input_0_dyn.stride_types,
+        InputLayoutType = input_0_dyn.LayoutType,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
@@ -163,12 +161,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel, kernel](
             output_dyn.as_any_origin(),
             StaticTuple[
-                TileTensor[
-                    shape_types = input_0_dyn.shape_types,
-                    stride_types = input_0_dyn.stride_types,
-                    dtype,
-                    ImmutAnyOrigin,
-                ],
+                TileTensor[dtype, ImmutAnyOrigin, input_0_dyn.LayoutType],
                 4,
             ](
                 input_0_dyn.as_any_origin().as_immut(),
@@ -252,12 +245,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             output_dyn.as_any_origin(),
             4,
             StaticTuple[
-                TileTensor[
-                    shape_types = input_0_dyn.shape_types,
-                    stride_types = input_0_dyn.stride_types,
-                    dtype,
-                    ImmutAnyOrigin,
-                ],
+                TileTensor[dtype, ImmutAnyOrigin, input_0_dyn.LayoutType],
                 4,
             ](
                 input_0_dyn.as_any_origin().as_immut(),

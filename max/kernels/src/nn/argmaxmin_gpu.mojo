@@ -13,7 +13,7 @@
 
 
 from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from nn.topk import topk_gpu
@@ -45,7 +45,7 @@ fn argmaxmin_gpu[
     ), "Input and output rank must be the same"
     comptime K = 1
 
-    var out_vals_shape = coord_to_index_list(input.layout.shape)
+    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
     out_vals_shape[input.rank - 1] = K
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()

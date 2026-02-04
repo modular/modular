@@ -35,7 +35,7 @@ from layout._coord import (
     ComptimeInt,
     coord_to_index_list,
 )
-from layout._layout import row_major
+from layout._layout import row_major, TensorLayout, Layout
 from layout._tile_tensor import TileTensor
 from math import ceildiv, gcd, exp
 from memory import stack_allocation
@@ -112,23 +112,13 @@ fn TopKMaskLogitsKernel[
     dtype: DType,
     out_idx_type: DType,
     logits_origin: ImmutOrigin,
-    logits_shape_types: Variadic.TypesOfTrait[CoordLike],
-    logits_stride_types: Variadic.TypesOfTrait[CoordLike],
+    LogitsLayoutType: TensorLayout,
     masked_logits_origin: MutOrigin,
-    masked_logits_shape_types: Variadic.TypesOfTrait[CoordLike],
-    masked_logits_stride_types: Variadic.TypesOfTrait[CoordLike],
+    MaskedLogitsLayoutType: TensorLayout,
 ](
-    logits: TileTensor[
-        shape_types=logits_shape_types,
-        stride_types=logits_stride_types,
-        dtype,
-        logits_origin,
-    ],
+    logits: TileTensor[dtype, logits_origin, LogitsLayoutType],
     masked_logits: TileTensor[
-        shape_types=masked_logits_shape_types,
-        stride_types=masked_logits_stride_types,
-        dtype,
-        masked_logits_origin,
+        dtype, masked_logits_origin, MaskedLogitsLayoutType
     ],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -270,11 +260,9 @@ fn topk_mask_logits[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
-    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -282,12 +270,7 @@ fn topk_mask_logits[
     masked_logits: TileTensor[mut=True, dtype, ...],
     top_k_val: Int,
     top_k_arr: Optional[
-        TileTensor[
-            shape_types=top_k_arr_shape_types,
-            stride_types=top_k_arr_stride_types,
-            out_idx_type,
-            MutExternalOrigin,
-        ]
+        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
     ] = None,
 ) raises:
     __comptime_assert logits.rank == 2, "logits rank must be 2"
@@ -295,11 +278,11 @@ fn topk_mask_logits[
         logits.rank == masked_logits.rank
     ), "logits.rank must match masked_logits.rank"
 
-    var shape = coord_to_index_list(logits.layout.shape)
+    var shape = coord_to_index_list(logits.layout.shape_coord())
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(masked_logits.layout.shape)
+    var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
     if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
         raise Error("masked_logits shape must match logits shape")
 
@@ -321,11 +304,9 @@ fn topk_mask_logits[
             dtype,
             out_idx_type,
             logits_origin = ImmutOrigin(logits.origin),
-            logits_shape_types = logits.shape_types,
-            logits_stride_types = logits.stride_types,
+            LogitsLayoutType = logits.LayoutType,
             masked_logits_origin = masked_logits.origin,
-            masked_logits_shape_types = masked_logits.shape_types,
-            masked_logits_stride_types = masked_logits.stride_types,
+            MaskedLogitsLayoutType = masked_logits.LayoutType,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),
@@ -600,29 +581,17 @@ fn _block_reduce_value_count[
 
 fn TopKSamplingFromProbKernel[
     probs_origin: ImmutOrigin,
-    probs_shape_types: Variadic.TypesOfTrait[CoordLike],
-    probs_stride_types: Variadic.TypesOfTrait[CoordLike],
+    ProbsLayoutType: TensorLayout,
     output_origin: MutOrigin,
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     block_size: Int,
     vec_size: Int,
     dtype: DType,
     out_idx_type: DType,
     deterministic: Bool,
 ](
-    probs: TileTensor[
-        shape_types=probs_shape_types,
-        stride_types=probs_stride_types,
-        dtype,
-        probs_origin,
-    ],
-    output: TileTensor[
-        shape_types=output_shape_types,
-        stride_types=output_stride_types,
-        out_idx_type,
-        output_origin,
-    ],
+    probs: TileTensor[dtype, probs_origin, ProbsLayoutType],
+    output: TileTensor[out_idx_type, output_origin, OutputLayoutType],
     indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -809,17 +778,13 @@ fn topk_sampling_from_prob[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
-    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
-    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    indices_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    indices_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    IndicesLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -830,20 +795,10 @@ fn topk_sampling_from_prob[
     rng_seed: UInt64 = 0,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[
-            shape_types=indices_shape_types,
-            stride_types=indices_stride_types,
-            out_idx_type,
-            MutExternalOrigin,
-        ]
+        TileTensor[out_idx_type, MutExternalOrigin, IndicesLayoutType]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[
-            shape_types=top_k_arr_shape_types,
-            stride_types=top_k_arr_stride_types,
-            out_idx_type,
-            MutExternalOrigin,
-        ]
+        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
     ] = None,
 ) raises:
     """Top-K sampling from probability distribution.
@@ -870,11 +825,11 @@ fn topk_sampling_from_prob[
     __comptime_assert probs.rank == 2, "probs rank must be 2"
     __comptime_assert output.rank == 1, "output rank must be 1"
 
-    var shape = coord_to_index_list(probs.layout.shape)
+    var shape = coord_to_index_list(probs.layout.shape_coord())
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(output.layout.shape)
+    var out_shape = coord_to_index_list(output.layout.shape_coord())
     if out_shape[0] != batch_size:
         raise Error("output batch size must match probs batch size")
 
@@ -897,11 +852,9 @@ fn topk_sampling_from_prob[
     fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
         comptime kernel = TopKSamplingFromProbKernel[
             ImmutOrigin(probs.origin),
-            probs.shape_types,
-            probs.stride_types,
+            probs.LayoutType,
             output.origin,
-            output.shape_types,
-            output.stride_types,
+            output.LayoutType,
             block_size,
             vec_size,
             dtype,
@@ -943,23 +896,13 @@ fn TopKSoftmaxSampleKernel[
     dtype: DType,
     out_idx_type: DType,
     logits_origin: ImmutOrigin,
-    logits_shape_types: Variadic.TypesOfTrait[CoordLike],
-    logits_stride_types: Variadic.TypesOfTrait[CoordLike],
+    LogitsLayoutType: TensorLayout,
     sampled_origin: MutOrigin,
-    sampled_shape_types: Variadic.TypesOfTrait[CoordLike],
-    sampled_stride_types: Variadic.TypesOfTrait[CoordLike],
+    SampledLayoutType: TensorLayout,
 ](
-    logits: TileTensor[
-        shape_types=logits_shape_types,
-        stride_types=logits_stride_types,
-        dtype,
-        logits_origin,
-    ],
+    logits: TileTensor[dtype, logits_origin, LogitsLayoutType],
     sampled_indices: TileTensor[
-        shape_types=sampled_shape_types,
-        stride_types=sampled_stride_types,
-        out_idx_type,
-        sampled_origin,
+        out_idx_type, sampled_origin, SampledLayoutType
     ],
     top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
     top_k_val: Int,
@@ -1156,23 +1099,17 @@ fn topk_softmax_sample[
     dtype: DType,
     out_idx_type: DType,
     block_size: Int = 1024,
-    top_k_arr_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
-    top_k_arr_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    TemperatureLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
-    temperature_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    temperature_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
-    ],
-    seed_shape_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        RuntimeInt[DType.int64]
-    ],
-    seed_stride_types: Variadic.TypesOfTrait[CoordLike] = Variadic.types[
-        ComptimeInt[1]
+    SeedLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
     ],
 ](
     ctx: DeviceContext,
@@ -1184,28 +1121,13 @@ fn topk_softmax_sample[
     temperature_val: Float32 = 1.0,
     seed_val: UInt64 = 0,
     top_k_arr: Optional[
-        TileTensor[
-            shape_types=top_k_arr_shape_types,
-            stride_types=top_k_arr_stride_types,
-            out_idx_type,
-            MutExternalOrigin,
-        ]
+        TileTensor[out_idx_type, MutExternalOrigin, TopKArrLayoutType]
     ] = None,
     temperature: Optional[
-        TileTensor[
-            shape_types=temperature_shape_types,
-            stride_types=temperature_stride_types,
-            DType.float32,
-            MutExternalOrigin,
-        ]
+        TileTensor[DType.float32, MutExternalOrigin, TemperatureLayoutType]
     ] = None,
     seed: Optional[
-        TileTensor[
-            shape_types=seed_shape_types,
-            stride_types=seed_stride_types,
-            DType.uint64,
-            MutExternalOrigin,
-        ]
+        TileTensor[DType.uint64, MutExternalOrigin, SeedLayoutType]
     ] = None,
 ) raises:
     """Samples token indices from top-K logits using softmax probabilities.
@@ -1219,12 +1141,9 @@ fn topk_softmax_sample[
         dtype: The data type of the input logits tensor.
         out_idx_type: The data type of the output sampled indices.
         block_size: The number of threads per block (default is 1024).
-        top_k_arr_shape_types: The shape types of the optional top_k_arr tensor.
-        top_k_arr_stride_types: The stride types of the optional top_k_arr tensor.
-        temperature_shape_types: The shape types of the optional temperature tensor.
-        temperature_stride_types: The stride types of the optional temperature tensor.
-        seed_shape_types: The shape types of the optional seed tensor.
-        seed_stride_types: The stride types of the optional seed tensor.
+        TopKArrLayoutType: The layout type of the optional top_k_arr tensor.
+        TemperatureLayoutType: The layout type of the optional temperature tensor.
+        SeedLayoutType: The layout type of the optional seed tensor.
 
     Args:
         ctx: DeviceContext
@@ -1254,11 +1173,11 @@ fn topk_softmax_sample[
         sampled_indices.rank == 1
     ), "sampled_indices rank must be 1"
 
-    var shape = coord_to_index_list(logits.layout.shape)
+    var shape = coord_to_index_list(logits.layout.shape_coord())
     var batch_size = shape[0]
     var d = shape[1]
 
-    var out_shape = coord_to_index_list(sampled_indices.layout.shape)
+    var out_shape = coord_to_index_list(sampled_indices.layout.shape_coord())
     if shape[0] != out_shape[0]:
         raise Error("sampled_indices shape must be [batch_size]")
 
@@ -1293,11 +1212,9 @@ fn topk_softmax_sample[
             dtype,
             out_idx_type,
             logits_origin = ImmutOrigin(logits.origin),
-            logits_shape_types = logits.shape_types,
-            logits_stride_types = logits.stride_types,
+            LogitsLayoutType = logits.LayoutType,
             sampled_origin = sampled_indices.origin,
-            sampled_shape_types = sampled_indices.shape_types,
-            sampled_stride_types = sampled_indices.stride_types,
+            SampledLayoutType = sampled_indices.LayoutType,
         ]
         ctx.enqueue_function[kernel, kernel](
             logits.as_immut(),

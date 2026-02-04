@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._coord import Coord, DynamicCoord, Idx
-from layout._layout import Layout
+from layout._layout import Layout, TensorLayout
 from layout._tile_tensor import TileTensor
 from register import register_internal
 
@@ -31,10 +31,12 @@ fn reshape[
     input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
-    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
     input.origin,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+        stride_types = DynamicCoord[DType.int64, output_rank].element_types,
+    ],
     address_space = input.address_space,
 ]:
     var stride_tuple = type_of(new_shape)()
@@ -64,10 +66,12 @@ fn layout_tensor_reshape[
     input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, output_rank].element_types,
-    stride_types = DynamicCoord[DType.int64, output_rank].element_types,
     dtype,
     input.origin,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, output_rank].element_types,
+        stride_types = DynamicCoord[DType.int64, output_rank].element_types,
+    ],
     address_space = input.address_space,
 ]:
     return reshape[

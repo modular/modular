@@ -462,8 +462,8 @@ fn matmul_dynamic_scaled_fp8[
     )
     var c_buf = NDBuffer[c_type, 2, _, c_shape, c_stride](
         c.ptr,
-        rebind[IndexList[2]](coord_to_index_list(c.layout.shape)),
-        rebind[IndexList[2]](coord_to_index_list(c.layout.stride)),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.shape_coord())),
+        rebind[IndexList[2]](coord_to_index_list(c.layout.stride_coord())),
     )
     comptime a_shape = DimList(dim[a.static_shape[0]], dim[a.static_shape[1]])
     comptime a_stride = DimList(
@@ -471,8 +471,8 @@ fn matmul_dynamic_scaled_fp8[
     )
     var a_buf = NDBuffer[a_type, 2, _, a_shape, a_stride](
         a.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a.layout.shape)),
-        rebind[IndexList[2]](coord_to_index_list(a.layout.stride)),
+        rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
+        rebind[IndexList[2]](coord_to_index_list(a.layout.stride_coord())),
     )
     comptime b_shape = DimList(dim[b.static_shape[0]], dim[b.static_shape[1]])
     comptime b_stride = DimList(
@@ -480,8 +480,8 @@ fn matmul_dynamic_scaled_fp8[
     )
     var b_buf = NDBuffer[b_type, 2, _, b_shape, b_stride](
         b.ptr,
-        rebind[IndexList[2]](coord_to_index_list(b.layout.shape)),
-        rebind[IndexList[2]](coord_to_index_list(b.layout.stride)),
+        rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
+        rebind[IndexList[2]](coord_to_index_list(b.layout.stride_coord())),
     )
     comptime a_scales_shape = DimList(
         dim[a_scales.static_shape[0]], dim[a_scales.static_shape[1]]
@@ -493,8 +493,12 @@ fn matmul_dynamic_scaled_fp8[
         a_scales_type, 2, _, a_scales_shape, a_scales_stride
     ](
         a_scales.ptr,
-        rebind[IndexList[2]](coord_to_index_list(a_scales.layout.shape)),
-        rebind[IndexList[2]](coord_to_index_list(a_scales.layout.stride)),
+        rebind[IndexList[2]](
+            coord_to_index_list(a_scales.layout.shape_coord())
+        ),
+        rebind[IndexList[2]](
+            coord_to_index_list(a_scales.layout.stride_coord())
+        ),
     )
     comptime b_scales_shape = DimList(
         dim[b_scales.static_shape[0]], dim[b_scales.static_shape[1]]
@@ -506,8 +510,12 @@ fn matmul_dynamic_scaled_fp8[
         b_scales_type, 2, _, b_scales_shape, b_scales_stride
     ](
         b_scales.ptr,
-        rebind[IndexList[2]](coord_to_index_list(b_scales.layout.shape)),
-        rebind[IndexList[2]](coord_to_index_list(b_scales.layout.stride)),
+        rebind[IndexList[2]](
+            coord_to_index_list(b_scales.layout.shape_coord())
+        ),
+        rebind[IndexList[2]](
+            coord_to_index_list(b_scales.layout.stride_coord())
+        ),
     )
 
     matmul_dynamic_scaled_fp8[

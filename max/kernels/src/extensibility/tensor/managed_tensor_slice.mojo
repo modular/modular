@@ -29,6 +29,7 @@ from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from layout._coord import Coord, _DimsToCoordLike
+from layout._layout import Layout as TileLayout
 from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
@@ -1357,12 +1358,16 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            shape_types = _DimsToCoordLike[coord_dtype, Self.static_spec.shape],
-            stride_types = _DimsToCoordLike[
-                coord_dtype, Self.static_spec.strides
-            ],
             dtype = Self.dtype,
             origin=MutExternalOrigin,
+            LayoutType = TileLayout[
+                shape_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.shape
+                ],
+                stride_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.strides
+                ],
+            ],
         ],
     ):
         var shape_tuple = Coord[

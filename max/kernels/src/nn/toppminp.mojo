@@ -15,7 +15,7 @@
 from math import iota
 
 from random import random_float64
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
@@ -110,7 +110,7 @@ fn _topp_minp_sampling[
         out_token_ids.rank == 2
     ), "Only rank 2 tensors are supported"
     __comptime_assert p_thresholds.rank == 1
-    var input_shape = coord_to_index_list(input_logits.layout.shape)
+    var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -152,7 +152,7 @@ fn _topp_minp_sampling[
 
     @parameter
     for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i].value()
+        shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,

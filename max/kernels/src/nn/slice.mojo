@@ -49,14 +49,16 @@ fn slice_dim_as_view[
 ](
     tensor: TileTensor[dtype, ...], start: Int, end: Int, step: Int
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
     tensor.origin,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    ],
     address_space = tensor.address_space,
 ]:
-    var new_shape = coord_to_index_list(tensor.layout.shape)
-    var new_stride = coord_to_index_list(tensor.layout.stride)
+    var new_shape = coord_to_index_list(tensor.layout.shape_coord())
+    var new_stride = coord_to_index_list(tensor.layout.stride_coord())
 
     var dim_i = Int(tensor.dim(dim))
     var old_stride = Int(tensor.dynamic_stride(dim))
@@ -83,8 +85,8 @@ fn slice_dim_as_view[
     return {
         new_data,
         Layout(
-            Coord(new_shape),
-            Coord(rebind[type_of(new_shape)](new_stride)),
+            Coord(rebind[IndexList[tensor.rank]](new_shape)),
+            Coord(rebind[IndexList[tensor.rank]](new_stride)),
         ),
     }
 
@@ -106,10 +108,12 @@ fn slice_as_view[
     ends: TileTensor[end_type, ...],
     steps: TileTensor[step_type, ...],
 ) -> TileTensor[
-    shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
-    stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     dtype,
     tensor.origin,
+    Layout[
+        shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+        stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
+    ],
     address_space = tensor.address_space,
 ]:
     __comptime_assert starts.rank == 1
@@ -181,14 +185,14 @@ fn copy_to_slice[
     )
 
     if expected_shape != rebind[IndexList[buffer.rank]](
-        coord_to_index_list(in_slice.layout.shape)
+        coord_to_index_list(in_slice.layout.shape_coord())
     ):
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
             " operand to have shape: ",
             expected_shape,
             " but got: ",
-            coord_to_index_list(in_slice.layout.shape),
+            coord_to_index_list(in_slice.layout.shape_coord()),
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
@@ -207,7 +211,7 @@ fn copy_to_slice[
         )
 
     elementwise[copy, 1, target=target](
-        coord_to_index_list(buffer_slice_view.layout.shape),
+        coord_to_index_list(buffer_slice_view.layout.shape_coord()),
         context,
     )
 
@@ -247,7 +251,7 @@ fn slice_as_copy[
         )
 
     # Invoke copy.
-    elementwise[copy, 1](coord_to_index_list(output.layout.shape))
+    elementwise[copy, 1](coord_to_index_list(output.layout.shape_coord()))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -372,7 +376,7 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            coord_to_index_list(c.layout.shape),
+            coord_to_index_list(c.layout.shape_coord()),
             ctx.value(),
         )
     else:
@@ -380,5 +384,5 @@ fn sliced_add[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[_sliced_add, simd_width, target=target](
-            coord_to_index_list(c.layout.shape)
+            coord_to_index_list(c.layout.shape_coord())
         )

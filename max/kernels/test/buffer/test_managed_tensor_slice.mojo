@@ -225,8 +225,8 @@ def test_to_tile_tensor():
     assert_equal(tile_tensor[2, 3], 11.0)
 
     # Verify dimensions
-    assert_equal(tile_tensor.layout.shape[0].value(), 3)
-    assert_equal(tile_tensor.layout.shape[1].value(), 4)
+    assert_equal(tile_tensor.layout.shape[0]().value(), 3)
+    assert_equal(tile_tensor.layout.shape[1]().value(), 4)
 
 
 def main():

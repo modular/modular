@@ -13,7 +13,7 @@
 
 
 from layout._coord import Coord, CoordLike, Idx
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from nn.concat import _concat_parallel, _concat_serial, concat
 
@@ -21,36 +21,18 @@ from utils import Index, IndexList, StaticTuple
 
 
 fn _tuple_to_list[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    LayoutType: TensorLayout,
     //,
     dtype: DType,
 ](
     elems: StaticTuple[
-        TileTensor[
-            shape_types=shape_types,
-            stride_types=stride_types,
-            dtype,
-            ImmutAnyOrigin,
-        ],
+        TileTensor[dtype, ImmutAnyOrigin, LayoutType],
         ...,
     ]
-) -> List[
-    TileTensor[
-        shape_types=shape_types,
-        stride_types=stride_types,
-        dtype,
-        ImmutAnyOrigin,
-    ]
-]:
-    var output = List[
-        TileTensor[
-            shape_types=shape_types,
-            stride_types=stride_types,
-            dtype,
-            ImmutAnyOrigin,
-        ]
-    ](capacity=len(elems))
+) -> List[TileTensor[dtype, ImmutAnyOrigin, LayoutType]]:
+    var output = List[TileTensor[dtype, ImmutAnyOrigin, LayoutType]](
+        capacity=len(elems)
+    )
     for i in range(len(elems)):
         output.append(elems[i].as_immut())
     return output^
@@ -66,27 +48,22 @@ def test_concat():
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.size()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.size()](uninitialized=True)
+    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
+    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
     var x1_dyn = x1.make_dynamic[DType.int64]()
 
     var input_tuple = StaticTuple[
-        TileTensor[
-            shape_types = x1_dyn.shape_types,
-            stride_types = x1_dyn.stride_types,
-            dtype,
-            ImmutAnyOrigin,
-        ],
+        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),
@@ -124,7 +101,7 @@ def test_concat():
         output.ptr,
         row_major(Coord(Idx(output.numel()))),
     )
-    for i in range(output.layout.shape.static_product):
+    for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 
@@ -138,9 +115,9 @@ def test_concat_parallel():
     comptime l1 = row_major[2, 2, 1, 2]()
     comptime l2 = row_major[2, 2, 2, 2]()
     comptime l3 = row_major[2, 2, 3, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.size()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.size()](uninitialized=True)
+    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -150,18 +127,13 @@ def test_concat_parallel():
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[2, 2, 6, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
+    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     var input_tuple = StaticTuple[
-        TileTensor[
-            shape_types = x1_dyn.shape_types,
-            stride_types = x1_dyn.stride_types,
-            dtype,
-            ImmutAnyOrigin,
-        ],
+        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),
@@ -200,7 +172,7 @@ def test_concat_parallel():
         output.ptr,
         row_major(Coord(Idx(output.numel()))),
     )
-    for i in range(output.layout.shape.static_product):
+    for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 
@@ -215,9 +187,9 @@ def test_concat_inner():
     comptime l1 = row_major[1, 1, 1, 2, 2]()
     comptime l2 = row_major[1, 1, 2, 2, 2]()
     comptime l3 = row_major[1, 1, 3, 2, 2]()
-    var x1_stack = InlineArray[Scalar[dtype], l1.size()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.size()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.size()](uninitialized=True)
+    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
     var x1 = TileTensor(x1_stack, l1).fill(0)
     var x2 = TileTensor(x2_stack, l2).fill(1)
     var x3 = TileTensor(x3_stack, l3).fill(2)
@@ -227,18 +199,13 @@ def test_concat_inner():
     var x3_dyn = x3.make_dynamic[DType.int64]()
 
     comptime out_layout = row_major[1, 1, 6, 2, 2]()
-    var out_stack = InlineArray[Scalar[dtype], out_layout.size()](
+    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     var input_tuple = StaticTuple[
-        TileTensor[
-            shape_types = x1_dyn.shape_types,
-            stride_types = x1_dyn.stride_types,
-            dtype,
-            ImmutAnyOrigin,
-        ],
+        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),
@@ -271,7 +238,7 @@ def test_concat_inner():
         output.ptr,
         row_major(Coord(Idx(output.numel()))),
     )
-    for i in range(output.layout.shape.static_product):
+    for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 

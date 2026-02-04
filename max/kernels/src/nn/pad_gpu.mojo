@@ -13,8 +13,8 @@
 
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import Layout
+from layout._coord import Coord, Idx
+from layout._layout import TensorLayout, Layout
 from layout._tile_tensor import TileTensor
 from math import ceildiv
 from sys.info import align_of
@@ -110,26 +110,14 @@ fn vector_copy_row[
 
 fn padded_copy_kernel[
     input_origin: ImmutOrigin,
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
     output_origin: MutOrigin,
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     dtype: DType,
     simd_width: Int,
 ](
-    input_tensor: TileTensor[
-        shape_types=input_shape_types,
-        stride_types=input_stride_types,
-        dtype,
-        input_origin,
-    ],
-    output_tensor: TileTensor[
-        shape_types=output_shape_types,
-        stride_types=output_stride_types,
-        dtype,
-        output_origin,
-    ],
+    input_tensor: TileTensor[dtype, input_origin, InputLayoutType],
+    output_tensor: TileTensor[dtype, output_origin, OutputLayoutType],
     rows_per_sm: Int,
     total_rows: Int,
     row_length: Int,
@@ -195,11 +183,9 @@ fn _pad_constant_impl[
     comptime block_rows = max_threads // threads_per_row
     comptime kernel = padded_copy_kernel[
         input_origin = ImmutOrigin(input_tensor.origin),
-        input_shape_types = input_tensor.shape_types,
-        input_stride_types = input_tensor.stride_types,
+        InputLayoutType = input_tensor.LayoutType,
         output_origin = output_tensor.origin,
-        output_shape_types = output_tensor.shape_types,
-        output_stride_types = output_tensor.stride_types,
+        OutputLayoutType = output_tensor.LayoutType,
         dtype=dtype,
         simd_width=simd_width,
     ]

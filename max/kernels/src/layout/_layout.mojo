@@ -39,10 +39,77 @@ from .int_tuple import IntTuple
 from .layout import Layout as LegacyLayout
 
 
+trait TensorLayout(TrivialRegisterType):
+    comptime rank: Int
+    comptime shape_known: Bool
+    comptime stride_known: Bool
+    comptime all_dims_known: Bool = Self.shape_known and Self.stride_known
+    comptime static_shape[i: Int]: Int
+    comptime static_stride[i: Int]: Int
+    comptime _shape_types: Variadic.TypesOfTrait[CoordLike]
+    comptime _stride_types: Variadic.TypesOfTrait[CoordLike]
+
+    fn shape[i: Int](self) -> Self._shape_types[i]:
+        ...
+
+    fn stride[i: Int](self) -> Self._stride_types[i]:
+        ...
+
+    fn product(self) -> Int:
+        ...
+
+    fn __call__[
+        index_type: CoordLike,
+        *,
+        linear_idx_type: DType = DType.int64,
+    ](self, index: index_type) -> Scalar[linear_idx_type]:
+        """Maps a logical coordinate to a linear memory index.
+
+        Args:
+            index: An IntTuple representing the logical coordinates to map.
+
+        Returns:
+            The linear memory index corresponding to the given coordinates.
+        """
+        ...
+
+    fn idx2crd[
+        *,
+        out_dtype: DType = DType.int64,
+    ](self, idx: Int) -> DynamicCoord[out_dtype, Self.rank]:
+        """Maps a linear memory index back to logical coordinates.
+
+        This is the inverse of `__call__` (crd2idx). Given a linear index,
+        it computes the corresponding multi-dimensional coordinates.
+
+        Parameters:
+            out_dtype: The data type for the output coordinate values.
+
+        Args:
+            idx: The linear memory index to convert to coordinates.
+
+        Returns:
+            A Coord containing the logical coordinates corresponding to the linear index.
+
+        Examples:
+            For a layout with shape (3, 4) and row-major strides:
+            - layout.idx2crd(0) returns (0, 0).
+            - layout.idx2crd(5) returns (1, 1).
+            - layout.idx2crd(11) returns (2, 3).
+        """
+        ...
+
+    fn shape_coord(self) -> Coord[*Self._shape_types]:
+        ...
+
+    fn stride_coord(self) -> Coord[*Self._stride_types]:
+        ...
+
+
 struct Layout[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
-](ImplicitlyCopyable, TrivialRegisterType):
+](ImplicitlyCopyable, TensorLayout, TrivialRegisterType):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -54,16 +121,20 @@ struct Layout[
         stride_types: The types for the stride dimensions.
     """
 
-    var shape: Coord[*Self.shape_types]
+    var _shape: Coord[*Self.shape_types]
     """The shape of the layout as a Coord."""
 
-    var stride: Coord[*Self.stride_types]
+    var _stride: Coord[*Self.stride_types]
     """The stride of the layout as a Coord."""
 
     comptime rank = Variadic.size(Self.shape_types)
-    comptime all_dims_known = Coord[*Self.shape_types].all_dims_known and Coord[
-        *Self.stride_types
-    ].all_dims_known
+    comptime shape_known = Coord[*Self.shape_types].all_dims_known
+    comptime stride_known = Coord[*Self.stride_types].all_dims_known
+    comptime static_shape[i: Int]: Int = Self.shape_types[i].static_value
+    comptime static_stride[i: Int]: Int = Self.stride_types[i].static_value
+    comptime _shape_types: Variadic.TypesOfTrait[CoordLike] = Self.shape_types
+    comptime _stride_types: Variadic.TypesOfTrait[CoordLike] = Self.stride_types
+
     comptime static_product = Coord[*Self.shape_types].static_product
 
     fn __init__(
@@ -88,8 +159,8 @@ struct Layout[
             " stride length: ",
             type_of(stride).__len__(),
         )
-        self.shape = shape
-        self.stride = stride
+        self._shape = shape
+        self._stride = stride
 
     fn __call__[
         index_type: CoordLike,
@@ -104,7 +175,9 @@ struct Layout[
         Returns:
             The linear memory index corresponding to the given coordinates.
         """
-        return crd2idx[out_type=linear_idx_type](index, self.shape, self.stride)
+        return crd2idx[out_type=linear_idx_type](
+            index, self._shape, self._stride
+        )
 
     fn idx2crd[
         *,
@@ -133,10 +206,10 @@ struct Layout[
         comptime Shape = Coord[*Self.shape_types]
         comptime Stride = Coord[*Self.stride_types]
         return rebind[DynamicCoord[out_dtype, Self.rank]](
-            idx2crd[Shape, Stride, out_dtype](idx, self.shape, self.stride)
+            idx2crd[Shape, Stride, out_dtype](idx, self._shape, self._stride)
         )
 
-    fn size(self) -> Int:
+    fn product(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
         For a layout with shape (m, n), this returns m * n, representing
@@ -145,7 +218,7 @@ struct Layout[
         Returns:
             The total number of elements in the layout.
         """
-        return self.shape.product()
+        return self._shape.product()
 
     fn cosize[
         linear_idx_type: DType = DType.int64
@@ -158,12 +231,14 @@ struct Layout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return self[linear_idx_type=linear_idx_type](Idx(self.size() - 1)) + 1
+        return (
+            self[linear_idx_type=linear_idx_type](Idx(self.product() - 1)) + 1
+        )
 
     fn to_layout(self) -> LegacyLayout:
         return LegacyLayout(
-            coord_to_int_tuple(self.shape),
-            coord_to_int_tuple(self.stride),
+            coord_to_int_tuple(self._shape),
+            coord_to_int_tuple(self._stride),
         )
 
     @always_inline("nodebug")
@@ -191,9 +266,21 @@ struct Layout[
             ```
         """
         return Layout(
-            self.shape.make_dynamic[dtype](),
-            self.stride.make_dynamic[dtype](),
+            self._shape.make_dynamic[dtype](),
+            self._stride.make_dynamic[dtype](),
         )
+
+    fn shape[i: Int](self) -> Self._shape_types[i]:
+        return self._shape[i]
+
+    fn stride[i: Int](self) -> Self._stride_types[i]:
+        return self._stride[i]
+
+    fn shape_coord(self) -> Coord[*Self._shape_types]:
+        return self._shape
+
+    fn stride_coord(self) -> Coord[*Self._stride_types]:
+        return self._stride
 
 
 comptime _RowMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[

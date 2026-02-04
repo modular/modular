@@ -33,10 +33,9 @@ from layout.layout_tensor import (
 )
 
 from layout._tile_tensor import TileTensor, stack_allocation
-from layout._layout import row_major
+from layout._layout import TensorLayout, row_major
 from layout._coord import (
     Coord,
-    CoordLike,
     coord,
     Idx,
     ComptimeInt,
@@ -52,14 +51,11 @@ fn is_benchmark() -> Bool:
 
 fn gemm_kernel[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[CoordLike],
-    c_stride_types: Variadic.TypesOfTrait[CoordLike],
+    CLayoutType: TensorLayout,
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[CoordLike],
-    a_stride_types: Variadic.TypesOfTrait[CoordLike],
+    ALayoutType: TensorLayout,
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[CoordLike],
-    b_stride_types: Variadic.TypesOfTrait[CoordLike],
+    BLayoutType: TensorLayout,
     NUM_THREADS: Int,
     BM: Int where BM > -1,
     BN: Int where BN > -1,
@@ -69,24 +65,9 @@ fn gemm_kernel[
     TM: Int where TM > -1,
     TN: Int where TN > -1,
 ](
-    mat_c: TileTensor[
-        shape_types=c_shape_types,
-        stride_types=c_stride_types,
-        c_dtype,
-        MutExternalOrigin,
-    ],
-    mat_a: TileTensor[
-        shape_types=a_shape_types,
-        stride_types=a_stride_types,
-        a_dtype,
-        MutExternalOrigin,
-    ],
-    mat_b: TileTensor[
-        shape_types=b_shape_types,
-        stride_types=b_stride_types,
-        b_dtype,
-        MutExternalOrigin,
-    ],
+    mat_c: TileTensor[c_dtype, MutExternalOrigin, CLayoutType],
+    mat_a: TileTensor[a_dtype, MutExternalOrigin, ALayoutType],
+    mat_b: TileTensor[b_dtype, MutExternalOrigin, BLayoutType],
 ) where (
     mat_a.rank == 2
     and mat_b.rank == 2
@@ -217,14 +198,11 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     comptime kernel = gemm_kernel[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         NUM_THREADS,
         BM,
         BN,
@@ -251,14 +229,11 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         BLOCK_DIM,
     ]
 
@@ -370,14 +345,11 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     comptime kernel = gemm_kernel[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         NUM_THREADS,
         BM,
         BN,
@@ -404,14 +376,11 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
-        mat_c.shape_types,
-        mat_c.stride_types,
+        mat_c.LayoutType,
         DType.float32,
-        mat_a.shape_types,
-        mat_a.stride_types,
+        mat_a.LayoutType,
         DType.float32,
-        mat_b.shape_types,
-        mat_b.stride_types,
+        mat_b.LayoutType,
         BLOCK_DIM,
     ]
 
@@ -529,36 +498,18 @@ def main():
 
 fn matmul_kernel_naive[
     c_dtype: DType,
-    c_shape_types: Variadic.TypesOfTrait[CoordLike],
-    c_stride_types: Variadic.TypesOfTrait[CoordLike],
+    CLayoutType: TensorLayout,
     a_dtype: DType,
-    a_shape_types: Variadic.TypesOfTrait[CoordLike],
-    a_stride_types: Variadic.TypesOfTrait[CoordLike],
+    ALayoutType: TensorLayout,
     b_dtype: DType,
-    b_shape_types: Variadic.TypesOfTrait[CoordLike],
-    b_stride_types: Variadic.TypesOfTrait[CoordLike],
+    BLayoutType: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
     s_type: DType = get_accum_type[c_dtype](),
 ](
-    c: TileTensor[
-        shape_types=c_shape_types,
-        stride_types=c_stride_types,
-        c_dtype,
-        MutExternalOrigin,
-    ],
-    a: TileTensor[
-        shape_types=a_shape_types,
-        stride_types=a_stride_types,
-        a_dtype,
-        MutExternalOrigin,
-    ],
-    b: TileTensor[
-        shape_types=b_shape_types,
-        stride_types=b_stride_types,
-        b_dtype,
-        MutExternalOrigin,
-    ],
+    c: TileTensor[c_dtype, MutExternalOrigin, CLayoutType],
+    a: TileTensor[a_dtype, MutExternalOrigin, ALayoutType],
+    b: TileTensor[b_dtype, MutExternalOrigin, BLayoutType],
     m: Int,
     n: Int,
     k: Int,
@@ -588,19 +539,11 @@ fn matmul_kernel_naive[
 
 
 @always_inline
-fn outer_product_acc[
-    M: Int, N: Int
-](
-    res: TileTensor[
-        mut=True,
-        shape_types = Variadic.types[
-            T=CoordLike, ComptimeInt[M], ComptimeInt[N]
-        ],
-        ...,
-    ],
+fn outer_product_acc(
+    res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,
-) where (lhs.rank == 1 and rhs.rank == 1):
+) where lhs.rank == 1 and rhs.rank == 1:
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
@@ -621,15 +564,17 @@ fn outer_product_acc[
 
     __comptime_assert lhs.element_size == res.element_size
     __comptime_assert lhs.element_size == rhs.element_size
+    __comptime_assert res.rank == 2
 
     comptime dtype = res.dtype
+    comptime M = res.static_shape[0]
+    comptime N = res.static_shape[1]
 
     @parameter
     for i in range(M):
 
         @parameter
         for j in range(N):
-            var idx = coord[i, j]()
-            res[idx] += rebind[res.ElementType](
+            res[i, j] += rebind[res.ElementType](
                 (lhs[(Idx[i](),)]).cast[dtype]()
             ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())
