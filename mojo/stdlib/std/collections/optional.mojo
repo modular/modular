@@ -39,6 +39,7 @@ from utils import Variant
 from builtin.constrained import _constrained_conforms_to
 from builtin.device_passable import DevicePassable
 from compile import get_type_name
+from format._utils import FormatStruct
 
 
 # TODO(27780): NoneType can't currently conform to traits
@@ -467,13 +468,10 @@ struct Optional[T: Movable](
         else:
             writer.write("None")
 
-    fn write_repr_to[
-        U: Representable & Copyable & Movable, //
-    ](self: Optional[U], mut writer: Some[Writer]):
-        writer.write("Optional(")
-        self.write_to(writer)
-        writer.write(")")
-
+    
+        fn write_repr_to(self: Self, mut writer: Some[Writer]):
+        FormatStruct(writer, "Optional").fields(self)
+        
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
