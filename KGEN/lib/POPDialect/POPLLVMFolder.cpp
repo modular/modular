@@ -33,8 +33,8 @@ static llvm::Type *convertDTypeToLLVM(KGENDType dtype,
     return llvm::Type::getDoubleTy(llvmCtx);
   case KGENDType::index:
   case KGENDType::uindex:
-    if (auto indexBitWidth = target.getIndexBitWidth())
-      return llvm::IntegerType::get(llvmCtx, *indexBitWidth);
+    if (target)
+      return llvm::IntegerType::get(llvmCtx, target.resolveIndexBitWidth());
     return {};
   default:
     return {};
@@ -83,8 +83,6 @@ static llvm::Constant *convertAttrToLLVM(TypedAttr attr,
   // Convert SIMD values.
   if (auto simdAttr = dyn_cast<SIMDAttr>(attr)) {
     SmallVector<llvm::Constant *> elts;
-    std::optional<int64_t> indexBitWidth =
-        target ? target.getIndexBitWidth() : std::nullopt;
     for (auto elt : simdAttr.getValues()) {
       llvm::Constant *value = nullptr;
       if (elt.getDType().isBool())
@@ -93,12 +91,14 @@ static llvm::Constant *convertAttrToLLVM(TypedAttr attr,
         value = llvm::ConstantInt::get(llvmCtx, elt.getIntVal());
       else if (elt.getDType().isFloat())
         value = llvm::ConstantFP::get(llvmCtx, elt.getFloatVal());
-      else if (elt.getDType().isUIndex() && indexBitWidth) {
+      else if (elt.getDType().isUIndex() && target) {
         value = llvm::ConstantInt::get(
-            llvmCtx, elt.getIntVal().zextOrTrunc(*indexBitWidth));
-      } else if (elt.getDType().isIndex() && indexBitWidth) {
+            llvmCtx,
+            elt.getIntVal().zextOrTrunc(target.resolveIndexBitWidth()));
+      } else if (elt.getDType().isIndex() && target) {
         value = llvm::ConstantInt::get(
-            llvmCtx, elt.getIntVal().sextOrTrunc(*indexBitWidth));
+            llvmCtx,
+            elt.getIntVal().sextOrTrunc(target.resolveIndexBitWidth()));
       }
 
       if (!value)
