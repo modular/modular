@@ -10,12 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build a Llama3 model that uses continuous or paged kv-caching"""
+"""Build a Qwen3 model that uses continuous or paged kv-caching"""
 
 from __future__ import annotations
 
 import functools
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from max.pipelines.architectures.qwen3vl_moe.nn.moe import Qwen3VLMoE
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
@@ -106,6 +110,45 @@ class Qwen3(Transformer):
                 has_bias=config.attention_bias,
             )
 
+        def get_mlp(layer_idx: int) -> MLP | StackedMLP | Qwen3VLMoE:
+            """Returns either an MLP or MoE layer based on config and layer index.
+
+            For MoE models (num_experts > 0), uses MoE layers at positions determined
+            by decoder_sparse_step, unless the layer is in mlp_only_layers.
+            For dense models (num_experts == 0), always uses MLP.
+            """
+            use_moe = (
+                config.num_experts > 0
+                and layer_idx not in config.mlp_only_layers
+                and (layer_idx + 1) % config.decoder_sparse_step == 0
+            )
+
+            if use_moe:
+                # Lazy import to avoid circular dependency with qwen3vl_moe
+                from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
+                    Qwen3VLMoE,
+                )
+
+                return Qwen3VLMoE(
+                    devices=config.devices,
+                    hidden_dim=config.hidden_size,
+                    num_experts=config.num_experts,
+                    num_experts_per_token=config.num_experts_per_tok,
+                    moe_dim=config.moe_intermediate_size,
+                    dtype=config.dtype,
+                    mlp_only_layers=config.mlp_only_layers,
+                    float8_config=config.float8_config,
+                )
+            else:
+                return mlp_cls(
+                    config.dtype,
+                    config.model_quantization_encoding,
+                    config.hidden_size,
+                    config.intermediate_size,
+                    config.devices,
+                    linear_cls,
+                )
+
         layers = [
             TransformerBlock(
                 attention=attention_cls(
@@ -119,14 +162,7 @@ class Qwen3(Transformer):
                     linear_cls=linear_cls,
                     devices=config.devices,
                 ),
-                mlp=mlp_cls(
-                    config.dtype,
-                    config.model_quantization_encoding,
-                    config.hidden_size,
-                    config.intermediate_size,
-                    config.devices,
-                    linear_cls,
-                ),
+                mlp=get_mlp(i),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
                 residual_multiplier=config.residual_multiplier,

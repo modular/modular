@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import sys.ffi as ffi
+import ffi
 
 from complex import ComplexFloat32, ComplexFloat64
 from gpu.host._nvidia_cuda import CUstream

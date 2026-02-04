@@ -36,7 +36,7 @@ from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
-from sys.ffi import c_char
+from ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros

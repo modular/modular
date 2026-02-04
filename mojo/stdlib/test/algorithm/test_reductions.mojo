@@ -19,8 +19,7 @@ from algorithm import (
     variance,
 )
 from algorithm.reduction import _reduce_generator, max, min
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from testing import TestSuite
 
 from utils.index import Index, IndexList, StaticTuple

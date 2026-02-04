@@ -66,7 +66,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from sys.ffi import c_char, CStringSlice, external_call
+        from ffi import c_char, CStringSlice, external_call
 
         fn getenv_wrapper(
             name: CStringSlice,
@@ -100,7 +100,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from sys.ffi import CStringSlice
+        from ffi import CStringSlice
         from testing import assert_raises
 
         var string = String("Hello, World!")

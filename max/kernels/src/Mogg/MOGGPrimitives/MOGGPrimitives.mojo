@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of, align_of
+from ffi import external_call
+from sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -1517,20 +1518,8 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@register_internal("mogg.async.pack.borrow")
 @no_inline
-fn mogg_async_pack_borrow(
-    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
-
-
-@no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1564,7 +1553,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](

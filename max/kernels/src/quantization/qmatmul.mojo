@@ -104,7 +104,9 @@ fn _quantize_a_block[
     var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[
         DType.int8
     ]()
-    var quant_data = quant_data_s8.cast[aq_type]() + a_zero_point
+    var quant_data = quant_data_s8.cast[aq_type]() + Scalar[aq_type](
+        a_zero_point
+    )
 
     return (quant_data, scale)
 

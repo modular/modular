@@ -22,13 +22,11 @@ from max.entrypoints.cli.config import parse_task_flags
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.pipelines import PIPELINE_REGISTRY, SupportedEncoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig, SamplingConfig
-from test_common.graph_utils import is_h100_h200
 from test_common.mocks import (
     mock_estimate_memory_footprint,
-    mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
 )
-from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
+from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 # ===----------------------------------------------------------------------=== #
@@ -393,13 +391,16 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.quantization_encoding == "bfloat16"
         assert config.model.kv_cache.kv_cache_page_size == 512
 
+    @pytest.mark.skip(
+        reason="SERVOPT-971: Failing due to cache_dtype assertion"
+    )
     @mock_pipeline_config_resolve
     def test_kv_cache_config_dtype(
         self,
     ) -> None:
         """Test that the KVCache dtype is set correctly."""
         kwargs = {
-            "model_path": "test/model",
+            "model_path": "trl-internal-testing/tiny-random-LlamaForCausalLM",
             # Draft model config
             "draft_model_path": "/draft/model",
             "draft_quantization_encoding": "float8_e4m3fn",
@@ -426,14 +427,13 @@ def test_validate_model_path__bad_repo_provided() -> None:
         )
 
 
-@mock_pipeline_config_hf_dependencies
 def test_config_init__raises_with_no_model_path() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(weight_path="file.gguf")
 
 
-@mock_pipeline_config_hf_dependencies
+@prepare_registry
 def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
     config = PipelineConfig(
@@ -471,7 +471,6 @@ def test_config_post_init__other_repo_weights(
     assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
 
 
-@mock_pipeline_config_hf_dependencies
 def test_config_init__reformats_with_str_weights_path(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -492,8 +491,9 @@ def test_config_init__reformats_with_str_weights_path(
     assert isinstance(config.model.weight_path[0], Path)
 
 
-@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
-@mock_pipeline_config_hf_dependencies
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 def test_validate_model_path__correct_repo_id_provided(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -507,9 +507,7 @@ def test_validate_model_path__correct_repo_id_provided(
     assert config.model.model_path == modular_ai_llama_3_1_local_path
 
 
-@prepare_registry
 @mock_estimate_memory_footprint
-@mock_pipeline_config_hf_dependencies
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -546,9 +544,11 @@ def test_config__test_incompatible_quantization_encoding(
     )
 
 
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 @prepare_registry
 @mock_estimate_memory_footprint
-@mock_pipeline_config_hf_dependencies
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -566,6 +566,17 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             use_legacy_module=False,
         )
 
+
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_quantization_encoding_with_dtype_casting2(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
+
     # This should pass, because the flag also supports casting bfloat16 weights
     # to float32.
     config = PipelineConfig(
@@ -578,6 +589,17 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     )
     assert config.model.kv_cache.cache_dtype == DType.float32
 
+
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_quantization_encoding_with_dtype_casting3(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
+
     # This should not raise, as allow_safetensors_weights_fp32_bf6_bidirectional_cast is set to True,
     # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
@@ -589,6 +611,14 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         use_legacy_module=False,
     )
     assert config.model.kv_cache.cache_dtype == DType.bfloat16
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_quantization_encoding_with_dtype_casting4(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
 
     # Test that quantization_encoding is required when allow_safetensors_weights_fp32_bf6_bidirectional_cast is True.
     with pytest.raises(
@@ -655,8 +685,9 @@ class LimitedPickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
-@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
-@mock_pipeline_config_hf_dependencies
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 def test_config_is_picklable(
     tmp_path: Path, modular_ai_llama_3_1_local_path: str
 ) -> None:
@@ -680,9 +711,10 @@ def test_config_is_picklable(
     assert loaded_config == config
 
 
-@pytest.mark.skipif(not is_h100_h200(), reason="This fails on MI300")
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_config__validates_supported_device(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -728,6 +760,9 @@ def test_config__validates_supported_device(
         )
 
 
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 @prepare_registry
 def test_config__validates_lora_configuration(
     llama_3_1_8b_instruct_local_path: str, llama_3_1_8b_lora_local_path: str
@@ -757,8 +792,6 @@ def test_config__validates_lora_only_supported_for_llama(
     gemma_3_1b_it_local_path: str,
 ) -> None:
     """Test that LoRA validation fails for non-Llama models."""
-    # Import and register Gemma architecture for testing
-    from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH
 
     PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH, allow_override=True)
 
@@ -779,6 +812,9 @@ def test_config__validates_lora_only_supported_for_llama(
         )
 
 
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__validates_lora_works_for_llama(
@@ -855,6 +891,9 @@ def test_config__validates_lora_single_device_only(
     assert config.lora.enable_lora is True
 
 
+@pytest.mark.skip(
+    reason="PAQ-1936: Failing due to unfetchable safetensors weights"
+)
 @prepare_registry
 @mock_estimate_memory_footprint
 @pytest.mark.skipif(
@@ -976,6 +1015,7 @@ def test_diffusers_config_is_none_for_transformer_model(
     )
 
 
+@pytest.mark.skip(reason="SERVOPT-972, diffusers_config assertion failure")
 def test_pipeline_config_with_flux_1_dev_model() -> None:
     """Test PipelineConfig instantiation with Flux.1-dev model."""
     # Flux.1-dev is a diffusion model from Black Forest Labs

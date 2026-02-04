@@ -22,9 +22,9 @@ from memory import OpaquePointer, alloc
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
-from sys import external_call
 from sys.arg import argv
-from sys.ffi import (
+from ffi import (
+    external_call,
     _DLHandle,
     OwnedDLHandle,
     c_char,

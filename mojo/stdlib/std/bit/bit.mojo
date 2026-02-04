@@ -19,7 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, bit_width_of, size_of
+from sys import llvm_intrinsic, bit_width_of
 
 from bit._mask import is_negative
 
@@ -64,14 +64,9 @@ fn count_leading_zeros[
         leading zeros at position `i` of the input value.
     """
     __comptime_assert dtype.is_integral(), "must be integral"
-
-    # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype != DType.int else (
-        DType.int32 if size_of[dtype]() == 4 else DType.int64
+    return llvm_intrinsic["llvm.ctlz", type_of(val), has_side_effect=False](
+        val, False
     )
-    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
-        val.cast[d](), False
-    ).cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -366,20 +361,6 @@ fn log2_floor(val: Int) -> Int:
 
 
 @always_inline
-fn log2_floor(val: UInt) -> UInt:
-    """Returns the floor of the base-2 logarithm of an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns UInt.MAX if val is 0.
-    """
-    return UInt(bit_width_of[UInt]() - count_leading_zeros(Int(val)) - 1)
-
-
-@always_inline
 fn log2_floor[
     dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -469,28 +450,6 @@ fn next_power_of_two(val: Int) -> Int:
     """
     return select(
         val <= 1, 1, 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
-    )
-
-
-@always_inline
-fn next_power_of_two(val: UInt) -> UInt:
-    """Computes the smallest power of 2 that is greater than or equal to the
-    input value. Any integral value less than or equal to 1 will be ceiled to 1.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The smallest power of 2 that is greater than or equal to the input
-        value.
-
-    Notes:
-        This operation is called `bit_ceil()` in C++.
-    """
-    return select(
-        val == 0,
-        UInt(1),
-        UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1)))),
     )
 
 

@@ -29,7 +29,7 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from sys.info import size_of
-from sys.ffi import external_call
+from ffi import external_call
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (

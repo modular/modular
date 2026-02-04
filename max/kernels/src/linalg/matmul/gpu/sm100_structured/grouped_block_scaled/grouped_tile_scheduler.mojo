@@ -47,9 +47,7 @@ from utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
-    ProducerConsumerPipeline,
-)
+from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================

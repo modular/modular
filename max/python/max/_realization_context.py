@@ -244,7 +244,7 @@ class EagerRealizationContext(RealizationContext):
             # Lazy import to avoid circular dependency
             from ._interpreter import MOInterpreter
 
-            interp = MOInterpreter(devices=_session().devices)
+            interp = MOInterpreter()
             inputs = [self.sources[input._mlir_value] for input in graph.inputs]
             results = interp.execute(
                 graph,

@@ -45,8 +45,7 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from bit import log2_floor
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from gpu import lane_id
 from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
