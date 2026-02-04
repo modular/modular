@@ -1054,7 +1054,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
+        tags=["big", "nvidia-only", "no-h100"],
         run=_make_pipeline_runner(
             pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
             encoding="bfloat16",
