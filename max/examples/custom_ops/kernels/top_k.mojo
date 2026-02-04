@@ -113,8 +113,8 @@ struct TopK:
                     # value from a thread 'offset' positions higher, keeping the
                     # larger value.
                     var shuffled = TopKElement(
-                        warp.shuffle_down(reduced.idx, offset),
-                        warp.shuffle_down(reduced.val, offset),
+                        warp.shuffle_down(reduced.idx, UInt32(offset)),
+                        warp.shuffle_down(reduced.val, UInt32(offset)),
                     )
                     reduced = max(reduced, shuffled)
 

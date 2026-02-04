@@ -117,10 +117,10 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
     fn add(mut self, key: StringSlice):
         var prev_end = 0 if self.count == 0 else self.keys_end[self.count - 1]
         var key_length = len(key)
-        var new_end = prev_end + key_length
+        var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
         var needs_realocation = False
-        while new_end > self.allocated_bytes:
+        while new_end > Scalar[Self.KeyEndType](self.allocated_bytes):
             self.allocated_bytes += self.allocated_bytes >> 1
             needs_realocation = True
 
@@ -283,7 +283,7 @@ struct StringDict[
 
         var key_hash = hash(key).cast[Self.KeyCountType]()
         var modulo_mask = self.capacity - 1
-        var slot = Int(key_hash & modulo_mask)
+        var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
             var key_index = Int(self.slot_to_index.load(slot))
             if key_index == 0:
@@ -333,7 +333,7 @@ struct StringDict[
     fn _is_deleted(self, index: Int) -> Bool:
         var offset = index >> 3
         var bit_index = index & 7
-        return (self.deleted_mask + offset).load() & (1 << bit_index) != 0
+        return (self.deleted_mask + offset).load() & UInt8(1 << bit_index) != 0
 
     @always_inline
     fn _deleted(self, index: Int):
@@ -341,7 +341,7 @@ struct StringDict[
         var bit_index = index & 7
         var p = self.deleted_mask + offset
         var mask = p.load()
-        p.store(mask | (1 << bit_index))
+        p.store(mask | UInt8((1 << bit_index)))
 
     @always_inline
     fn _not_deleted(self, index: Int):
@@ -349,7 +349,7 @@ struct StringDict[
         var bit_index = index & 7
         var p = self.deleted_mask + offset
         var mask = p.load()
-        p.store(mask & ~(1 << bit_index))
+        p.store(mask & UInt8(~(1 << bit_index)))
 
     @always_inline
     fn _rehash(mut self):
@@ -392,7 +392,7 @@ struct StringDict[
                     Self.KeyCountType
                 ]()
 
-            var slot = Int(key_hash & modulo_mask)
+            var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
 
             # var searching = True
             while True:
@@ -476,7 +476,7 @@ struct StringDict[
         var key_hash = hash(key).cast[Self.KeyCountType]()
         var modulo_mask = self.capacity - 1
 
-        var slot = Int(key_hash & modulo_mask)
+        var slot = Int(key_hash & Scalar[Self.KeyCountType](modulo_mask))
         while True:
             var key_index = Int(self.slot_to_index.load(slot))
             if key_index == 0:

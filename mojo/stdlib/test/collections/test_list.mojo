@@ -1029,7 +1029,7 @@ def _test_copyinit_trivial_types[dt: DType]():
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
-            x.append(i)
+            x.append(Scalar[dt](i))
         y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)

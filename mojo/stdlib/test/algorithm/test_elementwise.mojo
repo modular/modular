@@ -100,7 +100,7 @@ def test_elementwise_implicit_runtime():
     var vector = Span[Scalar[DType.int]](vector_stack)
 
     for i in range(len(vector)):
-        vector.unsafe_ptr()[i] = i
+        vector.unsafe_ptr()[i] = Scalar[DType.int](i)
 
     @always_inline
     @__copy_capture(vector)

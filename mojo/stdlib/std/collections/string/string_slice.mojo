@@ -2209,14 +2209,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
                     debug_assert(
-                        line_end + char_len <= UInt(length),
+                        line_end + UInt(char_len) <= UInt(length),
                         "corrupted sequence causing unsafe memory access",
                     )
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
                     )
-                    line_end += char_len
+                    line_end += UInt(char_len)
 
                 var str_len = line_end - line_start
 
@@ -2236,7 +2236,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & char_len
+                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended

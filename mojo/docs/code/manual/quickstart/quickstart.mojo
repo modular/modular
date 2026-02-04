@@ -21,7 +21,7 @@ fn calculate_average(temps: List[Float64]) raises -> Float64:
     var total: Float64 = 0.0
     for index in range(len(temps)):
         total += temps[index]
-    return total / len(temps)
+    return total / Float64(len(temps))
 
 
 fn main():

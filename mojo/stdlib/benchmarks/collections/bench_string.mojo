@@ -505,7 +505,10 @@ def main():
         var n = info.name
         var time = info.result.mean("ms")
         var avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
     print("")
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=", ")

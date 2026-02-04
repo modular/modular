@@ -28,7 +28,7 @@ def test_sync_parallelize():
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = i
+        vector[i] = Scalar[DType.int](i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
@@ -52,7 +52,7 @@ def test_sync_parallelize():
     # CHECK-NOT: ERROR
     for i in range(len(vector)):
         var expected_val = i + 2
-        if vector[i] != expected_val:
+        if vector[i] != Scalar[DType.int](expected_val):
             print("ERROR: Expecting the result to be i + 2")
 
 
@@ -66,7 +66,7 @@ def test_parallelize():
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = i
+        vector[i] = Scalar[DType.int](i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 

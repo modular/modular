@@ -205,13 +205,13 @@ def _test_memcmp_extensive[
     var dptr2 = alloc[Scalar[dtype]](count)
 
     for i in range(count):
-        ptr1[i] = i
-        dptr1[i] = i
+        ptr1[i] = Scalar[dtype](i)
+        dptr1[i] = Scalar[dtype](i)
 
         @parameter
         if extermes == "":
-            ptr2[i] = i + 1
-            dptr2[i] = i + 1
+            ptr2[i] = Scalar[dtype](i + 1)
+            dptr2[i] = Scalar[dtype](i + 1)
         elif extermes == "nan":
             ptr2[i] = nan[dtype]()
             dptr2[i] = nan[dtype]()
