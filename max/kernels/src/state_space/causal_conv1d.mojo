@@ -70,6 +70,30 @@ from utils.numerics import get_accum_type
 
 
 # ===----------------------------------------------------------------------=== #
+# Activation Functions
+# ===----------------------------------------------------------------------=== #
+
+
+fn silu[
+    dtype: DType, width: Int
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
+    """Sigmoid Linear Unit (SiLU) activation function.
+
+    Computes x * sigmoid(x) = x / (1 + exp(-x)).
+
+    Args:
+        x: Input SIMD vector.
+
+    Returns:
+        SiLU activation applied element-wise.
+
+    Constraints:
+        The dtype must be a floating-point type.
+    """
+    return x / (1 + exp(-x))
+
+
+# ===----------------------------------------------------------------------=== #
 # CPU Implementations
 # ===----------------------------------------------------------------------=== #
 
@@ -211,8 +235,14 @@ fn causal_conv1d_channel_first_fwd_cpu[
             var out_offset: UInt32 = out_base + UInt32(l * out_l_stride)
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_activation:
-                # SiLU: x * sigmoid(x) = x / (1 + exp(-x))
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             output.ptr[out_offset] = out_val
 
     sync_parallelize[process_bc](total_bc)
@@ -329,8 +359,14 @@ fn causal_conv1d_channel_first_fwd_cpu_no_bias[
             var out_offset: UInt32 = out_base + UInt32(l * out_l_stride)
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_activation:
-                # SiLU: x * sigmoid(x) = x / (1 + exp(-x))
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             output.ptr[out_offset] = out_val
 
     sync_parallelize[process_bc](total_bc)
@@ -409,7 +445,14 @@ fn causal_conv1d_channel_last_fwd_cpu[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
 
@@ -479,7 +522,14 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
 
@@ -576,7 +626,14 @@ fn causal_conv1d_channel_last_fwd_cpu_with_seq_idx[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
 
@@ -668,7 +725,14 @@ fn causal_conv1d_channel_last_fwd_cpu_no_bias_with_seq_idx[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
 
@@ -952,7 +1016,14 @@ fn causal_conv1d_channel_first_fwd_gpu[
             cur_bias
         ) + Scalar[output_dtype](conv_result)
         if silu_active:
-            out_val = out_val / (1 + exp(-out_val))
+
+            @parameter
+            if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[DType.float32]()).cast[
+                    output_dtype
+                ]()
         out_vals[i] = out_val
 
     @parameter
@@ -1195,7 +1266,12 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias[
 
         var out_val: Scalar[x_dtype] = conv_result
         if silu_active:
-            out_val = out_val / (1 + exp(-out_val))
+
+            @parameter
+            if x_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[DType.float32]()).cast[x_dtype]()
         out_vals[i] = out_val
 
     @parameter
@@ -1416,7 +1492,14 @@ fn causal_conv1d_channel_last_fwd_gpu[
 
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -1608,7 +1691,14 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias[
 
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -1973,7 +2063,14 @@ fn causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -2300,7 +2397,14 @@ fn causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -2654,7 +2758,14 @@ fn causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -2975,7 +3086,14 @@ fn causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
                 )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
-                out_val = out_val / (1 + exp(-out_val))
+
+                @parameter
+                if output_dtype.is_floating_point():
+                    out_val = silu(out_val)
+                else:
+                    out_val = silu(out_val.cast[DType.float32]()).cast[
+                        output_dtype
+                    ]()
             out_vals_channel[i] = out_val
 
         @parameter
@@ -3132,7 +3250,14 @@ fn causal_conv1d_update_cpu[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
             # Update conv_state: shift old values and add new x values
@@ -3266,7 +3391,14 @@ fn causal_conv1d_update_cpu_no_bias[
                 )
                 var out_val: Scalar[output_dtype] = conv_sum
                 if silu_activation:
-                    out_val = out_val / (1 + exp(-out_val))
+
+                    @parameter
+                    if output_dtype.is_floating_point():
+                        out_val = silu(out_val)
+                    else:
+                        out_val = silu(out_val.cast[DType.float32]()).cast[
+                            output_dtype
+                        ]()
                 output.ptr[out_offset] = out_val
 
             # Update conv_state
@@ -3428,7 +3560,14 @@ fn causal_conv1d_update_gpu[
         )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
-            out_val = out_val / (1 + exp(-out_val))
+
+            @parameter
+            if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[DType.float32]()).cast[
+                    output_dtype
+                ]()
         output.ptr[out_offset] = out_val
 
     # Update conv_state
@@ -3579,7 +3718,14 @@ fn causal_conv1d_update_gpu_no_bias[
         )
         var out_val: Scalar[output_dtype] = conv_sum
         if silu_active:
-            out_val = out_val / (1 + exp(-out_val))
+
+            @parameter
+            if output_dtype.is_floating_point():
+                out_val = silu(out_val)
+            else:
+                out_val = silu(out_val.cast[DType.float32]()).cast[
+                    output_dtype
+                ]()
         output.ptr[out_offset] = out_val
 
     if seqlen >= state_len:
