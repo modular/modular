@@ -64,8 +64,8 @@ standard `@always_inline` decorator or the `"nodebug"` version, instead.
 This version of the decorator does everything that `"nodebug"` does, plus two
 other behaviors:
 
-- It checks the body of the function to validate that it doesn’t use
-  anything that `@always_inline("builtin")` can’t handle-this checks that there
+- It checks the body of the function to validate that it doesn't use
+  anything that `@always_inline("builtin")` can't handle-this checks that there
   is no control flow, no function calls to functions that are not themselves
   `@always_inline("builtin")`, no use of unsupported MLIR operations, etc.
 

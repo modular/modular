@@ -11,7 +11,7 @@ method to consume the value. If you don't, the compiler emits an error.
 
 Use explicit destruction when cleanup must be performed deliberately, may
 fail and require error handling, or your type offers multiple valid ways to end
-a value’s lifetime (such as saving to file and closing the file descriptor, or
+a value's lifetime (such as saving to file and closing the file descriptor, or
 quitting without saving).
 
 ## Implicit vs. explicit destruction
@@ -21,7 +21,7 @@ lifetime analysis, while some types opt into explicit control for stronger
 cleanup guarantees.
 
 _Implicit destruction_ (the default): The compiler automatically calls
-`__del__()` when a value has no further uses. Cleanup is triggered by Mojo’s
+`__del__()` when a value has no further uses. Cleanup is triggered by Mojo's
 lifetime analysis and requires no manual intervention. You may override
 `__del__()` in your type, but the compiler does not verify that cleanup is
 performed intentionally.
@@ -33,7 +33,7 @@ before a value leaves scope results in a compile-time error.
 
 Most types use implicit destruction. Explicit destruction adds a layer of
 safety when cleanup may fail, requires error handling, or benefits from
-deliberate control over how a value’s lifetime ends.
+deliberate control over how a value's lifetime ends.
 
 ## Basic usage
 
