@@ -19,7 +19,7 @@ from bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, bit_width_of, size_of
+from sys import llvm_intrinsic, bit_width_of
 
 from bit._mask import is_negative
 
@@ -64,14 +64,9 @@ fn count_leading_zeros[
         leading zeros at position `i` of the input value.
     """
     __comptime_assert dtype.is_integral(), "must be integral"
-
-    # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype != DType.int else (
-        DType.int32 if size_of[dtype]() == 4 else DType.int64
+    return llvm_intrinsic["llvm.ctlz", type_of(val), has_side_effect=False](
+        val, False
     )
-    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
-        val.cast[d](), False
-    ).cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
