@@ -1231,6 +1231,23 @@ PIPELINES = {
             timeout=1200,
         ),
     ),
+    "nvidia/DeepSeek-R1-0528-NVFP4-v2": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
+        run=_make_pipeline_runner(
+            pipeline="nvidia/DeepSeek-R1-0528-NVFP4-v2",
+            encoding="float4_e2m1fnx2",
+            # Goldens generated using vLLM with NVFP4 support
+            pregenerated_torch_goldens=PregeneratedTorchGoldens(
+                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1-nvfp4_golden/9/9b19a48a9bba02fe76bda80402950c1ae13c5e0f93444b08c2c6499f4b3247e7/vllm_deepseek-r1-nvfp4_golden.tar.gz",
+                json_file="vllm_deepseek-r1-nvfp4_float4_golden.json",
+            ),
+            # Tolerances from running --find-tolerances against vLLM goldens
+            cos_dist_threshold=2.7e-02,
+            kl_div_threshold=2.1e-01,
+            timeout=1200,
+        ),
+    ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=_make_pipeline_runner(
