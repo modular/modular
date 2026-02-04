@@ -21,8 +21,9 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.interfaces import RequestID, TextGenerationContext
+from max.nn.legacy.comm import Signals
 from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.legacy.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
@@ -118,6 +119,16 @@ class PagedKVCacheManager:
 
         # Store session for model loading
         self.session = session
+
+        # Enable broadcast for row_offset transfers when DP=1 with multiple devices.
+        # - DP=1 check: DP>1 requires scatter semantics (different data per replica),
+        #   not yet supported. See SERVOPT-970 for DP>1 broadcast support.
+        # - len(devices)>1 check: single-device models don't provide signal_buffers
+        #   in their ModelInputs. The broadcast kernel is a no-op for single device,
+        #   but we need signal_buffers as graph inputs to call it.
+        self._use_broadcast = (
+            self.params.data_parallel_degree == 1 and len(self.devices) > 1
+        )
 
         # Initialize the ragged increment cache lengths model
         self.increment_cache_lengths_model = session.load(
@@ -219,17 +230,40 @@ class PagedKVCacheManager:
             device=DeviceRef.CPU(),
         )
 
+        # Build input types list
+        input_types: list[TensorType | BufferType] = [
+            input_row_offsets_type,
+            data_parallel_splits_type,
+            *cache_lengths_types,
+        ]
+
+        # Add signal buffer types when using broadcast
+        signal_buffer_types: list[BufferType] = []
+        if self._use_broadcast:
+            device_refs = [DeviceRef(d.label, d.id) for d in self.devices]
+            signals = Signals(devices=device_refs)
+            signal_buffer_types = signals.input_types()
+            input_types.extend(signal_buffer_types)
+
         with Graph(
             "update_cache_lengths",
-            input_types=[
-                input_row_offsets_type,
-                data_parallel_splits_type,
-                *cache_lengths_types,
-            ],
+            input_types=input_types,
         ) as graph:
-            inp_row_offset, data_parallel_splits, *cache_lengths = (
-                inp.tensor for inp in graph.inputs
-            )
+            # Unpack inputs
+            num_fixed_inputs = 2 + len(
+                self.devices
+            )  # row_offsets + splits + cache_lengths
+            inp_row_offset, data_parallel_splits, *cache_lengths = [
+                inp.tensor for inp in graph.inputs[:num_fixed_inputs]
+            ]
+
+            # Unpack signal buffers if using broadcast
+            signal_buffers = None
+            if self._use_broadcast:
+                signal_buffers = [
+                    inp.buffer for inp in graph.inputs[num_fixed_inputs:]
+                ]
+
             split_offsets = split_input_row_offsets(
                 self.params.data_parallel_degree,
                 inp_row_offset,
@@ -240,18 +274,38 @@ class PagedKVCacheManager:
             for replica_idx in range(self.params.data_parallel_degree):
                 devices = self.devices_per_replica[replica_idx]
 
-                for i, device in enumerate(devices):
-                    row_offset = split_offsets[replica_idx].to(
-                        DeviceRef.from_device(device)
+                # Use broadcast to transfer row_offset to all devices in parallel.
+                # Currently only enabled for DP=1 (single replica with all devices).
+                if self._use_broadcast:
+                    assert signal_buffers is not None
+                    row_offsets_per_device = ops.distributed_broadcast(
+                        split_offsets[replica_idx], signal_buffers
                     )
-                    cache_length = cache_lengths[start_idx + i]
-                    assert isinstance(cache_length, TensorValue)
-                    right_slice = row_offset[1:].rebind(cache_length.shape)
-                    left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
-                        cache_length.shape
-                    )
-                    increment_amount = right_slice - left_slice
-                    outputs.append(cache_length + increment_amount)
+                    for i in range(len(devices)):
+                        row_offset = row_offsets_per_device[i]
+                        cache_length = cache_lengths[start_idx + i]
+                        assert isinstance(cache_length, TensorValue)
+                        right_slice = row_offset[1:].rebind(cache_length.shape)
+                        left_slice = row_offset[
+                            : row_offset.shape[0] - 1
+                        ].rebind(cache_length.shape)
+                        increment_amount = right_slice - left_slice
+                        outputs.append(cache_length + increment_amount)
+                else:
+                    # Fall back to sequential .to(device) transfers for DP>1.
+                    # TODO(SERVOPT-970): Replace with scatter+broadcast for DP>1.
+                    for i, device in enumerate(devices):
+                        row_offset = split_offsets[replica_idx].to(
+                            DeviceRef.from_device(device)
+                        )
+                        cache_length = cache_lengths[start_idx + i]
+                        assert isinstance(cache_length, TensorValue)
+                        right_slice = row_offset[1:].rebind(cache_length.shape)
+                        left_slice = row_offset[
+                            : row_offset.shape[0] - 1
+                        ].rebind(cache_length.shape)
+                        increment_amount = right_slice - left_slice
+                        outputs.append(cache_length + increment_amount)
                 start_idx += len(devices)
             graph.output(*outputs)
 
@@ -302,8 +356,22 @@ class PagedKVCacheManager:
             row_offsets = prev_model_inputs.input_row_offsets
         row_offsets = row_offsets.to(self.devices[0])
 
+        # Build execution args, including signal buffers when using broadcast
+        exec_args: list[Buffer] = [
+            row_offsets,
+            data_parallel_splits,
+            *cache_lengths,
+        ]
+        if self._use_broadcast:
+            if not hasattr(prev_model_inputs, "signal_buffers"):
+                raise ValueError(
+                    "signal_buffers required in model inputs when broadcast is "
+                    "enabled (data_parallel_degree=1 with multiple devices)"
+                )
+            exec_args.extend(prev_model_inputs.signal_buffers)
+
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            row_offsets, data_parallel_splits, *cache_lengths
+            *exec_args
         )
 
         start_idx = 0
