@@ -398,6 +398,11 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
     KGENDType inDType = *op.getInput().getType().getResolvedDType();
     KGENDType outDType = *op.getOutput().getType().getResolvedDType();
 
+    if ((inDType.isFloat() && inDType.getWidthInBits() <= 8) ||
+        (outDType.isFloat() && outDType.getWidthInBits() <= 8)) {
+      return op.emitError() << "illegal conversion";
+    }
+
     int64_t inByteCount = getDTypeSizeInBytes(inDType);
     int64_t outByteCount = getDTypeSizeInBytes(outDType);
 
@@ -1141,29 +1146,6 @@ private:
       if (simd && target.getTriple().isAMDGPU()) {
         return convertF8ToF32OnAMDGPU(rewriter, cast, value, fromFloatSemantics,
                                       toFloatSemantics);
-      }
-
-      return failure();
-    }
-
-    // Convert F8 (either e4m3fn or e5m2) to BF16
-    if ((fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN ||
-         fromFloatSemantics == llvm::APFloat::Semantics::S_Float8E5M2) &&
-        toFloatSemantics == llvm::APFloat::Semantics::S_BFloat) {
-      // For AMD gfx950+ GPUs, convert FP8 -> F32 -> BF16
-      if (simd && isAMDGPU(target, {"gfx950"})) {
-        // First convert FP8 to F32 using AMD intrinsics
-        auto simdF32 = SIMDType::get(rewriter.getContext(),
-                                     /*size=*/*cast.getType().getResolvedSize(),
-                                     KGENDType::f32);
-        Value f32Result = convertF8ToF32OnAMDGPUHelper(
-            rewriter, cast, value, convertType(simdF32), fromFloatSemantics,
-            llvm::APFloat::Semantics::S_IEEEsingle);
-
-        // Then convert F32 to BF16 using fptrunc
-        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(
-            cast, convertType(cast.getType()), f32Result);
-        return success();
       }
 
       return failure();
