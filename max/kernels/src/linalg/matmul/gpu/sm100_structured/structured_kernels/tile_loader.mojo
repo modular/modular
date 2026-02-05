@@ -22,14 +22,26 @@ Usage:
     var a_loader = ATileLoaderType(Pointer(to=a_tma_op), ctx.a_multicast_mask)
     var b_loader = BTileLoaderType(Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
-    # Load tiles using the loaders
+    # Load tiles using the loaders (LayoutTensor or TileTensor)
     a_loader.load(a_tile, barrier, k_coord, m_coord)
     b_loader.load(b_tile, barrier, k_coord, n_coord)
+
+    # TileTensor tiles are automatically converted to LayoutTensor for TMA ops
 """
 
+from gpu.memory import AddressSpace
+from layout import Layout as LegacyLayout, LayoutTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
-from linalg.structuring import SMemTile
+from linalg.structuring import SMemTile as LTSMemTile
+
+# Import TileTensor types for overloaded load methods
+from .tile_types import SMemTile2D
+
+# Import variadic types for TileTensor load overload
+from builtin.variadics import Variadic
+from layout._coord import CoordLike
+from layout._tile_tensor import TileTensor
 
 
 struct TileLoaderTMA[
@@ -82,7 +94,7 @@ struct TileLoaderTMA[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
+        dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: UInt,
         row_coord: UInt,
@@ -94,6 +106,67 @@ struct TileLoaderTMA[
 
         Args:
             dest: Destination SMEM tile (already sliced for peer CTA if needed).
+            barrier: Memory barrier for TMA completion signaling.
+            k_coord: K dimension coordinate in global memory (elements).
+            row_coord: Row coordinate (M for A, N for B) in global memory (elements).
+        """
+        self.tma_op[].async_multicast_load[Self.cta_group](
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
+        )
+
+    @always_inline
+    fn load[
+        dim0: Int,
+        dim1: Int,
+        /,
+        alignment: Int = 128,
+    ](
+        self,
+        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        k_coord: UInt,
+        row_coord: UInt,
+    ):
+        """Load a TileTensor tile using TMA hardware acceleration.
+
+        This overload accepts TileTensor-based tiles and passes them directly
+        to the TMA TileTensor overload (no LayoutTensor conversion needed).
+
+        Args:
+            dest: Destination SMEM TileTensor tile.
+            barrier: Memory barrier for TMA completion signaling.
+            k_coord: K dimension coordinate in global memory (elements).
+            row_coord: Row coordinate (M for A, N for B) in global memory (elements).
+        """
+        # TileTensor overload of async_multicast_load - no conversion needed
+        self.tma_op[].async_multicast_load[Self.cta_group](
+            dest, barrier, (k_coord, row_coord), self.multicast_mask
+        )
+
+    @always_inline
+    fn load[
+        shape_types: Variadic.TypesOfTrait[CoordLike],
+        stride_types: Variadic.TypesOfTrait[CoordLike],
+    ](
+        self,
+        dest: TileTensor[
+            shape_types=shape_types,
+            stride_types=stride_types,
+            Self.dtype,
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        k_coord: UInt,
+        row_coord: UInt,
+    ):
+        """Load a TileTensor tile with variadic shape/stride types using TMA.
+
+        This overload accepts TileTensor tiles with swizzled layouts (created via
+        internal_k_major) and passes them to the TMA operation.
+
+        Args:
+            dest: Destination SMEM TileTensor tile with swizzled layout.
             barrier: Memory barrier for TMA completion signaling.
             k_coord: K dimension coordinate in global memory (elements).
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
@@ -150,7 +223,7 @@ struct ScalesTileLoader[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTile[Self.dtype, tile_layout, alignment=alignment],
+        dest: LTSMemTile[Self.dtype, tile_layout, alignment=alignment],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,
         k_coord: Int,
@@ -169,4 +242,41 @@ struct ScalesTileLoader[
         """
         self.tma_op[].async_copy[Self.cta_group](
             dest, barrier, (row_coord, k_coord)
+        )
+
+    @always_inline
+    fn load[
+        dim0: Int,
+        dim1: Int,
+        /,
+        alignment: Int = 128,
+    ](
+        self,
+        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
+        ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
+        row_coord: Int,
+        k_coord: Int,
+    ):
+        """Load a TileTensor scales tile using TMA hardware acceleration.
+
+        This overload accepts TileTensor-based tiles and converts them to
+        LayoutTensor internally for the TMA operation. Zero-cost conversion
+        via pointer reinterpretation.
+
+        Args:
+            dest: Destination SMEM TileTensor tile.
+            barrier: Memory barrier for TMA completion signaling.
+            row_coord: Row coordinate (M for A-scales) in global memory.
+            k_coord: K dimension coordinate in global memory.
+        """
+        # Construct LayoutTensor from TileTensor pointer for TMA API
+        comptime tile_layout = LegacyLayout.row_major(dim0, dim1)
+        var lt_dest = LayoutTensor[
+            Self.dtype,
+            tile_layout,
+            address_space = AddressSpace.SHARED,
+            alignment=alignment,
+        ](dest.ptr)
+        self.tma_op[].async_copy[Self.cta_group](
+            lt_dest, barrier, (row_coord, k_coord)
         )

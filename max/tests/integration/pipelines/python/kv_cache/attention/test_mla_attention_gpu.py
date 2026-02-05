@@ -176,5 +176,4 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     assert isinstance(result, Buffer)
 
     host = CPU(0)
-    assert np.all(result.to(host).to_numpy() != np.inf)
-    assert np.all(result.to(host).to_numpy() != np.nan)
+    assert np.all(np.isfinite(result.to(host).to_numpy()))

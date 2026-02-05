@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string.string_slice import _to_string_list, get_static_string
-from sys.info import size_of
+from sys.info import size_of, simd_width_of
 
 from testing import assert_equal, assert_false, assert_true, assert_raises
 from testing import TestSuite
@@ -491,6 +491,25 @@ def test_find_compile_time():
     assert_equal(c13, -1)
     assert_equal(c14, -1)
     assert_equal(c15, -1)
+
+
+def test_find_mstdl_2258():
+    # Bug - when searching for a needle with the following conditions:
+    # - needle length is longer than the SIMD width
+    # - the haystack prefix is larger than UInt16.MAX
+    # - the haystack postfix is at least as long as the SIMD width
+    # then the search would fail due to integer overflow in offset calculation.
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    var needle = "z" * (simd_width + 1)
+    var prefix = "a" * (Int(UInt16.MAX) + 1)
+    var postfix = "a" * simd_width
+    var haystack = prefix + needle + postfix
+
+    var expected_pos = len(prefix)
+    var found = haystack.find(needle)
+    assert_equal(found, expected_pos)
+    assert_true(needle in haystack)
 
 
 def test_is_codepoint_boundary():

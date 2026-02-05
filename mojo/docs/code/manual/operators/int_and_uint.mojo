@@ -26,7 +26,7 @@ def main():
     sum_mixed = a_int + Int(i_uint)  # Result is type Int
     print("Mixed sum:", sum_mixed)
 
-    quotient_int = a_int / b_int  # Result is type Float64
+    quotient_int = a_int // b_int
     print("Int quotient:", quotient_int)
-    quotient_uint = i_uint / j_uint  # Result is type Float64
+    quotient_uint = i_uint / j_uint
     print("UInt quotient:", quotient_uint)

@@ -29,7 +29,7 @@ from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
 from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
-from ..layer import LayerList, Module, Shardable
+from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 
 
@@ -148,6 +148,9 @@ class MoE(Module, Shardable):
     experts: LayerList
     """The list of experts."""
 
+    _all_experts: list[Layer]
+    """The list of all experts when using expert parallel strategy."""
+
     shard_devices: list[DeviceRef] = []
     """The list of devices the MoE layer was sharded to."""
 
@@ -232,19 +235,19 @@ class MoE(Module, Shardable):
             self._init_experts()
 
     def _init_experts(self) -> None:
-        self.experts = LayerList(
-            [
-                MLP(
-                    dtype=self.dtype,
-                    quantization_encoding=None,
-                    hidden_dim=self.hidden_dim,
-                    feed_forward_length=self.moe_dim,
-                    devices=self.devices,
-                    float8_config=self.float8_config,
-                )
-                for _ in range(self.num_experts)
-            ]
-        )
+        self._all_experts = [
+            MLP(
+                dtype=self.dtype,
+                quantization_encoding=None,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.moe_dim,
+                devices=self.devices,
+                float8_config=self.float8_config,
+            )
+            for _ in range(self.num_experts)
+        ]
+
+        self.experts = LayerList(self._all_experts)
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
@@ -334,6 +337,9 @@ class MoE(Module, Shardable):
                 float8_config=self.float8_config,
                 is_sharding=True,
             )
+
+            # Keep a reference to the original experts for sharded instances.
+            sharded._all_experts = self._all_experts
 
             # Replace layers and weights with sharded versions.
             sharded.gate = gate_shards[shard_idx]

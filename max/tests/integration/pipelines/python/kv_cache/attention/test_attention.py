@@ -177,5 +177,4 @@ def test_kv_cache_ragged_attention(
     ) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
-        assert np.any(result != np.nan)
-        assert np.any(result != np.inf)
+        assert np.all(np.isfinite(result))

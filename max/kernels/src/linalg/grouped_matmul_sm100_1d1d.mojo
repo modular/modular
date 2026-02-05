@@ -929,7 +929,7 @@ fn load_AB[
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
-    var b_offset_vec = expert_id * scheduler.static_MN
+    var b_offset_vec = expert_id * Int32(scheduler.static_MN)
     var b_gmem_slice_coord_vec = (
         type_of(expert_id)(
             peer_cta_coord[1] * UInt(b_tma_rows)
@@ -1759,9 +1759,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
         load_mma_pipeline.init_mbars(
             Int32(1),
-            config.cluster_shape[0] // config.cta_group
-            + config.cluster_shape[1]
-            - 1,
+            Int32(
+                config.cluster_shape[0] // config.cta_group
+                + config.cluster_shape[1]
+                - 1
+            ),
         )
         mma_output_pipeline.init_mbars(
             accum_pipeline_producer_arv_count,
@@ -2005,7 +2007,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 if not work_info.is_done():
                     expert_id = expert_ids[Int(scheduler.current_group_idx)]
                 continue
-            with MatmulProfilerType[3](workspace, tile_idx):
+            with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                 var expert_scale = expert_scales[Int(expert_id)]
                 # WAIT FOR MMA TO FINISH AND STORE RESULT
                 # scheduler fetch next work

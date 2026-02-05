@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from pathlib import Path
-from sys import OwnedDLHandle
+from ffi import OwnedDLHandle
 
 from testing import assert_equal, assert_raises, assert_true
 from testing import TestSuite

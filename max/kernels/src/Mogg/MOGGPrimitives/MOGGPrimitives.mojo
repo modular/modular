@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import fma
-from sys import external_call, size_of, align_of
+from ffi import external_call
+from sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -591,7 +592,7 @@ fn mgp_buffer_set_with_index[
         "buffer size not divisible by number of index args",
     )
 
-    var elSize = bufSize / numArgs
+    var elSize = bufSize // numArgs
     if elSize == 4:
         fill_buffer[DType.int32](buffer, vals)
     elif elSize == 8:
@@ -1039,20 +1040,6 @@ fn ManagedTensorSliceDef[
     ty: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]:
     return ty
-
-
-@register_internal("list_of_tensor")
-fn ListOfTensorDef[
-    dtype: DType,
-    rank: Int,
-](
-    ty: List[
-        InputTensor[
-            static_spec = StaticTensorSpec[dtype, rank].create_unknown()
-        ]
-    ]
-) -> type_of(ty):
-    return ty.copy()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1531,20 +1518,8 @@ fn mogg_async_pack(pack_helper: MoggAsyncPackHelper):
     return
 
 
-@register_internal("mogg.async.pack.borrow")
 @no_inline
-fn mogg_async_pack_borrow(
-    borrower: AnyAsyncValueRefPtr, borrowee: TensorBufferRefPtr
-):
-    """
-    Borrows an async value. This differs from `mogg.async.pack` which assigns a
-    value to the given async value in that it's a simple refcount increment.
-    """
-    external_call["MGP_RT_BufferBorrow", NoneType](borrower, borrowee)
-
-
-@no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     buffer_rank: Int,
     dtype: DType,
     //,
@@ -1578,7 +1553,7 @@ fn mogg_async_pack_borrow_v2[
 
 
 @no_inline
-fn mogg_async_pack_borrow_v2[
+fn mogg_async_pack_borrow[
     spec_rank: Int,  # unused
     is_tensor: Bool,  # unused
 ](

@@ -25,7 +25,7 @@ from sys import (
     is_nvidia_gpu,
     size_of,
 )
-from sys.ffi import c_int, c_size_t, external_call
+from ffi import c_int, c_size_t, external_call
 
 from gpu.host import (
     ConstantMemoryMapping,

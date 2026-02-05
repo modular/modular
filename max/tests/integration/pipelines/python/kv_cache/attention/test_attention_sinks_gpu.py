@@ -245,5 +245,4 @@ def test_flash_attention_ragged_with_sinks(
         sliding_window if sliding_window else -1,
     )
 
-    assert np.all(max_output != np.nan)
-    assert np.all(max_output != np.inf)
+    assert np.all(np.isfinite(max_output))

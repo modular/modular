@@ -13,7 +13,7 @@
 
 from utils import StaticTuple
 from sys import size_of
-from sys.ffi import _Global, external_call
+from ffi import _Global, external_call
 
 from gpu.host import DeviceContext
 from gpu import (
@@ -108,7 +108,7 @@ This constant sets the upper bound for the number of GPUS supported in this algo
 
 
 @fieldwise_init
-struct Signal(TrivialRegisterType):
+struct Signal:
     """A synchronization primitive for coordinating GPU thread blocks across multiple devices.
 
     This struct provides counter-based synchronization between thread blocks on different GPUs.
@@ -124,6 +124,7 @@ struct Signal(TrivialRegisterType):
     # Counter may overflow, but it's fine since unsigned int overflow is
     # well-defined behavior.
     comptime flag_t = DType.uint32
+    comptime ptr_t = NoneType
 
     var self_counter: StaticTuple[
         StaticTuple[Scalar[Self.flag_t], MAX_GPUS], MAX_NUM_BLOCKS_UPPER_BOUND
@@ -148,6 +149,14 @@ struct Signal(TrivialRegisterType):
     Contains two sets of counters to handle two synchronization points safely.
     The dual counter design prevents race conditions where a peer block arrives
     at the second sync point before the current block passes the first sync point.
+    """
+
+    var pointer_exchange: InlineArray[
+        UnsafePointer[Self.ptr_t, MutAnyOrigin], 128
+    ]
+    """
+    A 1D array sized for 64-bit addresses used to exchange input/output buffer
+    addresses with peers. Sized at 128 for alignment (1024 bytes).
     """
 
 

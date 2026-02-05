@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.globals import global_constant
+from testing import assert_equal
 
 
 fn use_lookup(idx: Int) -> Int64:
@@ -35,4 +36,5 @@ fn use_lookup(idx: Int) -> Int64:
 
 
 def main():
-    print(use_lookup(3))
+    var x = use_lookup(3)
+    assert_equal(x, 34)

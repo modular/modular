@@ -16,9 +16,6 @@ from collections import OptionalReg
 from math import ceildiv, recip
 from nn.mha_utils import DynamicInt
 from math.constants import log2e
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import (
     align_of,
     has_nvidia_gpu_accelerator,
@@ -110,6 +107,7 @@ from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from gpu.host.info import B200, GPUInfo
 from nn.mla_decode_sm100 import mla_decode_sm100
+from nn.mla_decode_sm100_kv_fp8 import mla_decode_sm100_kv_fp8
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -277,7 +275,7 @@ fn flare_mla_decoding[
     var valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        UnsafePointer[UInt32](),
+        UnsafePointer[UInt32, MutExternalOrigin](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -394,36 +392,70 @@ fn flare_mla_decoding_dispatch[
         # TODO: add partitioning for SM100
         var num_partitions_value: Int = 1
 
-        mla_decode_sm100[
-            q.dtype,
-            q.layout,
-            k_t,
-            output.dtype,
-            mask_t,
-            score_mod_t,
-            valid_length.layout,
-            config=config,
-            depth = Int(depth),
-            num_heads = Int(num_heads),
-            group = Int(group),
-            use_score_mod=use_score_mod,
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            batch_size,
-            num_partitions_value,
-            max_cache_valid_length,
-            max_prompt_len,
-            valid_length,
-            mask_functor,
-            score_mod_functor,
-            ctx,
-        )
+        @parameter
+        if k_t.dtype == DType.float8_e4m3fn:
+            # convert fp8 KV to bf16 KV
+            mla_decode_sm100_kv_fp8[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                mask_t,
+                score_mod_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                max_prompt_len,
+                valid_length,
+                mask_functor,
+                score_mod_functor,
+                ctx,
+            )
+        else:
+            mla_decode_sm100[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                mask_t,
+                score_mod_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                use_score_mod=use_score_mod,
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                max_prompt_len,
+                valid_length,
+                mask_functor,
+                score_mod_functor,
+                ctx,
+            )
     else:
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
@@ -483,7 +515,9 @@ fn flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[Scalar[accum_type]]()
+        comptime nullptr = UnsafePointer[
+            Scalar[accum_type], MutExternalOrigin
+        ]()
 
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](ctx, q.ptr, q.size(), owning=False)
@@ -545,11 +579,11 @@ fn mla_decoding[
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     num_partitions: Int,
@@ -709,11 +743,11 @@ fn mla_decoding_single_batch[
     use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
-    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
-    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()], MutAnyOrigin],
     scale: Float32,
     num_keys: UInt,
     num_partitions: UInt,
@@ -1789,11 +1823,11 @@ fn mla_prefill[
     use_score_mod: Bool = False,
     _ndbuffer_mha_operand: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     batch_size: Int,
     seq_len_arg: Int,
@@ -1918,11 +1952,11 @@ fn mla_prefill_single_batch[
     cache_depth: Int = 576,
     use_score_mod: Bool = False,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
-    output_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     scale: Float32,
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.

@@ -160,7 +160,7 @@ def test_ep_moe_fp8(
         max_tokens_per_rank=max_tokens_per_rank,
         n_gpus_per_node=n_devices,
         n_nodes=1,  # Single node test
-        dispatch_fp8_config=fp8_input_config,
+        dispatch_fp8_config=fp8_config,
     )
 
     # Initialize EP communication

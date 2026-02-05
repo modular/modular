@@ -27,6 +27,7 @@ underlying GPU architecture.
 
 from collections.string.string_slice import get_static_string
 from os.atomic import Consistency
+from ffi import external_call
 from sys import (
     is_amd_gpu,
     is_gpu,
@@ -34,7 +35,6 @@ from sys import (
     is_apple_gpu,
     size_of,
     _RegisterPackType,
-    external_call,
 )
 from sys._assembly import inlined_assembly
 from sys.info import (
