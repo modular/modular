@@ -13,16 +13,37 @@
 """ops.repeat_interleave tests."""
 
 import operator
+from collections.abc import Iterable
 from functools import reduce
 
 import pytest
 from conftest import GraphBuilder, axes, tensor_types
-from hypothesis import assume, given, reject
+from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Shape, StaticDim, TensorType, ops
 
 shared_tensor_types = st.shared(tensor_types())
+
+_MAX_INT64 = 2**63 - 1
+
+
+def _int64_product_fits(values: Iterable[Dim | int], initial: int = 1) -> bool:
+    """Check if the product of values fits in int64 without intermediate overflow.
+
+    Unlike Python's arbitrary-precision integers, int64 arithmetic can overflow
+    during intermediate multiplications even if the final result would fit.
+    For example, [2, 2^62, 0] has product 0, but 2 * 2^62 overflows int64.
+    """
+    result = abs(int(initial))
+    for v in values:
+        v = abs(int(v))
+        if v == 0:
+            return True  # Product is 0, no overflow possible
+        if result > _MAX_INT64 // v:
+            return False  # Multiplication would overflow
+        result *= v
+    return result <= _MAX_INT64
 
 
 @given(
@@ -36,13 +57,12 @@ def test_repeat_interleave(
     repeats: int,
     axis: int,
 ) -> None:
+    assume(repeats <= _MAX_INT64)  # repeats must fit in int64
     dim = type.shape[axis]
-    assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
+    assume(
+        not isinstance(dim, StaticDim) or _int64_product_fits([dim], repeats)
+    )
     with graph_builder(input_types=[type]) as graph:
-        try:  # dims must fit into an int64
-            _ = repeats * type.shape[axis]
-        except ValueError:
-            reject()  # test dim out of range
         out = ops.repeat_interleave(graph.inputs[0].tensor, repeats, axis)
         target_shape = list(type.shape)
         target_shape[axis] *= repeats
@@ -85,8 +105,8 @@ def test_repeat_interleave__no_axis(
     type: TensorType,
     repeats: int,
 ) -> None:
-    static_product = reduce(operator.mul, type.shape.static_dims, repeats)
-    assume(static_product < 2**63)
+    # Check that the product of static dims fits in int64 (for reshape and output)
+    assume(_int64_product_fits(type.shape.static_dims, repeats))
     with graph_builder(input_types=[type]) as graph:
         out = ops.repeat_interleave(graph.inputs[0].tensor, repeats)
         flat_size = reduce(operator.mul, type.shape, 1)
