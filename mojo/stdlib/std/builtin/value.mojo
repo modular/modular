@@ -243,7 +243,8 @@ trait TrivialRegisterType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
     """A marker trait to denote the type to be register passable trivial.
 
      The compiler treats the type that conforms to this trait with the
-     followings:
+     following constraints:
+
      - The type implicitly conforms to Copyable and the compiler synthesizes
      `__copyinit__` that does a memcpy.
      - A trivial `__del__` member is synthesized by the compiler too,
@@ -256,6 +257,38 @@ trait TrivialRegisterType(ImplicitlyCopyable, ImplicitlyDestructible, Movable):
 
      ```mojo
     struct Foo(TrivialRegisterType):
+        ...
+     ```
+
+    """
+
+    pass
+
+
+trait RegisterType(Movable):
+    """A marker trait to denote the type to be register passable.
+
+     The compiler treats the type that conforms to this trait with the
+     following constraints:
+
+     - the value struct doesn’t have “identity” - you can’t take the
+       address of self on read convention methods. This is allows
+       the compiler to pass it in registers.
+
+     - The type implicitly conforms to Movable and the compiler synthesizes
+       a trivial move constructor. The compiler needs to be able to move around
+       values of the type by loading and storing them. A custom defined
+       __moveinit__ is not allowed.
+
+     - Compiler checks that any stored member (`var`s) also conforms to this
+       trait. It wouldn’t be possible to provide identity for a contained
+       member if the container doesn’t have identity.
+
+     - The type can choose whether it wants to be Copyable or not.
+
+
+     ```mojo
+    struct Foo(RegisterType):
         ...
      ```
 
