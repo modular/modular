@@ -390,9 +390,7 @@ fn _allreduce_2stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    var rs_config = ReduceScatterConfig[dtype, ngpus](
-        num_elements, global_tid, stride, my_rank
-    )
+    var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
 
     @parameter
     if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
@@ -440,7 +438,7 @@ fn _allreduce_2stage_kernel[
     # Output lambda for reduce-scatter: write to scratch buffer
     var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
         tmp_out,
-        rs_config.largest_part,
+        rs_config.rank_part(my_rank),
     )
 
     @always_inline
@@ -474,26 +472,45 @@ fn _allreduce_2stage_kernel[
     comptime simd_width = rs_config.simd_width
     comptime alignment = rs_config.alignment
 
+    # Ragged handling:
+    # When there are ragged elements (rs_config.remainder > 0), GPU-0 has the
+    # largest partition and GPU-(ngpus - 1) has the smallest partition
+    # (at most 1 SIMD vector smaller). When remainder == 0, all GPUs have
+    # equal partition sizes.
+
+    # Main loop - only process unragged elements (no bounds check)
     for idx in range(
-        rs_config.thr_local_start,
-        rs_config.largest_part,
+        rs_config.thr_local_start(global_tid),
+        rs_config.rank_part(ngpus - 1),
         rs_config.stride,
     ):
 
         @parameter
         for gpu_idx in range(ngpus):
-            var gather_from_rank = (my_rank + gpu_idx) % ngpus
+            var peer_rank = (my_rank + gpu_idx) % ngpus
 
-            # Handle edge cases for non-uniform partitions, where
-            # the final rank may have larger partition size.
-            if (gather_from_rank == (ngpus - 1)) or idx < rs_config.part:
-                var dst_idx = (gather_from_rank * rs_config.part) + idx
-                output_lambda[width=simd_width, alignment=alignment](
-                    result.get_nd_index(dst_idx),
-                    tmps[gpu_idx]
-                    .address_space_cast[_target_address_space]()
-                    .load[width=simd_width, alignment=alignment](idx),
-                )
+            var dst_idx = rs_config.rank_start(peer_rank) + idx
+            output_lambda[width=simd_width, alignment=alignment](
+                result.get_nd_index(dst_idx),
+                tmps[gpu_idx]
+                .address_space_cast[_target_address_space]()
+                .load[width=simd_width, alignment=alignment](idx),
+            )
+
+    # Ragged tail - max 1 simd vector per gpu, spread work between threads
+    if global_tid < ngpus:
+        var peer_rank = (my_rank + global_tid) % ngpus
+        if peer_rank < rs_config.remainder:
+            var idx = (
+                rs_config.rank_part(0) - simd_width
+            )  # last ragged simd_vector
+            var dst_idx = rs_config.rank_start(peer_rank) + idx
+            output_lambda[width=simd_width, alignment=alignment](
+                result.get_nd_index(dst_idx),
+                tmps[global_tid]
+                .address_space_cast[_target_address_space]()
+                .load[width=simd_width, alignment=alignment](idx),
+            )
 
 
 @__llvm_metadata(
@@ -689,6 +706,9 @@ fn _allreduce_p2p[
             comptime tile_vectors = 256 * atom_size
             var num_simd_vectors_total = num_elements // simd_width
             var num_tiles_total = ceildiv(num_simd_vectors_total, tile_vectors)
+
+            if num_simd_vectors_total % tile_vectors != 0:
+                raise Error("Quickreduce allreduce requires full tiles")
 
             var grid_size = min(max_num_blocks, num_tiles_total)
 
