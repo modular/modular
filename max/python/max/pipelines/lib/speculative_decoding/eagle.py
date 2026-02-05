@@ -104,13 +104,13 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         self._accepted_hidden_states_extractor = self._target_session.load(
             accepted_hidden_states_extractor(
-                device=DeviceRef.from_device(self.target_devices[0])
+                devices=DeviceRef.from_device(self.target_devices[0])
             )
         )
 
         self._hidden_states_filter = self._target_session.load(
             filter_hidden_states(
-                device=DeviceRef.from_device(self.target_devices[0])
+                devices=DeviceRef.from_device(self.target_devices[0])
             )
         )
 

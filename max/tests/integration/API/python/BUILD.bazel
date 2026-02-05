@@ -208,7 +208,6 @@ modular_py_test(
     size = "large",
     srcs = [
         "conftest.py",
-        "test_eagle_hidden_states_ops.py",
         "test_speculative_decoding.py",
     ],
     data = [
@@ -230,7 +229,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
@@ -239,6 +237,27 @@ modular_py_test(
         "//max/tests/integration/pipelines/python:hf_repo_lock",
         "//max/tests/integration/pipelines/python/test_common:pipeline_model_dummy",
         "//max/tests/integration/pipelines/python/test_common:registry",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_eagle_hidden_states_ops",
+    size = "large",
+    srcs = [
+        "test_eagle_hidden_states_ops.py",
+    ],
+    env = {"MODULAR_PATH": "."},
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("torch"),
     ],
