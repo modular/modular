@@ -105,8 +105,8 @@ def test_reducescatter_wrong_shape() -> None:
 def test_reducescatter_basic() -> None:
     """Test basic reducescatter use case.
 
-    With 4 devices and input shape [24, 5], output shape should be [6, 5]
-    (24 / 4 = 6 along axis 0).
+    With 4 devices and input shape [5, 24], output shape should be [5, 6]
+    (24 / 4 = 6 along axis 1).
     """
     devices = [
         DeviceRef.GPU(id=0),
@@ -119,10 +119,10 @@ def test_reducescatter_basic() -> None:
     with Graph(
         "reducescatter",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[24, 5], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[24, 5], device=devices[1]),
-            TensorType(dtype=DType.float32, shape=[24, 5], device=devices[2]),
-            TensorType(dtype=DType.float32, shape=[24, 5], device=devices[3]),
+            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[0]),
+            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[2]),
+            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[3]),
             *signals.input_types(),
         ],
     ) as graph:
@@ -133,13 +133,12 @@ def test_reducescatter_basic() -> None:
         graph.output(*reducescatter_outputs)
         for output, device in zip(reducescatter_outputs, devices, strict=True):
             assert device == output.device
-            # Output shape should be [6, 5] (input_dim / num_devices along axis 0)
-            assert output.shape[0] == 6
-            assert output.shape[1] == 5
+            assert output.shape[0] == 5
+            assert output.shape[1] == 6  # 24 / 4
 
 
-def test_reducescatter_axis1_not_supported() -> None:
-    """Test that axis != 0 raises NotImplementedError."""
+def test_reducescatter_axis0_not_supported() -> None:
+    """Test that axis != -1 raises NotImplementedError."""
     devices = [
         DeviceRef.GPU(id=0),
         DeviceRef.GPU(id=1),
@@ -148,7 +147,7 @@ def test_reducescatter_axis1_not_supported() -> None:
 
     with pytest.raises(
         NotImplementedError,
-        match=r"reducescatter.sum only supports axis=0",
+        match=r"reducescatter.sum only supports axis=-1",
     ):
         with Graph(
             "reducescatter",
@@ -165,5 +164,5 @@ def test_reducescatter_axis1_not_supported() -> None:
             ops.reducescatter.sum(
                 inputs=(v.tensor for v in graph.inputs[: len(devices)]),
                 signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
-                axis=1,
+                axis=0,
             )
