@@ -85,6 +85,9 @@ what we publish.
   The majority of generic algorithms that take their inputs by reference should
   not be affected.
 
+- Unstable `__comptime_assert` syntax is now finalized as `comptime assert`. A
+  deprecation warning is emitted with a fixit for the old syntax.
+
 ### Library changes
 
 - The `builtin.math` module has been merged into `math`. The traits `Absable`,

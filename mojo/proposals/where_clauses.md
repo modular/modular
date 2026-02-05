@@ -13,6 +13,9 @@ Status: Updated to remove the error message field. Implementation in progress.
 **Dec 4, 2025**
 Status: Original feature implemented. Added `__comptime_assert` statement.
 
+**Feb 3, 2026**
+Status: `__comptime_assert` syntax finalized as `comptime assert`
+
 This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
 for our users.
@@ -371,7 +374,7 @@ A dedicated statement that brings into scope an assumption, similar to
 `constrained` but more powerful.
 
 ```python
-__comptime_assert 2.is_prime()
+comptime assert 2.is_prime()
 needs_prime[2]()
 ```
 
@@ -398,11 +401,11 @@ when the condition fails.
 Examples:
 
 ```python
-__comptime_assert 2.is_prime()
+comptime assert 2.is_prime()
 
-__comptime_assert 2.is_prime(), "2 should be a prime"
+comptime assert 2.is_prime(), "2 should be a prime"
 
-__comptime_assert x > 2, "x should be greater than 2, got " + x + " instead"
+comptime assert x > 2, "x should be greater than 2, got " + x + " instead"
 ```
 
 The leading underscores indicate that this is not its final name.
@@ -413,13 +416,13 @@ The leading underscores indicate that this is not its final name.
 
 If the condition folds to False in the parser, the parser will report a local error.
 
-> error: failed __comptime_assert: condition is always False.
+> error: failed comptime assert: condition is always False.
 >
 
 If the condition folds to True in the parser, the parser will report a warning
 that this statement can be removed.
 
-> warning: redundant __comptime_assert: condition is always True.
+> warning: redundant comptime assert: condition is always True.
 >
 
 Otherwise, the condition is verified by the elaborator, and works exactly like
@@ -436,7 +439,7 @@ fn needs_prime[x: Int where is_prime(x)]():
   ...
 
 fn main():
- __comptime_assert is_prime(2)
+ comptime assert is_prime(2)
  needs_prime[2]()   # This is OK.
 ```
 
