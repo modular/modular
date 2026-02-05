@@ -391,9 +391,6 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.quantization_encoding == "bfloat16"
         assert config.model.kv_cache.kv_cache_page_size == 512
 
-    @pytest.mark.skip(
-        reason="SERVOPT-971: Failing due to cache_dtype assertion"
-    )
     @mock_pipeline_config_resolve
     def test_kv_cache_config_dtype(
         self,
@@ -411,9 +408,17 @@ class TestPipelineConfigUtilityMethods:
 
         config = PipelineConfig(**kwargs)
         assert config.model.quantization_encoding == "float4_e2m1fnx2"
-        assert config.model.kv_cache.cache_dtype == DType.bfloat16
+        # The KV cache dtype initially has a default value.
+        assert config.model.kv_cache.cache_dtype == DType.float32
+
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding == "float8_e4m3fn"
+        # The draft model KV cache dtype initially has a default value.
+        assert config.draft_model.kv_cache.cache_dtype == DType.float32
+
+        config.model.set_cache_dtype_given_quantization_encoding()
+        config.draft_model.set_cache_dtype_given_quantization_encoding()
+        assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
 

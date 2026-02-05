@@ -1169,8 +1169,10 @@ class MAXModelConfig(MAXModelConfigBase):
         if cache_dtype := self._get_cache_override():
             self.kv_cache._cache_dtype = cache_dtype
 
-    def set_default_cache_dtype_if_needed(self) -> None:
-        """Determine the KV cache dtype based on configuration.
+    def set_cache_dtype_given_quantization_encoding(
+        self,
+    ) -> None:
+        """Determine the KV cache dtype based on quantization encoding configuration.
 
         The dtype is determined in the following priority order:
         1. Explicit override from kv_cache.kv_cache_format (if set)
