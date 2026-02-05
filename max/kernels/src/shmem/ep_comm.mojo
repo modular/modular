@@ -1914,7 +1914,6 @@ fn dispatch_wait_kernel[
     fused_shared_expert: Bool = False,
     shared_expert_input_dtype: DType = DType.bfloat16,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
-    use_shmem: Bool = True,
 ](
     format_handler: token_fmt_type,
     row_offsets: LayoutTensor[DType.uint32, row_offsets_layout, MutAnyOrigin],
@@ -1956,7 +1955,6 @@ fn dispatch_wait_kernel[
             routed experts' inputs.
         shared_expert_input_dtype: The data type of the shared expert inputs.
         input_scales_wrapper: The wrapper for the input scales.
-        use_shmem: Whether to use the SHMEM API for the communication.
 
     Args:
         format_handler: Instance of token_fmt_type that performs token decoding
@@ -1990,9 +1988,9 @@ fn dispatch_wait_kernel[
         max_tokens_per_rank,
         1,  # p2p world size
         token_fmt_type,
-        use_shmem,
-        expert_m_padding,
-        fused_shared_expert,
+        use_shmem=False,
+        expert_m_padding=expert_m_padding,
+        fused_shared_expert=fused_shared_expert,
     ]
 
     var atomic_counter = ep_counters.get_dispatch_wait_ptr()
@@ -2705,7 +2703,6 @@ fn combine_wait_kernel[
     max_tokens_per_rank: Int,
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    use_shmem: Bool = True,
 ](
     output_tokens: LayoutTensor[
         output_type, output_tokens_layout, MutAnyOrigin
@@ -2734,7 +2731,6 @@ fn combine_wait_kernel[
         router_weights_wrapper: The wrapper for the router weights. If provided,
             all routed experts' outputs for a token will be weighted and summed.
         elementwise_lambda_fn: Optional output lambda function.
-        use_shmem: Whether to use the SHMEM API for the communication.
 
     Args:
         output_tokens: The tensor to store the output tokens.
@@ -2757,7 +2753,7 @@ fn combine_wait_kernel[
         msg_bytes,
         max_tokens_per_rank,
         1,  # p2p world size is not used in combine_wait
-        use_shmem,
+        use_shmem=False,
     ]
 
     var atomic_counter = ep_counters.get_combine_wait_ptr()

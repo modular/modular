@@ -147,6 +147,7 @@ def call_ep_init(
         "n_experts": config.n_experts,
         "max_token_per_rank": config.max_tokens_per_rank,
         "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
     }
     if config.dispatch_fp8_config is not None:
         if config.dispatch_fp8_config.is_nvfp4:
