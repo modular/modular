@@ -572,13 +572,15 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     }
 
     // Otherwise, apply the default argument. We've ensured before that we
-    // have a default argument for each missing operand.
-    TypedAttr defaultOr = argListAttr.getDefault(argIdx);
-    assert(defaultOr);
-    assert(convention != ArgConvention::Mut &&
-           "by_ref argument cannot have defaults");
+    // have a default argument for each missing operand.  We need to emit it
+    // with our expected type because there may be an implicit conversion.
+    PValue defaultVal = argListAttr.getDefault(argIdx);
+    AnyValue argVal =
+        emitOneArgVal({defaultVal, callExpr}, argIdx, convention, expectedType);
+    if (!argVal)
+      return failure();
     isDefaultMask.set(argIdx);
-    argumentValues.push_back({PValue(defaultOr), callExpr});
+    argumentValues.push_back({argVal, callExpr});
   }
 
   assert(posOperandIdx == operands.size() &&

@@ -349,6 +349,11 @@ fn test_auto_kw_default(a: IndexParam, b: IndexParam):
   auto_kw_default[1, v=2](a, b)
 
 
+fn default_with_parametric_value[i: Int](a: StructWithIntParam[i], b: StructWithIntParam[i] = StructWithIntParam[i]()):
+     pass
+fn test_default_with_parametric_value(zzz: StructWithIntParam[1]):
+    default_with_parametric_value(zzz)
+
 struct HasInferredParamWithAutoParam[value: StructWithIntParam, //]:
     pass
 fn test_autoparam_inferred[x: StructWithIntParam]():
@@ -1271,8 +1276,10 @@ fn default_on_infer_failure[p: Int = 0](a: Optional[ParamType[p]] = None):
 
 # CHECK-LABEL: lit.fn @"test_optional_inference
 fn test_optional_inference(value: ParamType[3]):
-    # CHECK-NEXT: [[NONE:%.*]] = lit.var.decl {{.*}}ParamType<:!Int {0}>
-    # CHECK: [[IMMUT:%.*]] = lit.ref.immut [[NONE]]
+    # CHECK-NEXT: %none = kgen.param.constant
+    # CHECK-NEXT: [[NONEVD:%.*]] = lit.var.decl {{.*}}ParamType<:!Int {0}>
+    # CHECK-NEXT: lit.call {{.*}}@Optional::@"__init__{{.*}}(%none, [[NONEVD]])
+    # CHECK: [[IMMUT:%.*]] = lit.ref.immut [[NONEVD]]
     # CHECK-NEXT: call {{.*}}default_on_infer_failure{{.*}}<:!Int {0}>([[IMMUT]])
     default_on_infer_failure()
 
@@ -1281,6 +1288,23 @@ fn test_optional_inference(value: ParamType[3]):
 
     # CHECK: call {{.*}}default_on_infer_failure{{.*}}<:!Int {3}>
     default_on_infer_failure(value)
+
+# The default value is a different type (non-parameterized) the argument. This
+# allows callers to infer O from the default value.
+
+# CHECK-LABEL: lit.fn @"default_inferring_param
+# CHECK: (%str: !lit.struct<#StringSlice <{{.*}} O>> = :!alias_StaticString1 apply
+fn default_inferring_param[O: ImmutOrigin](str: StringSlice[O] = StaticString("")):
+    pass
+
+# CHECK-LABEL: lit.fn @"test_default_inferring_param
+fn test_default_inferring_param(b: String):
+    # Infers O to default value.
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:i1 0}, :!lit.struct<#Origin <:!Bool {:i1 0}>> {_mlir_origin: origin<0> = #lit.origin.field<#lit.static.origin : !lit.origin<0>, "__constants__">}>>
+    # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
+    default_inferring_param()
+    default_inferring_param(StaticString("a"))
+    default_inferring_param(b)
 
 ##===----------------------------------------------------------------------===##
 # Default struct parameters

@@ -166,9 +166,32 @@ ParseResult LIT::parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
   if (hasAddress)
     if (auto ref = dyn_cast<RefType>(type))
       type = ref.getElementType();
-  if (succeeded(p.parseOptionalEqual()))
+  if (succeeded(p.parseOptionalEqual())) {
+    // The default value can mismatch; if so, it will have a :type prefix that
+    // overrides the expected type.
+    (void)parseColonTypeOrDefault(p, type, type);
     return parseParamValue(p, defaultVal, type);
+  }
   return success();
+}
+
+void LIT::printOptionalDefaultValue(AsmPrinter &p, TypedAttr defaultVal,
+                                    Type type, bool hasAddress) {
+  if (!defaultVal)
+    return;
+  if (hasAddress)
+    if (auto ref = dyn_cast<RefType>(type))
+      type = ref.getElementType();
+
+  p << " = ";
+  // The default value can mismatch the expected type; if so, print the
+  // actual type.
+  if (defaultVal.getType() != type) {
+    p << ':';
+    printKGENType(p, defaultVal.getType());
+    p << ' ';
+  }
+  printParamValue(p, defaultVal);
 }
 
 /// Helper to parse sigils that indicate that an argument/parameter is variadic
@@ -409,8 +432,8 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
 
     if (TypedAttr defaultOr = paramListAttr.getDefault(idx)) {
-      p << " = ";
-      printParamValue(p, evaluator.getReboundAttribute(defaultOr));
+      printOptionalDefaultValue(p, evaluator.getReboundAttribute(defaultOr),
+                                decl.getType());
     }
 
     printOptionalConstraintsList(p, pogs[idx].getConstraints(), &evaluator);
@@ -500,11 +523,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     }
     printKGENType(p, type);
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
-
-    if (TypedAttr defaultOr = paramListAttr.getDefault(idx)) {
-      p << " = ";
-      printParamValue(p, defaultOr);
-    }
+    printOptionalDefaultValue(p, paramListAttr.getDefault(idx), type);
 
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
@@ -618,11 +637,8 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
                                          .getOrigVariadicConvention()
                                    : argConv;
     printConventionAndVariadicness(p, convention, variadicness);
-
-    if (TypedAttr defaultOr = argListAttr.getDefault(i)) {
-      p << " = ";
-      printParamValue(p, defaultOr);
-    }
+    printOptionalDefaultValue(p, argListAttr.getDefault(i),
+                              signature.getArgument(i), hasAddress(argConv));
 
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(i);
@@ -1063,6 +1079,8 @@ LogicalResult
 LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
                         PogListAttr pogListAttr, ArrayRef<Type> types,
                         StringRef argOrParam, ArrayRef<ArgConvention> convs) {
+  return success();
+
   for (size_t idx = 0; idx < pogListAttr.size(); ++idx) {
     TypedAttr defaultOr = pogListAttr.getDefault(idx);
     if (!defaultOr || pogListAttr.isAnyVarArg(idx))

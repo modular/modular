@@ -6,6 +6,9 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+struct HasIntParam[x: Int]:
+  fn __init__(out self): pass
+
 ##===----------------------------------------------------------------------===##
 # Functions
 ##===----------------------------------------------------------------------===##
@@ -135,6 +138,21 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[1]' value to 'Int'}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
+
+# expected-note @+1 {{function declared here}}
+fn defaultArgumentBadType2[T: AnyType](a: T = 1.0): pass
+fn callDefaultArgumentBadType2():
+  # expected-error @+1 {{invalid call to 'defaultArgumentBadType2': value passed to 'a' cannot be converted from 'FloatLiteral[1]' to 'Int'}}
+  defaultArgumentBadType2[Int]()
+  defaultArgumentBadType2[Float64]()
+
+# expected-error @+1 {{invalid call to '__init__': no candidates found}}
+fn test_contextual_default[T: AnyType](copies: T = {}):
+    pass
+
+# this should work.
+fn test_contextual_default2[i: Int](x: HasIntParam[i] = {}):
+    pass
 
 # expected-error @+1 {{'mut' arguments may not have defaults}}
 fn byref_default(mut x: Int = 2): pass

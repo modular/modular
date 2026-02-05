@@ -676,8 +676,8 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printConventionAndVariadicness(p, argConv, argListAttr.getVariadicKind(i));
 
     if (TypedAttr defaultOr = argListAttr.getDefault(i)) {
-      p << " = ";
-      printParamValue(p, evaluator.getReboundAttribute(defaultOr));
+      printOptionalDefaultValue(p, evaluator.getReboundAttribute(defaultOr),
+                                signature.getArgument(i), hasAddress(argConv));
     }
 
     // Check if we are at the end; if so, we might still have to print a '/'.
