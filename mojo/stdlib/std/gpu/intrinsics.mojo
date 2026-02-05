@@ -91,7 +91,7 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    __comptime_assert dtype.is_numeric(), "the dtype must be numeric"
+    comptime assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -120,11 +120,11 @@ fn warpgroup_reg_alloc[count: Int]():
           longer needed
     """
 
-    __comptime_assert (
+    comptime assert (
         count % 8 == 0
     ), "count argument to warpgroup_reg_alloc must be in multiples of 8"
 
-    __comptime_assert (
+    comptime assert (
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
@@ -155,11 +155,11 @@ fn warpgroup_reg_dealloc[count: Int]():
         - Pair with `warpgroup_reg_alloc()` when extra registers are needed.
     """
 
-    __comptime_assert (
+    comptime assert (
         count % 8 == 0
     ), "count argument to warpgroup_reg_dealloc must be in multiples of 8"
 
-    __comptime_assert (
+    comptime assert (
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
@@ -619,12 +619,12 @@ fn threadfence[scope: Scope = Scope.GPU]():
         - Critical for synchronizing memory access in parallel algorithms.
         - Performance impact increases with broader scopes.
     """
-    __comptime_assert scope in (
+    comptime assert scope in (
         Scope.GPU,
         Scope.BLOCK,
         Scope.SYSTEM,
     ), "invalid threadfence scope"
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "threadfence is only implemented on NVIDIA GPUs"
 
@@ -656,7 +656,7 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
-    __comptime_assert is_nvidia_gpu(), (
+    comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
     )
@@ -681,7 +681,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
 
 
 fn _get_nvtx_pointer_constraint() -> StaticString:
-    __comptime_assert is_nvidia_gpu(), (
+    comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_pointer_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
     )
@@ -745,7 +745,7 @@ fn store_release[
         - Ensures all previous memory operations complete before this store.
         - Critical for implementing synchronization primitives.
     """
-    __comptime_assert is_gpu(), "atomic store only supported on GPU"
+    comptime assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -817,7 +817,7 @@ fn store_relaxed[
         ptr: Pointer to the memory location.
         value: Value to store.
     """
-    __comptime_assert is_gpu(), "atomic store only supported on GPU"
+    comptime assert is_gpu(), "atomic store only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -879,7 +879,7 @@ fn load_acquire[
         - Ensures subsequent memory operations don't execute until after load.
         - Critical for implementing synchronization primitives.
     """
-    __comptime_assert is_gpu(), "atomic load only supported on GPU"
+    comptime assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -954,7 +954,7 @@ fn load_relaxed[
     Returns:
         The loaded value.
     """
-    __comptime_assert is_gpu(), "atomic load only supported on GPU"
+    comptime assert is_gpu(), "atomic load only supported on GPU"
 
     @parameter
     if is_nvidia_gpu():
@@ -1008,7 +1008,7 @@ fn store_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular stores.
     """
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "store_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
@@ -1048,7 +1048,7 @@ fn load_volatile[
         - Useful for memory-mapped I/O or synchronization primitives.
         - May have performance implications compared to regular loads.
     """
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "load_volatile is not currently supported on AMD GPUs"
     comptime mem_constraint = StaticString(",~{memory}") if memory else ""
@@ -1090,7 +1090,7 @@ struct AMDBufferResource(TrivialRegisterType):
             gds_ptr: Pointer to the buffer in global memory.
             num_records: Number of records in the buffer.
         """
-        __comptime_assert (
+        comptime assert (
             is_amd_gpu()
         ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
@@ -1111,7 +1111,7 @@ struct AMDBufferResource(TrivialRegisterType):
             # GFX10.x (RDNA1/RDNA2)
             self.desc[3] = 0x31014000
         else:
-            __comptime_assert _cdna_3_or_newer(), (
+            comptime assert _cdna_3_or_newer(), (
                 "The AMDBufferResource struct is only defined for CDNA 3+"
                 " and RDNA 1-4 GPUs."
             )
@@ -1121,7 +1121,7 @@ struct AMDBufferResource(TrivialRegisterType):
     @always_inline("nodebug")
     fn __init__(out self):
         """Constructs a zeroed AMD buffer resource descriptor."""
-        __comptime_assert (
+        comptime assert (
             is_amd_gpu()
         ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
         self.desc = 0
@@ -1167,7 +1167,7 @@ struct AMDBufferResource(TrivialRegisterType):
         Returns:
             SIMD vector containing the loaded data.
         """
-        __comptime_assert (
+        comptime assert (
             is_amd_gpu()
         ), "The buffer_load function is only applicable on AMDGPU hardware."
 
@@ -1218,7 +1218,7 @@ struct AMDBufferResource(TrivialRegisterType):
             shared_ptr: Shared memory address.
             scalar_offset: Scalar memory offset in elements (shared across wave).
         """
-        __comptime_assert (
+        comptime assert (
             is_amd_gpu()
         ), "The buffer_load_lds function is only applicable on AMDGPU hardware."
 
@@ -1275,7 +1275,7 @@ struct AMDBufferResource(TrivialRegisterType):
             - SC[1:0] controls coherency scope: 0=wave, 1=group, 2=device, 3=system.
             - nt=True: Use streaming-optimized cache policies (recommended for streaming data).
         """
-        __comptime_assert (
+        comptime assert (
             is_amd_gpu()
         ), "The buffer_store function is only applicable on AMDGPU hardware."
 
@@ -1343,7 +1343,7 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     elif bytes == 2:
         return DType.uint16
     else:
-        __comptime_assert bytes in (4, 8, 16), "Width not supported"
+        comptime assert bytes in (4, 8, 16), "Width not supported"
         return DType.uint32
 
 
@@ -1383,15 +1383,15 @@ fn ds_read_tr16_b64[
         - Result width is fixed to 4 elements of dtype.
     """
 
-    __comptime_assert (
+    comptime assert (
         is_amd_gpu()
     ), "The ds_read_tr16_b64 function is only applicable on AMDGPU hardware."
 
-    __comptime_assert (
+    comptime assert (
         size_of[dtype]() == 2
     ), "ds_read_tr16_b64 supports 16-bit dtypes."
 
-    __comptime_assert (
+    comptime assert (
         _cdna_4_or_newer()
     ), "ds_read_tr16_b64 is only supported on CDNA4+"
 
@@ -1422,14 +1422,14 @@ fn permlane_swap[
     Returns:
         SIMD vector containing the swapped values.
     """
-    __comptime_assert (
+    comptime assert (
         is_amd_gpu()
     ), "The _amd_permlane_swap function is only applicable on AMDGPU hardware."
-    __comptime_assert (
+    comptime assert (
         _cdna_4_or_newer()
     ), "permlane swap is only supported on CDNA4+"
-    __comptime_assert bit_width_of[dtype]() == 32, "Unsupported dtype"
-    __comptime_assert stride in (16, 32), "Unsupported stride"
+    comptime assert bit_width_of[dtype]() == 32, "Unsupported dtype"
+    comptime assert stride in (16, 32), "Unsupported stride"
 
     comptime asm = "llvm.amdgcn.permlane" + String(stride) + ".swap"
     var result = llvm_intrinsic[

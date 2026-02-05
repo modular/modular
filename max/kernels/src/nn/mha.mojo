@@ -332,16 +332,16 @@ fn flash_attention[
     This kernels handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert (
+    comptime assert (
         ragged or q.rank == 4
     ), "only support rank 4 inputs for non-ragged inputs."
-    __comptime_assert (
+    comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert (
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -501,8 +501,8 @@ fn flash_attention_dispatch[
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     comptime is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
-    __comptime_assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
+    comptime assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
+    comptime assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
     var batch_size: Int
 
     @parameter
@@ -565,7 +565,7 @@ fn flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    __comptime_assert is_sm100
+                    comptime assert is_sm100
 
                     @parameter
                     if depth == 256 or not env_get_bool["ENABLE_FA4", True]():
@@ -1194,7 +1194,7 @@ fn flash_attention[
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert q.rank == 4, "only support rank 4 inputs."
+    comptime assert q.rank == 4, "only support rank 4 inputs."
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()
@@ -1296,14 +1296,12 @@ fn flash_attention_ragged[
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert (
-        q.rank == 3
-    ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert q.rank == 3, "only support rank 3 inputs for ragged inputs."
+    comptime assert (
         q.dtype == k.dtype == v.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1555,7 +1553,7 @@ fn mha[
                 sink_weights,
             )
     elif is_amd_gpu():
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
 
@@ -1635,7 +1633,7 @@ fn mha_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -1648,7 +1646,7 @@ fn mha_single_batch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2404,7 +2402,7 @@ fn mha_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -2417,7 +2415,7 @@ fn mha_single_batch_pipelined[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -3259,7 +3257,7 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
@@ -3464,20 +3462,20 @@ fn mha_decoding_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
-    __comptime_assert group <= 16, String(
+    comptime assert group <= 16, String(
         "Only support GQA with group <= 16 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -4177,18 +4175,18 @@ fn mha_decoding_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    __comptime_assert group <= 8, String(
+    comptime assert group <= 8, String(
         "Only support GQA with group <= 8 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -4635,7 +4633,7 @@ fn mha_splitk_reduce[
     num_partitions: Int,
 ):
     # we only reduce over a warp so limit number of warps to 1
-    __comptime_assert num_threads == UInt(WARP_SIZE), (
+    comptime assert num_threads == UInt(WARP_SIZE), (
         "num_threads: "
         + String(num_threads)
         + " should be equal to the warp_size:"

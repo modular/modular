@@ -216,33 +216,31 @@ fn validate_grouped_gemm_constraints[
     - 16-byte alignment on contiguous dimensions
     """
     # MMA tiler constraints
-    __comptime_assert config.mma_shape[0] in (
+    comptime assert config.mma_shape[0] in (
         128,
         256,
     ), "MMA tiler M must be 128 or 256"
-    __comptime_assert config.mma_shape[1] in (
+    comptime assert config.mma_shape[1] in (
         128,
         256,
     ), "MMA tiler N must be 128 or 256"
 
     # Cluster constraints
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[0] <= 4
     ), "Cluster M must be <=4 for SF multicast"
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[1] <= 4
     ), "Cluster N must be <=4 for SF multicast"
-    __comptime_assert (
+    comptime assert (
         config.cluster_shape[0] * config.cluster_shape[1] <= 16
     ), "Total cluster size must be <=16"
 
     # Must be transposed B
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     # SF dtype must match
-    __comptime_assert (
-        sfa_dtype == sfb_dtype
-    ), "sfa_dtype and sfb_dtype must match"
+    comptime assert sfa_dtype == sfb_dtype, "sfa_dtype and sfb_dtype must match"
 
 
 # =============================================================================

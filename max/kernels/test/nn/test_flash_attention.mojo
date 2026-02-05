@@ -47,7 +47,7 @@ def reference_attention_bshd[
     ],
     scale: Float32,
 ):
-    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
     fn reshape_4d(
@@ -180,7 +180,7 @@ def reference_attention_bshd_with_sinks[
     scale: Float32,
 ):
     """Reference implementation of attention with sink weights."""
-    __comptime_assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
 
     comptime layout_4d = Layout.row_major[4]()
 
@@ -603,7 +603,7 @@ def test_case_split_kv[
     ),
 ](cfg: TestCaseConfig[batch_rank]):
     # For now only allow Q.shape = [B, S, H, D].
-    __comptime_assert batch_rank == 2
+    comptime assert batch_rank == 2
 
     seed(42)
 
@@ -804,7 +804,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
     # Fill sink weights with known values
     for i in range(num_heads):
         sink_weights[i] = Scalar[dtype](
-            0.5 * (i + 1)
+            0.5 * Float64((i + 1))
         )  # 0.5, 1.0 for heads 0, 1
 
     # Test 1: Regular attention without sinks

@@ -144,7 +144,7 @@ fn use_lookup(idx: Int) -> Int64:
     ]
     ref lookup_table = global_constant[numbers]()
     if idx >= len(lookup_table):
-	      return 0
+          return 0
     return lookup_table[idx]
 
 def main():

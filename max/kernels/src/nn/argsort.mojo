@@ -21,7 +21,7 @@ from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, Idx
+from layout._coord import Coord, Idx
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -128,18 +128,8 @@ fn _argsort_gpu_impl[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
     fn bitonic_sort_step(
-        indices: TileTensor[
-            shape_types = indices.shape_types,
-            stride_types = indices.stride_types,
-            indices.dtype,
-            indices.origin,
-        ],
-        input: TileTensor[
-            shape_types = input.shape_types,
-            stride_types = input.stride_types,
-            input.dtype,
-            input.origin,
-        ],
+        indices: TileTensor[indices.dtype, indices.origin, indices.LayoutType],
+        input: TileTensor[input.dtype, input.origin, input.LayoutType],
         n: Int,
         step: Int,
         stage: Int,

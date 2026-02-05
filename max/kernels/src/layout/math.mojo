@@ -49,22 +49,22 @@ fn outer_product_acc(
         `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
     """
 
-    __comptime_assert (
+    comptime assert (
         res.layout.known_shape()
         and lhs.layout.known_shape()
         and rhs.layout.known_shape()
     ), "outer_product_acc expects inputs with statically known shapes"
-    __comptime_assert res.rank == 2, "Only rank 2 res is allowed."
-    __comptime_assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    __comptime_assert rhs.rank == 1, "Only rank 1 rhs is allowed."
+    comptime assert res.rank == 2, "Only rank 2 res is allowed."
+    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
+    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
 
     comptime dtype = res.dtype
 
     comptime M = res.shape[0]()
     comptime N = res.shape[1]()
 
-    __comptime_assert lhs.shape[0]() == M, "lhs shape mismatch"
-    __comptime_assert rhs.shape[0]() == N, "rhs shape mismatch"
+    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
+    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
 
     @parameter
     for i in range(M):
@@ -84,10 +84,10 @@ fn _reduce[
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    __comptime_assert (
+    comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()
     ), "_reduce expects inputs with statically know shapes"
-    __comptime_assert (
+    comptime assert (
         inp.rank - 1 == outp.rank
     ), "_reduce expects output of rank = inp.rank - 1"
 
@@ -96,8 +96,8 @@ fn _reduce[
 
         @parameter
         if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim]()
             ), "_reduce expects none reduction dims to be the same"
 
@@ -106,14 +106,14 @@ fn _reduce[
 
         @parameter
         if dim != axis:
-            __comptime_assert dim != UNKNOWN_VALUE
-            __comptime_assert (dim - 1) != UNKNOWN_VALUE
-            __comptime_assert (
+            comptime assert dim != UNKNOWN_VALUE
+            comptime assert (dim - 1) != UNKNOWN_VALUE
+            comptime assert (
                 inp.shape[dim]() == outp.shape[dim - 1]()
             ), "_reduce expects none reduction dims to be the same"
 
     # TODO(KERN-777): We need to relax this constraine.
-    __comptime_assert inp.rank == 2, "Only rank-2 _reduce is supported"
+    comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
 
     @parameter
     if inp.rank == 2 and axis == 1:
@@ -309,7 +309,7 @@ fn max[
         Input tensors must have statically known shapes and matching layouts.
     """
 
-    __comptime_assert (
+    comptime assert (
         x.layout.all_dims_known()
     ), "max expects tensor of statically know shape"
     var res_tensor = type_of(x).stack_allocation()
@@ -374,7 +374,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    __comptime_assert src.rank == 1, "src must be of rank 1"
+    comptime assert src.rank == 1, "src must be of rank 1"
 
     debug_assert(src.size() != 0, "input must not be empty")
 
@@ -531,7 +531,7 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     Raises:
         May raise on GPU targets when a device error occurs.
     """
-    __comptime_assert src.rank == 1, "src must be of rank 1"
+    comptime assert src.rank == 1, "src must be of rank 1"
 
     debug_assert(src.numel() != 0, "input must not be empty")
 

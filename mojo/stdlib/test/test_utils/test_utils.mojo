@@ -87,7 +87,7 @@ fn libm_call[
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp64, Scalar[result_type]](arg)
 
-    __comptime_assert dtype in [
+    comptime assert dtype in [
         DType.float32,
         DType.float64,
     ], "input dtype must be float32 or float64"

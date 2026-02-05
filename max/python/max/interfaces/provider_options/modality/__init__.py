@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Modality-specific provider options."""
 
-from .pixel import PixelModalityOptions
+from .image import ImageProviderOptions
+from .video import VideoProviderOptions
 
 __all__ = [
-    "PixelModalityOptions",
+    "ImageProviderOptions",
+    "VideoProviderOptions",
 ]

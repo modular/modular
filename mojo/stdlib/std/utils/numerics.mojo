@@ -33,7 +33,7 @@ from memory import bitcast
 
 
 fn _constrain_fp_type[dtype: DType]():
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "dtype must be a floating point type"
 
@@ -482,7 +482,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The NaN value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support NaN."
 
@@ -595,7 +595,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The +inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support +inf."
 
@@ -651,7 +651,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The -inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support -inf."
 
@@ -975,7 +975,7 @@ fn nextafter[
     Returns:
         The `nextafter` of the inputs.
     """
-    __comptime_assert dtype in (
+    comptime assert dtype in (
         DType.float32,
         DType.float64,
     ), "nextafter only supports float32 and float64 types"
@@ -998,7 +998,7 @@ fn nextafter[
             arg0, arg1
         )
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input dtype must be floating point"
 

@@ -467,7 +467,7 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
     ), "type must be boolean, integral, or floating-point"
 

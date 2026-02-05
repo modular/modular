@@ -64,7 +64,7 @@ fn run_reduce[
     # H100 has 50MB L2, MI300x has 256MB infinity cache.
     # Use 128 MiB to exceed 2x H100 L2, and 512 MiB option for MI300x.
     comptime MB_512 = 512 * 1024 * 1024
-    __comptime_assert MB_512 % align == 0, (
+    comptime assert MB_512 % align == 0, (
         "Cache busting allocation size must be a multiple of dtype SIMD"
         " alignment."
     )
@@ -105,9 +105,7 @@ fn run_reduce[
     fn reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
-            reduction_idx < num_reductions
-        ), "invalid reduction idx"
+        comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 

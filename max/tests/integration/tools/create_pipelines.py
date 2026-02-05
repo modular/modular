@@ -114,6 +114,7 @@ class VLLMPipeline:
     model_path: str
     trust_remote_code: bool = False
     encoding: str | None = None
+    tensor_parallel_size: int = 1
 
 
 class PipelineOracle(ABC):
@@ -166,11 +167,14 @@ class PipelineOracle(ABC):
                 f"Cannot find `model_path` for {self.__class__.__name__}"
             )
         config = getattr(self, "config_params", {})
+        # Use tensor parallelism across all GPU devices
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=path,
             trust_remote_code=config.get("trust_remote_code", False)
             or getattr(self, "trust_remote_code", False),
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
     @property
@@ -307,10 +311,12 @@ class InternVLPipelineOracle(PipelineOracle):
     def create_vllm_pipeline(
         self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
     ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=True,
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
 
@@ -1418,6 +1424,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
+        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
+        config_params={
+            "max_length": 1028,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

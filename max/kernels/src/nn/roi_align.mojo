@@ -144,20 +144,20 @@ fn roi_align_nhwc[
         in_sampling_ratio: Number of sampling points in the interpolation grid
           used to compute the output value of each pooled bin.
     """
-    __comptime_assert (
+    comptime assert (
         output.rank == 4 and input.rank == 4
     ), "expect rank 4 tensors for input and output"
-    __comptime_assert rois.rank == 2, "rois must be of rank 2"
+    comptime assert rois.rank == 2, "rois must be of rank 2"
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "ROI align input / output must be a floating point"
-    __comptime_assert (
+    comptime assert (
         in_spatial_scale.dtype.is_floating_point()
     ), "the scale factor must be in floating point format"
-    __comptime_assert rois.element_size == 1
-    __comptime_assert input.element_size == 1
-    __comptime_assert output.element_size == 1
+    comptime assert rois.element_size == 1
+    comptime assert input.element_size == 1
+    comptime assert output.element_size == 1
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 

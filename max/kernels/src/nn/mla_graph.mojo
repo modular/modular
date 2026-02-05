@@ -29,7 +29,7 @@ from gpu import (
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import Layout as TileLayout, row_major
+from layout._layout import TensorLayout, Layout as TileLayout, row_major
 from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
@@ -63,52 +63,25 @@ fn fused_rope_rmsnorm_kernel[
     dtype: DType,
     freq_dtype: DType,
     gamma_dtype: DType,
-    q_rope_output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_output_stride_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_shape_types: Variadic.TypesOfTrait[CoordLike],
-    q_rope_stride_types: Variadic.TypesOfTrait[CoordLike],
-    input_row_offsets_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_row_offsets_stride_types: Variadic.TypesOfTrait[CoordLike],
-    freqs_cis_shape_types: Variadic.TypesOfTrait[CoordLike],
-    freqs_cis_stride_types: Variadic.TypesOfTrait[CoordLike],
-    gamma_shape_types: Variadic.TypesOfTrait[CoordLike],
-    gamma_stride_types: Variadic.TypesOfTrait[CoordLike],
+    QRopeOutputLayoutType: TensorLayout,
+    QRopeLayoutType: TensorLayout,
+    InputRowOffsetsLayoutType: TensorLayout,
+    FreqsCisLayoutType: TensorLayout,
+    GammaLayoutType: TensorLayout,
     cache_t: KVCacheT,
     block_size: Int,
     n_rope_blocks: Int,
     n_rms_blocks: Int,
 ](
     q_rope_output: TileTensor[
-        mut=True,
-        shape_types=q_rope_output_shape_types,
-        stride_types=q_rope_output_stride_types,
-        dtype,
-        MutExternalOrigin,
+        mut=True, dtype, MutExternalOrigin, QRopeOutputLayoutType
     ],
-    q_rope: TileTensor[
-        shape_types=q_rope_shape_types,
-        stride_types=q_rope_stride_types,
-        dtype,
-        ImmutExternalOrigin,
-    ],
+    q_rope: TileTensor[dtype, ImmutExternalOrigin, QRopeLayoutType],
     input_row_offsets: TileTensor[
-        shape_types=input_row_offsets_shape_types,
-        stride_types=input_row_offsets_stride_types,
-        DType.uint32,
-        ImmutExternalOrigin,
+        DType.uint32, ImmutExternalOrigin, InputRowOffsetsLayoutType
     ],
-    freqs_cis: TileTensor[
-        shape_types=freqs_cis_shape_types,
-        stride_types=freqs_cis_stride_types,
-        freq_dtype,
-        ImmutExternalOrigin,
-    ],
-    gamma: TileTensor[
-        shape_types=gamma_shape_types,
-        stride_types=gamma_stride_types,
-        gamma_dtype,
-        ImmutExternalOrigin,
-    ],
+    freqs_cis: TileTensor[freq_dtype, ImmutExternalOrigin, FreqsCisLayoutType],
+    gamma: TileTensor[gamma_dtype, ImmutExternalOrigin, GammaLayoutType],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -125,16 +98,11 @@ fn fused_rope_rmsnorm_kernel[
         dtype: Data type of query tensors.
         freq_dtype: Data type of frequency cosine/sine values.
         gamma_dtype: Data type of RMSNorm gamma weights.
-        q_rope_output_shape_types: Shape types of the output query rope tensor.
-        q_rope_output_stride_types: Stride types of the output query rope tensor.
-        q_rope_shape_types: Shape types of the input query rope tensor.
-        q_rope_stride_types: Stride types of the input query rope tensor.
-        input_row_offsets_shape_types: Shape types of the row offset indices tensor.
-        input_row_offsets_stride_types: Stride types of the row offset indices tensor.
-        freqs_cis_shape_types: Shape types of the frequency tensor.
-        freqs_cis_stride_types: Stride types of the frequency tensor.
-        gamma_shape_types: Shape types of the gamma weights tensor.
-        gamma_stride_types: Stride types of the gamma weights tensor.
+        QRopeOutputLayoutType: Layout types of the output query rope tensor.
+        QRopeLayoutType: Layout types of the input query rope tensor.
+        InputRowOffsetsLayoutType: Layout types of the row offset indices tensor.
+        FreqsCisLayoutType: Layout types of the frequency tensor.
+        GammaLayoutType: Layout types of the gamma weights tensor.
         cache_t: Type of the KV cache.
         block_size: Number of threads per block.
         n_rope_blocks: Number of blocks allocated for RoPE computation.
@@ -151,14 +119,14 @@ fn fused_rope_rmsnorm_kernel[
         k_cache: Key cache to apply RoPE and RMSNorm to.
         epsilon: Small constant for numerical stability in RMSNorm.
     """
-    __comptime_assert (
+    comptime assert (
         cache_t.kv_params.num_heads == 1
     ), "num_heads should be 1 for MLA"
-    __comptime_assert q_rope_output.rank == 3
-    __comptime_assert q_rope.rank == 3
-    __comptime_assert input_row_offsets.rank == 1
-    __comptime_assert freqs_cis.rank == 2
-    __comptime_assert gamma.rank == 1
+    comptime assert q_rope_output.rank == 3
+    comptime assert q_rope.rank == 3
+    comptime assert input_row_offsets.rank == 1
+    comptime assert freqs_cis.rank == 2
+    comptime assert gamma.rank == 1
 
     comptime num_q_heads = q_rope.static_shape[1]
     comptime rope_dim = q_rope.static_shape[2]
@@ -178,7 +146,7 @@ fn fused_rope_rmsnorm_kernel[
             # First n_rope_blocks blocks of this worker process RoPE.
             if block_idx.x < UInt(n_rope_blocks):
                 comptime q_width = simd_width_of[dtype]()
-                __comptime_assert (
+                comptime assert (
                     rope_dim % q_width == 0
                 ), "rope_dim should be divisible by q_width"
 
@@ -215,7 +183,7 @@ fn fused_rope_rmsnorm_kernel[
                 comptime accum_type = get_accum_type[k_dtype]()
                 comptime warps_per_block = block_size // WARP_SIZE
 
-                __comptime_assert (
+                comptime assert (
                     kv_norm_dim % k_width == 0
                 ), "kv_norm_dim should be divisible by k_width"
 
@@ -303,13 +271,13 @@ fn mla_fused_rope_rmsnorm[
     comptime rope_dim = q_rope.static_shape[2]
     comptime kv_norm_dim = gamma.static_shape[0]
 
-    __comptime_assert (
+    comptime assert (
         q_rope_output.static_shape[2] == rope_dim
     ), "q_rope_output and q_rope must have the same head_size"
-    __comptime_assert (
+    comptime assert (
         q_rope_output.rank == 3 and q_rope.rank == 3
     ), "q_rope_output and q_rope must be rank 3"
-    __comptime_assert rope_dim + kv_norm_dim == Int(
+    comptime assert rope_dim + kv_norm_dim == Int(
         collection_t.kv_params.head_size
     ), "rope_dim + kv_norm_dim must be equal to kvcache head_size"
 
@@ -321,7 +289,7 @@ fn mla_fused_rope_rmsnorm[
     comptime n_rope_elems = (num_q_heads + num_k_heads) * rope_dim
 
     # Make sure that we can use one block to process the rmsnorm.
-    __comptime_assert kv_norm_dim <= block_size * kernel_simd_width, (
+    comptime assert kv_norm_dim <= block_size * kernel_simd_width, (
         "kv_norm_dim must be less than or equal to block_size *"
         " kernel_simd_width"
     )
@@ -343,16 +311,11 @@ fn mla_fused_rope_rmsnorm[
         dtype,
         freq_dtype,
         gamma_dtype,
-        q_rope_output.shape_types,
-        q_rope_output.stride_types,
-        q_rope.shape_types,
-        q_rope.stride_types,
-        input_row_offsets.shape_types,
-        input_row_offsets.stride_types,
-        freqs_cis.shape_types,
-        freqs_cis.stride_types,
-        gamma.shape_types,
-        gamma.stride_types,
+        q_rope_output.LayoutType,
+        q_rope.LayoutType,
+        input_row_offsets.LayoutType,
+        freqs_cis.LayoutType,
+        gamma.LayoutType,
         type_of(k_cache),
         block_size,
         n_rope_blocks,
@@ -398,9 +361,9 @@ fn concat_q_nope_proj_rope[
     comptime kv_latent_dim = q_nope_proj.static_shape[2]
     comptime qk_rope_head_dim = q_rope.static_shape[2]
 
-    __comptime_assert q_nope_proj.rank == 3, "rank should be equal to 3"
-    __comptime_assert q_rope.rank == 3, "rank should be equal to 3"
-    __comptime_assert output.rank == 3, "rank should be equal to 3"
+    comptime assert q_nope_proj.rank == 3, "rank should be equal to 3"
+    comptime assert q_rope.rank == 3, "rank should be equal to 3"
+    comptime assert output.rank == 3, "rank should be equal to 3"
 
     var seq_len = Int(q_rope.dim(0))
     var num_heads = Int(q_rope.dim(1))
@@ -411,9 +374,9 @@ fn concat_q_nope_proj_rope[
     fn concat_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        __comptime_assert rank == 3, "rank should be equal to 3"
+        comptime assert rank == 3, "rank should be equal to 3"
         var coord = Coord(idx)
-        __comptime_assert coord.rank == output.rank
+        comptime assert coord.rank == output.rank
 
         var token_idx = idx[0]
         var head_idx = idx[1]
@@ -421,7 +384,7 @@ fn concat_q_nope_proj_rope[
 
         if dim_idx < kv_latent_dim:
             var load_coord = Coord(Idx(head_idx), Idx(token_idx), Idx(dim_idx))
-            __comptime_assert load_coord.rank == q_nope_proj.rank
+            comptime assert load_coord.rank == q_nope_proj.rank
             output.store[width=width](
                 coord,
                 q_nope_proj.load[width=width](load_coord),
@@ -432,7 +395,7 @@ fn concat_q_nope_proj_rope[
                 Idx(head_idx),
                 Idx(dim_idx - kv_latent_dim),
             )
-            __comptime_assert load_coord.rank == q_rope.rank
+            comptime assert load_coord.rank == q_rope.rank
             output.store[width=width](
                 coord,
                 q_rope.load[width=width](load_coord),
@@ -466,9 +429,9 @@ fn split_kv_buffer[
     comptime qk_nope_head_dim = k.static_shape[2]
     comptime v_head_dim = v.static_shape[2]
 
-    __comptime_assert kv.rank == 2, "rank should be equal to 2"
-    __comptime_assert k.rank == 3, "rank should be equal to 3"
-    __comptime_assert v.rank == 3, "rank should be equal to 3"
+    comptime assert kv.rank == 2, "rank should be equal to 2"
+    comptime assert k.rank == 3, "rank should be equal to 3"
+    comptime assert v.rank == 3, "rank should be equal to 3"
 
     @always_inline
     @parameter
@@ -476,12 +439,12 @@ fn split_kv_buffer[
     fn split_kv_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 2, "rank should be equal to 2"
+        comptime assert rank == 2, "rank should be equal to 2"
 
-        __comptime_assert (
+        comptime assert (
             qk_nope_head_dim % width == 0
         ), "qk_nope_head_dim should be divisible by simd width"
-        __comptime_assert (
+        comptime assert (
             v_head_dim % width == 0
         ), "v_head_dim should be divisible by simd width"
         var idx = rebind[IndexList[2]](idx_arg)
@@ -611,10 +574,8 @@ fn mla_prefill_branch_fp8[
         ctx: Device context.
     """
     comptime kv_params = collection_t.kv_params
-    __comptime_assert kv_params.is_mla, "kv_params.is_mla should be true"
-    __comptime_assert (
-        kv_params.num_heads == 1
-    ), "kv_params.num_heads should be 1"
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
@@ -622,10 +583,8 @@ fn mla_prefill_branch_fp8[
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
 
-    __comptime_assert (
-        kv_b_proj.shape_known
-    ), "kv_b_proj's shape should be static"
-    __comptime_assert kv_b_proj.static_shape[0] == num_heads * (
+    comptime assert kv_b_proj.shape_known, "kv_b_proj's shape should be static"
+    comptime assert kv_b_proj.static_shape[0] == num_heads * (
         qk_nope_head_dim + v_head_dim
     ), (
         "kv_b_proj.layout.shape[0] should be equal to num_heads *"
@@ -633,10 +592,8 @@ fn mla_prefill_branch_fp8[
     )
     comptime kv_latent_dim = kv_b_proj.static_shape[1]
 
-    __comptime_assert (
-        m_scale_granularity == 1
-    ), "m_scale_granularity should be 1"
-    __comptime_assert (
+    comptime assert m_scale_granularity == 1, "m_scale_granularity should be 1"
+    comptime assert (
         n_scale_granularity == k_scale_granularity == 128
     ), "n, k scale_granularity should be 128"
 
@@ -881,7 +838,7 @@ fn quantize_and_bmm_fp8_helper[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[dtype, width]:
         # First transpose the q_nope tensor from [row, batch, col] to [batch, row, col].
-        __comptime_assert a.rank == 3
+        comptime assert a.rank == 3
         return a.load[width=width]((Idx(row), Idx(batch), Idx(col)))
 
     batched_quantize_dynamic_scaled_fp8[
@@ -935,12 +892,12 @@ fn transpose_helper[
     fn tranpose_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        __comptime_assert rank == 3, "rank should be equal to 3"
+        comptime assert rank == 3, "rank should be equal to 3"
         # Transpose by swapping first two dimensions: [B, N, K] -> [N, B, K]
         var input_coord = Coord(idx)
         var output_coord = Coord(Idx(idx[1]), Idx(idx[0]), Idx(idx[2]))
-        __comptime_assert input_coord.rank == input_tensor.rank
-        __comptime_assert output_coord.rank == output_tensor.rank
+        comptime assert input_coord.rank == input_tensor.rank
+        comptime assert output_coord.rank == output_tensor.rank
 
         output_tensor.store[width=width](
             output_coord, input_tensor.load[width=width](input_coord)
@@ -1046,10 +1003,8 @@ fn mla_decode_branch_fp8[
     """
 
     comptime kv_params = collection_t.kv_params
-    __comptime_assert kv_params.is_mla, "kv_params.is_mla should be true"
-    __comptime_assert (
-        kv_params.num_heads == 1
-    ), "kv_params.num_heads should be 1"
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
@@ -1058,17 +1013,17 @@ fn mla_decode_branch_fp8[
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = Int(kv_params.head_size)
 
-    __comptime_assert (
+    comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
-    __comptime_assert (
+    comptime assert (
         w_uk.static_shape[2] == qk_nope_head_dim
     ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
-    __comptime_assert (
+    comptime assert (
         w_uv.static_shape[1] == v_head_dim
     ), "w_uv.static_shape[1] should be equal to v_head_dim"
     comptime kv_latent_dim = w_uk.static_shape[1]
-    __comptime_assert (
+    comptime assert (
         kv_latent_dim + qk_rope_head_dim == k_cache_dim
     ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
@@ -1273,7 +1228,7 @@ fn mla_prefill_decode_graph_fp8[
         return
 
     # TODO: Remove this once prefill and decode branches support FP8 KV cache KERN-2394.
-    __comptime_assert (
+    comptime assert (
         collection_t.dtype == dtype
     ), "This KVCache DType is not supported."
 
@@ -1371,10 +1326,8 @@ fn mla_prefill_branch_bf16[
     prefill attention.
     """
     comptime kv_params = collection_t.kv_params
-    __comptime_assert kv_params.is_mla, "kv_params.is_mla should be true"
-    __comptime_assert (
-        kv_params.num_heads == 1
-    ), "kv_params.num_heads should be 1"
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
@@ -1382,10 +1335,8 @@ fn mla_prefill_branch_bf16[
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
 
-    __comptime_assert (
-        kv_b_proj.shape_known
-    ), "kv_b_proj's shape should be static"
-    __comptime_assert kv_b_proj.static_shape[0] == num_heads * (
+    comptime assert kv_b_proj.shape_known, "kv_b_proj's shape should be static"
+    comptime assert kv_b_proj.static_shape[0] == num_heads * (
         qk_nope_head_dim + v_head_dim
     ), (
         "kv_b_proj.layout.shape[0] should be equal to num_heads *"
@@ -1552,10 +1503,8 @@ fn mla_decode_branch_bf16[
     q_rope, and runs decode.
     """
     comptime kv_params = collection_t.kv_params
-    __comptime_assert kv_params.is_mla, "kv_params.is_mla should be true"
-    __comptime_assert (
-        kv_params.num_heads == 1
-    ), "kv_params.num_heads should be 1"
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
@@ -1564,17 +1513,17 @@ fn mla_decode_branch_bf16[
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = Int(kv_params.head_size)
 
-    __comptime_assert (
+    comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
-    __comptime_assert (
+    comptime assert (
         w_uk.static_shape[1] == qk_nope_head_dim
     ), "w_uk.static_shape[1] should be equal to qk_nope_head_dim"
     comptime kv_latent_dim = w_uk.static_shape[2]
-    __comptime_assert (
+    comptime assert (
         w_uv.static_shape[1] == kv_latent_dim
     ), "w_uv.static_shape[1] should be equal to kv_latent_dim"
-    __comptime_assert (
+    comptime assert (
         w_uv.static_shape[2] == v_head_dim
     ), "w_uv.static_shape[2] should be equal to v_head_dim"
 

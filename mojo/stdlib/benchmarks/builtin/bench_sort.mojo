@@ -253,7 +253,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
         @always_inline
         @parameter
         fn preproc():
-            randomize_list(list, count, delta)
+            randomize_list(list, count, UInt8(delta))
 
         @always_inline
         @parameter
@@ -271,7 +271,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
         @always_inline
         @parameter
         fn preproc():
-            randomize_list(list, count, delta)
+            randomize_list(list, count, UInt8(delta))
 
         @always_inline
         @parameter

@@ -115,10 +115,10 @@ fn grouped_matmul_1d1d_nvfp4[
         "Only support transposed B",
     ]()
 
-    __comptime_assert (
+    comptime assert (
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
-    __comptime_assert sfa_dtype in (
+    comptime assert sfa_dtype in (
         MXFP8_SF_DTYPE,
         NVFP4_SF_DTYPE,
     ), "Only support MXFP8_SF_DTYPE or NVFP4_SF_DTYPE for scales"
@@ -218,7 +218,7 @@ fn grouped_matmul_1d1d_nvfp4[
     comptime N = c_layout.shape[1].value()
     comptime expert_n = N
     comptime K = a_layout.shape[1].value()
-    __comptime_assert K % 16 == 0, (
+    comptime assert K % 16 == 0, (
         "Due to TMA limitations, K must be a multiple of 16 bytes"
         + " but got K = "
         + String(K)

@@ -66,7 +66,7 @@ fn test[
     N: Optional[Int],
     K: Optional[Int],
 ](mut bench: Bench, ctx: DeviceContext, m: Int, n: Int, k: Int,) raises:
-    __comptime_assert Bool(N) and Bool(
+    comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."
 

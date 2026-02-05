@@ -261,7 +261,7 @@ struct _FormatUtils:
 
         @parameter
         if result.isa[Error]():
-            __comptime_assert not result.isa[Error](), String(result[Error])
+            comptime assert not result.isa[Error](), String(result[Error])
         else:
             comptime entries = result[type_of(result).Ts[0]]
             _FormatUtils.format_precompiled[*Ts](

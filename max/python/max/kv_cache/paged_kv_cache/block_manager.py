@@ -24,7 +24,6 @@ This logic is largely borrowed from vLLM v1:
 
 from __future__ import annotations
 
-import copy
 import logging
 from collections import defaultdict
 from collections.abc import Iterable
@@ -34,6 +33,7 @@ from max.interfaces import (
     TextGenerationContext,
     VLMTextGenerationContext,
 )
+from max.kv_cache.kv_connector import KVConnector
 from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
@@ -41,7 +41,6 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 )
 from max.support.math import ceildiv
 
-from .block_copy_engine import BlockCopyEngine
 from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
@@ -58,9 +57,8 @@ class BlockManager:
         self,
         device_memory_tier: MemoryTier,
         total_num_blocks: int,
-        total_num_host_blocks: int,
         block_size: int,
-        block_copy_engine: BlockCopyEngine | None,
+        connector: KVConnector,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
     ) -> None:
@@ -70,12 +68,9 @@ class BlockManager:
         # Whether to enable prefix caching.
         self.enable_prefix_caching = enable_prefix_caching
 
-        # The block copy engine.
-        if enable_prefix_caching and block_copy_engine is None:
-            raise ValueError(
-                "Block copy engine must be provided if prefix caching is enabled"
-            )
-        self.block_copy_engine = block_copy_engine
+        # Connector for external cache tiers (host memory, etc.)
+        # The connector owns host memory, host block pool, and H2D/D2H transfers.
+        self.connector = connector
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -84,21 +79,6 @@ class BlockManager:
             enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
         )
-
-        # A pool of host blocks.
-        self.host_block_pool: BlockPool | None = None
-        if total_num_host_blocks > 0:
-            self.host_block_pool = BlockPool(
-                MemoryTier.MEMORY_TIER_CPU,
-                total_num_host_blocks,
-                enable_prefix_caching,
-                enable_runtime_checks=enable_runtime_checks,
-            )
-
-            if self.block_copy_engine is None:
-                raise ValueError(
-                    "Block copy engine must be provided if host block pool is enabled"
-                )
 
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
@@ -116,9 +96,6 @@ class BlockManager:
         # committed into the prefix cache). This replaces reliance on
         # the context's committed_idx.
         self.req_to_committed_idx: dict[RequestID, int] = defaultdict(int)
-
-        # Tracks recently committed device blocks to offload to host.
-        self.recently_committed_device_blocks: list[KVCacheBlock] = []
 
         # Metrics for the KV cache.
         self._metrics = KVCacheMetrics()
@@ -197,8 +174,6 @@ class BlockManager:
         # Query prefix cache for full blocks.
         prefix_cache_blocks = self.get_full_blocks_from_prefix_cache(ctx)
 
-        orig_start_idx = ctx.tokens.processed_length
-
         if len(prefix_cache_blocks) > 0:
             # Update metrics.
             self._metrics.cache_tokens += (
@@ -222,7 +197,7 @@ class BlockManager:
 
     @traced
     def _count_full_blocks_from_prefix_cache(
-        self, desired_hashes: list[int]
+        self, ctx: TextGenerationContext, desired_hashes: list[int]
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
 
@@ -241,17 +216,15 @@ class BlockManager:
 
         device_prefix_cache_hit_count = len(device_prefix_cache_hits)
 
-        # Count the number of host block hashes that are in the host prefix cache.
+        # Count host cache hits via connector (if any host blocks are available).
         host_prefix_cache_hit_count = 0
-        if self.host_block_pool is not None:
-            host_prefix_cache = self.host_block_pool.hash_to_committed_block
-            host_prefix_cache_hit = [
-                hash_value
-                for hash_value in desired_host_hashes
-                if hash_value in host_prefix_cache
-            ]
+        if self.connector.num_host_blocks > 0 and desired_host_hashes:
+            # Query connector for how many tokens are available from host cache.
+            available_tokens = self.connector.lookup(ctx, desired_host_hashes)
+            available_blocks = available_tokens // self.block_size
+            # Limit by available device blocks for loading.
             host_prefix_cache_hit_count = min(
-                len(host_prefix_cache_hit),
+                available_blocks,
                 len(self.device_block_pool.free_block_queue),
             )
 
@@ -280,43 +253,48 @@ class BlockManager:
     @traced
     def _get_full_blocks_from_host_prefix_cache(
         self,
+        ctx: TextGenerationContext,
         desired_hashes: list[int],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes.
 
         These device blocks are newly allocated and initialized with the
-        contents of the host blocks.
+        contents of the host blocks via the connector.
         """
+        if self.connector.num_host_blocks == 0 or not desired_hashes:
+            return []
 
-        assert self.host_block_pool is not None
-        host_prefix_cache = self.host_block_pool.hash_to_committed_block
+        # Query connector for available blocks from host cache.
+        available_tokens = self.connector.lookup(ctx, desired_hashes)
+        num_available_blocks = available_tokens // self.block_size
 
-        blocks = []
-        for block_hash in desired_hashes:
-            hash_value = block_hash
-            if (
-                hash_value not in host_prefix_cache
-                or len(self.device_block_pool.free_block_queue) == 0
-            ):
-                break
+        if num_available_blocks == 0:
+            return []
 
-            host_block = host_prefix_cache[hash_value]
-            assert host_block.block_hash is not None
-            self.host_block_pool.touch(host_block)
+        # Limit by available device blocks.
+        num_blocks_to_load = min(
+            num_available_blocks,
+            len(self.device_block_pool.free_block_queue),
+        )
 
-            # Allocate a new device block.
+        if num_blocks_to_load == 0:
+            return []
+
+        # Allocate device blocks for the loaded data.
+        blocks: list[KVCacheBlock] = []
+        device_block_ids: list[int] = []
+        for _ in range(num_blocks_to_load):
             device_block = self.allocate_device_block()
             blocks.append(device_block)
+            device_block_ids.append(device_block.bid)
 
-            # Enqueue a H2D block copy operation.
-            assert self.block_copy_engine is not None
-            self.block_copy_engine.memcpy_h2d(device_block.bid, host_block.bid)
-            self._metrics.h2d_blocks_copied += 1
+        # Load from host cache via connector - returns the block hashes.
+        loaded_hashes = self.connector.load(ctx, device_block_ids, [])
 
-            # Commit the device block into the prefix cache.
-            # We should use the hash from the host block.
+        # Commit the device blocks into the device prefix cache.
+        for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
             self.device_block_pool.commit_into_prefix_cache(
-                host_block.block_hash, device_block
+                block_hash, device_block
             )
 
         return blocks
@@ -342,7 +320,9 @@ class BlockManager:
             num_committed_blocks:num_inflight_blocks
         ]
 
-        return self._count_full_blocks_from_prefix_cache(uncommitted_hashes)
+        return self._count_full_blocks_from_prefix_cache(
+            ctx, uncommitted_hashes
+        )
 
     @traced
     def get_full_blocks_from_prefix_cache(
@@ -370,16 +350,16 @@ class BlockManager:
             uncommitted_hashes
         )
 
-        if self.host_block_pool is None:
+        if self.connector.num_host_blocks == 0:
             return device_blocks
 
         # remove the hashes that were found in the device prefix cache
         if len(device_blocks) > 0:
             uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
 
-        # query the host prefix cache for full blocks
+        # query the host prefix cache for full blocks via connector
         host_blocks = self._get_full_blocks_from_host_prefix_cache(
-            uncommitted_hashes
+            ctx, uncommitted_hashes
         )
         return device_blocks + host_blocks
 
@@ -419,12 +399,11 @@ class BlockManager:
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
-
-            if (
-                new_block is None
-                and self.recently_committed_device_blocks is not None
-            ):
-                self.recently_committed_device_blocks.append(block)
+            else:
+                # This block was newly committed (not a duplicate).
+                # Queue for offload to connector's external tier.
+                # Note: actual D2H copy and metrics are tracked by the connector.
+                self.connector.save([block.bid], [block_hash])
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -546,46 +525,6 @@ class BlockManager:
         return max(num_new_blocks, 0)
 
     @traced
-    def eagerly_offload_recently_committed_blocks(self) -> None:
-        """Offload recently committed blocks to host memory."""
-
-        for block in self.recently_committed_device_blocks:
-            self.maybe_offload_gpu_block_to_host(block, block.block_hash)
-        self.recently_committed_device_blocks.clear()
-
-    @traced
-    def maybe_offload_gpu_block_to_host(
-        self, gpu_block: KVCacheBlock, old_hash: int | None
-    ) -> None:
-        # Can't swap if there is no host block pool.
-        if self.host_block_pool is None:
-            return
-
-        # Can't swap if the block was not previously committed.
-        if old_hash is None:
-            return
-
-        # Should not swap if another block with the same hash is present.
-        if old_hash in self.host_block_pool.hash_to_committed_block:
-            return
-
-        # Allocate a host block
-        host_block, _ = self.host_block_pool.alloc_block()
-
-        # Copy the block from the GPU to the host.
-        assert self.block_copy_engine is not None
-        self.block_copy_engine.memcpy_d2h(host_block.bid, gpu_block.bid)
-        self._metrics.d2h_blocks_copied += 1
-
-        # Commit the host block into the host prefix cache.
-        self.host_block_pool.commit_into_prefix_cache(old_hash, host_block)
-
-        # Mark the host block as free. Host blocks are technically never
-        # "active" so ref_cnt should always be 0. We immediately mark it as
-        # free so it's added to the free block queue.
-        self.host_block_pool.free_block(host_block)
-
-    @traced
     def allocate_device_block(self) -> KVCacheBlock:
         new_block, _ = self.device_block_pool.alloc_block()
         return new_block
@@ -617,14 +556,15 @@ class BlockManager:
 
     @traced
     def reset_prefix_cache(self) -> None:
-        """Reset the prefix cache."""
+        """Reset the device prefix cache.
+
+        Note: Host prefix cache reset is handled by the connector.
+        """
         self.device_block_pool.reset_prefix_cache()
-        if self.host_block_pool is not None:
-            self.host_block_pool.reset_prefix_cache()
 
     @property
     def metrics(self) -> KVCacheMetrics:
-        return copy.copy(self._metrics)
+        return self._metrics + self.connector.metrics
 
     def reset_metrics(self) -> None:
         self._metrics = KVCacheMetrics()

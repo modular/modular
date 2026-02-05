@@ -51,7 +51,7 @@ struct DataType(TrivialRegisterType):
         Returns:
             The DataType enum value corresponding to the input data type.
         """
-        __comptime_assert dtype in (
+        comptime assert dtype in (
             DType.float32,
             DType.bfloat16,
             DType.float8_e4m3fn,

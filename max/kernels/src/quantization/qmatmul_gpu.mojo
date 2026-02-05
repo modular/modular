@@ -240,13 +240,11 @@ fn multistage_mma_q[
                                 target_address_space = AddressSpace.GENERIC,
                             ]()
                             .vectorize[1, async_copy_scales_veclen]()
-                            .distribute[async_copy_scales_layout](
-                                UInt(Int(tid))
-                            )
+                            .distribute[async_copy_scales_layout](UInt(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
-                        ]().distribute[async_copy_scales_layout](UInt(Int(tid)))
+                        ]().distribute[async_copy_scales_layout](UInt(tid))
 
                         dst_fragments.copy_from_async[](src_fragments)
 
@@ -341,7 +339,7 @@ fn multistage_mma_q[
     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
-        ](UInt(Int(lane_id)))
+        ](UInt(lane_id))
     )
 
     mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
@@ -378,7 +376,7 @@ fn multistage_mma_q[
                     scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
-                        ](UInt(Int(lane_id)))
+                        ](UInt(lane_id))
                     )
 
             mma_op.load_a[swizzle_a_pattern](
@@ -466,13 +464,13 @@ fn multistage_mma_q[
                                     ]()
                                     .vectorize[1, async_copy_scales_veclen]()
                                     .distribute[async_copy_scales_layout](
-                                        UInt(Int(tid))
+                                        UInt(tid)
                                     )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
                                 ]().distribute[async_copy_scales_layout](
-                                    UInt(Int(tid))
+                                    UInt(tid)
                                 )
 
                                 dst_fragments.copy_from_async[](
@@ -505,7 +503,7 @@ fn multistage_qgemm_kernel[
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
     b_packed: LayoutTensor[b_packed_type, b_layout, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu()
     ), "Quantized gemm only supports NVIDIA hardwares for now."
     comptime simd_size = simd_width_of[c_type]()
@@ -719,7 +717,7 @@ fn multistage_qgemm_kernel[
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
-        __comptime_assert (
+        comptime assert (
             elementwise_lambda_fn is not None
         ), "elementwise_lambda_fn is not valid"
         comptime thread_layout = Layout.row_major(
@@ -1454,9 +1452,9 @@ fn multistage_gemm_q[
     runtime_config: MatmulConfig[a_type, b_type, c_type, True],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
     var M = c.dim[0]()
     var N = c.dim[1]()
 
@@ -1564,10 +1562,10 @@ fn matmul_gpu_qint4[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     matmul_gpu_qint4_impl[group_size, target, elementwise_lambda_fn](
@@ -1589,10 +1587,10 @@ fn matmul_gpu_qint4_impl[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    # __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    # comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.value()
 
     comptime pack_factor = 8
@@ -2089,9 +2087,9 @@ fn gpu_qint4_repack_Q4_0[
     ],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2133,9 +2131,9 @@ fn gpu_qint4_repack_GPTQ[
     ] = None,
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
-    __comptime_assert is_gpu[target](), "unsupported target"
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
+    comptime assert is_gpu[target](), "unsupported target"
     var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
@@ -2146,10 +2144,10 @@ fn gpu_qint4_repack_GPTQ[
     comptime N = Int(b.layout.shape[1])
     comptime K = Int(b.layout.shape[0]) // group_bytes * group_size
 
-    __comptime_assert N == Int(
+    comptime assert N == Int(
         b_packed.layout.shape[0]
     ), "qmatmul: Mismatched input/output dimension."
-    __comptime_assert K == (
+    comptime assert K == (
         Int(b_packed.layout.shape[1]) // group_bytes * group_size
     ), "qmatmul: Mismatched input/output dimension."
 

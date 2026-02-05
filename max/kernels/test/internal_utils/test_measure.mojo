@@ -47,10 +47,13 @@ fn test_correlation() raises:
     var v = alloc[Float32](len)
     var x = alloc[Float32](len)
     for i in range(len):
-        u.store(i, (0.01 * i).cast[DType.float32]())
-        v.store(i, (-0.01 * i).cast[DType.float32]())
+        u.store(i, (0.01 * Float64(i)).cast[DType.float32]())
+        v.store(i, (-0.01 * Float64(i)).cast[DType.float32]())
     for i, j in product(range(a), range(b)):
-        x.store(b * i + j, (0.1 * i + 0.1 * j).cast[DType.float32]())
+        x.store(
+            b * i + j,
+            (0.1 * Float64(i) + 0.1 * Float64(j)).cast[DType.float32](),
+        )
 
     assert_almost_equal(1.0, correlation[out_type = DType.float64](u, u, len))
     assert_almost_equal(-1.0, correlation[out_type = DType.float64](u, v, len))

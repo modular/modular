@@ -335,11 +335,11 @@ struct _Mark:
             self._fn = _roctxMarkA.load()
 
     fn __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         self._fn[_nvtxMarkEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         self._fn[_roctxMarkA.fn_type](val)
 
 
@@ -356,11 +356,11 @@ struct _RangeStart:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> RangeID:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangeStartEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
@@ -391,11 +391,11 @@ struct _RangePush:
     fn __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> Int32:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangePushEx.fn_type](val)
 
     fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
-        __comptime_assert has_amd_gpu_accelerator()
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
@@ -500,7 +500,7 @@ struct Range:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
@@ -548,7 +548,7 @@ struct RangeStack:
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
         self._info = EventAttributes(
             message=message, color=color, category=category
         )

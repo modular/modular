@@ -51,6 +51,65 @@ def _setup_ninja_path() -> None:
             )
 
 
+def _resolve_vocab_size(*, llm: Any, tokenizer: Any, model_path: str) -> int:
+    """Resolve vocab size for dense logit reconstruction.
+
+    vLLM returns logprobs as a sparse mapping of {token_id: logprob}. For
+    verification we rebuild a dense vector of shape (vocab_size,) and place
+    each logprob at its token ID index. This requires a vocab size that matches
+    the model's output head, not just the tokenizer's current size.
+
+    Why this matters:
+    - Token IDs are produced by the tokenizer, so we must index by tokenizer
+      IDs.
+    - The dense vector must be sized to the model's true vocab size (the logits
+      dimension) so it aligns with MAX/Torch outputs during verification.
+    - Some models (e.g. DeepSeek R1 NVFP4) report a vocab size in the model
+      config that differs from len(tokenizer) or tokenizer.vocab_size. Using
+      the tokenizer size yields vectors with the wrong length (e.g. 128000 or
+      128815 vs 129280), which breaks element-wise comparison and tolerance
+      checks.
+
+    Resolution order:
+    1) vLLM model config (hf_config.vocab_size) if available.
+    2) Local HF config.json (no network) via huggingface_hub cache.
+    3) Tokenizer length or vocab_size as a fallback.
+    """
+    vocab_size: int | None = None
+    try:
+        model_config = llm.llm_engine.model_config
+        hf_config = getattr(model_config, "hf_config", None)
+        vocab_size = getattr(hf_config, "vocab_size", None)
+    except Exception:
+        vocab_size = None
+
+    if vocab_size is None:
+        try:
+            import json
+
+            from huggingface_hub import (  # type: ignore[import-not-found, unused-ignore]
+                hf_hub_download,
+            )
+
+            config_path = hf_hub_download(
+                repo_id=model_path,
+                filename="config.json",
+                local_files_only=True,
+            )
+            with open(config_path) as f:
+                vocab_size = json.load(f).get("vocab_size")
+        except Exception:
+            vocab_size = None
+
+    if vocab_size is None:
+        try:
+            vocab_size = len(tokenizer)
+        except TypeError:
+            vocab_size = tokenizer.vocab_size
+
+    return int(vocab_size)
+
+
 def run_text_generation(
     model_path: str,
     textgen_requests: Iterable[MockTextGenerationRequest],
@@ -60,6 +119,7 @@ def run_text_generation(
     trust_remote_code: bool = False,
     gpu_memory_utilization: float = 0.9,
     max_batch_size: int | None = None,
+    tensor_parallel_size: int = 1,
 ) -> list[dict[str, Any]]:
     """Run text generation using vLLM.
 
@@ -92,6 +152,9 @@ def run_text_generation(
             # vLLM often runs FP8 models automatically if hardware supports it,
             # but usually setting dtype to float16/bfloat16 is safer for the container
             dtype = "float16"
+        elif encoding_name == "float4_e2m1fnx2":
+            # NVFP4 models - vLLM loads these natively with auto dtype detection
+            dtype = "auto"
         elif encoding_name in ["awq", "gptq", "squeezellm", "fp8"]:
             quantization = encoding_name
         else:
@@ -114,12 +177,18 @@ def run_text_generation(
         # Default max_logprobs is 20. We increase this to support full logits
         # retrieval. 262144 covers large vocabs (e.g. Qwen2.5 is ~152k).
         max_logprobs=262144,
-        # Force eager mode if needed for debugging, but V1 prefers cuda graphs
-        enforce_eager=False,
+        # Force eager mode for stability.
+        enforce_eager=True,
+        # Avoid vLLM custom all-reduce path for stability.
+        disable_custom_all_reduce=True,
+        # Tensor parallelism for multi-GPU models
+        tensor_parallel_size=tensor_parallel_size,
     )
 
     tokenizer = llm.get_tokenizer()
-    vocab_size = tokenizer.vocab_size
+    vocab_size = _resolve_vocab_size(
+        llm=llm, tokenizer=tokenizer, model_path=model_path
+    )
 
     prompts = []
     sampling_params_list = []
@@ -151,7 +220,7 @@ def run_text_generation(
 
         if generated_data.logprobs:
             for step_logprobs in generated_data.logprobs:
-                # Initialize with a proxy for -inf
+                # Initialize with a proxy for -inf logprob
                 logits_np = np.full((vocab_size,), -100.0, dtype=np.float32)
 
                 # Fill in the values returned by vLLM
@@ -163,6 +232,7 @@ def run_text_generation(
 
                 next_token = logits_np.argmax()
 
+                # Save vLLM logprobs explicitly; verification normalizes as needed.
                 saved_logits.append(
                     {
                         "next_token": next_token,

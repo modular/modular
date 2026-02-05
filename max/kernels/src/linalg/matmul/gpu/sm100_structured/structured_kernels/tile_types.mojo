@@ -196,10 +196,12 @@ comptime SMemTile[
     *,
     alignment: Int = 128,
 ] = TileTensor[
-    shape_types = layout.shape_types,
-    stride_types = layout.stride_types,
     dtype,
     MutAnyOrigin,
+    Layout[
+        shape_types = layout.shape_types,
+        stride_types = layout.stride_types,
+    ],
     address_space = AddressSpace.SHARED,
 ]
 """Shared memory tile using TileTensor with a Layout.
@@ -224,7 +226,7 @@ Parameters:
 comptime SMemTileShape[
     idx: Int,
     Tile: TileTensor,
-] = Tile.shape_types[idx].static_value
+] = Tile.static_shape[idx]
 """Get compile-time shape value at index from a TileTensor type.
 
 Parameters:
@@ -238,7 +240,7 @@ Returns:
 comptime SMemTileStride[
     idx: Int,
     Tile: TileTensor,
-] = Tile.stride_types[idx].static_value
+] = Tile.static_stride[idx]
 """Get compile-time stride value at index from a TileTensor type.
 
 Parameters:
@@ -295,8 +297,8 @@ struct SMemTileArrayWithLayout[
     # The TileTensor-based tile type with correct layout
     comptime Tile = SMemTile[Self.dtype, Self.tile_layout]
 
-    # Size calculations - use layout.size() for element count
-    comptime tile_size: Int = Self.tile_layout.size()
+    # Size calculations - use layout.product() for element count
+    comptime tile_size: Int = Self.tile_layout.product()
     comptime num_elements: Int = Self.tile_size * Self.num_tiles
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
@@ -429,10 +431,11 @@ struct SMemTileArray[
 
     # The TileTensor-based tile type with correct shape/stride types
     comptime Tile = TileTensor[
-        shape_types = Self.shape_types,
-        stride_types = Self.stride_types,
         Self.dtype,
         MutAnyOrigin,
+        Layout[
+            shape_types = Self.shape_types, stride_types = Self.stride_types
+        ],
         address_space = AddressSpace.SHARED,
     ]
 

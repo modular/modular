@@ -264,11 +264,11 @@ def test_layout():
 
     # Test non-empty StringLiteral C string
     var ptr = "hello".as_c_string_slice().unsafe_ptr()
-    assert_equal(ptr[0], ord("h"))
-    assert_equal(ptr[1], ord("e"))
-    assert_equal(ptr[2], ord("l"))
-    assert_equal(ptr[3], ord("l"))
-    assert_equal(ptr[4], ord("o"))
+    assert_equal(ptr[0], Int8(ord("h")))
+    assert_equal(ptr[1], Int8(ord("e")))
+    assert_equal(ptr[2], Int8(ord("l")))
+    assert_equal(ptr[3], Int8(ord("l")))
+    assert_equal(ptr[4], Int8(ord("o")))
     assert_equal(ptr[5], 0)  # Verify NUL terminated
 
 

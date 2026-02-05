@@ -120,7 +120,9 @@ def test_gemv():
 
     var serial_perf = bench_run[bench_fn_serial]()
     benchmark.keep(out[10])
-    var serial_bandwidth = (bytes_per_iteration / serial_perf.mean()) / gigabyte
+    var serial_bandwidth = (
+        Float64(bytes_per_iteration) / serial_perf.mean()
+    ) / gigabyte
     print(
         "Serial GEMV Bandwidth: ",
         serial_bandwidth,
@@ -144,7 +146,9 @@ def test_gemv():
     var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
 
     # Compute speedup and bandwidth stats
-    var par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
+    var par_bandwidth = (
+        Float64(bytes_per_iteration) / par_perf.mean()
+    ) / gigabyte
     print(
         "Parallel GEMV Bandwidth: ",
         par_bandwidth,

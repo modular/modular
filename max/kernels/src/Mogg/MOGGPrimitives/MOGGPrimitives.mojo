@@ -70,7 +70,7 @@ struct StateContext(TrivialRegisterType):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
-        __comptime_assert size_of[StateContext]() == 16, (
+        comptime assert size_of[StateContext]() == 16, (
             "Expecting StateContext to be 16 bytes wide, to match the C++"
             " equivalent"
         )
@@ -176,7 +176,7 @@ fn create_non_tracked_tensor_async[
     buffer: NDBuffer[dtype, buffer_rank, MutAnyOrigin],
     async_ptr: OpaquePointer[MutAnyOrigin],
 ):
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncNonTrackedTensor", NoneType](
@@ -240,7 +240,7 @@ fn create_tensor_async[
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     external_call["MGP_RT_CreateAsyncTensorWithBorrow", NoneType](
@@ -380,7 +380,7 @@ fn unpack_tensor[
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
-    __comptime_assert tensor_rank == buffer_rank or (
+    comptime assert tensor_rank == buffer_rank or (
         tensor_rank == 0 and buffer_rank == 1
     )
     var shapes = IndexList[buffer_rank]()
@@ -460,13 +460,13 @@ fn mgp_tensor_create[
     @parameter
     if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
-        __comptime_assert spec_rank == buffer_rank
+        comptime assert spec_rank == buffer_rank
         return NDBuffer[dtype, buffer_rank](
             buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
@@ -484,10 +484,10 @@ fn mgp_tensor_extract_tensor_spec[
 ]:
     @parameter
     if tensor_rank == 0:
-        __comptime_assert buffer_rank == 1
+        comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
     else:
-        __comptime_assert buffer_rank == tensor_rank
+        comptime assert buffer_rank == tensor_rank
         return rebind[IndexList[tensor_rank]](
             buffer.dynamic_shape.canonicalize()
         )
@@ -838,7 +838,7 @@ fn mgp_tensor_spec_create[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: IndexList[spec_rank]) -> Int:
-    __comptime_assert axis < UInt64(
+    comptime assert axis < UInt64(
         spec_rank
     ), "axis for get_dim must be less than rank of TensorSpec"
     return spec[Int(axis)]
@@ -1081,7 +1081,7 @@ fn reshape_contiguous_buffer[
 fn get_simd_width_for_dtypes[
     dtypes: StaticTuple[DType], target: StaticString
 ]() -> Int:
-    __comptime_assert dtypes.size > 0
+    comptime assert dtypes.size > 0
 
     var width = get_kernel_simd_width[dtypes[0], target]()
 

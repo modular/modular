@@ -145,11 +145,11 @@ fn ep_dispatch_async_kernel_api[
         context: Device context pointer
     """
 
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert (
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert (
         input_tokens.shape[1]() == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         topk_ids.shape[1]() == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
@@ -302,7 +302,7 @@ fn ep_dispatch_wait_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
@@ -445,14 +445,14 @@ fn ep_fused_dispatch_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert dispatch_dtype == DType.bfloat16
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert dispatch_dtype == DType.bfloat16
 
     # Ensure the shape for the input tensors are correct
-    __comptime_assert (
+    comptime assert (
         input_tokens.shape[1]() == token_fmt_type.hid_dim
     ), "EP dispatch: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         topk_ids.shape[1]() == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
@@ -621,8 +621,8 @@ fn ep_combine_async_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
-    __comptime_assert (
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert (
         input_tokens.shape[1]() == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
 
@@ -770,9 +770,9 @@ fn ep_combine_wait_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the output tensor is correct
-    __comptime_assert (
+    comptime assert (
         output_tokens.shape[1]() == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
 
@@ -913,12 +913,12 @@ fn ep_fused_combine_kernel_api[
     """
 
     # Ensure this kernel only runs on GPU targets
-    __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+    comptime assert is_gpu[target](), "EP is only supported on GPU."
     # Ensure the shape for the tensors are correct
-    __comptime_assert (
+    comptime assert (
         input_tokens.shape[1]() == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
-    __comptime_assert (
+    comptime assert (
         output_tokens.shape[1]() == hidden_size
     ), "EP combine: output tokens shape doesn't match hidden size."
 

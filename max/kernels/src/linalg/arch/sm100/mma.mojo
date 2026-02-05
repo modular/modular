@@ -39,7 +39,7 @@ from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
 fn extract_first_2_modes[l: Layout]() -> Layout:
-    __comptime_assert l.rank() >= 2
+    comptime assert l.rank() >= 2
 
     return Layout(
         IntTuple(l.shape[0].value(), l.shape[1].value()),
@@ -71,7 +71,7 @@ fn max_contiguous_tile_shape[
     """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
     """
 
-    __comptime_assert rank == 2, "Only 2D tensors are supported!"
+    comptime assert rank == 2, "Only 2D tensors are supported!"
 
     @parameter
     if major == Major.K:
@@ -169,14 +169,14 @@ struct MmaOpSM100_SS[
 
     @always_inline
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
-        __comptime_assert Self.cta_group in (
+        comptime assert Self.cta_group in (
             1,
             2,
         ), "MmaOpSM100 only supports cta_group 1 or 2"
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
 
@@ -301,22 +301,22 @@ struct MmaOpSM100_SS[
         comptime a_layout = Layout(
             IntTuple(
                 IntTuple(
-                    a.shape_types[0].VariadicType[0].static_value,
-                    a.shape_types[0].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.shape_types[1].VariadicType[0].static_value,
-                    a.shape_types[1].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    a.stride_types[0].VariadicType[0].static_value,
-                    a.stride_types[0].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.stride_types[1].VariadicType[0].static_value,
-                    a.stride_types[1].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -324,22 +324,22 @@ struct MmaOpSM100_SS[
         comptime b_layout = Layout(
             IntTuple(
                 IntTuple(
-                    b.shape_types[0].VariadicType[0].static_value,
-                    b.shape_types[0].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.shape_types[1].VariadicType[0].static_value,
-                    b.shape_types[1].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    b.stride_types[0].VariadicType[0].static_value,
-                    b.stride_types[0].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.stride_types[1].VariadicType[0].static_value,
-                    b.stride_types[1].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -437,31 +437,31 @@ struct MmaOpSM100_BlockScaled_SS[
 
     @always_inline
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             Self.scaling_kind == UMMAKind.KIND_MXF8F6F4
             or Self.scaling_kind == UMMAKind.KIND_MXF4NVF4
         ), (
             "Only support MXF8F6F4 or MXF4NVF4 scaling kind for block scaled"
             " matmul!"
         )
-        __comptime_assert (
+        comptime assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
-        __comptime_assert Self.cta_group in (
+        comptime assert Self.cta_group in (
             1,
             2,
         ), "MmaOpSM100 only supports cta_group 1 or 2"
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
-        __comptime_assert Self.a_type in (
+        comptime assert Self.a_type in (
             DType.float8_e4m3fn,
             DType.uint8,  # TODO: (KERN-2238) replace with FP4-E2M1
         ), "Only support float8_e4m3fn or uint8 (F4-E2M1) for input operands"
-        __comptime_assert (
+        comptime assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "sfa_dtype and sfb_dtype must be the same"
-        __comptime_assert Self.sfa_dtype in (
+        comptime assert Self.sfa_dtype in (
             DType.float8_e4m3fn,
             DType.float8_e8m0fnu,
         ), "Only support float8_e4m3fn or float8_e8m0fnu for scales"
@@ -542,7 +542,7 @@ struct MmaOpSM100_BlockScaled_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        __comptime_assert (
+        comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
@@ -635,44 +635,44 @@ struct MmaOpSM100_BlockScaled_SS[
         comptime a_layout = Layout(
             IntTuple(
                 IntTuple(
-                    a.shape_types[0].VariadicType[0].static_value,
-                    a.shape_types[0].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.shape_types[1].VariadicType[0].static_value,
-                    a.shape_types[1].VariadicType[1].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    a.stride_types[0].VariadicType[0].static_value,
-                    a.stride_types[0].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    a.stride_types[1].VariadicType[0].static_value,
-                    a.stride_types[1].VariadicType[1].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
         comptime b_layout = Layout(
             IntTuple(
                 IntTuple(
-                    b.shape_types[0].VariadicType[0].static_value,
-                    b.shape_types[0].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.shape_types[1].VariadicType[0].static_value,
-                    b.shape_types[1].VariadicType[1].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    b.stride_types[0].VariadicType[0].static_value,
-                    b.stride_types[0].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
                 ),
                 IntTuple(
-                    b.stride_types[1].VariadicType[0].static_value,
-                    b.stride_types[1].VariadicType[1].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
                 ),
             ),
         )
@@ -682,80 +682,104 @@ struct MmaOpSM100_BlockScaled_SS[
         comptime sfa_layout = Layout(
             IntTuple(
                 IntTuple(
-                    sfa_smem.shape_types[0].VariadicType[0].static_value,
-                    sfa_smem.shape_types[0].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfa_smem.shape_types[1]
+                        sfa_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfa_smem.shape_types[1]
+                        sfa_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfa_smem.shape_types[1].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    sfa_smem.stride_types[0].VariadicType[0].static_value,
-                    sfa_smem.stride_types[0].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfa_smem.stride_types[1]
+                        sfa_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfa_smem.stride_types[1]
+                        sfa_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfa_smem.stride_types[1].VariadicType[1].static_value,
+                    sfa_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
         )
         comptime sfb_layout = Layout(
             IntTuple(
                 IntTuple(
-                    sfb_smem.shape_types[0].VariadicType[0].static_value,
-                    sfb_smem.shape_types[0].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfb_smem.shape_types[1]
+                        sfb_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfb_smem.shape_types[1]
+                        sfb_smem.LayoutType._shape_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfb_smem.shape_types[1].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
             IntTuple(
                 IntTuple(
-                    sfb_smem.stride_types[0].VariadicType[0].static_value,
-                    sfb_smem.stride_types[0].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
                 ),
                 IntTuple(
                     IntTuple(
-                        sfb_smem.stride_types[1]
+                        sfb_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[0]
                         .static_value,
-                        sfb_smem.stride_types[1]
+                        sfb_smem.LayoutType._stride_types[1]
                         .VariadicType[0]
                         .VariadicType[1]
                         .static_value,
                     ),
-                    sfb_smem.stride_types[1].VariadicType[1].static_value,
+                    sfb_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
                 ),
             ),
         )
@@ -775,7 +799,7 @@ struct MmaOpSM100_BlockScaled_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        __comptime_assert (
+        comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 

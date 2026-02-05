@@ -127,13 +127,13 @@ fn test[
         mla_mask_type.value,
     )
 
-    __comptime_assert (
+    comptime assert (
         mla_mask_type == MLAMaskType.NO_MASK
         or mla_mask_type == MLAMaskType.CAUSAL
         or mla_mask_type == MLAMaskType.MASK_3D
         or mla_mask_type == MLAMaskType.MASK_4D
     ), "mha only supports NO_MASK, CAUSAL, MASK_3D, or MASK_4D."
-    __comptime_assert (
+    comptime assert (
         against_gpu_naive or mla_mask_type == MLAMaskType.MASK_3D
     ), "Testing against cpu requires mask of MASK_3D."
 
@@ -212,7 +212,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             q_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[q_type](

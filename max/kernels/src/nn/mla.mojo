@@ -24,6 +24,7 @@ from sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
+    env_get_int,
     CompilationTarget,
 )
 
@@ -106,8 +107,8 @@ from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from gpu.host.info import B200, GPUInfo
-from nn.mla_decode_sm100 import mla_decode_sm100
-from nn.mla_decode_sm100_kv_fp8 import mla_decode_sm100_kv_fp8
+from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+
 
 # ===-----------------------------------------------------------------------===#
 # GPU Multi-head Latent Attention (MLA) decoding implementations
@@ -167,13 +168,13 @@ fn flare_mla_decoding[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert (
+    comptime assert (
         ragged or rank == 4
     ), "only support rank 4 inputs for non-ragged inputs."
-    __comptime_assert (
+    comptime assert (
         not ragged or rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert (
         q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
@@ -256,7 +257,7 @@ fn flare_mla_decoding[
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
 ) raises:
-    __comptime_assert q.rank == 4, "only support rank 4 inputs."
+    comptime assert q.rank == 4, "only support rank 4 inputs."
 
     comptime kv_num_heads = Int(k.layout.shape[2])
 
@@ -350,26 +351,26 @@ fn flare_mla_decoding_dispatch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime group = config.num_heads // UInt(kv_num_heads)
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
+    comptime assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
 
     # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
     comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-    __comptime_assert (
+    comptime assert (
         depth == UInt(Int(q.layout.shape[q.rank - 1])) == 576
     ), "flareMLA_decoding only supports head_dim == 576."
-    __comptime_assert (
+    comptime assert (
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
-    __comptime_assert (
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
-    __comptime_assert q.dtype.is_half_float(), "Only support half precision."
+    comptime assert q.dtype.is_half_float(), "Only support half precision."
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.
-    __comptime_assert q.layout.shape.all_known[
+    comptime assert q.layout.shape.all_known[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
@@ -391,71 +392,38 @@ fn flare_mla_decoding_dispatch[
         # For now, it is not partitioned for SM100
         # TODO: add partitioning for SM100
         var num_partitions_value: Int = 1
+        # convert fp8 KV to bf16 KV
+        mla_decode_sm100_dispatch[
+            q.dtype,
+            q.layout,
+            k_t,
+            output.dtype,
+            mask_t,
+            score_mod_t,
+            valid_length.layout,
+            config=config,
+            depth = Int(depth),
+            num_heads = Int(num_heads),
+            group = Int(group),
+            use_score_mod=use_score_mod,
+            ragged=ragged,
+            _is_cache_length_accurate=_is_cache_length_accurate,
+            decoding_warp_split_k=decoding_warp_split_k,
+        ](
+            q,
+            k,
+            output,
+            scale,
+            batch_size,
+            num_partitions_value,
+            max_cache_valid_length,
+            max_prompt_len,
+            valid_length,
+            mask_functor,
+            score_mod_functor,
+            ctx,
+        )
 
-        @parameter
-        if k_t.dtype == DType.float8_e4m3fn:
-            # convert fp8 KV to bf16 KV
-            mla_decode_sm100_kv_fp8[
-                q.dtype,
-                q.layout,
-                k_t,
-                output.dtype,
-                mask_t,
-                score_mod_t,
-                valid_length.layout,
-                config=config,
-                depth = Int(depth),
-                num_heads = Int(num_heads),
-                group = Int(group),
-                use_score_mod=use_score_mod,
-                ragged=ragged,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-                decoding_warp_split_k=decoding_warp_split_k,
-            ](
-                q,
-                k,
-                output,
-                scale,
-                batch_size,
-                num_partitions_value,
-                max_cache_valid_length,
-                max_prompt_len,
-                valid_length,
-                mask_functor,
-                score_mod_functor,
-                ctx,
-            )
-        else:
-            mla_decode_sm100[
-                q.dtype,
-                q.layout,
-                k_t,
-                output.dtype,
-                mask_t,
-                score_mod_t,
-                valid_length.layout,
-                config=config,
-                depth = Int(depth),
-                num_heads = Int(num_heads),
-                group = Int(group),
-                use_score_mod=use_score_mod,
-                ragged=ragged,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-                decoding_warp_split_k=decoding_warp_split_k,
-            ](
-                q,
-                k,
-                output,
-                scale,
-                batch_size,
-                num_partitions_value,
-                max_cache_valid_length,
-                max_prompt_len,
-                valid_length,
-                mask_functor,
-                score_mod_functor,
-                ctx,
-            )
     else:
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
@@ -758,7 +726,7 @@ fn mla_decoding_single_batch[
 ):
     """Flash attention v2 algorithm."""
     comptime k_type = k_t.dtype
-    __comptime_assert q_type == k_type
+    comptime assert q_type == k_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -769,11 +737,11 @@ fn mla_decoding_single_batch[
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    __comptime_assert (
+    comptime assert (
         not decoding_warp_split_k
     ), "mla_decoding doesn't support warp split-k."
 
@@ -1352,6 +1320,7 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1395,11 +1364,11 @@ fn flare_mla_prefill[
     This kernel handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert rank == 3, "only support ragged inputs"
-    __comptime_assert (
+    comptime assert rank == 3, "only support ragged inputs"
+    comptime assert (
         q.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1492,6 +1461,7 @@ fn flare_mla_prefill[
             q_depth=q_depth,
             cache_depth = Int(cache_depth),
             config=mha_config,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1518,6 +1488,7 @@ fn flare_mla_prefill[
     q_layout: Layout,
     //,
     use_score_mod: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1543,11 +1514,11 @@ fn flare_mla_prefill[
         ]
     ] = None,
 ) raises:
-    __comptime_assert rank == 3, "only support ragged inputs"
-    __comptime_assert (
+    comptime assert rank == 3, "only support ragged inputs"
+    comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1635,6 +1606,7 @@ fn flare_mla_prefill[
             cache_depth=cache_depth,
             config=mha_config,
             _ndbuffer_mha_operand=True,
+            use_fa4=use_fa4,
         ](
             output,
             q,
@@ -1671,6 +1643,7 @@ fn flare_mla_prefill_dispatch[
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
     },
     _ndbuffer_mha_operand: Bool = False,
+    use_fa4: Bool = False,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -1698,9 +1671,9 @@ fn flare_mla_prefill_dispatch[
     comptime group = config.num_heads // UInt(kv_num_heads)
     comptime rank = output.layout.rank()
 
-    __comptime_assert q_depth == Int(q.layout.shape[rank - 1])
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
-    __comptime_assert (
+    comptime assert q_depth == Int(q.layout.shape[rank - 1])
+    comptime assert num_heads == UInt(Int(q.layout.shape[rank - 2]))
+    comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
@@ -1728,10 +1701,10 @@ fn flare_mla_prefill_dispatch[
         ctx, output.ptr, output.size(), owning=False
     )
 
-    comptime is_sm100_available = ctx.default_device_info == B200
+    comptime fa4_enabled = ctx.default_device_info == B200 and use_fa4
 
     @parameter
-    if is_sm100_available:
+    if fa4_enabled:
         mla_sm100_prefill[
             config=config,
             group = Int(group),
@@ -1971,7 +1944,7 @@ fn mla_prefill_single_batch[
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
     comptime k_rope_type = k_rope_t.dtype
-    __comptime_assert (
+    comptime assert (
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     )
 
@@ -1990,7 +1963,7 @@ fn mla_prefill_single_batch[
 
     comptime cache_num_heads = num_heads // UInt(group)
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2955,7 +2928,7 @@ fn _k_cache_to_buffer[
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads
-    __comptime_assert num_heads == 1, "num_heads should be equal to 1"
+    comptime assert num_heads == 1, "num_heads should be equal to 1"
 
     @always_inline
     @parameter
@@ -2963,7 +2936,7 @@ fn _k_cache_to_buffer[
     fn copy_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 2, "rank should be equal to 2"
+        comptime assert rank == 2, "rank should be equal to 2"
 
         var idx = rebind[IndexList[2]](idx_arg)
         var global_token_idx = idx[0]

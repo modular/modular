@@ -172,7 +172,7 @@ struct ROCSHMEMInitAttr:
     var args: ROCSHMEMInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 144
         ), "ROCSHMEMInitAttr must be 144 bytes"
         self.version = c_int((1 << 16) + size_of[ROCSHMEMInitAttr]())
@@ -186,7 +186,7 @@ struct ROCSHMEMInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "ROCSHMEMInitArgs must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[ROCSHMEMInitArgs]())
@@ -201,7 +201,7 @@ struct ROCSHMEMUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 24
         ), "ROCSHMEMUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueIDArgs]())
@@ -215,7 +215,7 @@ struct ROCSHMEMUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "rocshmem_uniqueid_t must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[ROCSHMEMUniqueID]())

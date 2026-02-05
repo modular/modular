@@ -161,13 +161,13 @@ fn _irfft[
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "Input and output must have the same rank"
-    __comptime_assert (
+    comptime assert (
         input_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
-    __comptime_assert (
+    comptime assert (
         output_type == DType.float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
@@ -179,14 +179,14 @@ fn _irfft[
     cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = coord_to_index_list(input.layout.shape)
+    input_shape = coord_to_index_list(input.layout.shape_coord())
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
     input_size = input_shape[axis] // 2
     output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = coord_to_index_list(output.layout.shape)
+    output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "

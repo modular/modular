@@ -45,7 +45,9 @@ def execute_index_tensor_test[
     var actual_output_tensor = TileTensor(
         actual_output_device,
         row_major(
-            expected_output_device.layout.shape.make_dynamic[DType.int64]()
+            expected_output_device.layout.shape_coord().make_dynamic[
+                DType.int64
+            ]()
         ),
     )
     # Convert all tensors to dynamic layouts before calling the kernel
@@ -61,10 +63,10 @@ def execute_index_tensor_test[
     # check that our shapes are consistent and that the contents of the output are consistent
     assert_true(
         rebind[IndexList[actual_output_tensor.rank]](
-            coord_to_index_list(actual_output_tensor.layout.shape)
+            coord_to_index_list(actual_output_tensor.layout.shape_coord())
         )
         == rebind[IndexList[actual_output_tensor.rank]](
-            coord_to_index_list(expected_output_device.layout.shape)
+            coord_to_index_list(expected_output_device.layout.shape_coord())
         )
     )
     with actual_output_device.map_to_host() as actual_output_host:

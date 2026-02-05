@@ -63,7 +63,7 @@ fn count_leading_zeros[
         A SIMD value where the element at position `i` contains the number of
         leading zeros at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.ctlz", type_of(val), has_side_effect=False](
         val, False
     )
@@ -107,7 +107,7 @@ fn count_trailing_zeros[
         A SIMD value where the element at position `i` contains the number of
         trailing zeros at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.cttz", type_of(val), has_side_effect=False](
         val, False
     )
@@ -151,7 +151,7 @@ fn bit_reverse[
         A SIMD value where the element at position `i` has a reversed bitpattern
         of an integer value of the element at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic[
         "llvm.bitreverse", type_of(val), has_side_effect=False
     ](val)
@@ -208,7 +208,7 @@ fn byte_swap[
         A SIMD value where the element at position `i` is the value of the
         element at position `i` of the input value with its bytes swapped.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
 
     @parameter
     if bit_width_of[dtype]() < 16:
@@ -256,7 +256,7 @@ fn pop_count[
         A SIMD value where the element at position `i` contains the number of
         bits set in the element at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.ctpop", type_of(val), has_side_effect=False](
         val
     )
@@ -287,7 +287,7 @@ fn bit_not[
         A SIMD value where the element at position `i` is computed as a bitwise
         NOT of the integer value at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return ~val
 
 
@@ -329,7 +329,7 @@ fn bit_width[
     Returns:
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     comptime bitwidth = bit_width_of[dtype]()
 
     @parameter
@@ -377,7 +377,7 @@ fn log2_floor[
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
-    __comptime_assert dtype.is_integral(), "dtype must be integral"
+    comptime assert dtype.is_integral(), "dtype must be integral"
 
     comptime bitwidth = bit_width_of[dtype]()
     var res = SIMD[dtype, width](bitwidth) - count_leading_zeros(val) - 1
@@ -420,9 +420,7 @@ fn log2_ceil(val: Scalar) -> type_of(val):
         The smallest integer `n` such that `2^n` is greater than or equal to
         the input value. Returns 0 if `val` is 0.
     """
-    __comptime_assert (
-        val.dtype.is_integral()
-    ), "the input dtype must be integral"
+    comptime assert val.dtype.is_integral(), "the input dtype must be integral"
     return select(val <= 1, type_of(val)(0), log2_floor(val - 1) + 1)
 
 
@@ -478,7 +476,7 @@ fn next_power_of_two[
         that is greater than or equal to the integer at position `i` of the input
         value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return val.gt(1).select(1 << bit_width(val - 1), 1)
 
 
@@ -529,7 +527,7 @@ fn prev_power_of_two[
         that is less than or equal to the integer at position `i` of the input
         value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral and unsigned"
+    comptime assert dtype.is_integral(), "must be integral and unsigned"
     return val.gt(0).select(1 << (bit_width(val) - 1), 0)
 
 
@@ -556,7 +554,7 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
     Returns:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
-    __comptime_assert (
+    comptime assert (
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 
@@ -629,7 +627,7 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
     Returns:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
-    __comptime_assert (
+    comptime assert (
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 

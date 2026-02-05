@@ -25,6 +25,7 @@ from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -63,7 +64,12 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     first_k_dense_replace: int = 3
     norm_topk_prob: bool = True
     hidden_act: str = "silu"
+
     max_position_embeddings: int = 4096
+    """Maximum positional embeddings as defined by the original model."""
+    max_seq_len: int = 163840
+    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
     rope_theta: float = 10000.0
@@ -104,7 +110,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
-        return self.max_position_embeddings
+        return self.max_seq_len
 
     @staticmethod
     def construct_kv_params(
@@ -185,6 +191,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             cache_dtype=cache_dtype,
         )
 
+        max_seq_len = upper_bounded_default(
+            upper_bound=config.max_position_embeddings,
+            default=pipeline_config.max_length,
+        )
+
         return cls(
             dtype=dtype,
             kv_params=kv_params,
@@ -214,6 +225,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
             max_position_embeddings=config.max_position_embeddings,
+            max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=config.rope_theta,

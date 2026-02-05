@@ -27,6 +27,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn.legacy import Allreduce, Signals
 
 
 def test_multi_device_graph_capture_replay() -> None:
@@ -320,3 +321,117 @@ def test_multi_device_multiple_replay_cycles() -> None:
     np.testing.assert_allclose(
         captured1.to_numpy(), np.ones(4, dtype=np.float32) * 35
     )
+
+
+def test_allreduce_graph_capture_replay() -> None:
+    """Test graph capture and replay with allreduce distributed operations.
+
+    This verifies that collective operations like allreduce can be captured
+    and replayed correctly across multiple GPUs.
+    """
+    available_gpus = accelerator_count()
+    if available_gpus < 2:
+        pytest.skip("Test requires at least 2 GPUs")
+
+    host = CPU()
+
+    num_gpus = available_gpus
+    devices = [Accelerator(i) for i in range(num_gpus)]
+
+    # Set up signals for synchronization
+    graph_devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    # Create input types for each device + signal buffers
+    input_types = [
+        TensorType(
+            dtype=DType.float32, shape=[64, 128], device=graph_devices[i]
+        )
+        for i in range(num_gpus)
+    ]
+    all_input_types = input_types + list(signals.input_types())
+
+    # Build graph with allreduce
+    with Graph("allreduce_capture", input_types=all_input_types) as graph:
+        # Scale each input by (i + 1) to differentiate them
+        tensor_inputs = [
+            input.tensor * (i + 1)
+            for i, input in enumerate(graph.inputs[:num_gpus])
+        ]
+
+        # Perform allreduce
+        allreduce = Allreduce(num_accelerators=num_gpus)
+        allreduce_outputs = allreduce(
+            tensor_inputs,
+            [inp.buffer for inp in graph.inputs[num_gpus:]],
+        )
+
+        graph.output(*allreduce_outputs)
+
+    session = InferenceSession(devices=[host, *devices])
+    model = session.load(graph)
+
+    # Create input tensors - all ones for simplicity
+    input_data = np.ones((64, 128), dtype=np.float32)
+    input_tensors = [
+        Buffer.from_numpy(input_data).to(device) for device in devices
+    ]
+
+    # Expected output: sum of (1 * 1) + (1 * 2) = 3 for each element
+    # num_gpus=2: 1 + 2 = 3
+    expected_sum = num_gpus * (num_gpus + 1) // 2
+    expected_output = input_data * expected_sum
+
+    signal_buffers = signals.buffers()
+
+    # Execute baseline to verify correctness
+    baseline_outputs = model.execute(*input_tensors, *signal_buffers)
+    for output in baseline_outputs:
+        np.testing.assert_allclose(
+            output.to(host).to_numpy(), expected_output, rtol=1e-5
+        )
+
+    captured_outputs = model.capture(*input_tensors, *signal_buffers)
+
+    # Replay and verify outputs
+    model.replay(*input_tensors, *signal_buffers)
+
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(), expected_output, rtol=1e-5
+        )
+
+    # Update inputs and replay again
+    new_input_data = np.ones((64, 128), dtype=np.float32) * 2.0
+    for i, device in enumerate(devices):
+        input_tensors[i].inplace_copy_from(
+            Buffer.from_numpy(new_input_data).to(device)
+        )
+
+    # Expected output with new inputs: (2 * 1) + (2 * 2) = 2 + 4 = 6
+    expected_output_updated = new_input_data * expected_sum
+
+    model.replay(*input_tensors, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(),
+            expected_output_updated,
+            rtol=1e-5,
+        )
+
+    # Replay once more with different values to ensure stability
+    new_input_data2 = np.ones((64, 128), dtype=np.float32) * 5.0
+    for i, device in enumerate(devices):
+        input_tensors[i].inplace_copy_from(
+            Buffer.from_numpy(new_input_data2).to(device)
+        )
+
+    expected_output_final = new_input_data2 * expected_sum
+
+    model.replay(*input_tensors, *signal_buffers)
+    for captured_output in captured_outputs:
+        np.testing.assert_allclose(
+            captured_output.to(host).to_numpy(),
+            expected_output_final,
+            rtol=1e-5,
+        )

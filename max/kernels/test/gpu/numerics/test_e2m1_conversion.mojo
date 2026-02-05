@@ -16,13 +16,10 @@ from linalg.fp4_utils import (
     E2M1_TO_FLOAT32,
     cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
-    cast_f4e2m1x8_to_fp16x8,
-    cast_f4e2m1x16_to_fp16x16,
 )
 from gpu.host import DeviceContext
 from math import nan, inf
 from sys import bit_width_of
-from memory import bitcast
 
 
 # CHECK-LABEL: test_simd_f32_to_e2m1
@@ -192,77 +189,9 @@ fn test_simd_f4e2m1x2_to_fp16x2(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_f4e2m1x8_to_fp16x8_ptx_kernel[
-    size: Int,
-](x: SIMD[DType.uint32, size]):
-    for i in range(size):
-        var x_casted_0 = cast_f4e2m1x8_to_fp16x8(x[i])
-        print(
-            x_casted_0,
-        )
-
-
-# CHECK-LABEL: test_simd_f4e2m1x8_to_fp16x8
-# CHECK: [0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.5]
-# CHECK: [4.0, -1.0, 1.0, 0.5, -0.0, 1.5, 6.0, 1.0]
-# CHECK: [0.0, 4.0, 1.5, -1.5, 0.5, 1.5, 1.5, 1.5]
-# CHECK: [-6.0, 0.0, 3.0, 0.5, -2.0, 2.0, -4.0, 2.0]
-fn test_simd_f4e2m1x8_to_fp16x8(ctx: DeviceContext) raises:
-    print("== test_simd_f4e2m1x8_to_fp16x8")
-
-    comptime size = 4
-    var e4m21_simd = SIMD[DType.uint32, size](
-        0x00011011,
-        0xA6123827,
-        0x60B33133,
-        0x0F154C4E,
-    )
-
-    comptime kernel = test_simd_f4e2m1x8_to_fp16x8_ptx_kernel[size,]
-    ctx.enqueue_function_experimental[kernel](
-        e4m21_simd, grid_dim=1, block_dim=1
-    )
-    ctx.synchronize()
-
-
-fn test_simd_f4e2m1x16_to_fp16x16_ptx_kernel[
-    size: Int,
-](x: SIMD[DType.uint64, size]):
-    for i in range(size):
-        var x_casted_0 = cast_f4e2m1x16_to_fp16x16(x[i])
-        print(
-            x_casted_0,
-        )
-
-
-# CHECK-LABEL: test_simd_f4e2m1x16_to_fp16x16
-# CHECK: [0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.5, 4.0, -1.0, 1.0, 0.5, -0.0, 1.5, 6.0, 1.0]
-# CHECK: [4.0, -1.0, 1.0, 0.5, -0.0, 1.5, 6.0, 1.0, 0.0, 4.0, 1.5, -1.5, 0.5, 1.5, 1.5, 1.5]
-# CHECK: [0.0, 4.0, 1.5, -1.5, 0.5, 1.5, 1.5, 1.5, -6.0, 0.0, 3.0, 0.5, -2.0, 2.0, -4.0, 2.0]
-# CHECK: [-6.0, 0.0, 3.0, 0.5, -2.0, 2.0, -4.0, 2.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.5]
-fn test_simd_f4e2m1x16_to_fp16x16(ctx: DeviceContext) raises:
-    print("== test_simd_f4e2m1x16_to_fp16x16")
-
-    comptime size = 4
-    var e4m21_simd = SIMD[DType.uint64, size](
-        0x00011011A6123827,
-        0xA612382760B33133,
-        0x60B331330F154C4E,
-        0x0F154C4E00011011,
-    )
-
-    comptime kernel = test_simd_f4e2m1x16_to_fp16x16_ptx_kernel[size,]
-    ctx.enqueue_function_experimental[kernel](
-        e4m21_simd, grid_dim=1, block_dim=1
-    )
-    ctx.synchronize()
-
-
 fn main() raises:
     test_simd_f32_to_e2m1()
 
     with DeviceContext() as ctx:
         test_simd_f32_to_e2m1_ptx_path(ctx)
         test_simd_f4e2m1x2_to_fp16x2(ctx)
-        test_simd_f4e2m1x8_to_fp16x8(ctx)
-        test_simd_f4e2m1x16_to_fp16x16(ctx)

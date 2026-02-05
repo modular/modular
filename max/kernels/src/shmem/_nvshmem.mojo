@@ -159,7 +159,7 @@ struct NVSHMEMXInitAttr:
     var args: NVSHMEMXInitArgs
 
     fn __init__(out self, mpi_comm: UnsafePointer[MPIComm, MutAnyOrigin]):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 144
         ), "NVSHMEMXInitAttr must be 144 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitAttr]())
@@ -173,7 +173,7 @@ struct NVSHMEMXInitArgs:
     var content: InlineArray[Byte, 96]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "NVSHMEMXInitArgs must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXInitArgs]())
@@ -188,7 +188,7 @@ struct NVSHMEMXUniqueIDArgs:
     var nranks: c_int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
@@ -202,7 +202,7 @@ struct NVSHMEMXUniqueID:
     var internal: InlineArray[Byte, 124]
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             size_of[Self]() == 128
         ), "nvshmemx_uniqueid_t must be 128 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueID]())

@@ -390,11 +390,11 @@ fn moe_create_indices_kernel[
 
 ### Pattern 6: Rank Assertions
 
-Use `__comptime_assert` for compile-time rank checking:
+Use `comptime assert` for compile-time rank checking:
 
 ```mojo
 # From PR #76670
-__comptime_assert topk_ids.rank == 1, "topk_ids must be 1D"
+comptime assert topk_ids.rank == 1, "topk_ids must be 1D"
 ```
 
 ### Pattern 7: Dual Accessor Pattern for C Tiles

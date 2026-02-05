@@ -244,7 +244,7 @@ fn test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_tt.as_any_origin().as_immut(),
+                    k=k_host_tt.as_any_origin().as_immut(),
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
@@ -483,7 +483,10 @@ fn fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
 
 @parameter
 fn fill_iota[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
-    iota(buf.ptr, coord_to_index_list(buf.layout.shape).flattened_length())
+    iota(
+        buf.ptr,
+        coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
+    )
 
 
 struct TestCase[_sampling: Bool, _largest: Bool = True](ImplicitlyCopyable):
