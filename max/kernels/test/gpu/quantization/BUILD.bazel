@@ -25,9 +25,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_fp8_quantization.mojo": select({
-        "//:h100_gpu": ["//:h100_gpu"],
-        "//:b200_gpu": ["//:b200_gpu"],
-        "//conditions:default": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     "test_scaled_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
