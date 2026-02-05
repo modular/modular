@@ -124,6 +124,7 @@ struct TensorMapInterleave(TrivialRegisterType):
 @fieldwise_init("implicit")
 struct TensorMapSwizzle(
     Equatable,
+    Hashable,
     ImplicitlyCopyable,
     Intable,
     Stringable,

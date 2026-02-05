@@ -23,7 +23,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Hashable, Stringable, TrivialRegisterType, Writable):
+struct RasterOrder(
+    Equatable, Hashable, Stringable, TrivialRegisterType, Writable
+):
     var _value: Int32
 
     comptime AlongN = Self(0)
