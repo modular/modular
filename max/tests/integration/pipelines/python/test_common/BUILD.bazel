@@ -218,6 +218,14 @@ modular_py_library(
     name = "vllm_utils",
     testonly = True,
     srcs = ["vllm_utils.py"],
+    # These imports are only available when running on NVIDIA GPUs with vllm
+    # installed. They are loaded lazily inside functions and are not available
+    # in the default //conditions:default build configuration.
+    ignore_unresolved_imports = [
+        "huggingface_hub",
+        "huggingface_hub.hf_hub_download",
+        "test_common.vllm_hook_core",
+    ],
     imports = [".."],
     deps = [
         ":test_data",

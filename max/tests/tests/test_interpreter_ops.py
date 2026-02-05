@@ -31,6 +31,8 @@ INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UINT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 SIGNED_DTYPES = FLOAT_DTYPES + INT_DTYPES
 ELEMENTWISE_DTYPES = SIGNED_DTYPES + UINT_DTYPES
+# DTypes to test for matmul operations (float and integer)
+MATMUL_DTYPES = FLOAT_DTYPES + INT_DTYPES
 
 
 class TestBinaryElementwiseOps:
@@ -52,7 +54,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(12, dtype=np_dtype).reshape(shape)
         b_np = np.arange(12, 24, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -77,7 +79,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(12, 24, dtype=np_dtype).reshape(shape)
         b_np = np.arange(12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -102,7 +104,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
         b_np = np.arange(2, 14, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -127,7 +129,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
         b_np = np.arange(1, 13, dtype=np_dtype).reshape(shape) + 0.5
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -152,7 +154,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(12, dtype=np_dtype).reshape(shape)
         b_np = np.arange(11, -1, -1, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -177,7 +179,7 @@ class TestBinaryElementwiseOps:
         a_np = np.arange(12, dtype=np_dtype).reshape(shape)
         b_np = np.arange(11, -1, -1, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -206,7 +208,7 @@ class TestBinaryComparisonOps:
         a_np = np.array([1, 2, 3, 4], dtype=np_dtype)
         b_np = np.array([1, 5, 3, 6], dtype=np_dtype)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -233,7 +235,7 @@ class TestBinaryComparisonOps:
         a_np = np.array([1, 2, 3, 4], dtype=np_dtype)
         b_np = np.array([1, 5, 3, 6], dtype=np_dtype)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -260,7 +262,7 @@ class TestBinaryComparisonOps:
         a_np = np.array([1, 5, 3, 6], dtype=np_dtype)
         b_np = np.array([2, 3, 3, 4], dtype=np_dtype)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -287,7 +289,7 @@ class TestBinaryComparisonOps:
         a_np = np.array([1, 5, 3, 6], dtype=np_dtype)
         b_np = np.array([2, 3, 3, 4], dtype=np_dtype)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -317,7 +319,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.arange(-6, 6, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -339,7 +341,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.arange(-6, 6, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -362,7 +364,7 @@ class TestUnaryElementwiseOps:
         # Use non-negative values for unsigned types
         x_np = np.arange(0, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -384,7 +386,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-2, 2, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -408,7 +410,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(0.1, 10, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -432,7 +434,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(0, 10, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -456,7 +458,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-3, 3, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -480,7 +482,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-3, 3, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -502,7 +504,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-np.pi, np.pi, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -526,7 +528,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-np.pi, np.pi, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -550,7 +552,7 @@ class TestUnaryElementwiseOps:
         np_dtype = dtype.to_numpy()
         x_np = np.linspace(-2.5, 2.5, 12, dtype=np_dtype).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -575,7 +577,7 @@ class TestBooleanLogicOps:
         a_np = np.array([True, True, False, False], dtype=np.bool_)
         b_np = np.array([True, False, True, False], dtype=np.bool_)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -598,7 +600,7 @@ class TestBooleanLogicOps:
         a_np = np.array([True, True, False, False], dtype=np.bool_)
         b_np = np.array([True, False, True, False], dtype=np.bool_)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -621,7 +623,7 @@ class TestBooleanLogicOps:
         a_np = np.array([True, True, False, False], dtype=np.bool_)
         b_np = np.array([True, False, True, False], dtype=np.bool_)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(
             graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -643,7 +645,7 @@ class TestBooleanLogicOps:
 
         x_np = np.array([True, False, True, False], dtype=np.bool_)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -677,7 +679,7 @@ class TestChainedOperations:
 
         x_np = np.arange(12, dtype=np.float32).reshape(shape)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
 
@@ -705,7 +707,7 @@ class TestChainedOperations:
 
         x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
         assert isinstance(result, Buffer)
         result_np = result.to_numpy()
@@ -731,7 +733,7 @@ class TestBasicOpExecution:
             graph.output(c)
 
         device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -750,7 +752,7 @@ class TestBasicOpExecution:
             graph.output(c)
 
         device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -768,7 +770,7 @@ class TestBasicOpExecution:
             graph.output(exp_x)
 
         device = CPU()
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -798,7 +800,7 @@ class TestMutableLoadOp:
         input_np = np.arange(12, dtype=np.float32).reshape(3, 4)
         input_buffer = Buffer.from_numpy(input_np)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [input_buffer])
 
         assert len(outputs) == 1
@@ -828,7 +830,7 @@ class TestMutableLoadOp:
             input_np = np.array([1, 2, 3, 4], dtype=np_dtype)
             input_buffer = Buffer.from_numpy(input_np)
 
-            interp = MOInterpreter(devices=[device])
+            interp = MOInterpreter()
             outputs = interp.execute(graph, [input_buffer])
 
             assert len(outputs) == 1
@@ -857,7 +859,7 @@ class TestMutableLoadOp:
             input_np = np.arange(size, dtype=np.float32).reshape(shape)
             input_buffer = Buffer.from_numpy(input_np)
 
-            interp = MOInterpreter(devices=[device])
+            interp = MOInterpreter()
             outputs = interp.execute(graph, [input_buffer])
 
             assert len(outputs) == 1
@@ -883,7 +885,7 @@ class TestShapeOps:
             y = ops.broadcast_to(x, shape=[2, 3])
             graph.output(y)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -905,7 +907,7 @@ class TestShapeOps:
             y = ops.broadcast_to(x, shape=[2, 3, 4])
             graph.output(y)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -927,7 +929,7 @@ class TestShapeOps:
             y = ops.broadcast_to(x, shape=[3, 2, 2])
             graph.output(y)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -956,7 +958,7 @@ class TestShapeOps:
             z = ops.add(x_broadcast, y)
             graph.output(z)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         outputs = interp.execute(graph, [])
 
         assert len(outputs) == 1
@@ -1002,7 +1004,7 @@ class TestInterpreterVsCompiled:
             compiled_graph.output(c)
 
         # Execute via interpreter
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         interp_result = interp.execute(
             interp_graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -1042,7 +1044,7 @@ class TestInterpreterVsCompiled:
         a_np = np.array([2.0, 3.0, 4.0], dtype=np.float32)
         b_np = np.array([5.0, 6.0, 7.0], dtype=np.float32)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         interp_result = interp.execute(
             interp_graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
         )[0]
@@ -1092,7 +1094,7 @@ class TestInterpreterVsCompiled:
 
         x_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
 
-        interp = MOInterpreter(devices=[device])
+        interp = MOInterpreter()
         interp_result = interp.execute(interp_graph, [Buffer.from_numpy(x_np)])[
             0
         ]
@@ -1105,3 +1107,120 @@ class TestInterpreterVsCompiled:
         np.testing.assert_array_almost_equal(
             interp_result.to_numpy(), compiled_result
         )
+
+
+class TestMatmulOp:
+    """Tests for matmul Mojo op."""
+
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_matmul_basic(self, dtype: DType) -> None:
+        """Test basic 2D matmul matches numpy."""
+        device = CPU()
+        lhs_shape = [3, 4]
+        rhs_shape = [4, 5]
+        lhs_type = TensorType(dtype, lhs_shape, device)
+        rhs_type = TensorType(dtype, rhs_shape, device)
+
+        with Graph("matmul_test", input_types=[lhs_type, rhs_type]) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        # Use small values to avoid overflow for integer types
+        a_np = np.arange(12, dtype=np_dtype).reshape(lhs_shape) % 10
+        b_np = np.arange(20, dtype=np_dtype).reshape(rhs_shape) % 10
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", MATMUL_DTYPES)
+    def test_matmul_square(self, dtype: DType) -> None:
+        """Test square matrix matmul."""
+        device = CPU()
+        shape = [4, 4]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph(
+            "matmul_square_test", input_types=[input_type, input_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(16, dtype=np_dtype).reshape(shape) % 5
+        b_np = np.arange(16, dtype=np_dtype).reshape(shape) % 5
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_matmul_float_precision(self, dtype: DType) -> None:
+        """Test matmul with random floats for precision."""
+        device = CPU()
+        lhs_shape = [8, 16]
+        rhs_shape = [16, 8]
+        lhs_type = TensorType(dtype, lhs_shape, device)
+        rhs_type = TensorType(dtype, rhs_shape, device)
+
+        with Graph(
+            "matmul_float_test", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        np_dtype = dtype.to_numpy()
+        np.random.seed(42)
+        a_np = np.random.randn(8, 16).astype(np_dtype)
+        b_np = np.random.randn(16, 8).astype(np_dtype)
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(
+            result.to_numpy(), expected, decimal=5
+        )
+
+    def test_matmul_vector(self) -> None:
+        """Test matmul with vector-like shapes."""
+        device = CPU()
+        dtype = DType.float32
+        lhs_type = TensorType(dtype, [1, 4], device)
+        rhs_type = TensorType(dtype, [4, 1], device)
+
+        with Graph(
+            "matmul_vec_test", input_types=[lhs_type, rhs_type]
+        ) as graph:
+            a, b = graph.inputs
+            c = ops.matmul(a, b)  # type: ignore[arg-type]
+            graph.output(c)
+
+        a_np = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
+        b_np = np.array([[1.0], [2.0], [3.0], [4.0]], dtype=np.float32)
+
+        interp = MOInterpreter()
+        result = interp.execute(
+            graph, [Buffer.from_numpy(a_np), Buffer.from_numpy(b_np)]
+        )[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.matmul(a_np, b_np)
+        np.testing.assert_array_almost_equal(result.to_numpy(), expected)

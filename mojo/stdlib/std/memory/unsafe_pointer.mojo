@@ -88,7 +88,7 @@ fn alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = get_type_name[type]()
-    __comptime_assert size_of_t > 0, "size must be greater than zero"
+    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -361,7 +361,7 @@ struct UnsafePointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to to do may result in undefined behavior.
         """
-        __comptime_assert (
+        comptime assert (
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]

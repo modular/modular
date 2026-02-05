@@ -56,12 +56,17 @@ from max.nn.legacy.rotary_embedding import (
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.legacy.transformer.distributed_transformer import (
-    distribute_value,
     forward_sharded_layers,
 )
 
 from .layers.moe_gate import DeepseekV3TopKRouter
 from .model_config import DeepseekV3Config
+
+
+def distribute_value(
+    v: TensorValue, devices: list[DeviceRef]
+) -> list[TensorValue]:
+    return [v.to(device) for device in devices]
 
 
 def _unpack_kv_collections(
@@ -453,14 +458,10 @@ class DeepseekV3(Module):
         h = self.embed_tokens(tokens, signal_buffers)
 
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        freqs_cis = ops.distributed_broadcast(
-            self.rope.freqs_cis.to(devices[0]), signal_buffers
+        freqs_cis = distribute_value(self.rope.freqs_cis, devices)
+        input_row_offsets_ = ops.distributed_broadcast(
+            input_row_offsets, signal_buffers
         )
-        # Note: input_row_offsets uses distribute_value instead of broadcast
-        # because its size depends on batch size and may be too small for
-        # the broadcast kernel's SIMD requirements.
-        # TODO: Rebase once kernel fix is merged
-        input_row_offsets_ = distribute_value(input_row_offsets, devices)
 
         if len(devices) > 1:
             # Split batch across devices for data-parallel attention.
@@ -592,9 +593,7 @@ class DeepseekV3(Module):
             h0 = h[0]
             last_token_indices = input_row_offsets_[0][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = distribute_value(last_token_h, devices)
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(

@@ -22,8 +22,8 @@ from utils.index import Index, IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
-    var shape = coord_to_index_list(tensor.layout.shape)
-    var stride = coord_to_index_list(tensor.layout.stride)
+    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var stride = coord_to_index_list(tensor.layout.stride_coord())
     print("New shape:", shape)
     print("New strides:", stride)
 
@@ -61,8 +61,8 @@ def test_slice[
         row_major(Coord(dims)),
     )
 
-    var shape = coord_to_index_list(in_tensor.layout.shape)
-    var stride = coord_to_index_list(in_tensor.layout.stride)
+    var shape = coord_to_index_list(in_tensor.layout.shape_coord())
+    var stride = coord_to_index_list(in_tensor.layout.stride_coord())
     print("In shape:", shape)
     print("In strides:", stride)
 
@@ -91,12 +91,12 @@ def test_slice[
     )
 
     for dim in range(outer_rank):
-        start_tensor[dim] = starts[dim]
-        end_tensor[dim] = stops[dim]
-        step_tensor[dim] = steps[dim]
+        start_tensor[dim] = Scalar[DType.int](starts[dim])
+        end_tensor[dim] = Scalar[DType.int](stops[dim])
+        step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.ptr[i] = i
+        in_tensor.ptr[i] = Scalar[dtype](i)
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(
@@ -111,7 +111,7 @@ def test_slice[
     else:
         print("As copy")
 
-        var sliced_shape = coord_to_index_list(sliced.layout.shape)
+        var sliced_shape = coord_to_index_list(sliced.layout.shape_coord())
         var output_buffer = TileTensor(
             output_mem.unsafe_ptr(),
             row_major(Coord(sliced_shape)),

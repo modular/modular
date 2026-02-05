@@ -180,7 +180,7 @@ def test_ndbuffer_prefetch():
     # Set values
     for i1 in range(2):
         for j1 in range(3):
-            matrix[Index(i1, j1)] = i1 * 3 + j1
+            matrix[Index(i1, j1)] = Scalar[DType.int](i1 * 3 + j1)
 
     # Prefetch for read
     for i2 in range(2):
@@ -221,7 +221,7 @@ def test_aligned_load_store():
     # Set values
     for i1 in range(4):
         for j1 in range(4):
-            matrix[Index(i1, j1)] = i1 * 4 + j1
+            matrix[Index(i1, j1)] = Scalar[DType.int](i1 * 4 + j1)
 
     # CHECK: [0, 1, 2, 3]
     print(matrix.load[width=4, alignment=16](0, 0))
@@ -281,7 +281,9 @@ def test_print():
     for i in range(2):
         for j in range(2):
             for k in range(3):
-                buffer[Index(i, j, k)] = i * 2 * 3 + j * 3 + k
+                buffer[Index(i, j, k)] = Scalar[DType.int](
+                    i * 2 * 3 + j * 3 + k
+                )
 
     assert_equal(
         String(buffer),
@@ -338,7 +340,7 @@ def test_ndbuffer_tile():
     fn linspace(buffer: NDBuffer[mut=True, ...]):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
-                buffer[i, j] = i * buffer.dim[1]() + j
+                buffer[i, j] = Scalar[buffer.dtype](i * buffer.dim[1]() + j)
 
     fn print_buffer(buffer: NDBuffer):
         for i in range(buffer.dim[0]()):

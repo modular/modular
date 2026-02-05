@@ -174,13 +174,6 @@ fn _reduce_scatter_impl[
         dtype, ngpus, simd_width, alignment, accum_type
     ],
 ):
-    """Core implementation of the reduce-scatter operation.
-
-    This function performs the reduce-scatter by having each thread reduce
-    its assigned elements across all input buffers and then applying the
-    output epilogue.
-    """
-
     # Grid-strided loop with vectorized reduction:
     # - Each thread processes partition elements using 128-bit accesses.
     # - Accumulates in higher precision (float32) for numerical stability.

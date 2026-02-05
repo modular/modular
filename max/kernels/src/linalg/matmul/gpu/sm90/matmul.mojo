@@ -127,7 +127,7 @@ fn warp_specialize_gemm_with_multicasting[
     @parameter
     if splits > 0:
         # TODO: Remove if unnecessary otherwise add support
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for split-k kernel"
         # Dispatch to split-k kernel
@@ -199,16 +199,16 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     comptime N_static = c_shape.get[1]()
     comptime K_static = a_shape.get[1]()
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         schedule == MatmulSchedule.NONE
     ), "swapAB does not support persistent kernels yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         hilbert_swizzle == False
     ), "swapAB does not support hilbert swizzle yet"
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         use_tma_store == False
     ), "swapAB does not support TMA store yet"
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "H100 matmul only supports transposed B"
 
@@ -567,7 +567,7 @@ fn _warp_specialize_gemm_with_multicasting_impl[
     # Dispatch kernel using cp.async.ca when the stride is not multiple of 4B or 8B..
     else:
         # TODO add support for swapAB
-        __comptime_assert (
+        comptime assert (
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
@@ -608,7 +608,7 @@ fn _get_c_smem_layout[
 
     comptime available_smem_size: Int = H100.shared_memory_per_multiprocessor - 1024
 
-    __comptime_assert not swapAB or (
+    comptime assert not swapAB or (
         a_type == b_type == c_type == DType.bfloat16
     ), "swapAB is only supported for bfloat16 dtypes"
 
@@ -706,23 +706,21 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     comptime BK = config.block_tile_shape[2]
     comptime k_group_size = config.k_group_size
 
-    __comptime_assert (
-        k_group_size == 1
-    ), "Only support k_group_size == 1 for now"
+    comptime assert k_group_size == 1, "Only support k_group_size == 1 for now"
 
-    __comptime_assert (a_type == b_type == DType.float8_e4m3fn) or (
+    comptime assert (a_type == b_type == DType.float8_e4m3fn) or (
         a_type == b_type and a_type in (DType.bfloat16, DType.float32)
     ), "Unsupported input dtype"
 
-    __comptime_assert (
+    comptime assert (
         a_type != DType.float8_e4m3fn or BK == 128
     ), "BK must be 128 for fp8 data type for numerical accuracy correctness"
 
-    __comptime_assert (
+    comptime assert (
         elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
     ), "Either the epilogue lambda or the compute lambda can be used"
 
-    __comptime_assert BM > 64 or (
+    comptime assert BM > 64 or (
         BM == 64 and config.num_consumer == 1
     ), "Only support 1 consumer for BM=64"
 

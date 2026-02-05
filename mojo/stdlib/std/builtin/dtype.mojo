@@ -689,7 +689,7 @@ struct DType(
         Returns:
             The mantissa width.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
         return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
@@ -707,7 +707,7 @@ struct DType(
         Returns:
             The max exponent.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
@@ -737,7 +737,7 @@ struct DType(
         Returns:
             The exponent width.
         """
-        __comptime_assert (
+        comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
@@ -1021,7 +1021,7 @@ fn _scientific_notation_digits[
 
 @always_inline
 fn _int_type_of_width[width: Int]() -> DType:
-    __comptime_assert width in (
+    comptime assert width in (
         8,
         16,
         32,
@@ -1052,7 +1052,7 @@ fn _int_type_of_width[width: Int]() -> DType:
 
 @always_inline
 fn _uint_type_of_width[width: Int]() -> DType:
-    __comptime_assert width in (
+    comptime assert width in (
         8,
         16,
         32,

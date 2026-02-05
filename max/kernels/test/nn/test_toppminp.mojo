@@ -89,7 +89,7 @@ fn fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
 fn test_is_sorted_descending[
     dtype: DType
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
-    __comptime_assert buf.rank == 2, "rank must be 2"
+    comptime assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.numel() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 

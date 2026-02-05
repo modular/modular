@@ -593,13 +593,13 @@ fn test_random_fill():
     var sum: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
         sum += rebind[Float32](src_tensor[i])
-    var mean = sum / src_tensor.runtime_layout.size()
+    var mean = sum / Float32(src_tensor.runtime_layout.size())
 
     var variance: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
         var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
-    variance = sqrt(variance / src_tensor.runtime_layout.size())
+    variance = sqrt(variance / Float32(src_tensor.runtime_layout.size()))
     src_tensor.ptr.free()
     # Check that the mean value is close to 0.5 and variance is more than 0.1
     # CHECK: ----mean-variance----

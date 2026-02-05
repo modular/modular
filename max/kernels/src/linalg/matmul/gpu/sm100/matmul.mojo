@@ -198,7 +198,7 @@ fn f32_frag_to_smem[
     var dst_frag = dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
         lane_id()
     )
-    __comptime_assert (
+    comptime assert (
         2 * dst_frag.layout.size() == vec.size
     ), "2*dst_frag.layout.size() must be equal to vec.size"
 
@@ -228,7 +228,7 @@ fn stsm_helper[
 ):
     @parameter
     if size_of[dst.dtype]() == 4:
-        __comptime_assert not transpose_c, "transpose_c must be False"
+        comptime assert not transpose_c, "transpose_c must be False"
         return f32_frag_to_smem[swizzle_mode, stageN](vec, dst)
     # Number of elements in one row is 32B and 16B per stsmx4 and stmtx2 tile, respectively.
     comptime stsmx_row_size = 32 // size_of[
@@ -242,7 +242,7 @@ fn stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.layout.stride[0].value()
     comptime stride1 = dst.layout.stride[1].value()
-    __comptime_assert stride1 == 1, (
+    comptime assert stride1 == 1, (
         "stride1 must be 1. Got: "
         + String(stride1)
         + " for layout: "
@@ -337,7 +337,7 @@ fn shared_memory_epilogue_transpose[
     if warp_dim == 2:
         comptime layout_3d = Layout.row_major(2, Int(stageN), swizzle_dim)
         var rt_layout_3d = RLayout32Bits[layout_3d]()
-        __comptime_assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
+        comptime assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
         comptime thread_layout = Layout.row_major(1, 8, 1, 4)
         comptime result = zipped_divide(
             upcast(c_smem_layout, simd_size), thread_layout
@@ -417,7 +417,7 @@ fn shared_memory_epilogue_transpose[
                     ptr.store[width=simd_size, alignment=alignment](reg_val)
     else:
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
-        __comptime_assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
+        comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
         comptime thread_bound = UInt(thread_layout.cosize())
         var lane = lane_id()
@@ -779,7 +779,7 @@ fn register_epilogue[
     c_col: UInt32,
     N: UInt32,
 ):
-    __comptime_assert (
+    comptime assert (
         bits == 256 and data_paths == 16
     ), "Only 16x256b tensor memory load is supported"
 

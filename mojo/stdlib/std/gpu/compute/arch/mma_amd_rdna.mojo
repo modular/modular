@@ -42,7 +42,7 @@ fn _load_matrix_a_amd_rdna[
     ldm: Int,
 ) -> SIMD[DType.float16, 16]:
     """RDNA-specific implementation: loads 16 FP16 elements per thread."""
-    __comptime_assert m == 16 and n == 16 and k == 16
+    comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
     var a = SIMD[DType.float16, 16]()
@@ -65,7 +65,7 @@ fn _load_matrix_a_amd_rdna[
     ldm: Int,
 ) -> SIMD[DType.bfloat16, 16]:
     """RDNA-specific implementation: loads 16 BF16 elements per thread."""
-    __comptime_assert m == 16 and n == 16 and k == 16
+    comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
     var a = SIMD[DType.bfloat16, 16]()
@@ -88,7 +88,7 @@ fn _load_matrix_b_amd_rdna[
     ldm: Int,
 ) -> SIMD[DType.float16, 16]:
     """RDNA-specific implementation: loads 16 FP16 elements per thread."""
-    __comptime_assert m == 16 and n == 16 and k == 16
+    comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
     var b = SIMD[DType.float16, 16]()
@@ -111,7 +111,7 @@ fn _load_matrix_b_amd_rdna[
     ldm: Int,
 ) -> SIMD[DType.bfloat16, 16]:
     """RDNA-specific implementation: loads 16 BF16 elements per thread."""
-    __comptime_assert m == 16 and n == 16 and k == 16
+    comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
     var b = SIMD[DType.bfloat16, 16]()

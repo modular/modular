@@ -329,7 +329,7 @@ def test_scalar_range():
     append_many(expected_elements, 2, 6, 10, 14)
     actual_elements = List[UInt8]()
     for e in r:
-        actual_elements.append(e)
+        actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)
 
 

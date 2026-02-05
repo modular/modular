@@ -608,7 +608,7 @@ fn _write_hex[
     ```
     """
 
-    __comptime_assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
+    comptime assert amnt_hex_bytes in (2, 4, 8), "only 2 or 4 or 8 sequences"
 
     comptime `\\` = Byte(ord("\\"))
     comptime `x` = Byte(ord("x"))

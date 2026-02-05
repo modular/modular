@@ -29,6 +29,7 @@ from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from layout._coord import Coord, _DimsToCoordLike
+from layout._layout import Layout as TileLayout
 from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
@@ -56,7 +57,7 @@ from .io_spec import IO, IOSpec
 @always_inline
 fn _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
-    __comptime_assert (
+    comptime assert (
         a.is_power_of_two() and b.is_power_of_two()
     ), "a and b must be powers of 2"
     return min(a, b)
@@ -801,7 +802,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
         var offset = _dot_prod(indices, self.strides())
@@ -817,7 +818,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.in_lambda
         ), "Direct load on fused tensor is forbidden"
         debug_assert(
@@ -835,7 +836,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
         debug_assert(
@@ -855,7 +856,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        __comptime_assert (
+        comptime assert (
             not Self.static_spec.out_lambda
         ), "Direct store on fused tensor is forbidden"
         var offset = _dot_prod(indices, self.strides())
@@ -1007,11 +1008,11 @@ struct ManagedTensorSlice[
         Returns:
             Data from this tensor slice at dimension `index`.
         """
-        __comptime_assert (
+        comptime assert (
             Self.input == IO.Input or Self.input == IO.Unknown
         ), "loading not supported for output tensors"
 
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         return simd_load_from_managed_tensor_slice[
             simd_width=width, element_alignment=element_alignment
@@ -1025,7 +1026,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) capturing -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime in_lambda = Self.static_spec.in_lambda
@@ -1049,10 +1050,10 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](self, index: IndexList[_rank]) -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         comptime in_lambda = Self.static_spec.in_lambda
-        __comptime_assert Bool(in_lambda)
+        comptime assert Bool(in_lambda)
         comptime in_fn = in_lambda.value()
         return in_fn[width, element_alignment](ridx)
 
@@ -1126,7 +1127,7 @@ struct ManagedTensorSlice[
             index: An `IndexList` of size `_rank` to indicate the dimension of the tensor slice to set data in.
             val: The data to set into this tensor slice.
         """
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         simd_store_into_managed_tensor_slice[
@@ -1146,7 +1147,7 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime out_lambda = Self.static_spec.out_lambda
@@ -1178,10 +1179,10 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ):
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
         comptime out_lambda = Self.static_spec.out_lambda
-        __comptime_assert Bool(out_lambda)
+        comptime assert Bool(out_lambda)
         comptime out_fn = out_lambda.value()
         out_fn[width, element_alignment](ridx, val)
 
@@ -1195,7 +1196,7 @@ struct ManagedTensorSlice[
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing -> SIMD[Self.dtype, width]:
-        __comptime_assert _rank == Self.rank
+        comptime assert _rank == Self.rank
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime out_compute_lambda = Self.static_spec.out_compute_lambda
@@ -1226,10 +1227,10 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             len(new_static_shape) == new_rank
         ), "static shape has incorrect rank"
-        __comptime_assert (
+        comptime assert (
             len(new_static_strides) == new_rank
         ), "static strides has incorrect rank"
         debug_assert(
@@ -1357,12 +1358,16 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            shape_types = _DimsToCoordLike[coord_dtype, Self.static_spec.shape],
-            stride_types = _DimsToCoordLike[
-                coord_dtype, Self.static_spec.strides
-            ],
             dtype = Self.dtype,
             origin=MutExternalOrigin,
+            LayoutType = TileLayout[
+                shape_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.shape
+                ],
+                stride_types = _DimsToCoordLike[
+                    coord_dtype, Self.static_spec.strides
+                ],
+            ],
         ],
     ):
         var shape_tuple = Coord[
@@ -1553,7 +1558,7 @@ struct VariadicTensors[
         Returns:
             The tensor at the specified index.
         """
-        __comptime_assert index < Self.size
+        comptime assert index < Self.size
         var tensor = self._tensors[index]
         return {tensor._ptr, tensor._spec, tensor._runtime_strides}
 
@@ -1757,7 +1762,7 @@ fn view_copy_impl[
     x: ManagedTensorSlice[static_spec=spec],
     ctx: DeviceContextPtr,
 ) raises:
-    __comptime_assert _compatible_with[
+    comptime assert _compatible_with[
         x._static_shape, z._static_shape
     ](), "static shapes not compatible"
     debug_assert(x.shape() == z.shape(), "runtime shapes not compatible")

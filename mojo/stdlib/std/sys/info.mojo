@@ -702,7 +702,7 @@ fn _is_amd_mi355x() -> Bool:
 
 @always_inline("nodebug")
 fn _cdna_version() -> Int:
-    __comptime_assert (
+    comptime assert (
         _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
@@ -1099,7 +1099,7 @@ fn _macos_version() raises -> Tuple[Int, Int, Int]:
         The version triple of macOS.
     """
 
-    __comptime_assert (
+    comptime assert (
         CompilationTarget.is_macos()
     ), "the operating system must be macOS"
 

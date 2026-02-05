@@ -47,11 +47,11 @@ fn test_tma_5d_load_kernel[
     dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
 ):
-    __comptime_assert (
+    comptime assert (
         cta_tile_layout.size() == smem_layout.size()
     ), "CTA Tile and SMEM tile should be the same size"
 
-    __comptime_assert (
+    comptime assert (
         cta_tile_layout == smem_layout
     ), "for these test cases cta and smem should have the same size"
 
@@ -64,7 +64,7 @@ fn test_tma_5d_load_kernel[
     comptime cta_tile_dim3 = cta_tile_layout.shape[3].value()
     comptime cta_tile_dim4 = cta_tile_layout.shape[4].value()
 
-    __comptime_assert (
+    comptime assert (
         dst_dim1 == cta_tile_dim4
     ), "dst and cta should have the same last dimension for these test cases"
 

@@ -21,7 +21,8 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from sys import external_call, size_of
+from ffi import external_call
+from sys import size_of
 
 from gpu._utils import to_llvm_ptr
 from gpu.host.device_context import (
@@ -85,7 +86,7 @@ struct TensorMapDataType(TrivialRegisterType):
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        __comptime_assert dtype in (
+        comptime assert dtype in (
             DType.float32,
             DType.bfloat16,
             DType.uint8,

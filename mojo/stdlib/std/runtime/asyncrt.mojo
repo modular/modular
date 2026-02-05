@@ -14,7 +14,7 @@
 
 from os import abort
 from os.atomic import Atomic
-from sys import external_call
+from ffi import external_call
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext

@@ -89,7 +89,7 @@ def test_vectorize_evl():
         else:
             var ptr = vector.unsafe_ptr() + idx
             var incr = iota[DType.int32, width]()
-            var mask = incr.lt(evl)
+            var mask = incr.lt(Int32(evl))
             var loaded = masked_load[width](
                 ptr, mask, SIMD[DType.float32, width]()
             )
@@ -114,8 +114,8 @@ def test_vectorize_unroll():
     var buf = Span(buf_stack)
 
     for i in range(buf_len):
-        vec[i] = i
-        buf[i] = i
+        vec[i] = Float32(i)
+        buf[i] = Float32(i)
 
     @always_inline
     fn double_buf[simd_width: Int](idx: Int) unified {var buf}:

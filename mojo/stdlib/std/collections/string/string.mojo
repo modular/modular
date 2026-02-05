@@ -32,7 +32,7 @@ from format._utils import (
 from os import PathLike, abort
 from os.atomic import Atomic, Consistency, fence
 from sys import size_of, bit_width_of
-from sys.ffi import c_char, CStringSlice
+from ffi import c_char, CStringSlice
 from sys.info import is_32bit
 
 from bit import count_leading_zeros
