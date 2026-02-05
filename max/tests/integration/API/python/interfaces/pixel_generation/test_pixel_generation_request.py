@@ -15,6 +15,7 @@ import pytest
 from max.interfaces import (
     PixelGenerationRequest,
     RequestID,
+    TextGenerationRequestMessage,
 )
 
 
@@ -26,10 +27,42 @@ def test_pixel_generation_request_init() -> None:
         prompt="hello world",
     )
 
-    # Empty prompt should raise ValueError.
+    # Prompt and messages cannot be provided concurrently.
     with pytest.raises(ValueError):
         _ = PixelGenerationRequest(
             request_id=RequestID(),
             model_name="test",
-            prompt="",
+            prompt="hello world",
+            messages=[
+                TextGenerationRequestMessage(
+                    role="user",
+                    content=[{"type": "text", "text": "hello world"}],
+                )
+            ],
+        )
+
+    _ = PixelGenerationRequest(
+        request_id=RequestID(),
+        model_name="test",
+        prompt=None,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content=[{"type": "text", "text": "hello world"}],
+            )
+        ],
+    )
+
+    # role not user is not supported.
+    with pytest.raises(ValueError):
+        _ = PixelGenerationRequest(
+            request_id=RequestID(),
+            model_name="test",
+            prompt=None,
+            messages=[
+                TextGenerationRequestMessage(
+                    role="not_user",
+                    content=[{"type": "text", "text": "hello world"}],
+                )
+            ],
         )

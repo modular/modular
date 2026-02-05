@@ -25,6 +25,7 @@ import numpy.typing as npt
 from max.interfaces import (
     PipelineTokenizer,
     PixelGenerationRequest,
+    TextGenerationRequestMessage,
     TokenBuffer,
 )
 from max.pipelines.core import PixelContext
@@ -288,10 +289,12 @@ class PixelGenerationTokenizer(
 
     async def _generate_tokens_ids(
         self,
-        prompt: str,
+        prompt: str | None,
         prompt_2: str | None = None,
         negative_prompt: str | None = None,
         negative_prompt_2: str | None = None,
+        messages: list[TextGenerationRequestMessage] | None = None,
+        chat_template_options: dict[str, Any] | None = None,
         do_true_cfg: bool = False,
     ) -> tuple[
         npt.NDArray[np.int64],
@@ -306,7 +309,15 @@ class PixelGenerationTokenizer(
             Tuple of (token_ids, attn_mask, token_ids_2, negative_token_ids, negative_token_ids_2).
             token_ids_2 and negative_token_ids_2 are None if no secondary tokenizer is configured.
         """
-        token_ids, attn_mask = await self.encode(prompt)
+        if isinstance(prompt, str):
+            token_ids, attn_mask = await self.encode(prompt)
+        elif isinstance(messages, list):
+            prompt = self.apply_chat_template(messages, chat_template_options)
+            token_ids, attn_mask = await self.encode(prompt)
+        else:
+            raise ValueError(
+                "Either prompt must be provided as a string, or messages must be provided as a list of TextGenerationRequestMessage"
+            )
 
         token_ids_2: npt.NDArray[np.int64] | None = None
         if self.delegate_2 is not None:
@@ -342,6 +353,20 @@ class PixelGenerationTokenizer(
     @property
     def expects_content_wrapping(self) -> bool:
         return False
+
+    def apply_chat_template(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        chat_template_options: dict[str, Any] | None = None,
+    ) -> str:
+        templated_message = self.delegate.apply_chat_template(
+            [msg.model_dump() for msg in messages],
+            tokenize=False,
+            **chat_template_options or {},
+        )
+
+        assert isinstance(templated_message, str)
+        return templated_message
 
     async def encode(
         self,
@@ -440,6 +465,8 @@ class PixelGenerationTokenizer(
             request.secondary_prompt,
             request.negative_prompt,
             request.secondary_negative_prompt,
+            request.messages,
+            request.chat_template_options,
             do_true_cfg,
         )
 
@@ -524,9 +551,9 @@ class PixelGenerationTokenizer(
             request_id=request.request_id,
             tokens=token_buffer,
             mask=attn_mask,
-            tokens_2=token_buffer_2,
+            secondary_tokens=token_buffer_2,
             negative_tokens=negative_token_buffer,
-            negative_tokens_2=negative_token_buffer_2,
+            secondary_negative_tokens=negative_token_buffer_2,
             timesteps=timesteps,
             sigmas=self._scheduler.sigmas,
             latents=latents,
