@@ -26,8 +26,6 @@ from .model_config import Flux2Config
 
 
 class Flux2Model(ComponentModel):
-    config_name = Flux2Config.config_name
-
     def __init__(
         self,
         config: dict[str, Any],

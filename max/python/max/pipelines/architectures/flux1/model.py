@@ -26,8 +26,6 @@ from .weight_adapters import convert_safetensor_state_dict
 
 
 class Flux1Model(ComponentModel):
-    config_name = FluxConfig.config_name
-
     def __init__(
         self,
         config: dict[str, Any],
