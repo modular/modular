@@ -26,7 +26,7 @@ comptime ExternalOrigin[*, mut: Bool] = Origin[mut=mut](
     ]
 )
 comptime ImmutExternalOrigin = ExternalOrigin[mut=False]
-comptime MutExternalOrigin = ExternalOrigin[True]
+comptime MutExternalOrigin = ExternalOrigin[mut=True]
 comptime StaticConstantOrigin = Origin(
     __mlir_attr[
         `#lit.origin.field<`,

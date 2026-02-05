@@ -1289,12 +1289,16 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
       continue;
     }
 
-    // If not, and this argument has a default value, then just skip it. We
-    // can't infer from default values since its type already matches the
-    // argument type. If its type is dependent, we already know the value is
-    // well-formed regardless of the parameter's value.
-    if (argPogs.getDefault(expectedArgIdx))
+    // If not, and this argument has a default value, then infer from default
+    // values - it might not match the argument type in a parametric situation.
+    if (auto defaultVal = argPogs.getDefault(expectedArgIdx)) {
+      defaultVal = evaluator.getReboundAttribute(defaultVal);
+      if (failed(inferOneOperand({defaultVal, getGivenBindings().getExpr()},
+                                 expectedArgIdx, expectedType,
+                                 expectedConvention, argPogs, operands.syntax)))
+        return failure();
       continue;
+    }
 
     // Otherwise we have an argument count mismatch, just fail.
     return failure();
@@ -1426,6 +1430,24 @@ LogicalResult ParamInf::inferFromDefaults() {
     if (evaluator.getIndexBindings()[idx])
       continue;
 
+    auto setDefault = [&](TypedAttr value) -> LogicalResult {
+      value = evaluator.getReboundAttribute(value);
+
+      // Don't try to infer from default values that have unresolved references
+      // to other parameters.
+      if (paramFinder.hasReferences(value))
+        return success();
+
+      auto argType = evaluator.getReboundType(declaredParamTypes[idx]);
+      FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
+          {value, getGivenBindings().getExpr()}, argType, idx);
+      if (failed(paramVal))
+        return failure();
+      if (*paramVal && !evaluator.getIndexBindings()[idx])
+        return setInferredValue(idx, *paramVal);
+      return success();
+    };
+
     // If available, we use a default parameter value.
     if (TypedAttr defaultParam = declaredParamPogs.getDefault(idx);
         defaultParam && !sugarIsa<UnknownAttr>(defaultParam)) {
@@ -1442,12 +1464,9 @@ LogicalResult ParamInf::inferFromDefaults() {
       // need to evaluate these.
       // If the default value is dependent, and we can not fully resolve all its
       // dependencies, do not try to set the value of it.
-      defaultParam = evaluator.getReboundAttribute(defaultParam);
-      if (!paramFinder.hasReferences(defaultParam)) {
-        if (failed(setInferredValue(idx, defaultParam)))
-          return failure();
-        continue;
-      }
+      if (failed(setDefault(defaultParam)))
+        return failure();
+      continue;
     }
 
     // FIXME: this need a more systematical fix.
@@ -1457,7 +1476,7 @@ LogicalResult ParamInf::inferFromDefaults() {
               paramBindings.ctadPogs[idx].getDefaultValue()) {
         defaultCTAD = evaluator.getReboundAttribute(defaultCTAD);
         if (!paramFinder.hasReferences(defaultCTAD)) {
-          if (failed(setInferredValue(idx, defaultCTAD)))
+          if (failed(setDefault(defaultCTAD)))
             return failure();
           continue;
         }

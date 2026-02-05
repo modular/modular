@@ -703,8 +703,31 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
                           SmallVectorImpl<TypedAttr> &defaults,
                           IREmitter &emitter, ExprContext exprContext) {
   if (const ExprNode *initExpr = arg.initExpr) {
-    if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type))
-      return value;
+    // If the type is parametric, then we have to be careful about emitting the
+    // initializer - we can't check to see if the argument satisfies type
+    // conversions until it is used.  However, our IR representation cannot
+    // support representing UValues.  If the default value is one, we try to
+    // emit it as the parametric argument type anyway.  This resolves more {}'s.
+    SmallVector<ParamDeclRefAttr> paramUses;
+    emitter.shared.collectParamRefsInType(type, paramUses);
+
+    if (paramUses.empty()) {
+      if (auto value = emitter.emitExprPValue(initExpr, exprContext, type))
+        return value;
+    } else if (auto irValue = emitter.emitExpr(initExpr, exprContext)) {
+      // Emit in two stages to handle UValues.
+      auto cv = irValue.getIfCValue();
+      if (!cv) {
+        // If we have a uvalue, we need to emit the UValue as the contextual
+        // type to resolve things like {}.
+        cv = emitter.emitExprCValue(initExpr, exprContext, type);
+      }
+
+      if (cv) {
+        if (auto value = emitter.emitPValue({cv, initExpr}, exprContext))
+          return value;
+      }
+    }
     arg.isErroneous = true;
     return UnknownAttr::get(type);
   }

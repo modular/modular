@@ -64,8 +64,8 @@ fn variadic_and_kw_only(
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !kgen.variadic<!Int> pos_vararg = *?,
-# CHECK-SAME:  *, %c: !Int, %d: !Int = {1}, %kwargs: {{.*}}|kw_vararg = *?)
+# CHECK-SAME: (%a: !Int, %b: !Int = {0}, %args: !kgen.variadic<!Int> pos_vararg = :none *?,
+# CHECK-SAME:  *, %c: !Int, %d: !Int = {1}, %kwargs: {{.*}}|kw_vararg = :none *?)
 fn variadic_arg_after_default(
     a: Int,
     b: Int = 0,
@@ -78,7 +78,7 @@ fn variadic_arg_after_default(
 
 
 # CHECK-LABEL: lit.fn @"variadic_param_after_default
-# CHECK-SAME: <a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = *?, *, c: !Int, d: !Int = {1}>()
+# CHECK-SAME: <a: !Int, b: !Int = {0}, args: {{.*}} pos_vararg = :none *?, *, c: !Int, d: !Int = {1}>()
 fn variadic_param_after_default[
     a: Int, b: Int = 0, *args: Int, c: Int, d: Int = 1
 ]():

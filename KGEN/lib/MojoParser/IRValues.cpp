@@ -606,9 +606,13 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       return operand.keyword != StringAttr();
     });
     if (hasKWArg || get().values.empty()) {
-      emitter.emitError(
-          get().callExpr->getLoc(),
-          "cannot emit initializer list without a contextual type");
+      auto diag = emitter.emitError(get().callExpr->getLoc());
+      if (dest.getContext() == EC_DefaultArgument) {
+        diag << "cannot infer initializer list type for default value from "
+                "parametric type; use an explicit constructor call";
+      } else {
+        diag << "cannot emit initializer list without a contextual type";
+      }
       return {};
     }
 

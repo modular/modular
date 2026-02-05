@@ -92,6 +92,8 @@ void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
 /// reference. The method is tolerant if `type` is not actually one.
 ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
                                       Type type, bool hasAddress = false);
+void printOptionalDefaultValue(AsmPrinter &p, TypedAttr defaultVal, Type type,
+                               bool hasAddress = false);
 
 /// Parse a parameter specification in a lit op.
 ParseResult parseOptionalParameterSpec(AsmParser &p,
