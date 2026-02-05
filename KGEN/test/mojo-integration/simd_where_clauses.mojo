@@ -226,6 +226,22 @@ fn simd_where_clause_int_shr[
     return 0
 
 
+# Note we can't test abs(SIMDInt(x)) here because the Absable trait's 'abs'
+# method isn't marked "builtin".
+@always_inline("builtin")
+fn simd_where_clause_int_abs[
+    x: Int
+]() -> Int where SIMDInt.__abs__(x) == SIMDInt(7):
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_abs[
+    x: Int
+]() -> Int where SIMDInt.__abs__(x) != SIMDInt(7):
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"use_them
 fn use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
@@ -315,3 +331,8 @@ fn use_them():
     comptime shr0 = simd_where_clause_int_shr[6]()
     # CHECK: lit.alias.decl *"shr1`{{.*}}": !Int = <{0}>
     comptime shr1 = simd_where_clause_int_shr[2]()
+
+    # CHECK: lit.alias.decl *"abs0`{{.*}}": !Int = <{1}>
+    comptime abs0 = simd_where_clause_int_abs[-7]()
+    # CHECK: lit.alias.decl *"abs1`{{.*}}": !Int = <{0}>
+    comptime abs1 = simd_where_clause_int_abs[-6]()
