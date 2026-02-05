@@ -40,7 +40,6 @@ class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
                 structure, normalization settings, BatchNorm parameters, and device/dtype information.
         """
         super().__init__()
-        # Encoder: images -> latents (mean and logvar)
         self.encoder = Encoder(
             in_channels=config.in_channels,
             out_channels=config.latent_channels,
@@ -55,7 +54,6 @@ class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
             device=config.device,
             dtype=config.dtype,
         )
-        # Decoder: latents -> images
         self.decoder = Decoder(
             in_channels=config.latent_channels,
             out_channels=config.out_channels,
