@@ -15,9 +15,11 @@ from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module, module_dataclass
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
+
+flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 from max.nn.norm import RMSNorm
 
@@ -318,16 +320,13 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
 
         # Scaled dot-product attention
         scale = 1.0 / (self.head_dim**0.5)
-        from max.tensor import Tensor as TensorType
-
-        hidden_states_tv = flash_attention_gpu(
-            query.__tensorvalue__(),
-            key.__tensorvalue__(),
-            value.__tensorvalue__(),
+        hidden_states = flash_attention_gpu(
+            query,
+            key,
+            value,
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=scale,
         )
-        hidden_states = TensorType.from_graph_value(hidden_states_tv)
 
         # hidden_states = F.flatten(hidden_states, 2, 3)
         # Reshape from [B, S, num_heads, head_dim] to [B, S, num_heads * head_dim]
@@ -475,16 +474,13 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
             key = key.cast(original_dtype)
 
         # Attention computation
-        hidden_states_tv = flash_attention_gpu(
-            query.__tensorvalue__(),
-            key.__tensorvalue__(),
-            value.__tensorvalue__(),
+        hidden_states = flash_attention_gpu(
+            query,
+            key,
+            value,
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=1.0 / (self.head_dim**0.5),
         )
-        from max.tensor import Tensor as TensorType
-
-        hidden_states = TensorType.from_graph_value(hidden_states_tv)
         # hidden_states = F.flatten(hidden_states, 2, 3)
         # Reshape from [B, S, num_heads, head_dim] to [B, S, num_heads * head_dim]
         batch_size = hidden_states.shape[0]
