@@ -993,17 +993,17 @@ struct VariadicPack[
         return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
 
     fn _write_to[
-        O1: ImmutOrigin = StaticConstantOrigin,
-        O2: ImmutOrigin = StaticConstantOrigin,
-        O3: ImmutOrigin = StaticConstantOrigin,
+        O1: ImmutOrigin,
+        O2: ImmutOrigin,
+        O3: ImmutOrigin,
         *,
         is_repr: Bool = False,
     ](
         self: VariadicPack[_, Writable, ...],
         mut writer: Some[Writer],
-        start: StringSlice[O1] = rebind[StringSlice[O1]](StaticString("")),
-        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString("")),
-        sep: StringSlice[O3] = rebind[StringSlice[O3]](StaticString(", ")),
+        start: StringSlice[O1] = StaticString(""),
+        end: StringSlice[O2] = StaticString(""),
+        sep: StringSlice[O3] = StaticString(", "),
     ):
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.

@@ -55,16 +55,20 @@ comptime O_RDWR = 0x0002
 """Open file for reading and writing."""
 
 # File creation flags
-comptime O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+comptime O_CREAT = platform_map[T=Int, "O_CREAT", linux=0x0040, macos=0x0200]()
 """Create file if it doesn't exist."""
 
-comptime O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+comptime O_TRUNC = platform_map[T=Int, "O_TRUNC", linux=0x0200, macos=0x0400]()
 """Truncate file to zero length."""
 
-comptime O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+comptime O_APPEND = platform_map[
+    T=Int, "O_APPEND", linux=0x0400, macos=0x0008
+]()
 """Append mode: writes always go to end of file."""
 
-comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+comptime O_CLOEXEC = platform_map[
+    T=Int, "O_CLOEXEC", linux=0x80000, macos=0x1000000
+]()
 """Close file descriptor on exec."""
 
 # ===----------------------------------------------------------------------=== #

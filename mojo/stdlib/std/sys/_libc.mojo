@@ -295,7 +295,9 @@ fn dlsym[
 
 fn realpath(
     path: UnsafePointer[mut=False, c_char],
-    resolved_path: UnsafePointer[mut=True, c_char] = {},
+    resolved_path: UnsafePointer[mut=True, c_char] = UnsafePointer[
+        c_char, MutExternalOrigin
+    ](),
     out result: UnsafePointer[c_char, MutExternalOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
