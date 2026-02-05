@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ Use the public API in `random.mojo` instead.
 
 from math import sqrt, log, cos, pi
 from os import abort
-from sys.ffi import _Global
+from ffi import _Global
 from utils.numerics import isnan, max_finite, FPUtils
 
 from .philox import Random as PhiloxRandom

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,8 +45,7 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
 from bit import log2_floor
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from gpu import lane_id
 from gpu.intrinsics import permlane_shuffle
 from gpu.globals import WARP_SIZE
@@ -77,7 +76,7 @@ fn _shuffle[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    __comptime_assert (
+    comptime assert (
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
@@ -119,7 +118,7 @@ fn _shuffle[
             )
             return bitcast[dtype, simd_width](result_packed)
     elif dtype == DType.bool:
-        __comptime_assert simd_width == 1, "unhandled simd width"
+        comptime assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val.cast[DType.int32](), offset
         ).cast[dtype]()
@@ -141,7 +140,7 @@ fn _shuffle_amd_helper[
         )
         return bitcast[dtype, simd_width](result_packed)
     else:
-        __comptime_assert simd_width == 1, "Unsupported simd width"
+        comptime assert simd_width == 1, "Unsupported simd width"
 
         @parameter
         if dtype == DType.bool:
@@ -181,7 +180,7 @@ fn _shuffle_apple_helper[
       simd_shuffle_xor              → llvm.air.simd_shuffle_xor
     """
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
@@ -1223,7 +1222,7 @@ fn _vote_nvidia_helper(vote: Bool) -> UInt32:
 
 @always_inline
 fn _vote_amd_helper[ret_type: DType](vote: Bool) -> Scalar[ret_type]:
-    __comptime_assert ret_type in (
+    comptime assert ret_type in (
         DType.uint32,
         DType.uint64,
     ), "Unsupported return type"
@@ -1259,7 +1258,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
 
     @parameter
     if is_nvidia_gpu():
-        __comptime_assert ret_type == DType.uint32, "Unsupported return type"
+        comptime assert ret_type == DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)

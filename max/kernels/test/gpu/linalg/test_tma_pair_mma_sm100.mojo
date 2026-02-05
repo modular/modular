@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -73,7 +73,7 @@ fn tma_umma_kernel_pair_cta[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert a_type == b_type and a_type in (
+    comptime assert a_type == b_type and a_type in (
         DType.float8_e4m3fn,
         DType.bfloat16,
     ), "a_type and b_type must be the same and either float8_e4m3fn or bfloat16"

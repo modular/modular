@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.connectors.local_connector import LocalConnector
 from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
 from test_common.context_utils import create_text_context
 
@@ -53,7 +54,7 @@ async def test_kv_cache_multi_gpu() -> None:
         list_of_kv_tuples = kv_manager.get_runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
-            assert len(kv_tuple) == 4
+            assert len(kv_tuple) == 5
 
 
 def create_kv_cache(
@@ -121,9 +122,10 @@ async def test_swapping_to_host_multi_gpu(
         assert replica_manager.host_tensors is not None
         for i in range(len(replica_manager.host_tensors)):
             assert replica_manager.host_tensors[i].pinned
-        # Evictions should be scheduled on auxiliary stream
-        assert replica_manager.block_manager.block_copy_engine is not None
-        assert replica_manager.block_manager.block_copy_engine.supports_multistream()
+        # Evictions should be scheduled on auxiliary stream (via connector)
+        connector = replica_manager.connector
+        assert isinstance(connector, LocalConnector)
+        assert connector._block_copy_engine.supports_multistream()
 
     def gen_prompt(length: int) -> np.ndarray:
         # returns a binary sequence of length `length`

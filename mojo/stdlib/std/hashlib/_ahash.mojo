@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -179,9 +179,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             @parameter
             for i in range(new_data.size):
                 var v = new_data[i]
-                __comptime_assert (
-                    size_of[v.dtype]() > 8 and v.dtype.is_integral()
-                )
+                comptime assert size_of[v.dtype]() > 8 and v.dtype.is_integral()
 
                 @parameter
                 for r in range(0, rounds, 2):

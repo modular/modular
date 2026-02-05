@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -449,7 +449,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The static dimension value at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].get()
 
     @always_inline("nodebug")
@@ -462,7 +462,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             The dimension at the specified index.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i]
 
     @always_inline("nodebug")
@@ -475,7 +475,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             Whether the specified dimension has a static value.
         """
-        __comptime_assert i >= 0, "index must be positive"
+        comptime assert i >= 0, "index must be positive"
         return self.value[i].__bool__()
 
     @always_inline
@@ -628,7 +628,7 @@ struct DimList(Representable, Sized, Stringable, TrivialRegisterType, Writable):
         Returns:
             A list of all dynamic dimension values.
         """
-        __comptime_assert length > 0, "length must be positive"
+        comptime assert length > 0, "length must be positive"
 
         return Self(
             VariadicList[Dim](

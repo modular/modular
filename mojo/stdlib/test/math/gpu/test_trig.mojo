@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ fn run_func[
     val: Scalar[dtype],
     ref_: Scalar[dtype],
     ctx: DeviceContext,
-) raises:
+) raises where dtype.is_floating_point():
     print("test trigonometric functions on gpu")
 
     var out = ctx.enqueue_create_buffer[dtype](1)

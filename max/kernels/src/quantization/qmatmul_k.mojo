@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -96,8 +96,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
-        __comptime_assert Self.bit_width == 4
-        __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 4
+        comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -112,7 +112,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                     var bytes = (src_ptr + i * Self._packed_stride).load[
                         width = Self._simd_width
                     ]()
-                    packed_bits |= bytes << (i * 4)
+                    packed_bits |= bytes << UInt8(i * 4)
 
                 src_ptr += Self._simd_width
 
@@ -123,8 +123,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
-        __comptime_assert Self.bit_width == 4
-        __comptime_assert (Self.block_m % (2 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 4
+        comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -137,7 +137,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
                 @parameter
                 for i in range(2):
-                    var bytes = (packed_bits >> (i * 4)) & 15
+                    var bytes = (packed_bits >> UInt8(i * 4)) & 15
                     (dst_ptr + i * Self._packed_stride).store(bytes)
 
                 dst_ptr += Self._simd_width
@@ -152,8 +152,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
     @always_inline
     fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
-        __comptime_assert Self.bit_width == 6
-        __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 6
+        comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -171,7 +171,9 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                     var bytes = (src_col_ptr + i * Self._packed_stride).load[
                         width = Self._simd_width
                     ]()
-                    var packed_bits = bytes | (((hi_bytes >> (i * 2)) & 3) << 6)
+                    var packed_bits = bytes | (
+                        ((hi_bytes >> UInt8(i * 2)) & 3) << 6
+                    )
 
                     bits_ptr.store(packed_bits)
                     bits_ptr += Self._simd_width
@@ -184,8 +186,8 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     fn _unpack_int6[
         zero_point: UInt8
     ](mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
-        __comptime_assert Self.bit_width == 6
-        __comptime_assert (Self.block_m % (4 * Self._tuple_width)) == 0
+        comptime assert Self.bit_width == 6
+        comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
 
         var bits_ptr = self.bits.unsafe_ptr()
 
@@ -205,7 +207,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
                         (packed_bits & 63) - zero_point,
                     )
 
-                    hi_bytes |= (packed_bits >> 6) << (i * 2)
+                    hi_bytes |= (packed_bits >> 6) << UInt8(i * 2)
 
                 (dst_col_ptr + 3 * Self._packed_stride).store(
                     hi_bytes - zero_point,
@@ -218,7 +220,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn pack(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         """Packs the supplied external buffer to local storage."""
-        __comptime_assert (Self._packed_stride % Self._simd_width) == 0
+        comptime assert (Self._packed_stride % Self._simd_width) == 0
 
         @parameter
         if Self.bit_width == 4:
@@ -233,11 +235,11 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         *, zero_point: UInt8 = 0
     ](mut self, var dst_ptr: UnsafePointer[UInt8, ...]):
         """Unpacks the local storage to the supplied external buffer."""
-        __comptime_assert (Self._packed_stride % Self._simd_width) == 0
+        comptime assert (Self._packed_stride % Self._simd_width) == 0
 
         @parameter
         if Self.bit_width == 4:
-            __comptime_assert zero_point == 0, "zero point not implemented"
+            comptime assert zero_point == 0, "zero point not implemented"
             return self._unpack_int4(dst_ptr)
         elif Self.bit_width == 6:
             return self._unpack_int6[zero_point](dst_ptr)
@@ -273,7 +275,7 @@ fn _quantize_a_Q8_K[
 ](a: LayoutTensor[dtype, ...]) -> LegacyUnsafePointer[
     mut = a.mut, _block_Q8_K_packed[group_size], origin = a.origin
 ]:
-    __comptime_assert a.rank == 2
+    comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
     comptime group_count = quantized_k // group_size
 
@@ -291,7 +293,7 @@ fn _quantize_a_Q8_K[
         @parameter
         @always_inline
         fn process_rows[tile_m: Int](m: Int):
-            __comptime_assert (
+            comptime assert (
                 size_of[_block_Q8_K_packed[group_size]]() * tile_m
                 == size_of[_block_Q8_K_packed[group_size, tile_m]]()
             ), "tiled block size should be multiple of the single block size"
@@ -360,7 +362,7 @@ fn _expand_q_bits_lo[
 
         @parameter
         for i in range(2):
-            dst_ptr.store((src_q_bits >> (i * 4)) & 15)
+            dst_ptr.store((src_q_bits >> UInt8(i * 4)) & 15)
             dst_ptr += width
 
 
@@ -379,8 +381,8 @@ fn _expand_and_merge_q_bits_hi[
 
         for _ in range(values_per_byte):
             var dst_q_bits_lo = dst_ptr.load[width=width]()
-            var dst_q_bits_hi = (src_q_bits & bit_mask) << 4
-            src_q_bits >>= bit_count
+            var dst_q_bits_hi = (src_q_bits & UInt8(bit_mask)) << 4
+            src_q_bits >>= UInt8(bit_count)
 
             dst_ptr.store(dst_q_bits_hi | dst_q_bits_lo)
             dst_ptr += width
@@ -413,7 +415,7 @@ fn _pack_block_Q4_K[
     comptime group_size = _block_Q4_K.group_size
     comptime group_count = _block_Q4_K.group_count
 
-    __comptime_assert (
+    comptime assert (
         size_of[_block_Q4_K]() * block_n
         == size_of[_block_Q4_K_packed[block_n]]()
     ), "packed block size should be multiple of the unpacked block size"
@@ -532,7 +534,7 @@ fn _pack_block_Q6_K[
 ):
     comptime group_count = _block_Q6_K.group_count
 
-    __comptime_assert (
+    comptime assert (
         size_of[_block_Q6_K]() * block_n
         == size_of[_block_Q6_K_packed[block_n]]()
     ), "packed block size should be multiple of the unpacked block size"
@@ -574,8 +576,8 @@ fn matmul_Q4_K_pack_b(
         mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
 ):
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q4_K]()
@@ -606,8 +608,8 @@ fn matmul_Q6_K_pack_b(
         mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
     ],
 ):
-    __comptime_assert b.rank == 2
-    __comptime_assert b_packed.rank == 2
+    comptime assert b.rank == 2
+    comptime assert b_packed.rank == 2
     var N = b.dim[0]()
     var K = b.dim[1]()
     var k_blocks = K // size_of[_block_Q6_K]()
@@ -747,7 +749,7 @@ fn _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    __comptime_assert tile_k.is_power_of_two() and tile_k <= 4
+    comptime assert tile_k.is_power_of_two() and tile_k <= 4
 
     @parameter
     if CompilationTarget.is_x86():
@@ -1040,7 +1042,7 @@ fn _matmul_group_packed_Q4_K[
 
             @parameter
             for i in range(2):
-                var bytes = (packed_bits >> (i * 4)) & 15
+                var bytes = (packed_bits >> UInt8(i * 4)) & 15
                 b_vals[col * tile_k + i] = bytes
 
     _matmul_group_stream[
@@ -1277,7 +1279,7 @@ fn _matmul_group_packed_Q6_K[
                 var bytes = packed_bits & 63
                 b_vals[col * tile_k + i] = bytes - zero_point
 
-                hi_bytes |= (packed_bits >> 6) << (i * 2)
+                hi_bytes |= (packed_bits >> 6) << UInt8(i * 2)
 
             b_vals[col * tile_k + 3] = hi_bytes - zero_point
 
@@ -1429,7 +1431,7 @@ fn _matmul_Q6_K_columns[
             a_q_bits_ptr: UnsafePointer[Int8],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
-            _matmul_group_packed_Q6_K[zero_point=b_zero_point](
+            _matmul_group_packed_Q6_K[zero_point = UInt8(b_zero_point)](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
@@ -1444,7 +1446,7 @@ fn _matmul_Q6_K_columns[
     var b_q_bits = stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
-    b_tile_ptr[].q_bits.unpack[zero_point=b_zero_point](b_q_bits)
+    b_tile_ptr[].q_bits.unpack[zero_point = UInt8(b_zero_point)](b_q_bits)
 
     @parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
@@ -1501,9 +1503,9 @@ fn _matmul_Qb_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
 
     comptime simd_width = simd_width_of[DType.float32]()
 
@@ -1586,9 +1588,9 @@ fn matmul_Q4_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q4_K.group_size,
         b_type = _block_Q4_K_packed[],
@@ -1605,9 +1607,9 @@ fn matmul_Q6_K[
     b: LayoutTensor[DType.uint8, address_space = AddressSpace.GENERIC, ...],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
     _matmul_Qb_K[
         group_size = _block_Q6_K.group_size,
         b_type = _block_Q6_K_packed[],

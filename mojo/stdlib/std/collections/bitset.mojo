@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -125,7 +125,7 @@ struct BitSet[size: Int](
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        __comptime_assert (
+        comptime assert (
             max(init.size, _WORD_BITS) // _WORD_BITS == Self._words_size
         )
         self._words = type_of(self._words)(uninitialized=True)

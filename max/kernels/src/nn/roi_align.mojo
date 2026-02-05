@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,16 +60,18 @@ fn _bilinear_interpolate[
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
     var y = (
         roi_start_h
-        + ph * bin_size_h
-        + (iy + Float32(0.5)) * bin_size_h / roi_bin_grid_h
+        + Float32(ph) * bin_size_h
+        + (Float32(iy) + Float32(0.5)) * bin_size_h / Float32(roi_bin_grid_h)
     )
     var x = (
         roi_start_w
-        + pw * bin_size_w
-        + (ix + Float32(0.5)) * bin_size_w / roi_bin_grid_w
+        + Float32(pw) * bin_size_w
+        + (Float32(ix) + Float32(0.5)) * bin_size_w / Float32(roi_bin_grid_w)
     )
 
-    if not (Float32(-1.0) <= y <= height) or not (Float32(-1.0) <= x <= width):
+    if not (Float32(-1.0) <= y <= Float32(height)) or not (
+        Float32(-1.0) <= x <= Float32(width)
+    ):
         var zeroPoint = Weighted2DPoint[dtype](0, 0, 0)
         return (zeroPoint, zeroPoint, zeroPoint, zeroPoint)
 
@@ -88,8 +90,8 @@ fn _bilinear_interpolate[
     var y_high = min(y_low + 1, height - 1)
     var x_high = min(x_low + 1, width - 1)
 
-    var ly = y - y_low
-    var lx = x - x_low
+    var ly = y - Float32(y_low)
+    var lx = x - Float32(x_low)
     var hy = 1.0 - ly
     var hx = 1.0 - lx
 
@@ -142,20 +144,20 @@ fn roi_align_nhwc[
         in_sampling_ratio: Number of sampling points in the interpolation grid
           used to compute the output value of each pooled bin.
     """
-    __comptime_assert (
+    comptime assert (
         output.rank == 4 and input.rank == 4
     ), "expect rank 4 tensors for input and output"
-    __comptime_assert rois.rank == 2, "rois must be of rank 2"
+    comptime assert rois.rank == 2, "rois must be of rank 2"
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "ROI align input / output must be a floating point"
-    __comptime_assert (
+    comptime assert (
         in_spatial_scale.dtype.is_floating_point()
     ), "the scale factor must be in floating point format"
-    __comptime_assert rois.element_size == 1
-    __comptime_assert input.element_size == 1
-    __comptime_assert output.element_size == 1
+    comptime assert rois.element_size == 1
+    comptime assert input.element_size == 1
+    comptime assert output.element_size == 1
 
     debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
 
@@ -188,8 +190,8 @@ fn roi_align_nhwc[
         )
 
         # Bin size for region.
-        var bin_size_h = roi_height / pooled_height
-        var bin_size_w = roi_width / pooled_width
+        var bin_size_h = roi_height / Float32(pooled_height)
+        var bin_size_w = roi_width / Float32(pooled_width)
 
         # Use pooling window size as either sampling_ratio x sampling_ratio or
         # ⌈bin_size_h x bin_size_w⌉.
@@ -277,4 +279,6 @@ fn roi_align_nhwc[
                                 pool_val,
                                 p4.w * input[roi_batch_idx, p4.y, p4.x, c][0],
                             )
-                    output[ri, ph, pw, c] = reduce_fn(pool_val, pool_elemn_num)
+                    output[ri, ph, pw, c] = reduce_fn(
+                        pool_val, Scalar[dtype](pool_elemn_num)
+                    )

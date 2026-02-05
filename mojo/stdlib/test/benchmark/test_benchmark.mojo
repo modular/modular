@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -54,14 +54,18 @@ def test_stopping_criteria():
     @parameter
     fn timer2() raises:
         var report = run[func4=time_me](
-            max_iters=max_iters_2, min_runtime_secs=lb, max_runtime_secs=ub_big
+            max_iters=max_iters_2,
+            min_runtime_secs=lb,
+            max_runtime_secs=Float64(ub_big),
         )
         assert_true(report.mean() > 0)
         assert_true(report.iters() >= max_iters_2)
 
     var t2 = time_function[timer2]()
 
-    assert_true(Float64(t2) / 1e9 >= lb and Float64(t2) / 1e9 <= ub_big)
+    assert_true(
+        Float64(t2) / 1e9 >= lb and Float64(t2) / 1e9 <= Float64(ub_big)
+    )
 
     # stop on or before max_iters
     var max_iters_3 = 3
@@ -70,14 +74,16 @@ def test_stopping_criteria():
     @parameter
     fn timer3() raises:
         var report = run[func4=time_me](
-            max_iters=max_iters_3, min_runtime_secs=0, max_runtime_secs=ub_big
+            max_iters=max_iters_3,
+            min_runtime_secs=0,
+            max_runtime_secs=Float64(ub_big),
         )
         assert_true(report.mean() > 0)
         assert_true(report.iters() <= max_iters_3)
 
     var t3 = time_function[timer3]()
 
-    assert_true(Float64(t3) / 1e9 <= ub_big)
+    assert_true(Float64(t3) / 1e9 <= Float64(ub_big))
 
 
 struct SomeStruct(TrivialRegisterType):

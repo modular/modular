@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -81,7 +81,7 @@ def test_constructors():
 def test_copy():
     var s0 = "find"
     var s1 = String(s0)
-    s1.unsafe_ptr_mut()[3] = ord("e")
+    s1.unsafe_ptr_mut()[3] = Byte(ord("e"))
     assert_equal("find", s0)
     assert_equal("fine", s1)
 
@@ -284,6 +284,14 @@ def test_string_indexing():
 
     assert_equal("Hello Mojo!!", str[-50::])
     assert_equal("Hello Mojo!!", str[:50:])
+
+    var str2 = "😌😃"
+    assert_equal("😌", str2[byte=0])
+    assert_equal("😌", str2[0:4])
+    assert_equal("😃", str2[byte=4])
+    assert_equal("😃", str2[4:])
+    var str3 = "😌😃🥰😋"
+    assert_equal("😃🥰", str3[4:12])
 
 
 def test_atol():
@@ -1268,6 +1276,9 @@ def test_format_args():
     with assert_raises(contains=curly("}")):
         _ = String("}").format(1)
 
+    with assert_raises(contains=curly("}")):
+        _ = String("hello}world").format(42)
+
     with assert_raises(contains=""):
         _ = String("{}").format()
 
@@ -1346,8 +1357,8 @@ def test_format_conversion_flags():
     )
 
     var d = 42
-    assert_equal("{} {!r}".format(d, d), "42 42")
-    assert_equal("{!s} {!r}".format(d, d), "42 42")
+    assert_equal("{} {!r}".format(d, d), "42 Int(42)")
+    assert_equal("{!s} {!r}".format(d, d), "42 Int(42)")
 
     assert_true(
         "Mojo SIMD[DType.float64, 1](2" in "{} {!r} {} {!r}".format(a, b, c, d)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,6 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from collections import OptionalReg
 from kv_cache.types import KVCacheT
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import to_index_list
@@ -618,6 +617,9 @@ struct _FlashAttention[
         scale: Float32,
         sink_weight: Optional[Scalar[Self.dtype]] = None,
     ):
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "dtype must be floating point"
         var qk_row_ptr = qk_block_ptr
         var o_row_ptr = o_block_ptr
 
@@ -1145,7 +1147,7 @@ fn flash_attention_split_kv[
     # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
-    __comptime_assert rank == 4
+    comptime assert rank == 4
 
     @always_inline
     @parameter
@@ -1347,7 +1349,7 @@ fn _flash_attention_kv_cache[
     comptime depth_dim = cache_t.kv_params.head_size
     comptime cache_type = cache_t.dtype
 
-    __comptime_assert cache_type == dtype, (
+    comptime assert cache_type == dtype, (
         "Expected cache dtype ("
         + String(cache_type)
         + ") to match input dtype ("

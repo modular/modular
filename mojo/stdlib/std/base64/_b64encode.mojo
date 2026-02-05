@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota
+from math import iota, ceildiv
 from sys import llvm_intrinsic
 
 from memory import Span, bitcast, memcpy
@@ -54,7 +54,7 @@ fn _base64_simd_mask[
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
 fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
-    __comptime_assert width in [
+    comptime assert width in [
         4,
         8,
         16,
@@ -209,9 +209,7 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
-    result.resize(
-        unsafe_uninit_length=Int(4 * ((len(input_bytes) + 3 - 1) / 3))
-    )
+    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
     var res_ptr = result.unsafe_ptr_mut()
@@ -275,7 +273,7 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
 
 
 fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
-    __comptime_assert width >= v.size, "width must be at least v.size"
+    comptime assert width >= v.size, "width must be at least v.size"
 
     @parameter
     if width == v.size:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -114,6 +114,7 @@ class VLLMPipeline:
     model_path: str
     trust_remote_code: bool = False
     encoding: str | None = None
+    tensor_parallel_size: int = 1
 
 
 class PipelineOracle(ABC):
@@ -166,11 +167,14 @@ class PipelineOracle(ABC):
                 f"Cannot find `model_path` for {self.__class__.__name__}"
             )
         config = getattr(self, "config_params", {})
+        # Use tensor parallelism across all GPU devices
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=path,
             trust_remote_code=config.get("trust_remote_code", False)
             or getattr(self, "trust_remote_code", False),
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
     @property
@@ -307,10 +311,12 @@ class InternVLPipelineOracle(PipelineOracle):
     def create_vllm_pipeline(
         self, *, encoding: str | None, device_specs: list[driver.DeviceSpec]
     ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
             model_path=self.model_path,
             trust_remote_code=True,
             encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
         )
 
 
@@ -703,22 +709,42 @@ class GenericOracle(PipelineOracle):
             return self._weight_path_map[encoding]
         return None
 
+    def _parse_weight_path(
+        self, weight_path: str
+    ) -> tuple[str, str, str | None]:
+        """Parse weight path into (repo_id, filename, revision)."""
+        path_pieces = weight_path.split("/")
+        weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
+        weight_filename = "/".join(path_pieces[2:])
+        weight_revision = hf_repo_lock.revision_for_hf_repo(weight_repo_id)
+        return weight_repo_id, weight_filename, weight_revision
+
     def create_max_pipeline(
         self,
         *,
         encoding: str,
         device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
+
+        # Determine weight revision: use weight repo's revision if different
+        weight_revision = model_revision
+        if weight_path:
+            weight_repo_id, _, weight_revision = self._parse_weight_path(
+                weight_path
+            )
+            if weight_repo_id == self.model_path:
+                weight_revision = model_revision
+
         config = pipelines.PipelineConfig(
             device_specs=device_specs if device_specs else None,
             quantization_encoding=pipelines.SupportedEncoding[encoding]
             if encoding
             else None,
             model_path=self.model_path,
-            huggingface_model_revision=revision,
-            huggingface_weight_revision=revision,
+            huggingface_model_revision=model_revision,
+            huggingface_weight_revision=weight_revision,
             weight_path=[] if weight_path is None else [weight_path],
             max_num_steps=1,
             **self.config_params,
@@ -750,14 +776,14 @@ class GenericOracle(PipelineOracle):
                     revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
                 )
             )
-            path_pieces = weight_path.split("/")
-            weight_repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
-            weight_filename = "/".join(path_pieces[2:])
+            weight_repo_id, weight_filename, weight_revision = (
+                self._parse_weight_path(weight_path)
+            )
             downloaded_weight_path = Path(
                 huggingface_hub.hf_hub_download(
                     repo_id=weight_repo_id,
                     filename=weight_filename,
-                    revision=hf_repo_lock.revision_for_hf_repo(weight_repo_id),
+                    revision=weight_revision,
                 )
             )
             config = transformers.AutoConfig.from_pretrained(config_path)
@@ -1240,6 +1266,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": GenericOracle(
+        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "HuggingFaceTB/SmolLM2-135M": GenericOracle(
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
@@ -1393,6 +1424,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
+    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
+        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
+        config_params={
+            "max_length": 1028,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

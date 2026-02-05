@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,7 +39,7 @@ fn get_gpu_target[
     Returns:
         Target type information for the specified GPU architecture.
     """
-    __comptime_assert (
+    comptime assert (
         target_arch != ""
     ), "target_arch must be a valid GPU architecture."
     return GPUInfo.from_name[target_arch]().target()

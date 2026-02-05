@@ -11,6 +11,7 @@ copy_files(
     ],
     outs = [
         "_ods_common.py",
+        "ext.py",
         "mo.py",
         "rmo.py",
     ],

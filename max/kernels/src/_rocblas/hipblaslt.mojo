@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,9 +13,9 @@
 
 from os import abort
 from pathlib import Path
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle
 
 from gpu.host._amdgpu_hip import hipStream_t
 
@@ -502,7 +502,7 @@ fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     elif dtype == DType.float8_e5m2fnuz:
         return hipDataType_t.R_8F_E5M2_FNUZ
     else:
-        __comptime_assert dtype == DType.bfloat16, (
+        comptime assert dtype == DType.bfloat16, (
             "Only support FP32, FP16, BF16, E4M3(FNUZ), and E5M2(FNUZ)."
             " Please extend it if more dtypes are needed."
         )

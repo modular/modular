@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -60,7 +60,7 @@ fn tc_reduce_gevm_8x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert (
+    comptime assert (
         out_type == DType.float32 and in_type == DType.bfloat16
     ), "unsupported input/output type"
 
@@ -95,7 +95,7 @@ fn tc_reduce_gevm_4x[
         Uses tensor core matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert (
+    comptime assert (
         out_type == DType.float32 and in_type == DType.bfloat16
     ), "unsupported input/output type"
 
@@ -263,7 +263,7 @@ fn _tc_reduce_scalar[
         Uses matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    __comptime_assert out_type == DType.float32
+    comptime assert out_type == DType.float32
 
     @parameter
     if out_type == DType.float32 and in_type == DType.float16:
@@ -308,7 +308,7 @@ fn _tc_reduce_scalar[
         return d_reg[0]
 
     else:
-        __comptime_assert (
+        comptime assert (
             in_type == DType.float16 and out_type == DType.float16
         ), "unsupported dtype"
         var d_reg = SIMD[out_type, 2]()

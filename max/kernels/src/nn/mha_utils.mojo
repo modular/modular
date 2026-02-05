@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -676,19 +676,19 @@ fn dispatch_mask_and_score_mod[
     if MaskName.CAUSAL == mask_type:
         return outer_wrapper(CausalMask())
     elif MaskName.CHUNKED == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for ChunkedMask"
         return outer_wrapper(ChunkedMask[local_window_size]())
     elif MaskName.NULL == mask_type:
         return outer_wrapper(NullMask())
     elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for SlidingWindowCausalMask"
         return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
     elif MaskName.CHUNKED_CAUSAL == mask_type:
-        __comptime_assert (
+        comptime assert (
             local_window_size > 0
         ), "You must specify local_window_size for ChunkedCausalMask"
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
@@ -738,7 +738,7 @@ fn _dispatch_score_mod[
 
     @parameter
     if score_mod_type == AlibiScoreMod.name_str:
-        __comptime_assert (
+        comptime assert (
             num_heads > 0
         ), "You must specify num_heads for AlibiScoreMod"
         return wrapper(AlibiScoreMod[num_heads]())

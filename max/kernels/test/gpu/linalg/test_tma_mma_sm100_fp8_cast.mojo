@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -66,13 +66,13 @@ fn cpu_matmul_naive[
     # layout_b is K x N
     comptime layout_b = B.layout.transpose() if transpose_b else B.layout
     comptime K = layout_a[1].size()
-    __comptime_assert M == layout_a[0].size(), String(
+    comptime assert M == layout_a[0].size(), String(
         "C.M = ", M, "; A.M = ", layout_a[0].size()
     )
-    __comptime_assert N == layout_b[1].size(), String(
+    comptime assert N == layout_b[1].size(), String(
         "C.N = ", M, "; B.N = ", layout_b[1].size()
     )
-    __comptime_assert K == layout_b[0].size(), String(
+    comptime assert K == layout_b[0].size(), String(
         "A.K = ", K, "; B.K = ", layout_b[0].size()
     )
     for n in range(N):
@@ -130,11 +130,11 @@ fn tma_umma_kernel_sgs[
     Matrix B: FP8 in global memory, loaded to registers, cast to BF16, stored to smem
     MMA: Uses BF16 operands (KIND_F16)
     """
-    __comptime_assert num_threads == 128 or num_threads == 256
-    __comptime_assert (
+    comptime assert num_threads == 128 or num_threads == 256
+    comptime assert (
         a_type == DType.bfloat16
     ), "a_type must be bfloat16 for this kernel"
-    __comptime_assert (
+    comptime assert (
         b_gmem_type == DType.float8_e4m3fn
     ), "b_gmem_type must be float8_e4m3fn for this kernel"
 
@@ -191,10 +191,10 @@ fn tma_umma_kernel_sgs[
     comptime a_size = a_smem_layout.size()
     comptime b_size = b_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_smem_type]()) % 16
     ) == 0, "preserve alignment"
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_smem_type]]()
@@ -313,7 +313,7 @@ fn tma_umma_kernel_sgs[
         # Each thread handles a portion of the BN*BK elements
         comptime elems_per_thread = (BN * BK) // Int(num_threads)
         comptime simd_size = 8
-        __comptime_assert elems_per_thread % simd_size == 0
+        comptime assert elems_per_thread % simd_size == 0
         comptime K_total = b_layout.shape[
             1
         ].value() if transpose_b else b_layout.shape[0].value()

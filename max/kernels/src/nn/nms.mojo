@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -127,8 +127,8 @@ fn _get_bounding_box[
     Returns:
         A BoundingBox instance constructed from the extracted coordinates.
     """
-    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
-    __comptime_assert boxes.element_size == 1
+    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert boxes.element_size == 1
 
     var y1 = boxes[batch_size, box_idx, 0][0]
     var x1 = boxes[batch_size, box_idx, 1][0]
@@ -168,9 +168,9 @@ fn non_max_suppression[
         score_threshold: Minimum score threshold. Boxes with score < threshold
                         are filtered out.
     """
-    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
-    __comptime_assert scores.rank == 3, "scores must be of rank 3"
-    __comptime_assert output.rank == 2, "output must be of rank 2"
+    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert scores.rank == 3, "scores must be of rank 3"
+    comptime assert output.rank == 2, "output must be of rank 2"
 
     var pred_count = 0
 
@@ -217,8 +217,8 @@ fn non_max_suppression_shape_func[
     Returns:
         A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
     """
-    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
-    __comptime_assert scores.rank == 3, "scores must be of rank 3"
+    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert scores.rank == 3, "scores must be of rank 3"
 
     var box_pred_count: Int64 = 0
 
@@ -251,26 +251,26 @@ fn non_max_suppression[
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
-    __comptime_assert boxes.rank == 3, "boxes must be of rank 3"
-    __comptime_assert scores.rank == 3, "scores must be of rank 3"
+    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = boxes.layout.shape[0].value()
-    var num_boxes = boxes.layout.shape[1].value()
-    var num_classes = scores.layout.shape[1].value()
+    var batch_size = boxes.layout.shape[0]().value()
+    var num_boxes = boxes.layout.shape[1]().value()
+    var num_classes = scores.layout.shape[1]().value()
 
     debug_assert(
-        boxes.layout.shape[2].value() == 4,
+        boxes.layout.shape[2]().value() == 4,
         (
             "boxes must be specified with the 2D coords representing the"
             " diagonal corners"
         ),
     )
     debug_assert(
-        boxes.layout.shape[0].value() == scores.layout.shape[0].value(),
+        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value(),
         "dim 0 of boxes and scores must be equal",
     )
     debug_assert(
-        boxes.layout.shape[1].value() == scores.layout.shape[2].value(),
+        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value(),
         "boxes and scores must contain the same number of boxes",
     )
 

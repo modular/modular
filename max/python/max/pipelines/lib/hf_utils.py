@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -624,9 +624,6 @@ class HuggingFaceRepo:
             raise ValueError(
                 f"gguf file, but encoding not found in file name: {file}"
             )
-        elif str(file).endswith(".bin"):
-            # If this file is pytorch, return the first encoding, as Pytorch repos only likely have one.
-            return self.supported_encodings[0]
         else:
             raise ValueError(
                 f"weight path: {file} not gguf or safetensors, cannot infer encoding from file."

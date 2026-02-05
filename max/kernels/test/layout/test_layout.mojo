@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -955,7 +955,7 @@ def test_layout_tensor_iterator_print():
     comptime buf_size = 16
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
-        storage[i] = i
+        storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(2, 2)
     var iter = LayoutTensorIter[
         DType.int16,

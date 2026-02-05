@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -429,7 +429,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     comptime cta_tile_M = cta_tile_layout.shape[0].value()
     comptime cta_tile_N = cta_tile_layout.shape[1].value()
 
-    __comptime_assert N == cta_tile_N, (
+    comptime assert N == cta_tile_N, (
         "for this test number of columns in src layout should be equal to"
         " number of columns in cta tile layout"
     )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -318,6 +318,7 @@ def run_vllm_model(
             encoding_name=vllm_pipeline.encoding,
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
+            tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
         )
     else:
         raise NotImplementedError(

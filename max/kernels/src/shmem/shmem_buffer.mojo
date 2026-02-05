@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ from sys import (
     has_amd_gpu_accelerator,
     size_of,
 )
-from sys.ffi import external_call
+from ffi import external_call
 
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host.device_context import _checked, _DeviceContextPtr

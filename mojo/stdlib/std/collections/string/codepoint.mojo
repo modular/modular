@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -377,7 +377,7 @@ struct Codepoint(
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        __comptime_assert (
+        comptime assert (
             codepoint.dtype.is_integral()
         ), "only integral codepoints exist"
         comptime ` ` = type_of(codepoint)(ord(" "))

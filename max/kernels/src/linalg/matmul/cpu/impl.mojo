@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -70,7 +70,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
         tile_n_k: IndexList[2],
         skip_boundary_check: Bool,
     ):
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
         ...
 
 

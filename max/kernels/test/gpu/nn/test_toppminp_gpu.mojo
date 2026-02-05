@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,9 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._coord import Idx
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
@@ -154,7 +156,7 @@ fn sort_buf_descending[
 ](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    __comptime_assert rank == 2, "rank must be 2"
+    comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
 
     for batch_id in range(batch_size):
@@ -166,7 +168,7 @@ fn sort_buf_descending[
 fn test_is_sorted_descending[
     dtype: DType, rank: Int
 ](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int) -> Bool:
-    __comptime_assert rank == 2, "rank must be 2"
+    comptime assert rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 
@@ -282,16 +284,6 @@ fn test_case_sampling[
     )
     var device_p_thresholds_buf = ctx.enqueue_create_buffer[dtype](batch_size)
 
-    var device_in = NDBuffer[dtype, rank](
-        device_in_buf.unsafe_ptr(), DimList(batch_size, vocab_size)
-    )
-    var device_token_ids = NDBuffer[out_idx_type, rank](
-        device_token_ids_buf.unsafe_ptr(), DimList(batch_size, 1)
-    )
-    var device_p_thresholds = NDBuffer[dtype, 1](
-        device_p_thresholds_buf.unsafe_ptr(), DimList(batch_size)
-    )
-
     # Copy to device
     ctx.enqueue_copy(device_in_buf, in_logits.data)
     ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.data)
@@ -338,10 +330,17 @@ fn test_case_sampling[
     in_logits_cpu_test_ptr.free()
     sort_buf_descending(probs_cpu_test, vocab_size)
 
-    var device_in_tensor = from_ndbuffer_row_major(device_in)
-    var device_token_ids_tensor = from_ndbuffer_row_major(device_token_ids)
-    var device_p_thresholds_tensor = from_ndbuffer_row_major(
-        device_p_thresholds
+    var device_in_tensor = TileTensor(
+        device_in_buf.unsafe_ptr(),
+        row_major((Idx(batch_size), Idx(vocab_size))),
+    )
+    var device_token_ids_tensor = TileTensor(
+        device_token_ids_buf.unsafe_ptr(),
+        row_major((Idx(batch_size), Idx(1))),
+    )
+    var device_p_thresholds_tensor = TileTensor(
+        device_p_thresholds_buf.unsafe_ptr(),
+        row_major((Idx(batch_size),)),
     )
 
     @parameter

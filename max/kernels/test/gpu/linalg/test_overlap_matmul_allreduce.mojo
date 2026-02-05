@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -51,7 +51,7 @@ fn overlap_matmul_allreduce_test[
     # Other than allreduce i depending on matmul i, there is no dependence. The best
     # performance is obtained by letting allreduce i wait on matmul i but launch
     # matmul i+1 asap. Matmul doesn't need to wait for any kernel.
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
 
     print(
         "num_gpus",

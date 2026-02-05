@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,8 +16,8 @@ from math import ceil, floor
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout._coord import Coord, CoordLike, coord_to_index_list
-from layout._layout import row_major
+from layout._coord import Coord, coord_to_index_list
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import memcpy
@@ -67,7 +67,8 @@ fn coord_transform[
             return 0
         # note: resized image will have same corners as original image
         return (
-            out_coord_f32 * ((in_dim - 1) / (out_dim - 1)).cast[DType.float32]()
+            out_coord_f32
+            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[DType.float32]()
         )
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
@@ -141,12 +142,12 @@ fn resize_nearest_neighbor[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
-        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
             DType.float32
         ]()
 
@@ -195,7 +196,9 @@ fn resize_nearest_neighbor[
         output.ptr[out_idx] = input.ptr[in_idx]
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
-    elementwise[nn_interpolate, 1](coord_to_index_list(output.layout.shape))
+    elementwise[nn_interpolate, 1](
+        coord_to_index_list(output.layout.shape_coord())
+    )
 
 
 @always_inline
@@ -218,7 +221,7 @@ fn linear_filter(x: Float32) -> Float32:
 @parameter
 @always_inline
 fn interpolate_point_1d[
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
     //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
@@ -227,12 +230,13 @@ fn interpolate_point_1d[
 ](
     interpolator: Interpolator[interpolation_mode],
     dim: Int,
-    out_coords: IndexList[Variadic.size(input_shape_types)],
+    out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
         mut=True,
-        shape_types=input_shape_types,
         dtype,
+        _,
+        InputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,
     ],
@@ -316,14 +320,14 @@ fn _resize[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
 ):
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
 
     if rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape)
+        coord_to_index_list(input.layout.shape_coord())
     ) == rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape)
+        coord_to_index_list(output.layout.shape_coord())
     ):
         return memcpy(dest=output.ptr, src=input.ptr, count=input.numel())
     var scales = StaticTuple[Float32, input.rank]()
@@ -332,7 +336,7 @@ fn _resize[
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
-        scales[i] = (Int(output.dim(i)) / Int(input.dim(i))).cast[
+        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
             DType.float32
         ]()
         if Int(input.dim(i)) != Int(output.dim(i)):
@@ -357,8 +361,8 @@ fn _resize[
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
         tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
-    var in_shape = coord_to_index_list(input.layout.shape)
-    var out_shape = coord_to_index_list(input.layout.shape)
+    var in_shape = coord_to_index_list(input.layout.shape_coord())
+    var out_shape = coord_to_index_list(input.layout.shape_coord())
     # interpolation is separable, so perform 1d interpolation across each
     # interpolated dimension
     for dim_idx in range(len(resize_dims)):
@@ -378,7 +382,7 @@ fn _resize[
             for i in range(out_shape[resize_dim]):
                 coords[resize_dim] = i
                 interpolate_point_1d[
-                    input_shape_types = in_buf.shape_types,
+                    InputLayoutType = in_buf.LayoutType,
                     coordinate_transformation_mode,
                     antialias,
                 ](

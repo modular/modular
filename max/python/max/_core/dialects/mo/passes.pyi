@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -273,16 +273,6 @@ def PropagateShapes() -> max._core.Pass:
     """
     This pass evaluates shape parameter logic in the graph, simplifying and
     reducing shape logic as much as it can.
-    """
-
-def ResolveUnknownParameters() -> max._core.Pass:
-    """
-    This pass parameterizes `mo` ops that can be parameterized. This involves 2
-    things:
-    1. replacing unknown shape and dimension parameters (i.e. `?`) in `!mo.tensor`
-    instances with parameter references.
-    2. letting newly parameterized ops declare their new parameters that appear
-    in their results.
     """
 
 def SplatLargeConstants(num_elements: int = 100000000) -> max._core.Pass:

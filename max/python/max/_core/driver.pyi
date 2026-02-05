@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -180,6 +180,9 @@ class Device:
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
+    def _device_context_ptr(self) -> int:
+        """Gets the device context pointer. Returns 0 for host devices."""
+
     @staticmethod
     def cpu(id: int = -1) -> CPU:
         """Creates a CPU device. The id is ignored currently."""

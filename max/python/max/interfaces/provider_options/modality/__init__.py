@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Modality-specific provider options."""
 
-from .pixel import PixelModalityOptions
+from .image import ImageProviderOptions
+from .video import VideoProviderOptions
 
 __all__ = [
-    "PixelModalityOptions",
+    "ImageProviderOptions",
+    "VideoProviderOptions",
 ]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn cumsum[
         input: The input tensor.
         axis: The axis on which to perform the cumsum operation.
     """
-    __comptime_assert (
+    comptime assert (
         input.rank == output.rank
     ), "input and output should have the same rank."
 
@@ -59,7 +59,7 @@ fn cumsum[
     )
     var axis_pos = axis if axis >= 0 else axis + input.rank
 
-    var shape = coord_to_index_list(input.layout.shape)
+    var shape = coord_to_index_list(input.layout.shape_coord())
 
     var inner = 1
     var outer = 1

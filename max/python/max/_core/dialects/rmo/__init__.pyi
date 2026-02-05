@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -70,10 +70,6 @@ class RMOOp(Protocol):
 
     Each RMO op needs to have a parent `mo.graph_op`. This is needed to
     maintain unique shape parameters.
-
-    Each RMO op also has a method to resolve unknown parameters. This is done
-    by desugaring `?` in the shape of results. We reuse
-    MO_DefaultParameterization interface to do this.
     """
 
     @property

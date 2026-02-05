@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,9 +22,9 @@ from memory import OpaquePointer, alloc
 from os import abort, getenv, setenv
 from os.path import dirname
 from pathlib import Path
-from sys import external_call
 from sys.arg import argv
-from sys.ffi import (
+from ffi import (
+    external_call,
     _DLHandle,
     OwnedDLHandle,
     c_char,

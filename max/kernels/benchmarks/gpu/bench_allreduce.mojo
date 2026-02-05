@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -72,13 +72,14 @@ fn bench_reduce[
     list_of_ctx: List[DeviceContext],
     num_bytes: Int,
     max_num_blocks: Optional[Int],
+    ragged: Bool,
 ) raises:
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
-            ngpus, num_bytes
+            ngpus, num_bytes, ragged
         )
     )
 
@@ -330,10 +331,11 @@ fn bench_reduce[
 
 fn _get_test_str[
     dtype: DType, use_multimem: Bool, use_vendorccl: Bool, cache_busting: Bool
-](ngpus: Int, num_bytes: Int) -> String:
+](ngpus: Int, num_bytes: Int, ragged: Bool) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
     var vendorccl_tag = "-vendorccl" if use_vendorccl else ""
     var cache_tag = "-cachebust" if cache_busting else ""
+    var ragged_tag = "-ragged" if ragged else ""
     return String(
         "allreduce-",
         dtype,
@@ -342,6 +344,7 @@ fn _get_test_str[
         multimem_tag,
         vendorccl_tag,
         cache_tag,
+        ragged_tag,
         "-",
         human_readable_size(num_bytes),
     )
@@ -353,6 +356,7 @@ def main():
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime num_gpus = env_get_int["num_gpus", 2]()
     comptime rank = env_get_int["rank", 1]()
+    comptime ragged = env_get_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.
     var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
@@ -362,6 +366,13 @@ def main():
     comptime use_quickreduce = env_get_bool["use_quickreduce", False]()
     comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
+
+    # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
+    comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
+
+    @parameter
+    if ragged:
+        num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()
 
     var m = Bench()
 
@@ -390,4 +401,4 @@ def main():
         use_quickreduce=use_quickreduce,
         cache_busting=cache_busting,
         use_vendor_ccl=use_vendor_ccl,
-    ](m, ctx, num_bytes, max_num_blocks)
+    ](m, ctx, num_bytes, max_num_blocks, ragged)

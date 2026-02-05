@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,6 +16,7 @@ from sys._build import is_debug_build
 from sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import Layout, LayoutTensor, IntTuple, UNKNOWN_VALUE
+from layout._tile_tensor import TileTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList
@@ -164,7 +165,7 @@ struct ConvShape[rank: Int](TrivialRegisterType):
     fn output_flat_coord_to_input_offset(
         self, n: Int, output_flat_coord: Int
     ) -> Int:
-        __comptime_assert (
+        comptime assert (
             Self.rank == 1 or Self.rank == 2 or Self.rank == 3
         ), "Only support 1d, 2d, and 3d convolution."
 
@@ -308,6 +309,52 @@ fn get_conv_shape[
     )
 
 
+@always_inline
+fn get_conv_shape[
+    rank: Int,
+    filter_packed: Bool,
+](
+    output: TileTensor,
+    input: TileTensor,
+    filter: TileTensor,
+    stride: IndexList[rank],
+    dilation: IndexList[rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+) -> ConvShape[rank]:
+    var output_dims = IndexList[rank](0)
+    var input_dims = IndexList[rank](0)
+    var filter_dims = IndexList[rank](0)
+
+    @parameter
+    for i in range(rank):
+        output_dims[i] = Int(output.dim[i + 1]())
+        input_dims[i] = Int(input.dim[i + 1]())
+
+        @parameter
+        if filter_packed:
+            filter_dims[i] = Int(filter.dim[i + 1]())
+        else:
+            filter_dims[i] = Int(filter.dim[i]())
+
+    return ConvShape[rank](
+        n=Int(input.dim[0]()),
+        input_dims=input_dims,
+        output_dims=output_dims,
+        filter_dims=filter_dims,
+        c=Int(input.dim[rank + 1]()),
+        f=Int(output.dim[rank + 1]()),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
+        num_groups=num_groups,
+    )
+
+
 fn get_conv2d_shape[
     output_layout: Layout,
     input_layout: Layout,
@@ -325,11 +372,11 @@ fn get_conv2d_shape[
     dilation: IndexList[2],
     num_groups: Int,
 ) -> ConvShape[2]:
-    __comptime_assert (
+    comptime assert (
         input.rank == 4 and output.rank == 4
     ), "Input and output must be rank 4"
-    __comptime_assert data_layout == Image2DLayout.NHWC
-    __comptime_assert (
+    comptime assert data_layout == Image2DLayout.NHWC
+    comptime assert (
         filter.rank == 4 and filter_layout == Image2DLayout.RSCF
     ) or (filter.rank == 5 and filter_layout == Image2DLayout.FRSCf)
 
@@ -494,7 +541,7 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         input_c: Int,
         filter_c: Int,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.rank == 3 or Self.rank == 2 or Self.rank == 1
         ), "Only support 1d/2d/3d/ conv attributes"
 

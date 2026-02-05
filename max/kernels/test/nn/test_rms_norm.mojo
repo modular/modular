@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,12 +29,14 @@ fn compute_rms[
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[
     DType.float32
 ]:
-    __comptime_assert data.rank == 1, "data.rank must be 1"
+    comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
         var d = data.ptr[i].cast[DType.float32]()
         sum_of_squares += d * d
-    return sqrt((sum_of_squares / data.numel()) + eps.cast[DType.float32]())
+    return sqrt(
+        (sum_of_squares / Float32(data.numel())) + eps.cast[DType.float32]()
+    )
 
 
 fn run_rms_norm_cpu[
@@ -51,7 +53,7 @@ fn run_rms_norm_cpu[
         input_ptr[i] = Scalar[dtype](i)
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_ptr[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var param_shape = Index(cols)
 

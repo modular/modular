@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -62,53 +62,35 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
+from linalg.structuring import SMemPtr
+from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.tile_types import internal_k_major_128B
+from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.tile_pipeline import (
+    InputTilePipeline,
+    InputProducerStage,
+    InputConsumerStage,
+    OutputTilePipeline,
+    BlockScaledTilePayload,
+)
+from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
+from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.warp_context import (
+    MmaWarpContext,
+    EpilogueWarpContext,
+)
+from ..structured_kernels.output_writer import TileWriter
+from ..structured_kernels.tile_scheduler import (
+    TileScheduler as WorkingTileScheduler,
+)
+from ..block_scaled.block_scaled_smem import BlockScaledSmem
+from .grouped_block_scaled_smem import GroupedBlockScaledSmem
 from .grouped_tile_scheduler import (
     GroupedTileScheduler,
     GroupedWorkInfo,
     GroupedWorkIterator,
     GroupedCLCWorkIterator,
     GroupedCLCSchedulerIterator,
-)
-from linalg.structuring import SMemPtr
-from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
-    BlockScaledMatmulConfig,
-)
-from .grouped_block_scaled_smem import (
-    GroupedBlockScaledSmem,
-)
-from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_smem import (
-    BlockScaledSmem,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
-    WarpRole,
-    KernelContext,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    InputTilePipeline,
-    InputProducerStage,
-    InputConsumerStage,
-    BlockScaledTilePayload,
-    OutputTilePipeline,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
-    BlockScaledTmem,
-    TmemAllocation,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
-    TmemDeallocBarrier,
-    WarpGroupBarrier,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
-    MmaWarpContext,
-    EpilogueWarpContext,
-)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
-    TileWriter,
-)
-
-# Import working TileScheduler for minimal 2SM kernel (proven working pattern)
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler import (
-    TileScheduler as WorkingTileScheduler,
 )
 
 
@@ -749,16 +731,25 @@ struct GroupedBlockScaledMatmulKernel[
     ]
 
     # ========== Tile Pipeline Types ==========
+    # TileTensor-native payload - converts to LayoutTensor at TMA/MMA boundaries
 
     comptime TilePayload = BlockScaledTilePayload[
         Self.a_type,
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        Self.SmemType.a_smem_layout,
-        Self.SmemType.b_smem_layout,
-        Self.SmemType.sfa_smem_layout,
-        Self.SmemType.sfb_smem_layout,
+        # A tile dimensions (BM x BK)
+        Self.SmemType.BM,
+        Self.SmemType.BK,
+        # B tile dimensions (BN x BK)
+        Self.SmemType.BN,
+        Self.SmemType.BK,
+        # SFA tile dimensions
+        Self.SmemType.SFA_DIM0,
+        Self.SmemType.SFA_DIM1,
+        # SFB tile dimensions
+        Self.SmemType.SFB_DIM0,
+        Self.SmemType.SFB_DIM1,
         Self.SmemType.num_pipeline_stages,
     ]
 
@@ -832,7 +823,8 @@ struct GroupedBlockScaledMatmulKernel[
         num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_layout = Self.SmemType.c_smem_layout,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
         stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
@@ -1325,21 +1317,26 @@ struct GroupedBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
                     )
                 )
 
+                # Peer CTA slicing using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size)
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size)
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
                 )
 
                 var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
 
+                # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
                     a_peer_tile,
                     barrier[0],
@@ -1353,6 +1350,7 @@ struct GroupedBlockScaledMatmulKernel[
                     b_multicast_mask,
                 )
 
+                # TMA 5D now has TileTensor overload - pass tiles directly
                 sfa_tma_op.async_copy_5d[Self.cta_group](
                     sfa_tile,
                     barrier[0],
@@ -1404,6 +1402,7 @@ struct GroupedBlockScaledMatmulKernel[
             for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
+                # Get tiles as TileTensor (native SMEM storage)
                 var a_tile, b_tile, sfa_tile, sfb_tile = (
                     tiles.payload().get_tile[Self.config.k_group_size](
                         tiles.stage(), jj
@@ -1419,6 +1418,8 @@ struct GroupedBlockScaledMatmulKernel[
 
                 var is_first_k = (iter_idx + j) == k_start
 
+                # MMA has TileTensor overload - pass tiles directly
+                # (layout is extracted from TileTensor type parameters)
                 mma_op.mma(
                     a_tile,
                     b_tile,

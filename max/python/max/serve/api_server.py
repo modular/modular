@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -126,6 +126,7 @@ async def lifespan(
             context_type=PIPELINE_REGISTRY.retrieve_context_type(
                 serving_settings.pipeline_config,
                 override_architecture=override_architecture,
+                task=serving_settings.pipeline_task,
             ),
         )
         worker_monitor = await exit_stack.enter_async_context(

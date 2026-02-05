@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -87,7 +87,7 @@ def test_tma_swizzle[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     is_k_major: Bool = True,
 ](ctx: DeviceContext):
-    __comptime_assert (
+    comptime assert (
         shape == tile_shape
     ), "Only support same shape and tile shape."
 

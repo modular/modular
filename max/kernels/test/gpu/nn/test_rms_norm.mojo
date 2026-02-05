@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,8 +27,8 @@ from utils.index import Index, IndexList
 fn compute_rms[
     dtype: DType
 ](data: TileTensor[dtype, ...], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
-    __comptime_assert data.rank == 1, "data.rank must be 1"
-    __comptime_assert data.element_size == 1
+    comptime assert data.rank == 1, "data.rank must be 1"
+    comptime assert data.element_size == 1
 
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
@@ -54,7 +54,7 @@ fn run_rms_norm_gpu[
     rand[dtype](data_h, rows * cols)
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)

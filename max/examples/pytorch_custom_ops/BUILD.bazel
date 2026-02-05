@@ -26,6 +26,11 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
+    # TODO(GEX-3151): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/torch",
         requirement("numpy"),
@@ -52,6 +57,11 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "graph",
     srcs = ["graph.py"],
+    # TODO(GEX-3151): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/graph",
         "//max/python/max/torch",

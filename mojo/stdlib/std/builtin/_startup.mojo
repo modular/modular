@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from sys import external_call
-from sys.ffi import _get_global
+from ffi import external_call
+from ffi import _get_global
 from sys.compile import SanitizeAddress
 
 

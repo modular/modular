@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,57 +45,57 @@ struct TestWritable(ImplicitlyCopyable, Writable):
 
 def test_write_sequence_empty():
     var result = String()
-    write_sequence_to(result, open="[", close="]")
+    write_sequence_to(result, start="[", end="]")
     assert_equal(result, "[]")
 
 
 def test_write_sequence_single_element():
     var result = String()
-    write_sequence_to(result, 42, open="[", close="]")
+    write_sequence_to(result, 42, start="[", end="]")
     assert_equal(result, "[42]")
 
 
 def test_write_sequence_multiple_elements():
     var result = String()
-    write_sequence_to(result, 1, 2, 3, open="[", close="]")
+    write_sequence_to(result, 1, 2, 3, start="[", end="]")
     assert_equal(result, "[1, 2, 3]")
 
 
 def test_write_sequence_custom_delimiters():
     var result = String()
-    write_sequence_to(result, 1, 2, 3, open="(", close=")")
+    write_sequence_to(result, 1, 2, 3, start="(", end=")")
     assert_equal(result, "(1, 2, 3)")
 
 
 def test_write_sequence_custom_separator():
     var result = String()
-    write_sequence_to(result, 1, 2, 3, open="[", close="]", sep="; ")
+    write_sequence_to(result, 1, 2, 3, start="[", end="]", sep="; ")
     assert_equal(result, "[1; 2; 3]")
 
 
 def test_write_sequence_custom_all():
     var result = String()
-    write_sequence_to(result, "a", "b", "c", open="<", close=">", sep=" | ")
+    write_sequence_to(result, "a", "b", "c", start="<", end=">", sep=" | ")
     assert_equal(result, "<a | b | c>")
 
 
 def test_write_sequence_writable_objects():
     var result = String()
     write_sequence_to(
-        result, TestWritable(10), TestWritable(20), open="[", close="]"
+        result, TestWritable(10), TestWritable(20), start="[", end="]"
     )
     assert_equal(result, "[TestWritable(10), TestWritable(20)]")
 
 
 def test_write_sequence_mixed_types():
     var result = String()
-    write_sequence_to(result, 1, "hello", TestWritable(42), open="[", close="]")
+    write_sequence_to(result, 1, "hello", TestWritable(42), start="[", end="]")
     assert_equal(result, "[1, hello, TestWritable(42)]")
 
 
 def test_write_sequence_empty_separator():
     var result = String()
-    write_sequence_to(result, 1, 2, 3, open="[", close="]", sep="")
+    write_sequence_to(result, 1, 2, 3, start="[", end="]", sep="")
     assert_equal(result, "[123]")
 
 

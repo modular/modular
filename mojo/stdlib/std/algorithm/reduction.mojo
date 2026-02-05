@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,8 +26,7 @@ from sys.info import align_of, simd_width_of, size_of
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from bit import log2_floor
-from builtin.math import max as _max
-from builtin.math import min as _min
+from math.math import max as _max, min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from runtime.asyncrt import DeviceContextPtr
@@ -88,7 +87,7 @@ fn _get_nd_indices_from_flat_index(
             res[i] = 0
         else:
             res[i] = curr_index._positive_rem(shape[i])
-            curr_index = curr_index._positive_div(shape[i])
+            curr_index = curr_index / shape[i]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -399,7 +398,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    __comptime_assert is_valid_target[target](), "unsupported target"
+    comptime assert is_valid_target[target](), "unsupported target"
 
     for i in range(len(shape)):
         if shape[i] == 0:
@@ -672,7 +671,7 @@ fn _reduce_generator[
     fn reduce_fn_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](val: SIMD[dtype, width], acc: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             reduction_idx < num_reductions
         ), "invalid reduction index"
         return reduce_function[dtype, width](val, acc)

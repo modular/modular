@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,9 +14,14 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Generic
 
+import numpy as np
+from max.driver import load_devices
 from max.interfaces import (
+    GenerationStatus,
     Pipeline,
     PipelineOutputsDict,
     PixelGenerationContextType,
@@ -25,8 +30,16 @@ from max.interfaces import (
     RequestID,
 )
 
+from ..interfaces.diffusion_pipeline import (
+    DiffusionPipeline,
+    PixelModelInputs,
+)
+from .utils import get_weight_paths
+
 if TYPE_CHECKING:
     from ..config import PipelineConfig
+
+logger = logging.getLogger("max.pipelines")
 
 
 class PixelGenerationPipeline(
@@ -40,14 +53,35 @@ class PixelGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
+        pipeline_model: type[DiffusionPipeline],
     ) -> None:
         """Initialize a pixel generation pipeline instance.
 
         Args:
             pipeline_config: Configuration for the pipeline and runtime behavior.
+            pipeline_model: The diffusion pipeline model class to instantiate.
         """
+        from max.engine import InferenceSession  # local import to avoid cycles
+
         self._pipeline_config = pipeline_config
-        # TODO: Add full implementation
+        model_config = pipeline_config.model
+        self._devices = load_devices(pipeline_config.model.device_specs)
+
+        # Initialize Session.
+        session = InferenceSession(devices=self._devices)
+
+        # Configure session with pipeline settings.
+        self._pipeline_config.configure_session(session)
+
+        # Download weights if required and get absolute weight paths.
+        weight_paths: list[Path] = get_weight_paths(model_config)
+
+        self._pipeline_model = pipeline_model(
+            pipeline_config=self._pipeline_config,
+            session=session,
+            devices=self._devices,
+            weight_paths=weight_paths,
+        )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -58,18 +92,90 @@ class PixelGenerationPipeline(
         self,
         inputs: PixelGenerationInputs[PixelGenerationContextType],
     ) -> PipelineOutputsDict[PixelGenerationOutput]:
-        """Execute the pixel generation pipeline.
+        model_inputs, flat_batch = self.prepare_batch(inputs.batch)
+        if not flat_batch or model_inputs is None:
+            return {}
+
+        try:
+            model_outputs = self._pipeline_model.execute(
+                model_inputs=model_inputs
+            )
+        except Exception:
+            batch_size = len(flat_batch)
+            logger.error(
+                "Encountered an exception while executing pixel batch: "
+                "batch_size=%d, num_images_per_prompt=%s, height=%s, width=%s, "
+                "num_inference_steps=%s",
+                batch_size,
+                model_inputs.num_images_per_prompt,
+                model_inputs.height,
+                model_inputs.width,
+                model_inputs.num_inference_steps,
+            )
+            raise
+
+        image_list = model_outputs.images
+        num_images_per_prompt = model_inputs.num_images_per_prompt
+        expected_images = len(flat_batch) * num_images_per_prompt
+        if len(image_list) != expected_images:
+            raise ValueError(
+                "Unexpected number of images returned from pipeline: "
+                f"expected {expected_images}, got {len(image_list)}."
+            )
+
+        responses: dict[RequestID, PixelGenerationOutput] = {}
+        for index, (request_id, _context) in enumerate(flat_batch):
+            offset = index * num_images_per_prompt
+            pixel_data = np.stack(
+                image_list[offset : offset + num_images_per_prompt],
+                axis=0,
+            )
+            pixel_data = pixel_data.astype(np.float32, copy=False)
+            responses[request_id] = PixelGenerationOutput(
+                request_id=request_id,
+                final_status=GenerationStatus.END_OF_SEQUENCE,
+                pixel_data=pixel_data,
+            )
+
+        return responses
+
+    def prepare_batch(
+        self,
+        batch: dict[RequestID, PixelGenerationContextType],
+    ) -> tuple[
+        PixelModelInputs | None,
+        list[tuple[RequestID, PixelGenerationContextType]],
+    ]:
+        """Prepare model inputs for pixel generation execution.
+
+        Delegates to the pipeline model for model-specific input preparation.
 
         Args:
-            inputs: Batch of pixel generation contexts.
+            batch: Dictionary mapping request IDs to their PixelContext objects.
 
         Returns:
-            Dictionary mapping request IDs to pixel generation outputs.
+            A tuple of:
+                - PixelModelInputs | None: Inputs ready for model execution,
+                  or None if batch is empty.
+                - list: Flattened batch as (request_id, context) tuples for
+                  response mapping.
+
+        Raises:
+            ValueError: If batch size is larger than 1 (not yet supported).
         """
-        # TODO: Implement pixel generation execution
-        raise NotImplementedError(
-            "PixelGenerationPipeline.execute() is not yet implemented"
-        )
+        if not batch:
+            return None, []
+
+        # Flatten batch to list of (request_id, context) tuples
+        flat_batch = list(batch.items())
+
+        if len(flat_batch) > 1:
+            raise ValueError(
+                "Batching of different requests is not supported yet."
+            )
+
+        model_inputs = self._pipeline_model.prepare_inputs(flat_batch[0][1])
+        return model_inputs, flat_batch
 
     def release(self, request_id: RequestID) -> None:
         """Release resources associated with a request.
@@ -77,5 +183,4 @@ class PixelGenerationPipeline(
         Args:
             request_id: The request ID to release resources for.
         """
-        # TODO: Implement resource cleanup if needed
         pass

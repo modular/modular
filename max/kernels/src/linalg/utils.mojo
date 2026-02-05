@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -131,9 +131,9 @@ struct GemmShape(TrivialRegisterType):
         """
 
         # We only want a 2D tensor for now
-        __comptime_assert c.rank == 2
-        __comptime_assert a.rank == 2
-        __comptime_assert b.rank == 2
+        comptime assert c.rank == 2
+        comptime assert a.rank == 2
+        comptime assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
@@ -285,7 +285,7 @@ fn _get_tile_n_k[
     transpose_b: Bool,
     layout: Layout,
 ](b: LayoutTensor[b_type, layout, _, ...]) -> IndexList[2]:
-    __comptime_assert b.rank == 2
+    comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
     @parameter
@@ -640,9 +640,11 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
+    # Output must be 32-bit integer (int32 or uint32) since i8mm produces 4-wide
+    # SIMD vectors.
     return (
-        # Return False for now until i8mm is fully ready.
         CompilationTarget.has_neon_int8_matmul()
+        and (c_type == DType.int32 or c_type == DType.uint32)
         and (
             (a_type == DType.uint8 and b_type == DType.uint8)
             or (a_type == DType.uint8 and b_type == DType.int8)
@@ -805,7 +807,7 @@ fn apply_epilogue[
     # Scalar case
     # TODO: 1D vector is included, should handle it in a separate branch.
     else:
-        __comptime_assert dst_element_layout.rank() == 1
+        comptime assert dst_element_layout.rank() == 1
 
         @parameter
         for i in range(src.layout.size() * src.element_size):

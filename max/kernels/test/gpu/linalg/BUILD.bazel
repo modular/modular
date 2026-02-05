@@ -19,6 +19,7 @@ _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS = [
 ]
 
 _EXTRA_CONSTRAINTS = {
+    "test_amd_matmul_asm.mojo": ["//:amd_gpu"],
     "test_async_copy_wgmma.mojo": ["//:h100_gpu"],
     "test_dual_gemm.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_gemm_kernel.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
@@ -94,6 +95,15 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
     "test_grouped_matmul_tile_scheduler.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+    "test_gemv.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_split_k_reduce.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),

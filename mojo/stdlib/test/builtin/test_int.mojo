@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,8 @@ def test_sub():
 def test_div():
     var n = Int(5)
     var d = Int(2)
-    assert_equal(2.5, Int.__truediv__(n, d))
+    # TODO: re-enable when Int.__truediv__ is re-enabled
+    # assert_equal(2.5, Int.__truediv__(n, d))
     Int.__itruediv__(n, d)
     assert_equal(2, n)
 
@@ -77,6 +78,12 @@ def test_round():
     assert_equal(Int.__round__(0, 1), 0)
     assert_equal(Int.__round__(-5, 1), -5)
     assert_equal(Int.__round__(100, -2), 100)
+    assert_equal(Int.__round__(1342, 0), 1342)
+    assert_equal(Int.__round__(1342, -1), 1340)
+    assert_equal(Int.__round__(1342, -2), 1300)
+    assert_equal(Int.__round__(1342, -3), 1000)
+    assert_equal(Int.__round__(1342, -4), 0)
+    assert_equal(Int.__round__(1342, -5), 0)
 
 
 def test_trunc():

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from python import PythonObject
 
 from os import abort
 from sys import bit_width_of
-from sys.ffi import c_double, c_long, c_size_t, c_ssize_t
+from ffi import c_double, c_long, c_size_t, c_ssize_t
 
 from reflection import get_type_name
 

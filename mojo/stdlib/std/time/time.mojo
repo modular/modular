@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,9 +21,9 @@ from time import perf_counter_ns
 
 from math import floor
 from os import abort
+from ffi import external_call
 from sys import (
     CompilationTarget,
-    external_call,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -121,6 +121,27 @@ fn _gpu_clock_inst() -> StaticString:
 
 
 @always_inline
+fn _amd_gpu_realtime() -> UInt64:
+    """Returns the AMD GPU real-time counter (constant-speed clock).
+
+    This reads the s_memrealtime register which provides a constant-speed
+    64-bit clock counter, independent of GPU core clock frequency scaling.
+    This is suitable for wall-clock timing measurements.
+
+    The counter frequency is 100 MHz (10ns per tick) on MI355 (gfx950) and
+    likely other modern AMD GPUs, though this may vary by architecture.
+    Use _AMD_GPU_REALTIME_FREQ_HZ for conversions.
+    """
+    return llvm_intrinsic["llvm.amdgcn.s.memrealtime", UInt64]()
+
+
+# AMD GPU real-time counter frequency in Hz.
+# MI355 (gfx950) and likely other modern AMD GPUs use 100 MHz.
+# This can be queried at runtime via hipDeviceAttributeWallClockRate if needed.
+comptime _AMD_GPU_REALTIME_FREQ_HZ: UInt64 = 100_000_000
+
+
+@always_inline
 fn _realtime_nanoseconds() -> UInt:
     """Returns the current realtime time in nanoseconds"""
     return _gettime_as_nsec_unix(_CLOCK_REALTIME)
@@ -203,8 +224,12 @@ fn perf_counter_ns() -> UInt:
 @always_inline
 fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
     """Returns the current value in the global nanosecond resolution timer. This value
-    is common across all SM's. Currently, this is only supported on NVIDIA GPUs, on
-    non-NVIDIA GPUs, this function returns the same value as perf_counter_ns().
+    is common across all SM's.
+
+    On NVIDIA GPUs, this uses the globaltimer register which provides nanosecond
+    resolution. On AMD GPUs, this uses the s_memrealtime counter (constant-speed
+    clock) converted to nanoseconds. On other platforms, this falls back to
+    perf_counter_ns().
 
     Returns:
         The current time in ns.
@@ -217,6 +242,11 @@ fn global_perf_counter_ns() -> SIMD[DType.uint64, 1]:
             UInt64,
             has_side_effect=True,
         ]()
+    elif is_amd_gpu():
+        # Convert s_memrealtime ticks to nanoseconds.
+        # At 100 MHz, each tick is 10ns (1e9 / 100e6 = 10).
+        var ticks = _amd_gpu_realtime()
+        return (ticks * 1_000_000_000) // _AMD_GPU_REALTIME_FREQ_HZ
 
     return UInt64(perf_counter_ns())
 
@@ -320,17 +350,34 @@ fn sleep(sec: Float64):
                 elapsed = global_perf_counter_ns() - start
             return
         elif is_amd_gpu():
-            # AMD's s_sleep instruction only accepts values 0-15 and sleeps
-            # for a hardware-dependent number of cycles. This doesn't provide
-            # accurate wall-clock timing, but is sufficient for spin-wait
-            # backoff operations like those used in hostcall mechanisms.
-            # We loop with s_sleep to approximate the requested duration,
-            # though actual timing will vary based on hardware.
-            var iterations = Int(sec * 1000)  # Rough approximation
-            for _ in range(max(1, iterations)):
-                inlined_assembly[
-                    "s_sleep 1", NoneType, constraints="", has_side_effect=True
-                ]()
+            # AMD GPU sleep using s_memrealtime for timing feedback.
+            # This approach is based on ROCm's ockl rtcwait implementation.
+            #
+            # We use the constant-speed s_memrealtime counter to track actual
+            # elapsed time and loop with progressive s_sleep calls until the
+            # target duration is reached. The s_sleep instruction accepts
+            # values 0-127 and sleeps for approximately that many cycles.
+            #
+            # The tiered approach (127 -> 15 -> 1) balances power efficiency
+            # (longer sleeps when far from target) with timing accuracy
+            # (shorter sleeps as we approach the target).
+            var total_ticks = UInt64(sec * Float64(_AMD_GPU_REALTIME_FREQ_HZ))
+            var start = _amd_gpu_realtime()
+            var end = start + total_ticks
+            var now = start
+
+            # Use tiered sleep intervals for efficiency.
+            # Thresholds are approximate tick counts where each sleep level
+            # is appropriate (based on 10ns per tick at 100 MHz).
+            while now < end:
+                var remaining = end - now
+                if remaining > 3000:  # > ~30us remaining
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(127))
+                elif remaining > 400:  # > ~4us remaining
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(15))
+                else:
+                    llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
+                now = _amd_gpu_realtime()
             return
         else:
             # Other GPUs are not supported.

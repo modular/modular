@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -171,9 +171,9 @@ struct RegisterAccumulatorLayout[
     @staticmethod
     @always_inline
     fn description() -> RegisterAccumulatorDescription:
-        __comptime_assert (
-            Self.vec_output_layout.size() > 0
-        ), "layout: " + String(Self.vec_output_layout)
+        comptime assert Self.vec_output_layout.size() > 0, "layout: " + String(
+            Self.vec_output_layout
+        )
 
         return RegisterAccumulatorDescription(
             Self.num_m_mmas * Self.num_n_mmas, Self.frag_size
@@ -413,16 +413,16 @@ struct TMemAccumulator[
     @always_inline
     @staticmethod
     fn check_constraints():
-        __comptime_assert Self.vec_output_layout[0].size() > 0, (
+        comptime assert Self.vec_output_layout[0].size() > 0, (
             "layout: "
             + String(Self.vec_output_layout)
             + "\nnum_m_mmas = "
             + String(Self.num_m_mmas)
         )
-        __comptime_assert (
+        comptime assert (
             Self.vec_output_layout[1].size() > 0
         ), "layout: " + String(Self.vec_output_layout)
-        __comptime_assert Self.MMA_M > 0, (
+        comptime assert Self.MMA_M > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -433,7 +433,7 @@ struct TMemAccumulator[
             + String(Self.num_n_mmas)
             + "\n"
         )
-        __comptime_assert Self.MMA_N > 0, (
+        comptime assert Self.MMA_N > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -444,7 +444,7 @@ struct TMemAccumulator[
             + String(Self.num_n_mmas)
             + "\n"
         )
-        __comptime_assert Self.num_m_mmas > 0, (
+        comptime assert Self.num_m_mmas > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -455,7 +455,7 @@ struct TMemAccumulator[
             + String(Self.num_n_mmas)
             + "\n"
         )
-        __comptime_assert Self.num_n_mmas > 0, (
+        comptime assert Self.num_n_mmas > 0, (
             "MMA_M = "
             + String(Self.MMA_M)
             + "\nMMA_N = "
@@ -509,7 +509,7 @@ struct TMemAccumulator[
     ):
         frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
-        __comptime_assert dtype_size == 4
+        comptime assert dtype_size == 4
         comptime frag_size_b32 = Self.frag_size * dtype_size // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus fills 8 columns
@@ -547,13 +547,13 @@ struct TMemAccumulator[
     ):
         frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
-        __comptime_assert dtype_size == 4
+        comptime assert dtype_size == 4
         comptime frag_size_b32 = (Self.frag_size * dtype_size) // 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
         comptime repeat = frag_size_b32 // 4
-        __comptime_assert (
+        comptime assert (
             Self.num_m_mmas * Self.num_n_mmas == type_of(frags).layout.size()
         )
 
@@ -618,8 +618,8 @@ struct TMemOperand[
 
     @always_inline
     fn offset[m_mma: Int, k_mma: Int](self) -> UInt32:
-        __comptime_assert Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"
-        __comptime_assert Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"
+        comptime assert Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"
+        comptime assert Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"
 
         @parameter
         if m_mma == 0 and k_mma == 0:
@@ -648,15 +648,15 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         comptime num_frags = src_layout[0].size()
-        __comptime_assert num_frags == Self.num_m_mmas * Self.num_n_mmas
-        __comptime_assert Self.num_n_mmas == 1
-        __comptime_assert Self.frag_size == src_layout[1].size(), (
+        comptime assert num_frags == Self.num_m_mmas * Self.num_n_mmas
+        comptime assert Self.num_n_mmas == 1
+        comptime assert Self.frag_size == src_layout[1].size(), (
             "Self.frag_size = "
             + String(Self.frag_size)
             + "\nsrc_layout = "
             + String(src_layout)
         )
-        __comptime_assert src_element_layout.size() == 1
+        comptime assert src_element_layout.size() == 1
         comptime src_size = size_of[src_type]()
         comptime dst_size = size_of[Self.dtype]()
         comptime frag_size_b32 = (Self.frag_size * dst_size) // 4
@@ -671,7 +671,7 @@ struct TMemOperand[
         # width == (repeat * bits * datapaths) // (32 * 32)
         comptime repeat = 64 * frag_size_b32 // bits
         # We need to reshape into a row of frags
-        __comptime_assert (
+        comptime assert (
             Self.num_m_mmas * Self.num_n_mmas * Self.frag_size
             == src_layout.size() * src_element_layout.size()
         )
@@ -687,9 +687,9 @@ struct TMemOperand[
         ](src.ptr)
         # frags = src.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
-        __comptime_assert src_size >= dst_size
-        __comptime_assert Self.num_m_mmas == 1
-        __comptime_assert Self.num_n_mmas == 1
+        comptime assert src_size >= dst_size
+        comptime assert Self.num_m_mmas == 1
+        comptime assert Self.num_n_mmas == 1
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
@@ -726,10 +726,10 @@ struct TMemOperand[
     ):
         # src has row of frags layout
         comptime num_frags = dst_layout[0].size()
-        __comptime_assert num_frags == Self.num_m_mmas * Self.num_n_mmas
-        __comptime_assert Self.frag_size == dst_layout[1].size()
-        __comptime_assert dst_element_layout.size() == 1
-        __comptime_assert size_of[dst_type]() == 4
+        comptime assert num_frags == Self.num_m_mmas * Self.num_n_mmas
+        comptime assert Self.frag_size == dst_layout[1].size()
+        comptime assert dst_element_layout.size() == 1
+        comptime assert size_of[dst_type]() == 4
         # 16 x 256b results in repeated 8x4<1x2> pattern
         # each repetition thus loads 8 columns
         # and loads 4 values per thread.
@@ -749,8 +749,8 @@ struct TMemOperand[
         #
         frags = dst.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
-        __comptime_assert src_size <= dst_size
-        __comptime_assert Self.num_n_mmas == 1
+        comptime assert src_size <= dst_size
+        comptime assert Self.num_n_mmas == 1
 
         @parameter
         for m_mma in range(Self.num_m_mmas):
@@ -893,13 +893,13 @@ struct SM100TensorAccumulatorSS[
     @always_inline
     @staticmethod
     fn check_constraints():
-        __comptime_assert (Self.BM % Self.MMA_M) == 0, (
+        comptime assert (Self.BM % Self.MMA_M) == 0, (
             "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M)
         )
-        __comptime_assert ((Self.BN % Self.MMA_N) == 0) and (
+        comptime assert ((Self.BN % Self.MMA_N) == 0) and (
             Self.num_n_mmas > 0
         ), ("BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N))
-        __comptime_assert ((Self.compute_BK % Self.MMA_K) == 0) and (
+        comptime assert ((Self.compute_BK % Self.MMA_K) == 0) and (
             Self.num_k_mmas > 0
         ), (
             "compute_BK, MMA_K = "
@@ -1135,13 +1135,13 @@ struct SM100TensorAccumulatorTS[
     @staticmethod
     @always_inline
     fn check_constraints():
-        __comptime_assert (Self.BM % Self.MMA_M) == 0, (
+        comptime assert (Self.BM % Self.MMA_M) == 0, (
             "BM, MMA_M = " + String(Self.BM) + ", " + String(Self.MMA_M)
         )
-        __comptime_assert ((Self.BN % Self.MMA_N) == 0) and (
+        comptime assert ((Self.BN % Self.MMA_N) == 0) and (
             Self.num_n_mmas > 0
         ), ("BN, MMA_N = " + String(Self.BN) + ", " + String(Self.MMA_N))
-        __comptime_assert ((Self.BK % Self.MMA_K) == 0) and (
+        comptime assert ((Self.BK % Self.MMA_K) == 0) and (
             Self.num_k_mmas > 0
         ), ("BK, MMA_K = " + String(Self.BK) + ", " + String(Self.MMA_K))
 
@@ -1320,19 +1320,19 @@ fn mha_sm100_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    __comptime_assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
+    comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
     )
-    __comptime_assert (
+    comptime assert (
         BK % 64 == 0
     ), "B200 requires BK%64 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     comptime num_threads = new_config.num_threads[True]()
-    __comptime_assert num_threads % 128 == 0, "num_threads = " + String(
+    comptime assert num_threads % 128 == 0, "num_threads = " + String(
         num_threads
     )
-    __comptime_assert (
+    comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
     q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
@@ -1342,7 +1342,7 @@ fn mha_sm100_dispatch[
     # implying we don't have enough to make them persistent.
     # This also requires some tricky control flow handling to support,
     # which we haven't added yet.
-    __comptime_assert new_config.algorithm == FlashAttentionAlgorithm(3)
+    comptime assert new_config.algorithm == FlashAttentionAlgorithm(3)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -1959,7 +1959,7 @@ fn _mha_sm100[
 
     """
     comptime kv_type = KVLUTType.dtype
-    __comptime_assert kv_type == config.dtype
+    comptime assert kv_type == config.dtype
     comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
 
     comptime simd_size: Int = simd_width_of[kv_type]()
@@ -1987,9 +1987,9 @@ fn _mha_sm100[
     # mmas are now handled separately from in-register processing
     # in-register processing is divided up by warps, mmas are not
     comptime num_row_fragments = num_softmax_threads // 128
-    __comptime_assert (32 % num_row_fragments) == 0
+    comptime assert (32 % num_row_fragments) == 0
     comptime row_fragment_size = min(32 // num_row_fragments, BM // 4)
-    __comptime_assert num_row_fragments * row_fragment_size <= 32
+    comptime assert num_row_fragments * row_fragment_size <= 32
     comptime WM = row_fragment_size
     # if we have BM = 128, then we have
     # a 16x(BN//8) grid of 8x4<1x2>
@@ -2001,7 +2001,7 @@ fn _mha_sm100[
     # before we had num_m_mmas * MMA_M = BM
     # now, we have num_m_blocks_per_warp * 16*num_softmax_warps == BM
     # num_m_blocks_per_warp is like `num_m_mmas`, but for non-mma consumers.
-    __comptime_assert num_m_blocks_per_warp * 16 == WM
+    comptime assert num_m_blocks_per_warp * 16 == WM
     #
     # The following constraint is effectively equivalent to
     # BM == 128 or BM == 64
@@ -2014,7 +2014,7 @@ fn _mha_sm100[
     # num_softmax_threads*BM // (4 * 32) == BM
     # num_softmax_threads == 128
     # 32*128 // BM == num_softmax_threads
-    __comptime_assert WM * num_softmax_warps == BM
+    comptime assert WM * num_softmax_warps == BM
     # The above should also be true because:
     # num_softmax_warps = BM // (16 * num_m_blocks_per_warp)
     # -> BM // WM = BM // (16 * num_m_blocks_per_warp)
@@ -2035,6 +2035,9 @@ fn _mha_sm100[
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
     # warp_group_tid = tid % 128
     comptime accum_type = get_accum_type[kv_type]()
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
     comptime max_tmem_cols = 512
     comptime num_s = (max_tmem_cols - (MMA_N0 // 2) - MMA_N1) // MMA_N0
     comptime UMMA0Type = SM100TensorAccumulatorSS[
@@ -2106,10 +2109,10 @@ fn _mha_sm100[
     comptime o_frag_size = BM * MMA_N1 // (
         num_softmax_threads * num_m_blocks_per_warp
     )
-    __comptime_assert p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)
-    __comptime_assert o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)
+    comptime assert p_frag_size == 2 * (WM // 8) * (MMA_N0 // 8)
+    comptime assert o_frag_size == 2 * (WM // 8) * (MMA_N1 // 8)
     comptime frag_simdwidth = 2
-    __comptime_assert (
+    comptime assert (
         BN * num_k_mmas * BM * MMA_K
         == BK
         * num_n_mmas
@@ -2243,7 +2246,7 @@ fn _mha_sm100[
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
-    __comptime_assert not SchedulerType.may_advance
+    comptime assert not SchedulerType.may_advance
 
     @parameter
     if not decoding:
@@ -2297,7 +2300,7 @@ fn _mha_sm100[
     var kv_tile_start_row: UInt32 = startend[0]
     var end: UInt32 = startend[1]
 
-    __comptime_assert num_s > 0
+    comptime assert num_s > 0
 
     barrier()
     # For intra-warp overlap, we initiate ummas as
@@ -2349,7 +2352,7 @@ fn _mha_sm100[
                     return
 
             comptime tmem_cols = num_s * MMA_N0 + (MMA_N0 // 2) + MMA_N1
-            __comptime_assert tmem_cols <= max_tmem_cols
+            comptime assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
             qk_desc = UMMA0Type.mma_descriptors(q_smem, kv_smem)
@@ -2535,7 +2538,7 @@ fn _mha_sm100[
         if num_softmax_threads > 128:
             warp_y = 2 * (warp_y % 4) + (warp_y // 4)
         comptime warp_x: UInt32 = 0
-        __comptime_assert num_softmax_warps == 4 or num_softmax_warps == 8
+        comptime assert num_softmax_warps == 4 or num_softmax_warps == 8
 
         # Mask global memory iterator.
 
@@ -2676,10 +2679,10 @@ fn _mha_sm100[
             output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             # Write to global memory.
-            __comptime_assert (
+            comptime assert (
                 output_type.is_half_float()
             ), "we don't support Float32 output"
-            __comptime_assert size_of[kv_type]() == size_of[output_type]()
+            comptime assert size_of[kv_type]() == size_of[output_type]()
             comptime swizzle = make_swizzle[
                 num_rows = WM // 2, row_size=BN, access_size=8
             ]()
@@ -2823,7 +2826,7 @@ fn _mha_sm100[
 
         rowmax.copy_from(attention_rowmax)
 
-        __comptime_assert p_vec_output_layout.size() > 0, "layout: " + String(
+        comptime assert p_vec_output_layout.size() > 0, "layout: " + String(
             p_vec_output_layout
         )
 
@@ -2956,7 +2959,7 @@ fn _mha_sm100[
         umma_1.wait_for_mma()
 
         output_accumulator.copy_to(output_reg_tile)
-        __comptime_assert type_of(output_reg_tile).layout[1].size() > 1, (
+        comptime assert type_of(output_reg_tile).layout[1].size() > 1, (
             "output_reg_tile.layout = "
             + String(type_of(output_reg_tile).layout)
             + "\n"

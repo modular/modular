@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -78,5 +78,5 @@ struct ReadCounter:
     fn execute[
         stride: Int
     ](output: OutputTensor[dtype = DType.int32, rank=1], c: Counter[stride]):
-        output[0] = c.a
-        output[1] = c.b
+        output[0] = Int32(c.a)
+        output[1] = Int32(c.b)

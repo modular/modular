@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -135,10 +135,10 @@ fn test_argsort[
 
 def main():
     fn linear_filler(i: Int, n: Int) -> Float32:
-        return i
+        return Float32(i)
 
     fn reverse_filler(i: Int, n: Int) -> Float32:
-        return n - i
+        return Float32(n - i)
 
     test_argsort[ascending=True, filler=linear_filler]()
     test_argsort[ascending=True, filler=reverse_filler]()

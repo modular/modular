@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -71,7 +71,7 @@ struct ManagedLayoutTensor[
     ) raises:
         self.ctx = DeviceContext(api="cpu")
 
-        __comptime_assert runtime_layout.linear_idx_type == Self.index_type, (
+        comptime assert runtime_layout.linear_idx_type == Self.index_type, (
             "Mismatch of index type for RuntimeLayout: "
             + String(runtime_layout.linear_idx_type)
             + " and LayoutTensor: "
@@ -106,7 +106,7 @@ struct ManagedLayoutTensor[
         runtime_layout: RuntimeLayout[Self.layout, ...],
         ctx: DeviceContext,
     ) raises:
-        __comptime_assert (
+        comptime assert (
             runtime_layout.element_type == Self.element_type
         ), String(
             "Mismatch of element type for RuntimeLayout:",
@@ -117,7 +117,7 @@ struct ManagedLayoutTensor[
             sep=" ",
         )
 
-        __comptime_assert runtime_layout.linear_idx_type == Self.index_type, (
+        comptime assert runtime_layout.linear_idx_type == Self.index_type, (
             "Mismatch of index type for RuntimeLayout: "
             + String(runtime_layout.linear_idx_type)
             + " and LayoutTensor: "
@@ -195,7 +195,7 @@ fn load_to_simd(
     tensor: LayoutTensor,
     out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
 ):
-    __comptime_assert (
+    comptime assert (
         tensor.layout.all_dims_known()
     ), "load_to_simd is supported only for tensors with known layout"
     comptime size = type_of(res).size
@@ -206,10 +206,10 @@ fn load_to_simd(
 
 @always_inline
 fn _get_bounds(tensor: LayoutTensor) -> Int:
-    __comptime_assert (
+    comptime assert (
         tensor.element_layout.all_dims_known()
     ), "Element layout must be known for _get_bounds"
-    __comptime_assert (
+    comptime assert (
         tensor.element_layout.size() == 1
     ), "Element layout must be a scalar"
 
@@ -247,9 +247,7 @@ fn make_amd_buffer_resource(
 
 @always_inline
 fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
-    __comptime_assert (
-        layout.all_dims_known()
-    ), "Layout must be known for idx2crd"
+    comptime assert layout.all_dims_known(), "Layout must be known for idx2crd"
     var res = IndexList[layout.rank()]()
 
     @parameter
@@ -263,7 +261,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 @always_inline
 fn hash(tensor: LayoutTensor) -> Int:
     # Calculate hash of the content of the layout tensor, it can be useful for debugging
-    __comptime_assert (
+    comptime assert (
         size_of[tensor.dtype]() == 2
     ), "Only support 2 byte types for hash"
     var hash_value: Int = 0

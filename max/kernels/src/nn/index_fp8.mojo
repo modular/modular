@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -285,7 +285,6 @@ fn fp8_index[
     k_layout: Layout,
     ks_layout: Layout,
     //,
-    batch_size: Int,
     num_heads: Int,
     depth: Int,
 ](
@@ -310,6 +309,7 @@ fn fp8_index[
     cache_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
+    batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,
@@ -510,7 +510,6 @@ fn fp8_index_naive[
     k_layout: Layout,
     ks_layout: Layout,
     //,
-    batch_size: Int,
     num_heads: Int,
     depth: Int,
 ](
@@ -535,6 +534,7 @@ fn fp8_index_naive[
     cache_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
+    batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
     ctx: DeviceContext,

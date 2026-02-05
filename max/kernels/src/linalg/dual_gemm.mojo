@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,6 @@ from sys import align_of, is_defined, simd_width_of
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -131,7 +130,7 @@ fn multistage_dual_mma[
     *,
     num_b_rows: Optional[Int] = None,
 ):
-    __comptime_assert (
+    comptime assert (
         b0_iter_arg.address_space == b1_iter_arg.address_space
     ), "b0 and b1 should have the same address space"
     comptime simd_size = simd_width_of[a_type]()
@@ -263,10 +262,10 @@ fn multistage_dual_mma[
     comptime num_k_mma_iters: UInt = num_k_mmas // k_group_size
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // (2 * MMA_N)
-    __comptime_assert (
+    comptime assert (
         num_k_mmas % UInt(2 * Int(k_group_size)) == 0
     ), "num_k_mmas must be an integer multiple of 2*k_group_size"
-    __comptime_assert num_n_mmas % 2 == 0
+    comptime assert num_n_mmas % 2 == 0
 
     comptime frag_size = get_fragment_size[mma_shape]()
     comptime a_frag_size = frag_size[0]
@@ -497,7 +496,7 @@ fn multistage_dual_gemm_kernel[
     b1: LayoutTensor[b_type, b_layout, MutAnyOrigin],
 ):
     # Hold on adding fp16 because it could have different precisions than bf16.
-    __comptime_assert (
+    comptime assert (
         a_type in (DType.float32, DType.bfloat16, DType.float16)
         and a_type == b_type
     ), "Pipeline gemm only supports tf32, BF16 mma, or fp16"
@@ -798,7 +797,9 @@ fn multistage_dual_gemm_kernel[
 
 fn swilu[
     dtype: DType, width: Int
-](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+    dtype, width
+] where dtype.is_floating_point():
     return (x * y) / (1 + exp(-x))
 
 
@@ -826,7 +827,7 @@ fn multistage_dual_gemm[
     var N = c.dim[1]()
 
     comptime smem_usage = config.shared_mem_usage()
-    __comptime_assert (
+    comptime assert (
         smem_usage <= ctx.default_device_info.shared_memory_per_multiprocessor
     ), String(
         "using ",
@@ -962,9 +963,7 @@ fn dual_gemm[
     *,
     transpose_b: Bool,
     binary_lambda_fn: binary_fn_type = swilu,
-    config: OptionalReg[
-        MatmulConfig[a_type, b_type, c_type, transpose_b]
-    ] = None,
+    config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
@@ -997,10 +996,10 @@ fn dual_gemm[
     )
     comptime max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
-    __comptime_assert matmul_supported_format, String(
+    comptime assert matmul_supported_format, String(
         "unsupported dual_gemm dtypes", a_type, b_type, c_type
     )
-    __comptime_assert multistage_gemm_supported_shape, String(
+    comptime assert multistage_gemm_supported_shape, String(
         "unsupported dual_gemm shapes", a_shape, b_shape, c_shape
     )
     if multi_gemm_cond:
@@ -1423,7 +1422,7 @@ fn swishGLU[
     and writing to the destination once.
     """
 
-    __comptime_assert is_gpu[target](), "only valid on GPUs"
+    comptime assert is_gpu[target](), "only valid on GPUs"
 
     @always_inline
     @parameter

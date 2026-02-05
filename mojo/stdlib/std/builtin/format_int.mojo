@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -236,15 +236,15 @@ fn _write_int[
     The maximum supported radix is 36 unless a custom `digit_chars` mapping is
     provided.
     """
-    __comptime_assert dtype.is_integral(), "Expected integral"
-    __comptime_assert (
+    comptime assert dtype.is_integral(), "Expected integral"
+    comptime assert (
         radix >= 2
     ), "Unable to format integer to string with radix < 2"
-    __comptime_assert radix <= digit_chars.byte_length(), (
+    comptime assert radix <= digit_chars.byte_length(), (
         "Unable to format integer to string when provided radix is larger than"
         " length of available digit value characters"
     )
-    __comptime_assert digit_chars.byte_length() >= 2, (
+    comptime assert digit_chars.byte_length() >= 2, (
         "Unable to format integer to string when provided digit_chars mapping"
         " len is not >= 2"
     )

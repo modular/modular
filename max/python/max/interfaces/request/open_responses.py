@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -1047,8 +1047,8 @@ class CreateResponseBody(BaseModel):
         description=(
             "Provider-specific options for MAX platform and modalities. "
             "Structure: 'max' for universal MAX options (target_endpoint, etc.), "
-            "and modality-specific fields like 'pixel' for vision pipelines. "
-            "Example: {'max': {'target_endpoint': 'instance-123'}, 'pixel': {...}}"
+            "and modality-specific fields like 'image' for image generation or 'video' for video generation. "
+            "Example: {'max': {'target_endpoint': 'instance-123'}, 'image': {'width': 1024, 'height': 768}}"
         ),
     )
 

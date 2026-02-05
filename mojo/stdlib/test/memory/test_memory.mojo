@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -88,7 +88,7 @@ def test_memcpy_dtype():
     var a = alloc[Int32](4)
     var b = alloc[Int32](4)
     for i in range(4):
-        a[i] = i
+        a[i] = Int32(i)
         b[i] = -1
 
     assert_equal(b[0], -1)
@@ -132,7 +132,7 @@ def test_memcmp_non_multiple_of_int32():
     var triple1 = SixByteStruct(0, 0, 0)
     var triple2 = SixByteStruct(0, 0, 1)
 
-    __comptime_assert size_of[SixByteStruct]() == 6
+    comptime assert size_of[SixByteStruct]() == 6
 
     var ptr1 = UnsafePointer(to=triple1)
     var ptr2 = UnsafePointer(to=triple2)
@@ -205,13 +205,13 @@ def _test_memcmp_extensive[
     var dptr2 = alloc[Scalar[dtype]](count)
 
     for i in range(count):
-        ptr1[i] = i
-        dptr1[i] = i
+        ptr1[i] = Scalar[dtype](i)
+        dptr1[i] = Scalar[dtype](i)
 
         @parameter
         if extermes == "":
-            ptr2[i] = i + 1
-            dptr2[i] = i + 1
+            ptr2[i] = Scalar[dtype](i + 1)
+            dptr2[i] = Scalar[dtype](i + 1)
         elif extermes == "nan":
             ptr2[i] = nan[dtype]()
             dptr2[i] = nan[dtype]()
@@ -778,7 +778,7 @@ def test_dtypepointer_scatter():
 def test_indexing():
     var ptr = alloc[Float32](4)
     for i in range(4):
-        ptr[i] = i
+        ptr[i] = Float32(i)
 
     assert_equal(ptr[Int(2)], 2)
     assert_equal(ptr[1], 1)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -241,6 +241,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
+    device_graph_capture: bool = Field(
+        default=False,
+        description="Enable device graph capture/replay for graph execution.",
+    )
+
     force: bool = Field(
         default=False,
         description=(
@@ -415,7 +420,7 @@ class PipelineConfig(ConfigFileModel):
             if filtered_kwargs:
                 self.speculative = SpeculativeConfig(**filtered_kwargs)
                 assert self.draft_model is not None
-                # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
+                # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
                 if self.speculative.is_eagle():
                     if self.draft_model.huggingface_config is None:
                         raise ValueError(
@@ -436,7 +441,7 @@ class PipelineConfig(ConfigFileModel):
                     ]
                     if hf_arch == "LlamaForCausalLM":
                         self.draft_model.huggingface_config.architectures[0] = (
-                            "EagleLlamaForCausalLM"
+                            "LlamaForCausalLMEagle"
                         )
 
     def _process_remaining_config_classes(
@@ -512,12 +517,12 @@ class PipelineConfig(ConfigFileModel):
 
                 kv_cache_kwargs["device_memory_utilization"] = main_model_util
 
-            model_config.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+            model_config.create_kv_cache_config(**kv_cache_kwargs)
             setattr(self, config_name, model_config)
 
             if self.draft_model:
                 kv_cache_kwargs["device_memory_utilization"] = draft_model_util
-                self.draft_model.kv_cache = KVCacheConfig(**kv_cache_kwargs)
+                self.draft_model.create_kv_cache_config(**kv_cache_kwargs)
 
         elif config_name == "sampling":
             if hasattr(self, "model") and self.model:
@@ -837,10 +842,6 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Prefix caching is not supported with the Overlap scheduler."
                 )
-            if self.enable_chunked_prefill:
-                raise ValueError(
-                    "Chunked prefill is not supported with the Overlap scheduler."
-                )
             if self.sampling.enable_structured_output:
                 raise ValueError(
                     "Structured outputs are not supported with the Overlap scheduler."
@@ -1022,6 +1023,10 @@ class PipelineConfig(ConfigFileModel):
             default_encoding=arch.default_encoding
         )
 
+        # The quantization encoding has been resolved at this point.
+        # This means that a KV cache dtype can be determined, assuming an override wasn't provided.
+        model_config.set_default_cache_dtype_if_needed()
+
         model_config.validate_and_resolve_rope_type(
             arch_rope_type=arch.rope_type
         )
@@ -1053,15 +1058,27 @@ class PipelineConfig(ConfigFileModel):
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        arch_config = arch.config.initialize(self)
+
         MemoryEstimator.estimate_memory_footprint(
             self,
-            arch.pipeline_model,
             model_config,
+            arch_config,
             devices,
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
         )
 
         if clamped_max_seq_len := MemoryEstimator.max_supported_sequence_length(
-            arch.pipeline_model, self, model_config, devices
+            arch.pipeline_model.estimate_weights_size(self),
+            arch.pipeline_model.estimate_activation_memory(
+                self, model_config.huggingface_config
+            ),
+            model_config,
+            devices,
+            arch_config,
         ):
             if self.max_length is None:
                 self.max_length = clamped_max_seq_len
@@ -1310,6 +1327,7 @@ class PipelineConfig(ConfigFileModel):
         logger.info(f"    max_batch_size     : {self.max_batch_size}")
         logger.info(f"    max_seq_len        : {self.max_length}")
         logger.info(f"    cache_memory       : {memory_str}")
+        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
         logger.info("")
 
 

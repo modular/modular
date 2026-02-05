@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,13 +28,12 @@ from builtin.format_int import _write_int
 from builtin.simd import _simd_construction_checks
 from builtin.variadics import Variadic
 from compile import get_type_name
-from format._utils import FormatStruct, Named
+from format._utils import FormatStruct, Named, TypeNames
 from memory import memcpy
 from memory.memory import _free, _malloc
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from os import abort
 from python import PythonObject
-from reflection.type_info import _unqualified_type_name
 
 from builtin.device_passable import DevicePassable
 
@@ -89,7 +88,7 @@ fn alloc[
     """
     comptime size_of_t = size_of[type]()
     comptime type_name = get_type_name[type]()
-    __comptime_assert size_of_t > 0, "size must be greater than zero"
+    comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
         "alloc[",
@@ -362,7 +361,7 @@ struct UnsafePointer[
             must also ensure the pointer's origin and mutability is valid for
             the address, failure to to do may result in undefined behavior.
         """
-        __comptime_assert (
+        comptime assert (
             size_of[type_of(self)]() == size_of[Int]()
         ), "Pointer/Int size mismatch"
         self = UnsafePointer(to=unsafe_from_address).bitcast[type_of(self)]()[]
@@ -934,7 +933,7 @@ struct UnsafePointer[
         """
         FormatStruct(writer, "UnsafePointer").params(
             Named("mut", Self.mut),
-            _unqualified_type_name[Self.type](),
+            TypeNames[Self.type](),
             Named("address_space", Self.address_space),
         ).fields(self)
 

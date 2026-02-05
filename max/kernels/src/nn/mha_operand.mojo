@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -168,7 +168,7 @@ struct KVCacheMHAOperand[
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers."""
         # Forward to the underlying cache's implementation
-        # TODO: remove `__comptime_assert` when the `where` clause is enough
+        # TODO: remove `comptime assert` when the `where` clause is enough
         constrained[
             (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0
         ]()
@@ -352,10 +352,10 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
             DType.uint32, Self.cache_layout, MutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             buffer.rank == 3
         ), "only support rank 3 inputs for ragged inputs."
-        __comptime_assert (
+        comptime assert (
             cache_row_offsets.rank == 1
         ), "only support rank 1 inputs for cache offsets."
         self.buffer = buffer

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -59,7 +59,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = quantization_encoding.dtype
-        cache_dtype = quantization_encoding.cache_dtype
+        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

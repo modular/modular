@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -259,9 +259,9 @@ def gemv_tma[
     var b = from_ndbuffer_row_major(b_device_nd)
     var c = from_ndbuffer_row_major(c_device_nd)
 
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 1
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 1
 
     var tma_desc_a = create_tma_descriptor[dtype, 2](
         a_device,
@@ -420,7 +420,9 @@ def test_gemv_tma[
             run_func(ctx)
         ctx.synchronize()
 
-        var nstime = ctx.execution_time[run_func](num_runs) / num_runs
+        var nstime = Float64(ctx.execution_time[run_func](num_runs)) / Float64(
+            num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         # Round TFLOPS to two decimal places for cleaner output.

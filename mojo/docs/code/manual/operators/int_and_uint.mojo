@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ def main():
     sum_mixed = a_int + Int(i_uint)  # Result is type Int
     print("Mixed sum:", sum_mixed)
 
-    quotient_int = a_int / b_int  # Result is type Float64
+    quotient_int = a_int // b_int
     print("Int quotient:", quotient_int)
-    quotient_uint = i_uint / j_uint  # Result is type Float64
+    quotient_uint = i_uint / j_uint
     print("UInt quotient:", quotient_uint)

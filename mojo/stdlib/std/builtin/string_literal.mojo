@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,7 @@ from collections.string.string_slice import (
     StaticString,
 )
 from os import PathLike
-from sys.ffi import c_char, CStringSlice
+from ffi import c_char, CStringSlice
 
 from python import ConvertibleToPython, PythonObject
 
@@ -508,7 +508,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The number of occurrences of `substr`.
         """
-        return String(self).count(substr)
+        return StringSlice(self).count(substr)
 
     fn lower(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -518,7 +518,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to lowercase.
         """
 
-        return String(self).lower()
+        return StringSlice(self).lower()
 
     fn upper(self) -> String:
         """Returns a copy of the string literal with all cased characters
@@ -528,7 +528,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A new string where cased letters have been converted to uppercase.
         """
 
-        return String(self).upper()
+        return StringSlice(self).upper()
 
     fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal right justified in a string of specified width.
@@ -559,7 +559,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_rjust(width, fillchar)
+        return StringSlice(self).ascii_rjust(width, fillchar)
 
     fn ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal left justified in a string of specified width.
@@ -590,9 +590,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.ascii_ljust(3))         # "hello" (no padding)
         ```
         """
-        return String(self).ascii_ljust(width, fillchar)
+        return StringSlice(self).ascii_ljust(width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string literal center justified in a string of specified width.
 
         Pads the string literal on both sides with the specified fill character so
@@ -622,7 +622,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print(s.center(3))         # "hello" (no padding)
         ```
         """
-        return String(self).center(width, fillchar)
+        return StringSlice(self).ascii_center(width, fillchar)
 
     fn startswith(
         self, prefix: StringSlice, start: Int = 0, end: Int = -1
@@ -664,7 +664,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             True if all characters are digits else False.
         """
-        return String(self).is_ascii_digit()
+        return StringSlice(self).is_ascii_digit()
 
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string literal are
@@ -676,7 +676,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are uppercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).isupper()
+        return StringSlice(self).isupper()
 
     fn islower(self) -> Bool:
         """Returns True if all cased characters in the string literal
@@ -688,7 +688,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             True if all cased characters in the string literal are lowercase
             and there is at least one cased character, False otherwise.
         """
-        return String(self).islower()
+        return StringSlice(self).islower()
 
     fn strip(self) -> StaticString:
         """Return a copy of the string literal with leading and trailing
@@ -787,7 +787,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoints()
 
-    fn format[*Ts: AnyType](self, *args: *Ts) -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -799,8 +799,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         [`format` module](/mojo/std/collections/string/format/).
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Args:
             args: The substitution values.
@@ -817,29 +816,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
-        comptime result = _FormatUtils.compile_entries[*Ts](Self())
-
-        @parameter
-        if result.isa[Error]():
-            __comptime_assert not result.isa[Error](), String(result[Error])
-            return {}
-        else:
-            comptime PackType = type_of(args)
-            comptime AnyTypePack = VariadicPack[
-                elt_is_mutable = PackType.elt_is_mutable,
-                origin = PackType.origin,
-                PackType.is_owned,
-                AnyType,
-                *PackType.element_types,
-            ]
-
-            var buffer = String()
-            _FormatUtils.format_precompiled[*Ts](
-                buffer,
-                result[type_of(result).Ts[0]],
-                rebind[AnyTypePack](args),
-            )
-            return buffer^
+        var buffer = String()
+        _FormatUtils.format_to_comptime[StaticString(Self())](buffer, args)
+        return buffer^
 
     fn join[T: Copyable & Writable, //](self, elems: Span[T, ...]) -> String:
         """Joins string elements using the current string as a delimiter.

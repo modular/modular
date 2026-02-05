@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -139,10 +139,10 @@ fn _block_reduce[
         If broadcast is True, each thread in the block will receive the reduced
         value. Otherwise, only the first thread will have the complete result.
     """
-    __comptime_assert (
+    comptime assert (
         block_size >= WARP_SIZE
     ), "Block size must be a greater than warp size"
-    __comptime_assert (
+    comptime assert (
         block_size % WARP_SIZE == 0
     ), "Block size must be a multiple of warp size"
 
@@ -318,10 +318,10 @@ fn broadcast[
         A SIMD value where all threads contain a copy of the input value from
         the source thread.
     """
-    __comptime_assert (
+    comptime assert (
         block_size >= WARP_SIZE
     ), "Block size must be greater than or equal to warp size"
-    __comptime_assert (
+    comptime assert (
         block_size % WARP_SIZE == 0
     ), "Block size must be a multiple of warp size"
 
@@ -376,7 +376,7 @@ fn prefix_sum[
         A Scalar value containing the result of the scan operation for each
         thread.
     """
-    __comptime_assert (
+    comptime assert (
         block_size % WARP_SIZE == 0
     ), "Block size must be a multiple of warp size"
 

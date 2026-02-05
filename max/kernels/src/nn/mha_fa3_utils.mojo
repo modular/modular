@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -673,7 +673,7 @@ fn q_smem_shape[
     num_qk_stages: Int = 1,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4)
+    comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
     @parameter
@@ -702,7 +702,7 @@ fn q_gmem_shape[
     decoding: Bool,
 ](out res: IndexList[4 if decoding else 3]):
     comptime L = res.size
-    __comptime_assert L in (3, 4)
+    comptime assert L in (3, 4)
 
     @parameter
     if L == 3:  # prefill
@@ -1029,7 +1029,7 @@ fn q_coord[
         head_idx: q_head_idx if prefill, kv_head_idx if decoding.
     """
     comptime rank: Int = res.size
-    __comptime_assert rank in (3, 4)
+    comptime assert rank in (3, 4)
 
     res = {}
 

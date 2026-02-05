@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,9 +35,9 @@ from format._utils import _WriteBufferStack
 from os import PathLike, abort, makedirs, remove
 from os import SEEK_END
 from os.path import dirname
-from sys import external_call, size_of
+from ffi import c_int, c_ssize_t, external_call
+from sys import size_of
 from sys._libc_errno import ErrNo, get_errno
-from sys.ffi import c_int, c_ssize_t
 from sys.info import platform_map
 
 from memory import Span

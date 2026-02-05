@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,7 +55,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -121,7 +121,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
 
         var c_stride = c.dim[1]()
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -91,7 +91,7 @@ from .int_tuple import (
 # ===-----------------------------------------------------------------------===#
 
 
-trait LayoutTrait(Copyable):
+trait LayoutTrait(Copyable, ImplicitlyDestructible):
     """Defines the interface for mapping between logical coordinates and memory indices.
 
     The `LayoutTrait` provides a common interface for all layout types, including
@@ -1487,16 +1487,17 @@ fn blocked_product(
 ) -> Layout:
     """Creates a blocked layout by combining two layouts.
 
-    This function creates a hierarchical blocked layout by combining a base layout
-    with a block layout. The result is a layout where each element of the base
-    layout is replaced by a block defined by the second layout.
+    This function creates a hierarchical blocked layout by combining an inner
+    (block) and an outer (base) layout. The result is a layout where each
+    element of the outer layout is replaced by a block defined by the
+    inner layout.
 
     This is particularly useful for creating tiled layouts for efficient
     cache utilization in tensor operations like matrix multiplication.
 
     Args:
-        layout_a: The base layout to be blocked.
-        layout_b: The block layout defining the structure within each block.
+        layout_a: Inner layout. The layout for an individual block, or tile.
+        layout_b: Outer layout. The layout of the tiles in the output layout.
         coalesce_output: Whether to coalesce the output layout. Default is False.
 
     Returns:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -358,7 +358,7 @@ fn store_C[
     comptime remainder_elements = elements_per_row - main_load_elements
 
     # if i do have non-power of 2, then remainder_elements must be divisible by 32 (can extend to support more values later)
-    __comptime_assert (
+    comptime assert (
         remainder_elements % 32 == 0
     ), "remainder_elements must be divisible by 32"
 
@@ -879,7 +879,7 @@ fn blackwell_kernel_6[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1094,7 +1094,9 @@ def test_blackwell_kernel_6[
         ctx.synchronize()
         # print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         # Round TFLOPS to two decimal places for cleaner output

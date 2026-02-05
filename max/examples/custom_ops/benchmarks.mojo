@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -93,7 +93,7 @@ struct Tensor[
             var ptr = host_buffer.unsafe_ptr()
             for i in range(M):
                 for j in range(K):
-                    ptr[i * K + j] = i
+                    ptr[i * K + j] = Scalar[Self.dtype](i)
             return self
 
     fn custom_fill_b(self, K: Int, N: Int) raises -> Self:
@@ -101,7 +101,7 @@ struct Tensor[
             var ptr = host_buffer.unsafe_ptr()
             for i in range(K):
                 for j in range(N):
-                    ptr[i * N + j] = j
+                    ptr[i * N + j] = Scalar[Self.dtype](j)
             return self
 
 

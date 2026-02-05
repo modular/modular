@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,6 +21,8 @@ from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.compute.arch.tcgen05 import *
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor
+from layout._coord import coord_to_int_tuple
+from layout._tile_tensor import TileTensor
 from layout.layout import coalesce
 from layout.tensor_core_async import (
     tile_to_descriptor,
@@ -37,7 +39,7 @@ from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 # TODO: Add methods to conveniently extract specific modes from a layout.
 fn extract_first_2_modes[l: Layout]() -> Layout:
-    __comptime_assert l.rank() >= 2
+    comptime assert l.rank() >= 2
 
     return Layout(
         IntTuple(l.shape[0].value(), l.shape[1].value()),
@@ -69,7 +71,7 @@ fn max_contiguous_tile_shape[
     """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
     """
 
-    __comptime_assert rank == 2, "Only 2D tensors are supported!"
+    comptime assert rank == 2, "Only 2D tensors are supported!"
 
     @parameter
     if major == Major.K:
@@ -167,14 +169,14 @@ struct MmaOpSM100_SS[
 
     @always_inline
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
-        __comptime_assert Self.cta_group in (
+        comptime assert Self.cta_group in (
             1,
             2,
         ), "MmaOpSM100 only supports cta_group 1 or 2"
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
 
@@ -273,6 +275,112 @@ struct MmaOpSM100_SS[
             )
 
     @always_inline
+    fn mma(
+        self,
+        a: TileTensor[address_space = AddressSpace.SHARED, ...],
+        b: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_tmem: UInt32,
+        init_c: Bool,
+    ):
+        """TileTensor overload for MMA input tiles.
+
+        This overload accepts TileTensor directly. The layout is extracted from
+        TileTensor's compile-time type parameters (shape_types, stride_types).
+        """
+
+        # Extract Layout from TileTensor's compile-time type parameters
+        # comptime a_layout = Layout(
+        #     coord_to_int_tuple[*a.shape_types](),
+        #     coord_to_int_tuple[*a.stride_types](),
+        # )
+        # comptime b_layout = Layout(
+        #     coord_to_int_tuple[*b.shape_types](),
+        #     coord_to_int_tuple[*b.stride_types](),
+        # )
+
+        comptime a_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
+                ),
+            ),
+        )
+
+        comptime b_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
+                ),
+            ),
+        )
+
+        # Coalesce using the extracted layouts
+        comptime a_coalesced_layout = coalesce(a_layout)
+        comptime b_coalesced_layout = coalesce(b_layout)
+
+        # Canonical layouts are tiled by core matrices.
+        comptime a_canonical_layout = tile_to_descriptor[
+            a.dtype, extract_first_2_modes[a_coalesced_layout]()
+        ]()
+        comptime b_canonical_layout = tile_to_descriptor[
+            b.dtype, extract_first_2_modes[b_coalesced_layout]()
+        ]()
+
+        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
+
+        @parameter
+        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+            comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
+                Self.a_type
+            ]()
+            comptime b_offset = b_layout(IntTuple(0, k)) * size_of[
+                Self.b_type
+            ]()
+
+            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
+                1
+            )
+
+            mma[Self.cta_group](
+                a_desc + a_offset,
+                b_desc + b_offset,
+                c_tmem,
+                self.idesc,
+                c_scale=c_scale,
+            )
+
+    @always_inline
     fn commit(
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
@@ -329,31 +437,31 @@ struct MmaOpSM100_BlockScaled_SS[
 
     @always_inline
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             Self.scaling_kind == UMMAKind.KIND_MXF8F6F4
             or Self.scaling_kind == UMMAKind.KIND_MXF4NVF4
         ), (
             "Only support MXF8F6F4 or MXF4NVF4 scaling kind for block scaled"
             " matmul!"
         )
-        __comptime_assert (
+        comptime assert (
             Self.transpose_b
         ), "MmaOpSM100 only supports transposed B"
-        __comptime_assert Self.cta_group in (
+        comptime assert Self.cta_group in (
             1,
             2,
         ), "MmaOpSM100 only supports cta_group 1 or 2"
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "a_type and b_type must be the same"
-        __comptime_assert Self.a_type in (
+        comptime assert Self.a_type in (
             DType.float8_e4m3fn,
             DType.uint8,  # TODO: (KERN-2238) replace with FP4-E2M1
         ), "Only support float8_e4m3fn or uint8 (F4-E2M1) for input operands"
-        __comptime_assert (
+        comptime assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "sfa_dtype and sfb_dtype must be the same"
-        __comptime_assert Self.sfa_dtype in (
+        comptime assert Self.sfa_dtype in (
             DType.float8_e4m3fn,
             DType.float8_e8m0fnu,
         ), "Only support float8_e4m3fn or float8_e8m0fnu for scales"
@@ -434,7 +542,7 @@ struct MmaOpSM100_BlockScaled_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        __comptime_assert (
+        comptime assert (
             Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
@@ -502,6 +610,263 @@ struct MmaOpSM100_BlockScaled_SS[
                 )
 
     @always_inline
+    fn mma(
+        self,
+        a: TileTensor[address_space = AddressSpace.SHARED, ...],
+        b: TileTensor[address_space = AddressSpace.SHARED, ...],
+        sfa_smem: TileTensor[address_space = AddressSpace.SHARED, ...],
+        sfb_smem: TileTensor[address_space = AddressSpace.SHARED, ...],
+        c_tmem: UInt32,
+        sfa_tmem: UInt32,
+        sfb_tmem: UInt32,
+        init_c: Bool,
+    ):
+        """TileTensor overload for block-scaled MMA input tiles.
+
+        This overload accepts TileTensor directly for A, B, and scale factor
+        tiles. The layout is extracted from TileTensor's compile-time type
+        parameters (shape_types, stride_types) using direct VariadicType
+        extraction for fast compile times.
+        """
+
+        # Extract Layout from TileTensor's compile-time type parameters
+        # Use direct VariadicType extraction (fast) instead of coord_to_int_tuple (slow)
+        # A and B tiles have nested Coord structure (swizzled internal_k_major layout)
+        comptime a_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    a.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    a.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    a.LayoutType._shape_types[1].VariadicType[1].static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    a.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    a.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    a.LayoutType._stride_types[1].VariadicType[1].static_value,
+                ),
+            ),
+        )
+        comptime b_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    b.LayoutType._shape_types[0].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    b.LayoutType._shape_types[1].VariadicType[0].static_value,
+                    b.LayoutType._shape_types[1].VariadicType[1].static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    b.LayoutType._stride_types[0].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[0].VariadicType[1].static_value,
+                ),
+                IntTuple(
+                    b.LayoutType._stride_types[1].VariadicType[0].static_value,
+                    b.LayoutType._stride_types[1].VariadicType[1].static_value,
+                ),
+            ),
+        )
+
+        # Scale factor tiles: extract layout from TileTensor type parameters
+        # SF layout has 3-level nesting: ((32, tiles_m), ((4, 4), tiles_k))
+        comptime sfa_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+                IntTuple(
+                    IntTuple(
+                        sfa_smem.LayoutType._shape_types[1]
+                        .VariadicType[0]
+                        .VariadicType[0]
+                        .static_value,
+                        sfa_smem.LayoutType._shape_types[1]
+                        .VariadicType[0]
+                        .VariadicType[1]
+                        .static_value,
+                    ),
+                    sfa_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfa_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+                IntTuple(
+                    IntTuple(
+                        sfa_smem.LayoutType._stride_types[1]
+                        .VariadicType[0]
+                        .VariadicType[0]
+                        .static_value,
+                        sfa_smem.LayoutType._stride_types[1]
+                        .VariadicType[0]
+                        .VariadicType[1]
+                        .static_value,
+                    ),
+                    sfa_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+            ),
+        )
+        comptime sfb_layout = Layout(
+            IntTuple(
+                IntTuple(
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._shape_types[0]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+                IntTuple(
+                    IntTuple(
+                        sfb_smem.LayoutType._shape_types[1]
+                        .VariadicType[0]
+                        .VariadicType[0]
+                        .static_value,
+                        sfb_smem.LayoutType._shape_types[1]
+                        .VariadicType[0]
+                        .VariadicType[1]
+                        .static_value,
+                    ),
+                    sfb_smem.LayoutType._shape_types[1]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+            ),
+            IntTuple(
+                IntTuple(
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[0]
+                    .static_value,
+                    sfb_smem.LayoutType._stride_types[0]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+                IntTuple(
+                    IntTuple(
+                        sfb_smem.LayoutType._stride_types[1]
+                        .VariadicType[0]
+                        .VariadicType[0]
+                        .static_value,
+                        sfb_smem.LayoutType._stride_types[1]
+                        .VariadicType[0]
+                        .VariadicType[1]
+                        .static_value,
+                    ),
+                    sfb_smem.LayoutType._stride_types[1]
+                    .VariadicType[1]
+                    .static_value,
+                ),
+            ),
+        )
+
+        # Coalesce using the extracted layouts
+        comptime a_coalesced_layout = coalesce(a_layout)
+        comptime b_coalesced_layout = coalesce(b_layout)
+
+        # Canonical layouts are tiled by core matrices.
+        comptime a_canonical_layout = tile_to_descriptor[
+            a.dtype, extract_first_2_modes[a_coalesced_layout]()
+        ]()
+        comptime b_canonical_layout = tile_to_descriptor[
+            b.dtype, extract_first_2_modes[b_coalesced_layout]()
+        ]()
+
+        var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
+        var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
+
+        comptime assert (
+            Self.block_tile_shape[2] == 128 and Self.mma_shape[2] == 32
+        ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
+
+        # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
+        @parameter
+        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            self._copy_sf_to_tmem_tt[
+                Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
+            ](sfa_smem, sfa_tmem)
+            self._copy_sf_to_tmem_tt[
+                Self.sfb_dtype, sfb_layout, Self.mma_shape[1], 0
+            ](sfb_smem, sfb_tmem)
+
+        @parameter
+        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+            comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
+                Self.a_type
+            ]()
+            comptime b_offset = b_layout(IntTuple(0, k)) * size_of[
+                Self.b_type
+            ]()
+
+            var c_scale: UInt32 = UInt32(0) if (init_c and k == 0) else UInt32(
+                1
+            )
+
+            @parameter
+            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+                comptime sf_idx = k // Self.mma_shape[2]
+                var runtime_desc = UMMAInsDescriptor[
+                    Self.scaling_kind
+                ].update_desc_with_sf_id[UInt32(sf_idx)](
+                    self.idesc,
+                )
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    runtime_desc,
+                    sfa_tmem,
+                    sfb_tmem,
+                    c_scale=c_scale,
+                )
+            else:
+                comptime sf_idx = k // Self.mma_shape[2]
+                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
+                self._copy_sf_to_tmem_tt[
+                    Self.sfa_dtype,
+                    sfa_layout,
+                    Self.block_tile_shape[0],
+                    sf_idx,
+                ](sfa_smem, sfa_tmem)
+                self._copy_sf_to_tmem_tt[
+                    Self.sfb_dtype, sfb_layout, Self.mma_shape[1], sf_idx
+                ](sfb_smem, sfb_tmem)
+
+                mma[Self.cta_group](
+                    a_desc + a_offset,
+                    b_desc + b_offset,
+                    c_tmem,
+                    self.idesc,
+                    sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    sfb_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    c_scale=c_scale,
+                )
+
+    @always_inline
     fn commit(
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
@@ -527,6 +892,41 @@ struct MmaOpSM100_BlockScaled_SS[
         sf_smem: LayoutTensor[address_space = AddressSpace.SHARED, ...],
         sf_tmem: UInt32,
     ):
+        comptime sf_smem_size = sf_smem_layout.size()
+
+        @parameter
+        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+            comptime idx = IntTuple(
+                i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
+            )
+            comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
+            var sf_tmem_addr = (
+                sf_tmem
+                + UInt32(i * (SF_MN_GROUP_SIZE // 32))
+                + UInt32(tile_k_idx * (SF_MN_GROUP_SIZE // 32))
+            )
+            var sf_desc = MMASmemDescriptor.create[
+                8 * 16, 0, TensorMapSwizzle.SWIZZLE_NONE
+            ](sf_smem.ptr + sf_offset)
+            tcgen05_cp[
+                cta_group = Int32(Self.cta_group),
+                datapaths=32,
+                bits=128,
+                multicast="warpx4",
+            ](sf_tmem_addr, sf_desc)
+
+    @always_inline
+    fn _copy_sf_to_tmem_tt[
+        sf_dtype: DType,
+        sf_smem_layout: Layout,
+        TILE_MN: Int,
+        tile_k_idx: Int,
+    ](
+        self,
+        sf_smem: TileTensor[address_space = AddressSpace.SHARED, ...],
+        sf_tmem: UInt32,
+    ):
+        """TileTensor overload for copying scale factors to TMEM."""
         comptime sf_smem_size = sf_smem_layout.size()
 
         @parameter

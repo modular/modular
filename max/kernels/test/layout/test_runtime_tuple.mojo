@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -97,7 +97,7 @@ def test_crd2idx():
             )
             # Compute expected result: i * stride[0] + j * stride[1] = i * 4 + j * 1
             var expected = i * 4 + j
-            assert_equal(rt_result, expected)
+            assert_equal(rt_result, UInt64(expected))
 
 
 def test_shape_div():

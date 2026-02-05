@@ -7,7 +7,7 @@ dependencies = [
   "absl-py",
   "aiofiles",
   "aiohttp",
-  "anyio",
+  "anyio>=4.12.1",
   "asgiref",
   "async-asgi-testclient",
   "boto3",
@@ -173,11 +173,11 @@ amd = [
 ]
 
 cpu = [
-  "torch==2.9.0",
+  "torch==2.9.1",
   "torchaudio",
-  "torchvision==0.24.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "torchvision==0.24.0; platform_machine != 'x86_64'",
-  "triton==3.5.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1; platform_machine != 'x86_64'",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "accelerate",
   "lm-eval[api,ifeval,math]>=0.4.9.1",
@@ -191,14 +191,14 @@ cpu = [
 ]
 
 nvidia = [
-  "torch==2.9.0",
+  "torch==2.9.1",
   "torchaudio",
-  "torchvision==0.24.0",
-  "triton==3.5.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.24.1",
+  "triton==3.5.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "compressed-tensors; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "vllm==0.12.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "vllm==0.14.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
   "accelerate",
   "flashinfer-cubin",

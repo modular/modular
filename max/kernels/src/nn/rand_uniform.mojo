@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -64,7 +64,7 @@ fn random_uniform[
     fn generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        __comptime_assert width <= 4
+        comptime assert width <= 4
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

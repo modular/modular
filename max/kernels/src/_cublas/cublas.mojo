@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,9 +25,9 @@
 
 from os import abort
 from pathlib import Path
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import _Global, OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
 
@@ -123,7 +123,7 @@ fn _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
     elif mojo_type == DType.uint8:
         return DataType.R_4F_E2M1
     else:
-        __comptime_assert mojo_type == DType.bfloat16, (
+        comptime assert mojo_type == DType.bfloat16, (
             "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
             " Please extend it if more types are needed."
         )

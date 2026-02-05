@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,7 +25,7 @@ from sys import (
     is_nvidia_gpu,
     size_of,
 )
-from sys.ffi import c_int, c_size_t, external_call
+from ffi import c_int, c_size_t, external_call
 
 from gpu.host import (
     ConstantMemoryMapping,
@@ -173,7 +173,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        __comptime_assert (
+        comptime assert (
             has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
         ), "SHMEMContext is currently only available on NVIDIA and AMD GPUs"
         shmem_init()
@@ -231,7 +231,7 @@ struct SHMEMContext(ImplicitlyCopyable):
         Raises:
             If initialization fails.
         """
-        __comptime_assert has_nvidia_gpu_accelerator(), (
+        comptime assert has_nvidia_gpu_accelerator(), (
             "SHMEMContext in gpu-per-thread mode is currently only available on"
             " NVIDIA GPUs"
         )

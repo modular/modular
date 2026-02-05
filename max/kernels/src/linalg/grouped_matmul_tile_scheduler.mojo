@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -132,10 +132,10 @@ struct TileScheduler[
             DType.uint32, Self.offsets_layout, MutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        __comptime_assert Self.cta_group == Self.cluster[0], (
+        comptime assert Self.cta_group == Self.cluster[0], (
             "cta_group must be equal to cluster M size. Got cta_group = "
             + String(Self.cta_group)
             + " and cluster M size = "
@@ -143,7 +143,7 @@ struct TileScheduler[
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
-        __comptime_assert (
+        comptime assert (
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -62,6 +62,20 @@ class KVCacheStrategy(str, Enum):
 
 
 @dataclass
+class KVCacheQuantizationConfig:
+    """Configuration for KVCache quantization.
+
+    Currently only FP8 Quantization is supported.
+    """
+
+    scale_dtype: DType = DType.float32
+    """Data type of quantization scales, if quantization is enabled"""
+
+    quantization_granularity: int = 128
+    """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
+
+
+@dataclass
 class KVCacheParams:
     """Configuration parameters for key-value cache management in transformer models.
 
@@ -114,6 +128,9 @@ class KVCacheParams:
 
     n_kv_heads_per_device: int = 0
     """Number of KV heads allocated to each device. Computed automatically in __post_init__."""
+
+    kvcache_quant_config: KVCacheQuantizationConfig | None = None
+    """KVCache quantization config. Currently only FP8 quantization supported."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -184,6 +201,24 @@ class KVCacheParams:
         ):
             raise ValueError("Page size is required for paged cache strategy")
 
+        if self.quantized_kv_cache and self.kvcache_quant_config is not None:
+            # Validate FP8 KVCache quantization granularity.
+            if (
+                self.head_dim
+                % self.kvcache_quant_config.quantization_granularity
+                != 0
+            ):
+                raise ValueError(
+                    "KVCache quantization granularity must evenly divide KV head dimension."
+                )
+            if self.kvcache_quant_config is None:
+                raise ValueError("KVCache quantization config required.")
+
+    @property
+    def quantized_kv_cache(self) -> bool:
+        # Currently only FP8_E4M3 KVCache quantization supported.
+        return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
+
     @property
     def n_devices(self) -> int:
         """Returns the number of devices.
@@ -209,7 +244,12 @@ class KVCacheParams:
         Returns:
             "bf16" for bfloat16 dtype, "f32" otherwise.
         """
-        return "bf16" if self.dtype == DType.bfloat16 else "f32"
+        if self.dtype == DType.bfloat16:
+            return "bf16"
+        elif self.dtype == DType.float8_e4m3fn:
+            return "f8_m4e3fn"
+        else:
+            return "f32"
 
     @property
     def shape_per_block(self) -> list[int]:
@@ -231,20 +271,46 @@ class KVCacheParams:
         ]
 
     @property
+    def shape_per_scale_block(self) -> list[int]:
+        """Returns the shape of each scale block used for KVCache quantization
+
+        Returns:
+            The shape of the KVCache quantization scales block.
+        """
+        assert self.kvcache_quant_config is not None
+        shape_per_block = self.shape_per_block
+        # The final dimension is (head_dim / quantization_granularity).
+        shape_per_block[4] = (
+            shape_per_block[4]
+            // self.kvcache_quant_config.quantization_granularity
+        )
+        return shape_per_block
+
+    @property
     def bytes_per_block(self) -> int:
         """Returns the number of bytes per cache block.
 
         When TP>1, each block is sharded across the devices in the tensor parallel group.
         This method returns the total memory needed to store a block across these devices.
+        Includes memory needed for scales if quantization is enabled.
 
         Returns:
             The number of bytes per cache block.
         """
-        return (
+        base_bytes = (
             reduce(mul, self.shape_per_block, 1)
             * self.dtype.size_in_bytes
             * self.tensor_parallel_degree
         )
+        if self.quantized_kv_cache and self.kvcache_quant_config is not None:
+            # Add bytes needed to store the quantization scales.
+            scale_bytes = (
+                reduce(mul, self.shape_per_scale_block, 1)
+                * self.kvcache_quant_config.scale_dtype.size_in_bytes
+                * self.tensor_parallel_degree
+            )
+            base_bytes += scale_bytes
+        return base_bytes
 
     def compute_num_device_blocks(
         self,
@@ -434,6 +500,7 @@ class KVCacheParams:
             devices=devices_per_replica[0],
             is_mla=self.is_mla,
             data_parallel_degree=1,
+            kvcache_quant_config=self.kvcache_quant_config,
         )
 
     def _get_symbolic_inputs_for_replica(
@@ -446,6 +513,10 @@ class KVCacheParams:
         """
 
         dynamic_dim_prefix = f"replica_{replica_idx}_"
+
+        kv_cache_scale_dtype = DType.float32
+        if self.quantized_kv_cache and self.kvcache_quant_config is not None:
+            kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
         return [
             PagedCacheInputSymbols(
                 kv_blocks=BufferType(
@@ -474,6 +545,13 @@ class KVCacheParams:
                     shape=[dynamic_dim_prefix + "steps_remaining", 2],
                     device=DeviceRef.CPU(),
                 ),
+                kv_scales=BufferType(
+                    kv_cache_scale_dtype,
+                    shape=["total_num_pages", *self.shape_per_scale_block],
+                    device=device,
+                )
+                if self.quantized_kv_cache
+                else None,
             )
             for device in devices
         ]

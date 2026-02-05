@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -105,7 +105,7 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        __comptime_assert (
+        comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[
@@ -190,7 +190,7 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet]:
         Returns:
             The coroutine context.
         """
-        __comptime_assert (
+        comptime assert (
             size_of[_CoroutineContext]() == size_of[ctx_type]()
         ), "context size must be 16 bytes"
         return __mlir_op.`co.get_callback_ptr`[

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,8 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config_enums import SupportedEncoding
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
-from test_common.mocks import mock_pipeline_config_hf_dependencies
 from test_common.pipeline_model_dummy import (
+    DummyLlamaArchConfig,
     DummyLlamaPipelineModel,
 )
 from test_common.registry import prepare_registry
@@ -34,7 +34,6 @@ pytest.mark.skip(
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_registry__retrieve_architecture_with_legacy_module() -> None:
     """Test that retrieve_architecture works with use_legacy_module flag (default=True)."""
     # Register the legacy architecture (with _Legacy suffix)
@@ -47,6 +46,7 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -70,7 +70,6 @@ def test_registry__retrieve_architecture_with_legacy_module() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_registry__retrieve_architecture_without_legacy_module() -> None:
     """Test that retrieve_architecture returns None when new Module arch not registered."""
     # Only register the legacy architecture (with _Legacy suffix)
@@ -83,6 +82,7 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -107,7 +107,6 @@ def test_registry__retrieve_architecture_without_legacy_module() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_registry__retrieve_architecture_new_module() -> None:
     """Test that when use_legacy_module=False, new Module arch is chosen."""
     # Register both architectures
@@ -121,6 +120,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -138,6 +138,7 @@ def test_registry__retrieve_architecture_new_module() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -167,7 +168,6 @@ def test_registry__retrieve_architecture_new_module() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_config__use_legacy_module_default_is_true() -> None:
     """Test that use_legacy_module defaults to True in PipelineConfig for backward compat."""
     # Register legacy arch with _Legacy suffix (matches use_legacy_module=True)
@@ -180,6 +180,7 @@ def test_config__use_legacy_module_default_is_true() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -198,7 +199,6 @@ def test_config__use_legacy_module_default_is_true() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
@@ -214,6 +214,7 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -233,7 +234,6 @@ def test_config__use_legacy_module_can_be_set_to_false() -> None:
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> (
     None
 ):
@@ -248,6 +248,7 @@ def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> 
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,
@@ -267,7 +268,6 @@ def test_config__use_legacy_module_false_fails_gracefully_without_new_arch() -> 
 
 
 @prepare_registry
-@mock_pipeline_config_hf_dependencies
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
@@ -283,6 +283,7 @@ def test_config__use_legacy_module_with_draft_model() -> None:
             SupportedEncoding.float32: [KVCacheStrategy.PAGED],
         },
         pipeline_model=DummyLlamaPipelineModel,
+        config=DummyLlamaArchConfig,
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.gguf,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,16 +29,26 @@ class FlowMatchEulerDiscreteScheduler:
         self,
         num_inference_steps: int | None = None,
         sigmas: npt.NDArray[np.float32] | None = None,
-        device: str | None = None,
         **kwargs,
     ) -> None:
-        """Stub for set_timesteps."""
+        """Set the timesteps and sigmas for the diffusion process.
+
+        Args:
+            num_inference_steps: Number of inference steps. Used to generate
+                timesteps if sigmas is not provided.
+            sigmas: Custom sigma schedule. If provided, timesteps are derived
+                from sigmas.
+            **kwargs: Additional arguments (accepted for compatibility).
+        """
         if sigmas is not None:
-            self.sigmas = sigmas
-            # When sigmas is provided, generate timesteps from sigmas
-            # Sigmas represent noise levels, convert to timesteps
+            # Use provided sigmas and derive timesteps
+            # Append final sigma of 0.0 for the last scheduler step
+            # (scheduler step accesses sigmas[i+1], so we need n+1 elements)
+            self.sigmas = np.append(sigmas, np.float32(0.0))
             self.timesteps = sigmas * 1000.0
         elif num_inference_steps is not None:
+            # Generate default timesteps
             self.timesteps = np.linspace(
                 0, 1000, num_inference_steps, dtype=np.float32
             )
+            self.sigmas = self.timesteps / 1000.0

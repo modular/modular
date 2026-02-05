@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -395,7 +395,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -992,7 +992,7 @@ fn blackwell_kernel_8[
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1265,7 +1265,9 @@ def test_blackwell_kernel_8[
         ctx.synchronize()
         # print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         # Round TFLOPS to two decimal places for cleaner output
@@ -1277,7 +1279,7 @@ def test_blackwell_kernel_8[
             tflops_rounded,
         )
     else:
-        __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )

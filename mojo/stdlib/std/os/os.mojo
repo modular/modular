@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,8 +23,8 @@ from os import listdir
 from collections import InlineArray, List
 from collections.string.string_slice import _unsafe_strlen
 from io import FileDescriptor
-from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char, c_int, get_errno
+from ffi import c_char, c_int, external_call, get_errno
+from sys import CompilationTarget, is_gpu
 
 from .path import isdir, split
 from .pathlike import PathLike

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,7 +20,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from layout._coord import Coord, CoordLike, coord_to_index_list
 from layout._tile_tensor import TileTensor
-from layout._layout import row_major
+from layout._layout import row_major, TensorLayout
 
 from utils import IndexList, StaticTuple
 
@@ -30,8 +30,7 @@ from utils import IndexList, StaticTuple
 
 
 fn split[
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     //,
     dtype: DType,
     num_outputs: Int,
@@ -42,17 +41,12 @@ fn split[
     input: TileTensor[dtype, ...],
     axis: Int,
     outputs: StaticTuple[
-        TileTensor[
-            shape_types=output_shape_types,
-            stride_types=output_stride_types,
-            dtype,
-            output_origin,
-        ],
+        TileTensor[dtype, output_origin, OutputLayoutType],
         num_outputs,
     ],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         input.rank == outputs[0].rank
     ), "Input and outputs must have the same rank."
 
@@ -126,11 +120,11 @@ fn split[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape), ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(input.layout.shape), ctx)
+        ](coord_to_index_list(input.layout.shape_coord()), ctx)

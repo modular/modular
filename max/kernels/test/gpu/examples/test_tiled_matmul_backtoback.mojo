@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -156,11 +156,11 @@ fn b2b_gemm[
     B: LayoutTensor[in_type, b_layout, MutAnyOrigin],
     C: LayoutTensor[in_type, c_layout, MutAnyOrigin],
 ):
-    __comptime_assert (
+    comptime assert (
         A.dtype in (DType.float32, DType.bfloat16)
         and A.dtype == B.dtype == C.dtype
     ), "B2B gemm only supports tf32 or BF16 mma"
-    __comptime_assert (
+    comptime assert (
         Int(a_layout.shape[1]) != UNKNOWN_VALUE
     ), "The number of columns of `A` must be known."
 
@@ -184,7 +184,7 @@ fn b2b_gemm[
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
     comptime num_pipeline_stages = Int(config.num_pipeline_stages)
-    __comptime_assert WN == BN
+    comptime assert WN == BN
     # We have, roughly
     #
     #
@@ -197,11 +197,11 @@ fn b2b_gemm[
     #             D += AB[0:BM,(0:BK)+bk*BK] * C[0:BK,0:BN]
 
     # To avoid recalculating `A*B`:
-    __comptime_assert N == UInt(BN)
+    comptime assert N == UInt(BN)
     # TODO: lift this restriction
-    __comptime_assert K % UInt(BK) == 0, "K must be an integer multiple of BK"
-    __comptime_assert BN % BK == 0, "BN must be an integer multiple of BK"
-    __comptime_assert K == UInt(
+    comptime assert K % UInt(BK) == 0, "K must be an integer multiple of BK"
+    comptime assert BN % BK == 0, "BN must be an integer multiple of BK"
+    comptime assert K == UInt(
         BK
     ), "FIXME: currently, K == BK must be true, but that is a bug."
 
@@ -592,10 +592,10 @@ fn multistage_b2b_gemm[
     ctx: DeviceContext,
 ):
     try:
-        __comptime_assert dst_type == D.dtype
-        __comptime_assert src_type == A.dtype
-        __comptime_assert src_type == B.dtype
-        __comptime_assert src_type == C.dtype
+        comptime assert dst_type == D.dtype
+        comptime assert src_type == A.dtype
+        comptime assert src_type == B.dtype
+        comptime assert src_type == C.dtype
         comptime b2b_fn = b2b_gemm[
             dst_type,
             src_type,
@@ -633,15 +633,15 @@ fn matmul_naive(
     A: LayoutTensor,
     B: LayoutTensor,
 ):
-    __comptime_assert len(C.layout) == 2
-    __comptime_assert len(A.layout) == 2
-    __comptime_assert len(B.layout) == 2
+    comptime assert len(C.layout) == 2
+    comptime assert len(A.layout) == 2
+    comptime assert len(B.layout) == 2
     comptime M: Int = size(Layout(C.layout.shape[0]))
     comptime N: Int = size(Layout(C.layout.shape[1]))
     comptime K: Int = size(Layout(A.layout.shape[1]))
-    __comptime_assert M == size(Layout(A.layout.shape[0]))
-    __comptime_assert N == size(Layout(B.layout.shape[1]))
-    __comptime_assert K == size(Layout(B.layout.shape[0]))
+    comptime assert M == size(Layout(A.layout.shape[0]))
+    comptime assert N == size(Layout(B.layout.shape[1]))
+    comptime assert K == size(Layout(B.layout.shape[0]))
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[C.dtype]()
@@ -697,7 +697,9 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
         for k in range(K):
             # mat_a.tensor[m, k] = ((m + 1) / K).cast[src_type]()
             # mat_a.tensor[m, k] = (1 / K).cast[src_type]()
-            mat_a_tensor[m, k] = ((k + m * K) / (M * K)).cast[src_type]()
+            mat_a_tensor[m, k] = (Float64(k + m * K) / Float64(M * K)).cast[
+                src_type
+            ]()
     for k in range(K):
         for l in range(L):
             # mat_b.tensor[k, l] = 1

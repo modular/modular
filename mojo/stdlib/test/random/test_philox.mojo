@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -160,7 +160,7 @@ def test_philox_uniform_distribution():
         for i in range(4):
             sum += Float64(vals[i])
 
-    var mean = sum / (num_samples * 4)
+    var mean = sum / Float64((num_samples * 4))
 
     # For uniform distribution in [0, 1), mean should be close to 0.5
     # Use a generous tolerance since we're not generating that many samples
@@ -230,8 +230,8 @@ def test_normal_mean_stddev():
             sum_sq += val * val
 
     var total_count = num_samples * 8
-    var observed_mean = sum / total_count
-    var observed_variance = (sum_sq / total_count) - (
+    var observed_mean = sum / Float64(total_count)
+    var observed_variance = (sum_sq / Float64(total_count)) - (
         observed_mean * observed_mean
     )
     var observed_stddev = sqrt(observed_variance)

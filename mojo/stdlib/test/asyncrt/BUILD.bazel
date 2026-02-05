@@ -14,17 +14,23 @@ _CPU_TESTS = [
     "test_memset.mojo",
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+
 _EXTRA_CONSTRAINTS = {
     "test_hip.mojo": ["//:amd_gpu"],
     "test_cuda.mojo": ["//:nvidia_gpu"],
-    "test_copies.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2562
-    "test_smoke.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2554
+    "test_copies.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
+    "test_multi_context.mojo": _APPLE_GPU_INCOMPATIBLE,  # TODO(GEX-3156)
+    "test_smoke.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
+    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+    "test_capture.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_function.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_function_regress.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_multi_stream.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 [

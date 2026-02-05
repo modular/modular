@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -467,7 +467,7 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
     ), "type must be boolean, integral, or floating-point"
 
@@ -557,7 +557,7 @@ fn assert_is_not[
 
 
 fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
-    """Colorizes a string by highlighting characters that differ from another string.
+    """Colorizes a string by highlighting codepoints that differ from another string.
 
     Parameters:
         color: The color to use for highlighting differences.
@@ -570,14 +570,15 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
         A string with differences highlighted in the specified color.
     """
     var result = String()
-    for i in range(len(s)):
-        var char = s[byte=i]
-        if i < len(other) and char == other[byte=i]:
-            # Characters match - no color
-            result += char
+    var other_codepoints = other.codepoints()
+    for s_codepoint in s.codepoints():
+        var other_codepoint = other_codepoints.next()
+        if other_codepoint and s_codepoint == other_codepoint.value():
+            # Codepoints match - no color
+            result.append(s_codepoint)
         else:
-            # Character differs - apply color
-            result += String(Text[color](char))
+            # Codepoint differs or other string is shorter - apply color
+            result += String(Text[color](s_codepoint))
     return result
 
 

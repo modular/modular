@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -168,7 +168,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()

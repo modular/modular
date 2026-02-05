@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -78,15 +78,15 @@ def execute_ragged_flash_attention[
     var max_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets[i] = total_length
-        cache_lengths[i] = cache_lengths_list[i]
-        valid_lengths[i] = valid_lengths_list[i]
+        input_row_offsets[i] = UInt32(total_length)
+        cache_lengths[i] = UInt32(cache_lengths_list[i])
+        valid_lengths[i] = UInt32(valid_lengths_list[i])
         max_context_length = max(
             max_context_length, cache_lengths_list[i] + valid_lengths_list[i]
         )
         max_prompt_length = max(max_prompt_length, valid_lengths_list[i])
         total_length += valid_lengths_list[i]
-    input_row_offsets[batch_size] = total_length
+    input_row_offsets[batch_size] = UInt32(total_length)
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged = LayoutTensor[dtype, layout_3d](
@@ -223,8 +223,8 @@ def execute_ragged_flash_attention[
                 lookup_table.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_context_length),
     )
 
     var k_cache = kv_collection.get_key_cache(layer_idx)

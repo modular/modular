@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,8 +33,9 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
 from layout.int_tuple import IntTuple
+from layout._layout import Layout as InternalLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
-from layout.runtime_tuple import idx2crd
+from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
@@ -42,14 +43,15 @@ from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv
 from utils.static_tuple import StaticTuple
 
+# TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
+from .tile_types import (
+    SMemTile as TileSMemTile,
+    SMemTileStride,
+    SMemTileShape,
+    SMemTileArray2D,
+    SMemTileArrayWithLayout,
+)
 
-# =============================================================================
-# Helper type comptime for runtime layouts with 32-bit indices
-# =============================================================================
-
-comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-    layout, element_type = DType.uint32, linear_idx_type = DType.uint32
-]
 
 # =============================================================================
 # tma_wait_pipelined - Pipelined TMA wait helper
@@ -163,12 +165,15 @@ fn store_fragment_to_smem[
 
     @parameter
     if transpose_c:
-        from layout.int_tuple import IntTuple
+        # Use new Layout directly instead of RuntimeLayout wrapper
+        from layout._layout import Layout as NewLayout
+        from layout._coord import Coord, Idx
 
-        comptime trans_layout = Layout(
-            IntTuple(8, 2, 2), IntTuple(stride0, 8 * stride1, 8 * stride0)
+        comptime trans_layout = NewLayout(
+            Coord(Idx[8](), Idx[2](), Idx[2]()),
+            Coord(Idx[stride0](), Idx[8 * stride1](), Idx[8 * stride0]()),
         )
-        stsm_lane_offset = RLayout32Bits[trans_layout]()(Int(lane))
+        stsm_lane_offset = UInt32(trans_layout(Idx(Int(lane))))
     else:
         stsm_lane_offset = (
             UInt32(lane & 15) * UInt32(stride0) + UInt32(lane >> 4) * 8
@@ -340,7 +345,8 @@ struct TMAStoreCoords[
 
 struct TMAStoreExecutor[
     c_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
+    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -359,11 +365,16 @@ struct TMAStoreExecutor[
     When batched=True, uses 3D coordinates (M, N, Batch) for TMA stores.
     """
 
+    # Create layout from dimensions (eliminates old Layout from interface)
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
     comptime num_c_smem_tiles = 128 // Self.swizzle_width // (
         1 if Self.is_lower_frag_required else 2
     )
-    comptime c_smem_shape0 = Self.c_smem_layout.shape[0].value()
+    comptime c_smem_shape0 = Self.c_smem_dim0  # Now direct access
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
     comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
@@ -723,7 +734,8 @@ struct EpilogueApplier[
 struct TMEMToSMemWriter[
     c_type: DType,
     accum_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
+    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
     BM: Int,
     BN: Int,
     MMA_M: Int,
@@ -736,12 +748,17 @@ struct TMEMToSMemWriter[
 ](TrivialRegisterType):
     """Write TMEM accumulators to SMEM via st.matrix (SM100-specific)."""
 
+    # Create internal layout from dimensions
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
     comptime Config = EpilogueConfig[
         Self.MMA_M, Self.MMA_N, Self.stageN, Self.cta_group, Self.transpose_c
     ]
 
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
-    comptime stage_contiguous_size = Self.c_smem_layout.shape[1].value()
+    comptime stage_contiguous_size = Self.c_smem_dim1  # Now direct access
     comptime data_paths = 16
     comptime swizzle = _make_swizzle[Self.c_type, Self.c_swizzle]()
 
@@ -908,10 +925,11 @@ from layout.layout import coalesce, flatten
 struct SMemEpilogueWriter[
     # Infer-only: deduced from c_tiles argument type
     c_type: DType,
-    c_smem_layout: Layout,
     num_output_stages: Int,
     //,
     # Configuration parameters (must be explicit)
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
     epilogue_dtype: DType,
     BM: Int,
     BN: Int,
@@ -930,9 +948,13 @@ struct SMemEpilogueWriter[
 ](TrivialRegisterType):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
-    comptime N_dim = 0 if Self.transpose_c else 1
-    comptime stageN = Self.c_smem_layout.shape[Self.N_dim].value()
-    comptime stage_contiguous_size = Self.c_smem_layout.shape[1].value()
+    # Create layout from dimensions
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
+    comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
+    comptime stage_contiguous_size = Self.c_smem_dim1
 
     comptime swizzle = _make_swizzle[Self.c_type, Self.c_swizzle]()
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
@@ -1206,22 +1228,16 @@ fn shared_memory_epilogue_transpose[
 
     @parameter
     if warp_dim == 2:
-        comptime layout_3d = Layout.row_major(2, Int(stageN), swizzle_dim)
-        var rt_layout_3d = RLayout32Bits[layout_3d]()
+        # Use new Layout for idx2crd operations
+        comptime layout_3d = row_major[2, Int(stageN), swizzle_dim]()
         constrained[c_smem_layout.rank() == 4, "c_smem_layout must be 4D"]()
         comptime thread_layout = Layout.row_major(1, 8, 1, 4)
         comptime result = zipped_divide(
             upcast(c_smem_layout, simd_size), thread_layout
         )
-        var rt_thread_layout = RLayout32Bits[thread_layout]()
+        comptime thread_layout_new = row_major[1, 8, 1, 4]()
         var lane = lane_id()
-        var crd = idx2crd(
-            RuntimeTuple[IntTuple(UNKNOWN_VALUE), element_type = DType.uint32](
-                Int(lane)
-            ),
-            rt_thread_layout.shape,
-            rt_thread_layout.stride,
-        )
+        var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](Int(lane))
         comptime thread_shape = IntTuple(0, UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
 
         @parameter
@@ -1236,28 +1252,33 @@ fn shared_memory_epilogue_transpose[
                     [thread_shape, rest_shape], element_type = DType.uint32
                 ](
                     Int(0),
-                    Int(crd[1].get_int()),
+                    crd[1].value(),
                     Int(0),
-                    Int(crd[3].get_int()),
+                    crd[3].value(),
                     Int(warp_j),
                     iter_j,
                     Int(warp_i),
                     iter_i,
                 )
-                var offset = UInt32(simd_size) * RLayout32Bits[result]()(coord)
-                var logical_crd = idx2crd(
-                    RuntimeTuple[
-                        IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
-                    ](Int(offset)),
-                    rt_layout_3d.shape,
-                    rt_layout_3d.stride,
+                var offset = UInt32(simd_size) * rt_crd2idx[
+                    [thread_shape, rest_shape],
+                    result.shape,
+                    result.stride,
+                    DType.uint32,
+                ](
+                    coord,
+                    RuntimeTuple[result.shape](),
+                    RuntimeTuple[result.stride](),
+                )
+                var logical_crd = layout_3d.idx2crd[out_dtype = DType.uint32](
+                    Int(offset)
                 )
                 var local_i: UInt32
                 var local_j: UInt32
 
-                var ci = logical_crd[0].get_int()
-                var cj = logical_crd[1].get_int()
-                var ck = logical_crd[2].get_int()
+                var ci = logical_crd[0].value()
+                var cj = logical_crd[1].value()
+                var ck = logical_crd[2].value()
 
                 @parameter
                 if cta_group == 2 and MMA_M == 128:
@@ -1296,17 +1317,13 @@ fn shared_memory_epilogue_transpose[
             comptime result = zipped_divide(
                 upcast(c_smem_layout, simd_size), thread_layout
             )
-            var rt_thread_layout = RLayout32Bits[thread_layout]()
-            var crd = idx2crd(
-                RuntimeTuple[
-                    IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
-                ](Int(lane)),
-                rt_thread_layout.shape,
-                rt_thread_layout.stride,
+            # Use new Layout for idx2crd operations
+            comptime thread_layout_new = row_major[min(16, Int(stageN)), 1, 2]()
+            var crd = thread_layout_new.idx2crd[out_dtype = DType.uint32](
+                Int(lane)
             )
             comptime thread_shape = IntTuple(UNKNOWN_VALUE, 0, UNKNOWN_VALUE)
-            comptime layout_2d = Layout.row_major(Int(stageN), swizzle_dim)
-            var rt_layout_2d = RLayout32Bits[layout_2d]()
+            comptime layout_2d_new = row_major[Int(stageN), swizzle_dim]()
 
             @parameter
             for iter_i in range(result.shape[1][2].value()):
@@ -1321,26 +1338,29 @@ fn shared_memory_epilogue_transpose[
                     var coord = RuntimeTuple[
                         [thread_shape, rest_shape], element_type = DType.uint32
                     ](
-                        Int(crd[0].get_int()),
+                        crd[0].value(),
                         Int(0),
-                        Int(crd[2].get_int()),
+                        crd[2].value(),
                         iter_j,
                         Int(warp_i),
                         iter_i,
                     )
-                    var offset = UInt32(simd_size) * RLayout32Bits[result]()(
-                        coord
+                    var offset = UInt32(simd_size) * rt_crd2idx[
+                        [thread_shape, rest_shape],
+                        result.shape,
+                        result.stride,
+                        DType.uint32,
+                    ](
+                        coord,
+                        RuntimeTuple[result.shape](),
+                        RuntimeTuple[result.stride](),
                     )
-                    var logical_crd = idx2crd(
-                        RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE), element_type = DType.uint32
-                        ](Int(offset)),
-                        rt_layout_2d.shape,
-                        rt_layout_2d.stride,
-                    )
+                    var logical_crd = layout_2d_new.idx2crd[
+                        out_dtype = DType.uint32
+                    ](Int(offset))
 
-                    var local_i = logical_crd[0].get_int()
-                    var local_j = logical_crd[1].get_int()
+                    var local_i = logical_crd[0].value()
+                    var local_j = logical_crd[1].value()
 
                     # Undo swizzle to get logical value
                     var ptr = c_smem.ptr + swizzle(offset)

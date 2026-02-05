@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,7 @@
 
 from builtin.builtin_slice import ContiguousSlice
 from builtin.format_int import _write_int
+from collections._index_normalization import normalize_index
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -27,6 +28,7 @@ from collections.string._utf8 import (
     _utf8_byte_type,
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
+    _is_utf8_start_byte,
 )
 from collections.string.format import _FormatUtils
 from hashlib.hasher import Hasher
@@ -34,7 +36,7 @@ from format._utils import _TotalWritableBytes, _WriteBufferStack
 from math import align_down
 from os import PathLike, abort
 from sys import is_compile_time, simd_width_of
-from sys.ffi import c_char
+from ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_trailing_zeros
@@ -215,7 +217,7 @@ struct CodepointSliceIter[
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
-            var byte_len = Int(_utf8_first_byte_sequence_length(curr_ptr[]))
+            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
             return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
         else:
             return None
@@ -901,6 +903,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new StringSlice containing the bytes in the specified range.
         """
+        var start: Int
+        var end: Int
+
+        start, end = span.indices(len(self._slice))
+        debug_assert[assert_mode="safe"](
+            start == len(self._slice)
+            or _is_utf8_start_byte(self._slice.unsafe_get(start)),
+            "String slice starts on",
+            start,
+            " which is not a codepoint boundary.",
+        )
+        debug_assert[assert_mode="safe"](
+            end == len(self._slice)
+            or _is_utf8_start_byte(self._slice.unsafe_get(end)),
+            "String slice ends on, ",
+            end,
+            " which is not a codepoint boundary.",
+        )
         return Self(unsafe_from_utf8=self._slice[span])
 
     fn to_python_object(var self) raises -> PythonObject:
@@ -1132,7 +1152,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices_reversed()
 
-    fn __getitem__[I: Indexer, //](self, *, byte: I) -> String:
+    fn __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -1149,11 +1169,23 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new String containing a single byte at the specified position.
         """
-        # TODO(#933): implement this for unicode when we support llvm intrinsic
-        # evaluation at compile time
-        var result = String(capacity=1)
-        result._iadd(Span(ptr=UnsafePointer(to=self._slice[byte]), length=1))
-        return result^
+        var normalized_idx = normalize_index["StringSlice"](
+            byte, self.byte_length()
+        )
+        # _utf8_first_byte_sequence_length also checks for this, but
+        # we want subscripting to check unconditionally.
+        debug_assert[assert_mode="safe"](
+            _is_utf8_start_byte(self._slice.unsafe_get(normalized_idx)),
+            "String slice index, ",
+            normalized_idx,
+            " does not lie on a codepoint boundary.",
+        )
+        return StringSlice(
+            ptr=self.unsafe_ptr() + normalized_idx,
+            length=_utf8_first_byte_sequence_length(
+                self._slice.unsafe_get(normalized_idx)
+            ),
+        )
 
     fn __contains__(self, substr: StringSlice) -> Bool:
         """Returns True if the substring is contained within the current string.
@@ -1831,7 +1863,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self
 
     @always_inline
-    fn format[*Ts: AnyType](self, *args: *Ts) raises -> String:
+    fn format[*Ts: Writable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1846,8 +1878,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             args: The substitution values.
 
         Parameters:
-            Ts: The types of substitution values that implement `Representable &
-                Stringable` or `Writable`.
+            Ts: The types of substitution values that implement `Writable`.
 
         Returns:
             The template with the given values substituted.
@@ -2172,20 +2203,20 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 var line_end = line_start
                 var is_new_line = False
                 var b0 = Byte(0)
-                var char_len = UInt(0)
+                var char_len = 0
 
                 while not is_new_line and line_end < UInt(length):
                     b0 = ptr[line_end]
                     char_len = _utf8_first_byte_sequence_length(b0)
                     debug_assert(
-                        line_end + char_len <= UInt(length),
+                        line_end + UInt(char_len) <= UInt(length),
                         "corrupted sequence causing unsafe memory access",
                     )
                     # percentage-wise a newline is uncommon compared to a normal byte
                     is_new_line = unlikely(
-                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                        _is_newline_char_utf8(ptr, line_end, b0, UInt(char_len))
                     )
-                    line_end += char_len
+                    line_end += UInt(char_len)
 
                 var str_len = line_end - line_start
 
@@ -2205,7 +2236,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                     line_end += is_r_n
                     str_len += is_r_n
                 else:
-                    str_len -= UInt(splat(likely(is_new_line))) & char_len
+                    str_len -= UInt(splat(likely(is_new_line))) & UInt(char_len)
                     var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
@@ -2386,7 +2417,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self._justify(0, width, fillchar)
 
-    fn center(self, width: Int, fillchar: StaticString = " ") -> String:
+    fn ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice center justified in a string of specified width.
 
         Pads the string slice on both sides with the specified fill character so
@@ -2776,7 +2807,7 @@ fn _memmem_impl[
         var mask = pack_bits(bool_mask)
 
         while mask:
-            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            var offset = i + Int(count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 output = haystack + offset
                 return
@@ -2918,7 +2949,7 @@ fn _split[
         # until the start of the whitespace which was already appended
         if lhs == str_byte_len:
             break
-        rhs = lhs + Int(_utf8_first_byte_sequence_length(ptr[lhs]))
+        rhs = lhs + _utf8_first_byte_sequence_length(ptr[lhs])
         for s in _build_slice(ptr, rhs, str_byte_len).codepoint_slices():
             if s.isspace[single_character=True]():
                 break

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -218,10 +218,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         mbar: MBarType,
         smem: Self.SMemType,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
+        comptime assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = {mbar}
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -234,10 +234,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         ],
         smem: Self.SMemType,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
+        comptime assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = kv_pipeline
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -276,6 +276,37 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         that should be handled by the `tma_op.async_copy`.
         """
         self.kv_pipeline.state.step()
+
+
+@fieldwise_init
+struct WarpRole(Equatable, TrivialRegisterType):
+    var _role: Int32
+    comptime Softmax0 = Self(0)
+    comptime Softmax1 = Self(1)
+    comptime Correction = Self(2)
+    comptime MMA = Self(3)
+    comptime Load = Self(4)
+    comptime Empty = Self(5)
+
+    @always_inline
+    fn __eq__(self, other: Int) -> Bool:
+        return self == Self(Int32(other))
+
+
+fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+    var wg_idx = warp_idx // 4
+    if wg_idx == 0:
+        return WarpRole.Softmax0
+    elif wg_idx == 1:
+        return WarpRole.Softmax1
+    elif wg_idx == 2:
+        return WarpRole.Correction
+    elif warp_idx == 12:
+        return WarpRole.MMA
+    elif warp_idx == 13:
+        return WarpRole.Load
+    else:
+        return WarpRole.Empty
 
 
 struct MLASmemStorage[dtype: DType, num_mbars: Int, config: FA4Config]:
@@ -448,9 +479,9 @@ struct SM100MLA[
             Self.PartitionType,
         ],
     ):
-        __comptime_assert Self.MMA_M == 64 or Self.MMA_M == 128
-        __comptime_assert _is_decoding[Self.MaxSeqLenType]() == False
-        __comptime_assert Self.config.supported(), (
+        comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
+        comptime assert _is_decoding[Self.MaxSeqLenType]() == False
+        comptime assert Self.config.supported(), (
             "depth = "
             + String(Self.config.depth)
             + "\nBN = "
@@ -462,7 +493,7 @@ struct SM100MLA[
             + "\nsmem_used = "
             + String(Self.config.smem_used)
         )
-        __comptime_assert (
+        comptime assert (
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
@@ -475,7 +506,7 @@ struct SM100MLA[
 
         comptime num_qo = Self.config.num_qo()
         # TODO: We may want to support num_qo>2 for depth=64?
-        __comptime_assert (
+        comptime assert (
             num_qo == 1 or num_qo == 2
         ), "Currently only support num_qo == 1 or 2"
         smem_ptr = external_memory[
@@ -498,11 +529,12 @@ struct SM100MLA[
         var misc_mbars: Self.MiscMBarsType = {mbar_base}
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
-        comptime num_reg_softmax = 200
-        comptime num_reg_correction = 80
-        comptime num_reg_other = 32
+        comptime num_reg_softmax = 184
+        comptime num_reg_correction = 96
+        comptime num_reg_other = 48
+        comptime num_reg_empty = 24
 
-        __comptime_assert not Self.PartitionType.do_partition, (
+        comptime assert not Self.PartitionType.do_partition, (
             "Neither partitioning nor decoding are supported by the 2-q"
             " implementation."
         )
@@ -528,9 +560,11 @@ struct SM100MLA[
 
         barrier()
 
+        var role = warp_idx_to_role(warp_idx)
+
         # warp group partitioning
         # Two QO:
-        if warp_idx < 8:
+        if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
             # softmax $warp_group_idx
             warpgroup_reg_alloc[num_reg_softmax]()
             var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
@@ -560,7 +594,7 @@ struct SM100MLA[
                 correction_smem,
             )
 
-        elif warp_idx < 12:
+        elif role == WarpRole.Correction:
             # correction
             warpgroup_reg_dealloc[num_reg_correction]()
 
@@ -580,57 +614,59 @@ struct SM100MLA[
                 mask,
                 correction_smem,
             )
-        else:
+        elif role == WarpRole.Load:
             warpgroup_reg_dealloc[num_reg_other]()
-            if warp_idx == 13:  # produce
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
+                batch_size, max_seq_len, valid_length, partition
+            )
 
-                if not seq_info.is_valid():
-                    return
-                var pos: MLAPositionSummary = MLAPositionSummary.create[
-                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-                ](kv_lut, k_rope_lut, seq_info)
+            if not seq_info.is_valid():
+                return
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
 
-                Self.load(
-                    misc_mbars,
-                    pos.score_row,
-                    pos.num_keys,
-                    seq_info,
-                    max_seq_len,
-                    mask,
-                    q_tma_op,
-                    k_tma_op,
-                    k_rope_tma_op,
-                    v_tma_op,
-                    kv_lut,
-                    k_rope_lut,
-                    q_smem,
-                )
+            Self.load(
+                misc_mbars,
+                pos.score_row,
+                pos.num_keys,
+                seq_info,
+                max_seq_len,
+                mask,
+                q_tma_op,
+                k_tma_op,
+                k_rope_tma_op,
+                v_tma_op,
+                kv_lut,
+                k_rope_lut,
+                q_smem,
+            )
 
-            elif warp_idx == 12:  # Q @ K', P @ V
-                var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
-                    batch_size, max_seq_len, valid_length, partition
-                )
+        elif role == WarpRole.MMA:
+            warpgroup_reg_dealloc[num_reg_other]()
+            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
+                batch_size, max_seq_len, valid_length, partition
+            )
 
-                if not seq_info.is_valid():
-                    tcgen05_release_allocation_lock[Self.cta_group]()
-                    tcgen05_dealloc[Self.cta_group](
-                        ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                    )
-                    return
-                var pos: MLAPositionSummary = MLAPositionSummary.create[
-                    _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-                ](kv_lut, k_rope_lut, seq_info)
-                Self.mma(
-                    ptr_tmem_addr[0],
-                    misc_mbars,
-                    pos.score_row,
-                    pos.num_keys,
-                    mask,
-                    q_smem,
+            if not seq_info.is_valid():
+                tcgen05_release_allocation_lock[Self.cta_group]()
+                tcgen05_dealloc[Self.cta_group](
+                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
                 )
+                return
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](kv_lut, k_rope_lut, seq_info)
+            Self.mma(
+                ptr_tmem_addr[0],
+                misc_mbars,
+                pos.score_row,
+                pos.num_keys,
+                mask,
+                q_smem,
+            )
+        elif role == WarpRole.Empty:
+            warpgroup_reg_dealloc[num_reg_empty]()
 
     @staticmethod
     @always_inline
@@ -642,7 +678,7 @@ struct SM100MLA[
         mask: Self.MaskType,
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
-        __comptime_assert size_of[Self.accum_type]() == 4
+        comptime assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
         o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
@@ -687,8 +723,8 @@ struct SM100MLA[
                 if change:
                     # TODO: experiment with different batch sizes.
                     # The idea here is to both pipeline, and reduce peak register use.
-                    __comptime_assert load_iters > 1
-                    __comptime_assert Self.config.depth % batch_size == 0
+                    comptime assert load_iters > 1
+                    comptime assert Self.config.depth % batch_size == 0
 
                     var o_tmem: UInt32
 
@@ -878,7 +914,7 @@ struct SM100MLA[
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
-            __comptime_assert Self.config.BN == 64, String(Self.config.BN)
+            comptime assert Self.config.BN == 64, String(Self.config.BN)
             comptime BM = Self.config.BM // 2
             comptime batch_size = 32
             comptime has_remainder = (Self.config.BN % batch_size) != 0
@@ -970,8 +1006,8 @@ struct SM100MLA[
             for i in range(1, num_sets):
                 mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
 
-        __comptime_assert num_sets >= 1 and num_sets <= 3
-        __comptime_assert (
+        comptime assert num_sets >= 1 and num_sets <= 3
+        comptime assert (
             num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
         )
 
@@ -1016,14 +1052,14 @@ struct SM100MLA[
             comptime batch_size = 32
             comptime num_batch_iters = vs_len // batch_size
             comptime remainder = vs_len % batch_size
-            __comptime_assert num_batch_iters > 0
+            comptime assert num_batch_iters > 0
             comptime BatchTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, batch_size * exp_simd
             ]
             comptime RemainderTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, remainder * exp_simd
             ]
-            __comptime_assert (Self.config.BN % exp_simd) == 0
+            comptime assert (Self.config.BN % exp_simd) == 0
 
             vs = s.vectorize[exp_simd]()
             # We batch stores, e.g. use `tcgen_05.st.x32`.
@@ -1224,9 +1260,7 @@ struct SM100MLA[
             + warp_group_idx * UInt32(Self.padded_depth)
         )
         # wait on the o_pipeline producer
-        __comptime_assert (
-            size_of[Self.output_type]() == size_of[Self.qkv_type]()
-        )
+        comptime assert size_of[Self.output_type]() == size_of[Self.qkv_type]()
         if num_output_rows > 0:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1

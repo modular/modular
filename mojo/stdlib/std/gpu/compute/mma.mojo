@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -285,7 +285,7 @@ fn ld_matrix[
         ```
     """
 
-    __comptime_assert (transpose and dtype.is_half_float()) or (
+    comptime assert (transpose and dtype.is_half_float()) or (
         not transpose
     ), "Transposed ld_matrix is only for half precision."
 
@@ -326,7 +326,7 @@ fn ld_matrix[
         d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
-        __comptime_assert (
+        comptime assert (
             num_registers == 4
         ), "no valid implementation of ldmatrix instruction"
         comptime ins = base + ".x4" + get_suffix()
@@ -396,7 +396,7 @@ fn st_matrix[
         must execute this instruction to avoid deadlock.
     """
 
-    __comptime_assert dtype in (DType.bfloat16, DType.float32), ""
+    comptime assert dtype in (DType.bfloat16, DType.float32), ""
 
     comptime num_matrices = simd_width
 
@@ -423,7 +423,7 @@ fn st_matrix[
         )
 
     else:
-        __comptime_assert (
+        comptime assert (
             num_matrices == 4
         ), "no valid implementation of stmatrix instruction"
 
@@ -685,7 +685,7 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+    comptime assert (m * n // 128) * size_of[accum_type]() == width * size_of[
         c_dtype
     ](), String(
         "Number of output registers ",
@@ -694,21 +694,21 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert scale_d == 1 or scale_d == 0, (
+    comptime assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
         + String(scale_d)
         + "' which is not supported. Only 1 or 0 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_a == 1 or scale_a == -1, (
+    comptime assert scale_a == 1 or scale_a == -1, (
         "Invalid scale in value of scaled_a '"
         + String(scale_a)
         + "' which is not supported. Only 1 or -1 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_b == 1 or scale_b == -1, (
+    comptime assert scale_b == 1 or scale_b == -1, (
         "Invalid scale in value of scaled_b '"
         + String(scale_b)
         + "' which is not supported. Only 1 or -1 is supported as the"
@@ -813,7 +813,7 @@ fn wgmma_async[
         - Data type combinations must be compatible with hardware WGMMA instructions.
     """
 
-    __comptime_assert (m * n // 128) * size_of[accum_type]() == width * size_of[
+    comptime assert (m * n // 128) * size_of[accum_type]() == width * size_of[
         c_dtype
     ](), String(
         "Number of output registers ",
@@ -822,21 +822,21 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert scale_d == 1 or scale_d == 0, (
+    comptime assert scale_d == 1 or scale_d == 0, (
         "Invalid scale in value of scaled_d '"
         + String(scale_d)
         + "' which is not supported. Only 1 or 0 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_a == 1 or scale_a == -1, (
+    comptime assert scale_a == 1 or scale_a == -1, (
         "Invalid scale in value of scaled_a '"
         + String(scale_a)
         + "' which is not supported. Only 1 or -1 is supported as the"
         " scale in values."
     )
 
-    __comptime_assert scale_b == 1 or scale_b == -1, (
+    comptime assert scale_b == 1 or scale_b == -1, (
         "Invalid scale in value of scaled_b '"
         + String(scale_b)
         + "' which is not supported. Only 1 or -1 is supported as the"
@@ -942,7 +942,7 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-    __comptime_assert (m * n // 128) * size_of[
+    comptime assert (m * n // 128) * size_of[
         accum_type
     ]() == frag_c_width * size_of[c_dtype](), String(
         "Number of output registers ",
@@ -951,7 +951,7 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
 
-    __comptime_assert (m * k // 128) * size_of[
+    comptime assert (m * k // 128) * size_of[
         a_type
     ]() == frag_a_width * size_of[a_dtype](), String(
         "Number of input a registers ",
@@ -960,14 +960,14 @@ fn wgmma_async[
         String(Index(m, n, k)),
     )
     # for now, limited support
-    __comptime_assert m == 64
-    __comptime_assert k == 16
-    __comptime_assert a_type == DType.bfloat16
-    __comptime_assert b_type == DType.bfloat16
-    __comptime_assert accum_type == DType.float32
-    __comptime_assert c_dtype == DType.float32
-    __comptime_assert layout_a == "row"
-    __comptime_assert layout_b == "col" or (
+    comptime assert m == 64
+    comptime assert k == 16
+    comptime assert a_type == DType.bfloat16
+    comptime assert b_type == DType.bfloat16
+    comptime assert accum_type == DType.float32
+    comptime assert c_dtype == DType.float32
+    comptime assert layout_a == "row"
+    comptime assert layout_b == "col" or (
         layout_b == "row" and b_type == DType.bfloat16
     )
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -414,7 +414,7 @@ struct Softmax[
         ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
         # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
         # FIXME: require `warp_split_k` when delaying inter-warp communication.
-        __comptime_assert (
+        comptime assert (
             num_output_replications == 1
             or num_output_replications % Self.num_rowwise_warps == 0
         )

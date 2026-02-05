@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -519,8 +519,8 @@ __extension Attention:
 
     @always_inline
     fn mha_prefill_experimental(mut self):
-        __comptime_assert Self.BK == 32, "BK must be 32"
-        __comptime_assert Self.depth == 128, "depth must be 128"
+        comptime assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.depth == 128, "depth must be 128"
 
         comptime num_threads = config.num_threads()
         var warp_id = UInt32(

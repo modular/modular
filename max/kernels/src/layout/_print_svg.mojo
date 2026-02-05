@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -82,16 +82,16 @@ fn _print_svg_impl[
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
-    __comptime_assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
+    comptime assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
 
     if len(tensors) > 0:
-        __comptime_assert layout.rank() == 2, "Layout rank must be 2"
+        comptime assert layout.rank() == 2, "Layout rank must be 2"
 
-        __comptime_assert layout[0].size() <= (
+        comptime assert layout[0].size() <= (
             tensor_base.layout[0].size()
         ), "Layout 0 should have the largest first dimension"
 
-        __comptime_assert (
+        comptime assert (
             layout[1].size() <= tensor_base.layout[1].size()
         ), "Layout 0 should have the largest second dimension"
 
@@ -185,9 +185,9 @@ fn _print_svg_impl[
                     ' Segoe UI, Roboto, Arial, sans-serif" font-size="16"'
                     ' font-weight="600" x="'
                 ),
-                Float64(x) + cell_size / 2,
+                Float64(x) + Float64(cell_size) / 2,
                 '" y="',
-                Float64(y) + cell_size / 2 + 5,
+                Float64(y) + Float64(cell_size) / 2 + 5,
                 (
                     '" dominant-baseline="middle" text-anchor="middle"'
                     ' fill="#2C3E50">'
@@ -241,7 +241,7 @@ fn _print_svg_impl[
             + '<text font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'
             ' Roboto, Arial, sans-serif" font-size="16"'
             ' font-weight="700" x="',
-            Float64(x) + cell_size / 2,
+            Float64(x) + Float64(cell_size) / 2,
             '" y="',
             y + 15,
             (
@@ -313,7 +313,7 @@ fn _print_svg_impl[
 
     # Draw row labels with improved typography
     for i in range(comptime (tensor_base.layout[0].size())):
-        var y = Float64(start_y + i * cell_size) + cell_size / 2
+        var y = Float64(start_y + i * cell_size) + Float64(cell_size) / 2
         writer.write(
             '<text x="',
             margin,
@@ -331,12 +331,15 @@ fn _print_svg_impl[
 
     # Draw column labels with improved typography
     for j in range(comptime (tensor_base.layout[1].size())):
-        var x = Float64(margin + text_margin + j * cell_size) + cell_size / 2
+        var x = (
+            Float64(margin + text_margin + j * cell_size)
+            + Float64(cell_size) / 2
+        )
         writer.write(
             '<text x="',
             x,
             '" y="',
-            Float64(start_y) - text_margin / 2,
+            Float64(start_y) - Float64(text_margin) / 2,
             (
                 '" dominant-baseline="middle" text-anchor="middle"'
                 ' font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'

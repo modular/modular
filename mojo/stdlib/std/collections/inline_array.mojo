@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,7 +55,7 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    __comptime_assert (
+    comptime assert (
         size >= 0
     ), "number of elements in `InlineArray` must be >= 0"
 
@@ -462,7 +462,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             supports both positive indices starting from 0 and negative indices
             counting backwards from the end of the array.
         """
-        __comptime_assert (
+        comptime assert (
             -Self.size <= index(idx) < Self.size
         ), "Index must be within bounds."
         comptime normalized_index = normalize_index["InlineArray"](

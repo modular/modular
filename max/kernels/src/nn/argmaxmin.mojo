@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from sys.info import simd_width_of
 
 from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
-from builtin.math import min as _min
+from math.math import min as _min
 from layout._tile_tensor import TileTensor
 
 

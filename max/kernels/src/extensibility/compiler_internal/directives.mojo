@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -103,7 +103,7 @@ struct StaticTensorSpec[
         self.out_compute_lambda = out_compute_lambda
 
     fn __init__(out self, shape: DimList):
-        __comptime_assert Self.rank > 0, (
+        comptime assert Self.rank > 0, (
             "initializing `StaticTensorSpec` with just a shape only"
             " supports rank 1 to 3"
         )

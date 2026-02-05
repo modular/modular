@@ -36,10 +36,28 @@ can see working code to study and use. Reflection code is intentionally
 parameterized and compile-time heavy. The examples below show the patterns you
 can use in real reflection-based code.
 
+## Static vs. dynamic reflection
+
+Mojo's reflection is static, meaning it runs at compile time. Mojo
+generates reflection information during compilation. It uses the
+type information in your code, including types, fields, and methods.
+This contrasts with dynamic reflection, which inspects program
+state at runtime.
+
+Static reflection's timing affects what you can and cannot do. Reflection
+can only operate on types known to the compiler. If a variable's type
+depends on runtime conditions, reflection can't access it. However,
+since all reflection runs during compilation, there's no runtime overhead.
+
+Mojo reflection operates on program structure, not live program state.
+Use it to serialize types, implement generic operations over struct
+fields (comparison, copying, arithmetic), and validate structural constraints
+at compile time.
+
 ## Example: Present a type
 
 This example demonstrates how to use reflection to inspect a type at compile time.
-It shows how to retrieve a type’s name and iterate over a struct’s fields, including
+It shows how to retrieve a type's name and iterate over a struct's fields, including
 their names and types. This pattern is the foundation for most reflection-based
 utilities, such as validation, copying, and equality checks.
 
@@ -125,7 +143,7 @@ field name.
 ### Program output
 
 The following output shows the result of calling `show_type[]()` on three
-different types in `main()`. Each call prints the compiler’s view of the type,
+different types in `main()`. Each call prints the compiler's view of the type,
 including its fully resolved name and the structure of its fields:
 
 ```output
@@ -151,7 +169,7 @@ struct show_type.ParameterizedStruct[String, 5]
 
 When comparing the type names at the call sites with the names shown here,
 keep in mind that this output reflects how the compiler represents the type.
-This includes defaulted parameters, such as the dictionary’s `Hasher`.
+This includes defaulted parameters, such as the dictionary's `Hasher`.
 Comptime type aliases are expanded, so `Float64` displays
 as `SIMD[DType.float64, 1]`.
 

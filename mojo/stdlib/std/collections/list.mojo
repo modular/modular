@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,9 +18,13 @@ These APIs are imported automatically, just like builtins.
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
-from format._utils import FormatStruct, write_sequence_to
+from format._utils import (
+    FormatStruct,
+    TypeNames,
+    write_sequence_to,
+    constrained_conforms_to_writable,
+)
 from reflection import get_type_name
-from reflection.type_info import _unqualified_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
@@ -671,12 +675,7 @@ struct List[T: Copyable](
         return string^
 
     fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
+        constrained_conforms_to_writable[Self.T, Parent=Self]()
 
         var iterator = self.__iter__()
 
@@ -721,7 +720,7 @@ struct List[T: Copyable](
             self._write_self_to[is_repr=True](w)
 
         FormatStruct(writer, "List").params(
-            _unqualified_type_name[Self.T](),
+            TypeNames[Self.T](),
         ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#

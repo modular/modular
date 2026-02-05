@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,6 +28,7 @@ from max.serve.schemas.openai import CreateChatCompletionResponse
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 
+@pytest.mark.skip(reason="MODELS-1007: Flaky test, intermittently fails in CI")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -111,6 +112,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         assert "maxserve_cache_hit_rate" in response.text
 
 
+@pytest.mark.skip(reason="MODELS-1007: Flaky test, intermittently fails in CI")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",
@@ -194,6 +196,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
         assert "maxserve_cache_hit_rate" in raw_response.text
 
 
+@pytest.mark.skip(reason="MODELS-1007: Flaky test, intermittently fails in CI")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config",

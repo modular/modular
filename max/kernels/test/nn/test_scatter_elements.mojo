@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -94,7 +94,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -152,7 +152,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -210,7 +210,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)

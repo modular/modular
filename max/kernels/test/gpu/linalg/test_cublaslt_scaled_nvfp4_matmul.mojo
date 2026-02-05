@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -52,11 +52,11 @@ fn test_block_scaled_nvfp4_cublaslt[
     k: ValOrDim,
     tensor_sf: Float32 = 1.0,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         transpose_b == True
     ), "Only transpose_b = True is supported for scaled NVFP4 matmul"
 
-    __comptime_assert in_dtype == DType.float4_e2m1fn and out_dtype in (
+    comptime assert in_dtype == DType.float4_e2m1fn and out_dtype in (
         DType.float32,
         DType.bfloat16,
     ), (

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -543,10 +543,10 @@ fn copy_accum_to_gmem[
                 comptime simd_size = simd_width_of[c_type]()
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 comptime thread_n = stageN // simd_size
-                __comptime_assert (
+                comptime assert (
                     stageN % simd_size == 0
                 ), "stageN must be divisible by simd_size"
-                __comptime_assert (
+                comptime assert (
                     output_threads % thread_n == 0
                 ), "output_threads must be divisible by thread_n"
                 comptime thread_layout = Layout.row_major(
@@ -685,7 +685,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    __comptime_assert num_m_mmas == 1 and num_n_mmas == 1
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # assume N dimension is static
     comptime simd_size = simd_width_of[c_type]()
@@ -929,7 +929,7 @@ fn load_AB[
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
     )
-    var b_offset_vec = expert_id * scheduler.static_MN
+    var b_offset_vec = expert_id * Int32(scheduler.static_MN)
     var b_gmem_slice_coord_vec = (
         type_of(expert_id)(
             peer_cta_coord[1] * UInt(b_tma_rows)
@@ -938,7 +938,7 @@ fn load_AB[
         )
         + b_offset_vec
     )
-    __comptime_assert b_gmem_slice_coord_vec.size == 1
+    comptime assert b_gmem_slice_coord_vec.size == 1
     var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
 
     # Wait until MMA (consumer) has used the buffer.
@@ -979,7 +979,7 @@ fn load_AB[
             var a_scale_offset_vec = a_scale_offsets[
                 Int(scheduler.current_group_idx)
             ]
-            __comptime_assert a_scale_offset_vec.size == 1
+            comptime assert a_scale_offset_vec.size == 1
             sfa_tma_op.async_copy_4d[cta_group](
                 sfa_smem_tile,
                 tma_mbar[0],
@@ -992,7 +992,7 @@ fn load_AB[
                 ),
             )
 
-            __comptime_assert b_offset_vec.size == 1
+            comptime assert b_offset_vec.size == 1
             var b_offset = b_offset_vec[0]
             sfb_tma_op.async_copy_4d[cta_group](
                 sfb_smem_tile,
@@ -1179,10 +1179,10 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         "Only support transposed B",
     ]()
 
-    __comptime_assert (
+    comptime assert (
         sfa_dtype == sfb_dtype
     ), "Only support same scales dtype for A and B"
-    __comptime_assert sfa_dtype in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE), (
+    comptime assert sfa_dtype in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE), (
         "Only support MXFP8_SF_DTYPE (F8-UE8M0) or MXFP4_SF_DTYPE (F8-E4M3) for"
         " scales"
     )
@@ -1280,7 +1280,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     comptime N = c_layout.shape[1].value()
     comptime expert_n = N
     comptime K = a_layout.shape[1].value()
-    __comptime_assert K % 16 == 0, (
+    comptime assert K % 16 == 0, (
         "Due to TMA limitations, K must be a multiple of 16 bytes"
         + " but got K = "
         + String(K)
@@ -1759,9 +1759,11 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
         load_mma_pipeline.init_mbars(
             Int32(1),
-            config.cluster_shape[0] // config.cta_group
-            + config.cluster_shape[1]
-            - 1,
+            Int32(
+                config.cluster_shape[0] // config.cta_group
+                + config.cluster_shape[1]
+                - 1
+            ),
         )
         mma_output_pipeline.init_mbars(
             accum_pipeline_producer_arv_count,
@@ -2005,7 +2007,7 @@ fn blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 if not work_info.is_done():
                     expert_id = expert_ids[Int(scheduler.current_group_idx)]
                 continue
-            with MatmulProfilerType[3](workspace, tile_idx):
+            with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                 var expert_scale = expert_scales[Int(expert_id)]
                 # WAIT FOR MMA TO FINISH AND STORE RESULT
                 # scheduler fetch next work
@@ -2129,14 +2131,14 @@ fn grouped_matmul_dynamic_scaled_nvfp4[
     Constraints:
         - The target device must be SM100 (B200).
     """
-    __comptime_assert (
+    comptime assert (
         ctx.default_device_info == B200
     ), "Only support SM100 for grouped NVFP4 matmul"
-    __comptime_assert transpose_b, "Only support transpose_b = True"
-    __comptime_assert (
+    comptime assert transpose_b, "Only support transpose_b = True"
+    comptime assert (
         a_type == b_type == DType.uint8
     ), "input A and B dtype should be uint8 for NVFP4"
-    __comptime_assert (
+    comptime assert (
         scales_type == NVFP4_SF_DTYPE
     ), "scales dtype should be NVFP4_SF_DTYPE (float8_e4m3fn)"
     if num_active_experts == 0:

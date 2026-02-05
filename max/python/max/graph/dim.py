@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -329,12 +329,35 @@ class AlgebraicDim(Dim):
 
     @classmethod
     def apply(cls, op: kgen.POC, *operands: DimLike):  # noqa: ANN206
+        # Fast path: if all operands are static, compute in pure Python
+        # without needing an MLIR context. This enables dim algebra in
+        # eager mode outside of a Graph context.
+        dims = [Dim(operand) for operand in operands]
+        if all(isinstance(d, StaticDim) for d in dims):
+            values = [int(d) for d in dims]
+            if op == kgen.POC.add:
+                return StaticDim(sum(values))
+            elif op == kgen.POC.mul_no_wrap:
+                result = 1
+                for v in values:
+                    result *= v
+                return StaticDim(result)
+            elif op == kgen.POC.div:
+                if len(values) == 2:
+                    return StaticDim(values[0] // values[1])
+
+        # Fall back to MLIR-based computation for symbolic dims
         # kgen.ParamOperatorAttr eagerly folds on construction!
         #  - this can return static or symbolic dims
-        #  - let Dim decide what type to returtn
-        attr = kgen.ParamOperatorAttr(
-            op, [Dim(operand).to_mlir() for operand in operands]
-        )
+        #  - let Dim decide what type to return
+        try:
+            attr = kgen.ParamOperatorAttr(op, [d.to_mlir() for d in dims])
+        except (RuntimeError, SystemError) as e:
+            raise TypeError(
+                "Dim algebra with symbolic dimensions requires a graph context. "
+                "Use `with Graph(...):` or `with F.lazy():` to provide one. "
+                f"Operands: {operands}"
+            ) from e
         return Dim.from_mlir(attr)
 
     def __format__(self, format_spec: str) -> str:

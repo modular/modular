@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,9 @@ from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout._coord import Coord, Idx, coord_to_index_list
+from layout._layout import row_major
+from layout._tile_tensor import TileTensor
 from layout._fillers import random
 from math import ceildiv, iota, exp, log
 from nn.topk import _top_k_cpu, _topk_gpu
@@ -38,7 +40,7 @@ comptime NUM_VALIDATION_TRIALS = 50
 @parameter
 fn fill_random_for_test[
     dtype: DType, normalized: Bool
-](buffer: LayoutTensor[mut=True, dtype, ...]):
+](buffer: TileTensor[mut=True, dtype, ...]):
     """Fill buffer with random values, optionally normalizing to probabilities.
 
     Parameters:
@@ -46,7 +48,7 @@ fn fill_random_for_test[
         normalized: If True, normalize each row to sum to 1.0 (probabilities).
                    If False, use raw random values (logits).
     """
-    var shape = buffer.runtime_layout.shape.value
+    var shape = coord_to_index_list(buffer.layout.shape_coord())
     var batch_size = shape[0]
     var vocab_size = shape[1]
 
@@ -76,8 +78,8 @@ fn fill_random_for_test[
 fn compute_topk_mask[
     dtype: DType,
 ](
-    values: LayoutTensor[dtype, ...],
-    mask: LayoutTensor[mut=True, DType.bool, ...],
+    values: TileTensor[dtype, ...],
+    mask: TileTensor[mut=True, DType.bool, ...],
     K: Int,
     batch_size: Int,
     N: Int,
@@ -108,8 +110,8 @@ fn compute_topk_mask[
 fn validate_sampling_results[
     out_idx_type: DType,
 ](
-    sampled_idxs: LayoutTensor[out_idx_type, ...],
-    mask: LayoutTensor[DType.bool, ...],
+    sampled_idxs: TileTensor[out_idx_type, ...],
+    mask: TileTensor[DType.bool, ...],
     batch_size: Int,
     N: Int,
     trial_num: Int,
@@ -186,29 +188,18 @@ fn test_topk_sampling[
     comptime largest = test_case.largest
     comptime sampling = test_case.sampling
 
-    __comptime_assert sampling, "This test requires sampling=True"
+    comptime assert sampling, "This test requires sampling=True"
 
     # Create layouts for input tensor [batch_size, N].
-    comptime input_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     var input_shape = IndexList[2](batch_size, N)
-    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
-        input_shape
-    )
+    var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for output tensor [batch_size].
-    comptime output_static_layout = Layout.row_major(UNKNOWN_VALUE)
     var output_shape = IndexList[1](batch_size)
-    var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
-        output_shape
-    )
+    var output_runtime_layout = row_major(Idx(batch_size))
 
     # Create layouts for mask tensor [batch_size, N].
-    comptime mask_static_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var mask_runtime_layout = RuntimeLayout[mask_static_layout].row_major(
-        input_shape
-    )
+    var mask_runtime_layout = row_major(Coord(input_shape))
 
     # Create device buffers.
     var device_input = ctx.enqueue_create_buffer[dtype](
@@ -222,18 +213,12 @@ fn test_topk_sampling[
     )
 
     # Create layout tensors for GPU operations.
-    var input_tensor = LayoutTensor[dtype, input_static_layout](
-        device_input, input_runtime_layout
-    )
-    var output_tensor = LayoutTensor[out_idx_type, output_static_layout](
-        device_output, output_runtime_layout
-    )
+    var input_tensor = TileTensor(device_input, input_runtime_layout)
+    var output_tensor = TileTensor(device_output, output_runtime_layout)
 
     # Initialize input data on host.
     with device_input.map_to_host() as input_host:
-        var input_host_tensor = LayoutTensor[dtype, input_static_layout](
-            input_host, input_runtime_layout
-        )
+        var input_host_tensor = TileTensor(input_host, input_runtime_layout)
 
         @parameter
         if sampling_from_prob:
@@ -254,9 +239,7 @@ fn test_topk_sampling[
 
         # STEP 1: Compute ground truth mask (while we have input on host).
         with mask_buffer.map_to_host() as mask_host:
-            var mask_host_tensor = LayoutTensor[DType.bool, mask_static_layout](
-                mask_host, mask_runtime_layout
-            )
+            var mask_host_tensor = TileTensor(mask_host, mask_runtime_layout)
             compute_topk_mask[dtype](
                 input_host_tensor, mask_host_tensor, K, batch_size, N
             )
@@ -321,12 +304,12 @@ fn test_topk_sampling[
         # Read back results and validate.
         with device_output.map_to_host() as output_host:
             with mask_buffer.map_to_host() as mask_host:
-                var output_host_tensor = LayoutTensor[
-                    out_idx_type, output_static_layout
-                ](output_host, output_runtime_layout)
-                var mask_host_tensor = LayoutTensor[
-                    DType.bool, mask_static_layout
-                ](mask_host, mask_runtime_layout)
+                var output_host_tensor = TileTensor(
+                    output_host, output_runtime_layout
+                )
+                var mask_host_tensor = TileTensor(
+                    mask_host, mask_runtime_layout
+                )
 
                 validate_sampling_results[out_idx_type](
                     output_host_tensor, mask_host_tensor, batch_size, N, trial
@@ -384,10 +367,10 @@ fn extract_topk_from_masked[
     dtype: DType,
     out_idx_type: DType,
 ](
-    masked_logits: LayoutTensor[dtype, ...],
+    masked_logits: TileTensor[dtype, ...],
     K: Int,
-    topk_vals_out: LayoutTensor[mut=True, dtype, ...],
-    topk_idxs_out: LayoutTensor[mut=True, out_idx_type, ...],
+    topk_vals_out: TileTensor[mut=True, dtype, ...],
+    topk_idxs_out: TileTensor[mut=True, out_idx_type, ...],
 ) raises:
     """Extract top-K values and indices from masked logits tensor.
 
@@ -401,8 +384,8 @@ fn extract_topk_from_masked[
         topk_vals_out: Output buffer for top-K values (batch_size, K).
         topk_idxs_out: Output buffer for top-K indices (batch_size, K).
     """
-    var batch_size = masked_logits.runtime_layout.shape.value[0]
-    var N = masked_logits.runtime_layout.shape.value[1]
+    var batch_size = masked_logits.layout.shape[0]().value()
+    var N = masked_logits.layout.shape[1]().value()
 
     for b in range(batch_size):
         var values = List[Scalar[dtype]]()
@@ -441,7 +424,7 @@ fn extract_topk_from_masked[
 fn test_case_batched[
     dtype: DType,
     fill_fn: fn[rank: Int, dtype: DType](
-        LayoutTensor[mut=True, dtype, ...]
+        TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     out_idx_type: DType = DType.int,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -456,25 +439,17 @@ fn test_case_batched[
     comptime block_size = test_case.block_size
 
     # sampling must be False for mask_logits kernel
-    __comptime_assert (
+    comptime assert (
         not sampling
     ), "topk_mask_logits only supports sampling=False"
 
     # Create layouts for input/masked_logits tensors [batch_size, N].
-    comptime input_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE
-    )
     var input_shape = IndexList[2](batch_size, N)
-    var input_runtime_layout = RuntimeLayout[input_static_layout].row_major(
-        input_shape
-    )
+    var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for topk output tensors [batch_size, K].
-    comptime topk_static_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var topk_shape = IndexList[2](batch_size, K)
-    var topk_runtime_layout = RuntimeLayout[topk_static_layout].row_major(
-        topk_shape
-    )
+    var topk_runtime_layout = row_major(Coord(topk_shape))
 
     # Create device buffers.
     var device_in = ctx.enqueue_create_buffer[dtype](
@@ -497,18 +472,14 @@ fn test_case_batched[
     )
 
     # Create layout tensors for GPU operations.
-    var in_tensor = LayoutTensor[dtype, input_static_layout](
-        device_in, input_runtime_layout
-    )
-    var masked_logits_tensor = LayoutTensor[dtype, input_static_layout](
+    var in_tensor = TileTensor(device_in, input_runtime_layout)
+    var masked_logits_tensor = TileTensor(
         device_masked_logits, input_runtime_layout
     )
 
     # Initialize input data on host.
     with device_in.map_to_host() as in_host:
-        var in_host_tensor = LayoutTensor[dtype, input_static_layout](
-            in_host, input_runtime_layout
-        )
+        var in_host_tensor = TileTensor(in_host, input_runtime_layout)
         fill_fn[2, dtype](in_host_tensor)
 
     @parameter
@@ -537,9 +508,9 @@ fn test_case_batched[
 
     # Read back masked logits and extract top-K.
     with device_masked_logits.map_to_host() as masked_logits_host:
-        var masked_logits_host_tensor = LayoutTensor[
-            dtype, input_static_layout
-        ](masked_logits_host, input_runtime_layout)
+        var masked_logits_host_tensor = TileTensor(
+            masked_logits_host, input_runtime_layout
+        )
 
         @parameter
         if PRINT_OUTPUT:
@@ -549,12 +520,12 @@ fn test_case_batched[
 
         with topk_vals_extracted_buf.map_to_host() as topk_vals_host:
             with topk_idxs_extracted_buf.map_to_host() as topk_idxs_host:
-                var topk_vals_tensor = LayoutTensor[dtype, topk_static_layout](
+                var topk_vals_tensor = TileTensor(
                     topk_vals_host, topk_runtime_layout
                 )
-                var topk_idxs_tensor = LayoutTensor[
-                    out_idx_type, topk_static_layout
-                ](topk_idxs_host, topk_runtime_layout)
+                var topk_idxs_tensor = TileTensor(
+                    topk_idxs_host, topk_runtime_layout
+                )
 
                 extract_topk_from_masked[dtype, out_idx_type](
                     masked_logits_host_tensor,
@@ -576,15 +547,13 @@ fn test_case_batched[
     with device_in.map_to_host() as in_host:
         with topk_vals_cpu_buf.map_to_host() as topk_vals_cpu_host:
             with topk_idxs_cpu_buf.map_to_host() as topk_idxs_cpu_host:
-                var in_host_tensor = LayoutTensor[dtype, input_static_layout](
-                    in_host, input_runtime_layout
+                var in_host_tensor = TileTensor(in_host, input_runtime_layout)
+                var topk_vals_cpu_tensor = TileTensor(
+                    topk_vals_cpu_host, topk_runtime_layout
                 )
-                var topk_vals_cpu_tensor = LayoutTensor[
-                    dtype, topk_static_layout
-                ](topk_vals_cpu_host, topk_runtime_layout)
-                var topk_idxs_cpu_tensor = LayoutTensor[
-                    DType.int64, topk_static_layout
-                ](topk_idxs_cpu_host, topk_runtime_layout)
+                var topk_idxs_cpu_tensor = TileTensor(
+                    topk_idxs_cpu_host, topk_runtime_layout
+                )
 
                 @parameter
                 if DEBUG_BENCH:
@@ -632,10 +601,10 @@ fn test_case_batched[
     # Compare extracted values with CPU reference.
     with topk_vals_extracted_buf.map_to_host() as topk_vals_ext_host:
         with topk_vals_cpu_buf.map_to_host() as topk_vals_cpu_host:
-            var topk_vals_ext_tensor = LayoutTensor[dtype, topk_static_layout](
+            var topk_vals_ext_tensor = TileTensor(
                 topk_vals_ext_host, topk_runtime_layout
             )
-            var topk_vals_cpu_tensor = LayoutTensor[dtype, topk_static_layout](
+            var topk_vals_cpu_tensor = TileTensor(
                 topk_vals_cpu_host, topk_runtime_layout
             )
 
@@ -679,10 +648,10 @@ fn time_kernel[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](buffer: LayoutTensor[mut=True, dtype, ...]):
+](buffer: TileTensor[mut=True, dtype, ...]):
     comptime min_val = -1e9
     comptime max_val = 1e9
-    var total_elements = buffer.size()
+    var total_elements = buffer.numel()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
         buffer.ptr[i] = random_value.cast[dtype]()

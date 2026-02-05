@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ from . import weight_adapters
 from .model import EagleLlama3Model
 
 eagle_llama_arch = SupportedArchitecture(
-    name="EagleLlamaForCausalLM_Legacy",
+    name="LlamaForCausalLMEagle_Legacy",
     example_repo_ids=[
         "lmsys/sglang-EAGLE-LLaMA3-Instruct-8B",
     ],

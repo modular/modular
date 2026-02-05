@@ -24,6 +24,7 @@ Qwen/Qwen2.5-VL-32B-Instruct	7cfb30d71a1f4f49a57592323337a4a4727301da
 Qwen/Qwen2.5-VL-3B-Instruct	66285546d2b821cf421d4f5eb2576359d3770cd3
 Qwen/Qwen2.5-VL-7B-Instruct	cc594898137f460bfe9f0759e9844b3ce807cfb5
 Qwen/Qwen3-30B-A3B	f0abbbee7f4db139f64a2c3be5dc133fd7328acb
+Qwen/Qwen3-30B-A3B-Instruct-2507	0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
 Qwen/Qwen3-32B	d47b0d4ae4b48fde975756bf360a63a9cca8d470
 Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
 Qwen/Qwen3-Embedding-0.6B	c54f2e6e80b2d7b7de06f51cec4959f6b3e03418
@@ -85,6 +86,7 @@ modularai/SmolLM-135M-Instruct-FP32	1ade67aacf72511c94c55529056f7222c1c0b586
 modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
+nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -47,9 +47,7 @@ from utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
-    ProducerConsumerPipeline,
-)
+from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================

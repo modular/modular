@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -1640,7 +1640,7 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_func(self, py_args: PO, py_kwargs: PO) raises -> PO:
-        __comptime_assert (
+        comptime assert (
             Self.has_kwargs
         ), "should only be used for functions that accept kwargs"
         var kwargs = Self._convert_kwargs(py_kwargs)
@@ -1828,7 +1828,7 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO) raises -> PO:
-        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
+        comptime assert not Self._has_arity(0), "method arity must not be 0"
 
         @parameter
         if Self._has_arity(1):
@@ -2078,8 +2078,8 @@ struct PyObjectFunction[
 
     @always_inline("nodebug")
     fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
-        __comptime_assert not Self._has_arity(0), "method arity must not be 0"
-        __comptime_assert (
+        comptime assert not Self._has_arity(0), "method arity must not be 0"
+        comptime assert (
             Self.has_kwargs
         ), "should only be used for methods that accept kwargs"
         var kwargs = Self._convert_kwargs(py_kwargs)

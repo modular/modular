@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,8 +31,8 @@ def compute_group_stats[
     Scalar[t],
     Scalar[t],
 ]:
-    __comptime_assert vec.rank == 1, "vec must be rank 1"
-    __comptime_assert vec.element_size == 1
+    comptime assert vec.rank == 1, "vec must be rank 1"
+    comptime assert vec.element_size == 1
     var sum_val = Scalar[t]()
     var sum_sq = Scalar[t]()
     for i in range(size):
@@ -70,8 +70,8 @@ fn run_group_norm_gpu[
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
 
     for i in range(C):
-        gamma_h[i] = ((i + C) / C).cast[dtype]()
-        beta_h[i] = (i / C).cast[dtype]()
+        gamma_h[i] = (Float64(i + C) / Float64(C)).cast[dtype]()
+        beta_h[i] = (Float64(i) / Float64(C)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](C)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,7 @@ from utils import IndexList
 
 def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 
@@ -88,7 +88,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     ](input_row_offsets_layout.static_product)
     ctx.synchronize()
     for i in range(batch_size):
-        input_row_offsets_host_buffer[i] = i * seq_len
+        input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
     input_row_offsets_host_buffer[batch_size] = batch_size * seq_len
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_host_buffer, input_row_offsets_layout

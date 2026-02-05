@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,17 +13,16 @@
 
 """DeepseekV3.2 layer modules."""
 
-from .mlp import MLP
-from .moe import MoE, MoEFp8
+from .mlp import DeepseekV3_2MLP
+from .moe import DeepseekV3_2MoE
 from .moe_gate import DeepseekV3_2TopKRouter
 from .rms_norm_fused import RMSNormFused
 from .transforms import HadamardTransform
 
 __all__ = [
-    "MLP",
+    "DeepseekV3_2MLP",
+    "DeepseekV3_2MoE",
     "DeepseekV3_2TopKRouter",
     "HadamardTransform",
-    "MoE",
-    "MoEFp8",
     "RMSNormFused",
 ]

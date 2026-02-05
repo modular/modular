@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,10 +20,10 @@ comptime OpaquePointer = LegacyUnsafePointer[
 from memory import UnsafePointer as RealUnsafePointer
 from sys import has_amd_gpu_accelerator
 from pathlib import Path
-from sys.ffi import _get_global_or_null, external_call
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import OwnedDLHandle, _Global
+from ffi import _get_global_or_null, external_call
+from ffi import _find_dylib
+from ffi import _get_dylib_function as _ffi_get_dylib_function
+from ffi import OwnedDLHandle, _Global
 from collections.optional import Optional
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
@@ -317,13 +317,13 @@ fn allreduce[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not output_lambda
     ), "vendor_ccl allreduce does not support output epilogue lambdas yet"
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    __comptime_assert (
+    comptime assert (
         not use_quickreduce
     ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
@@ -456,7 +456,7 @@ fn broadcast[
     Currently requires prior single-threaded call to init_comms, as thread-safe
     version not yet implemented.
     """
-    __comptime_assert (
+    comptime assert (
         not use_multimem
     ), "vendor_ccl broadcast does not support multimem path"
     # Determine this device's rank from its context id.

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -216,15 +216,13 @@ fn get_mha_decoding_num_partitions[
             # High occupancy: scale partition size to avoid over-partitioning
             # 128: base partition size matching kernel block (BN=128)
             # 64: scaling factor - reduces partitions as occupancy increases
-            #     e.g., 256 work_items → scale=4 → 512-key partitions
-            #           512 work_items → scale=8 → 1024-key partitions
             occupancy_scale = work_items // 64
-            return min(ceildiv(num_keys, 128 * occupancy_scale), WARP_SIZE)
+            return min(ceildiv(num_keys, 256 * occupancy_scale), WARP_SIZE)
         else:
             # Low occupancy: aggressive partitioning for more parallelism
             # 128: keys per partition (matches kernel BN=128)
             # WARP_SIZE (64): max partitions (AMD wavefront size, reduction limit)
-            return min(ceildiv(num_keys, 128), WARP_SIZE)
+            return min(ceildiv(num_keys, 256), WARP_SIZE)
     else:
         if num_keys > 512:
             return min(
@@ -334,16 +332,16 @@ fn flash_attention[
     This kernels handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    __comptime_assert (
+    comptime assert (
         ragged or q.rank == 4
     ), "only support rank 4 inputs for non-ragged inputs."
-    __comptime_assert (
+    comptime assert (
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert (
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -503,8 +501,8 @@ fn flash_attention_dispatch[
     # K V smem is only separate for GPUs with shared memory greater or equal to A100's.
     comptime is_shared_kv = ctx.default_device_info.shared_memory_per_multiprocessor < A100.shared_memory_per_multiprocessor
 
-    __comptime_assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
-    __comptime_assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
+    comptime assert depth == UInt(Int(q.layout.shape[q.rank - 1]))
+    comptime assert num_heads == UInt(Int(q.layout.shape[q.rank - 2]))
     var batch_size: Int
 
     @parameter
@@ -567,7 +565,7 @@ fn flash_attention_dispatch[
                         sink_weights,
                     )
                 else:
-                    __comptime_assert is_sm100
+                    comptime assert is_sm100
 
                     @parameter
                     if depth == 256 or not env_get_bool["ENABLE_FA4", True]():
@@ -888,8 +886,13 @@ fn flash_attention_dispatch[
                     # We split partitions and then reduce
                     # allocate memory for intermediate results
                     # q # [B, S, H, D]
+
+                    # Determine intermediate buffer type based on platform
+                    # AMD uses float32 for higher precision with aggressive split-k
+                    comptime intermediate_dtype = output.dtype
+
                     var output_intermediate_data = ctx.enqueue_create_buffer[
-                        output.dtype
+                        intermediate_dtype
                     ](
                         Int(
                             num_heads
@@ -900,7 +903,7 @@ fn flash_attention_dispatch[
                     )
 
                     var output_intermediate = LayoutTensor[
-                        output.dtype, Layout.row_major[4]()
+                        intermediate_dtype, Layout.row_major[4]()
                     ](
                         output_intermediate_data.unsafe_ptr(),
                         RuntimeLayout[Layout.row_major[4]()].row_major(
@@ -1016,7 +1019,35 @@ fn flash_attention_dispatch[
                                 sink_weights,
                             )
                     else:
-                        ctx.enqueue_function[kernel, kernel](
+                        # For split-k, instantiate kernel with intermediate dtype
+                        comptime kernel_splitk = mha_decoding[
+                            q.dtype,
+                            k_t,
+                            v_t,
+                            intermediate_dtype,
+                            mask_t,
+                            score_mod_t,
+                            type_of(valid_length.value()).layout,
+                            BM=BM,
+                            BN=BN,
+                            BK = UInt(BK),
+                            WM=WM,
+                            WN=WN,
+                            depth=depth,
+                            num_heads=num_heads,
+                            num_threads = UInt(num_threads),
+                            num_pipeline_stages = UInt(num_pipeline_stages),
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            is_shared_kv=is_shared_kv,
+                            sink=sink,
+                            _use_valid_length=_use_valid_length,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                            decoding_warp_split_k=decoding_warp_split_k,
+                        ]
+
+                        ctx.enqueue_function[kernel_splitk, kernel_splitk](
                             q_device,
                             k,
                             v,
@@ -1047,6 +1078,7 @@ fn flash_attention_dispatch[
                         )
 
                     comptime kernel_reduce = mha_splitk_reduce[
+                        intermediate_dtype,
                         output.dtype,
                         depth=depth,
                         num_heads=num_heads,
@@ -1162,7 +1194,7 @@ fn flash_attention[
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert q.rank == 4, "only support rank 4 inputs."
+    comptime assert q.rank == 4, "only support rank 4 inputs."
 
     # Runtime dimensions.
     var batch_size = q.dim[0]()
@@ -1264,14 +1296,12 @@ fn flash_attention_ragged[
 ) raises:
     # See the kV cache overloads for comments.
 
-    __comptime_assert (
-        q.rank == 3
-    ), "only support rank 3 inputs for ragged inputs."
-    __comptime_assert (
+    comptime assert q.rank == 3, "only support rank 3 inputs for ragged inputs."
+    comptime assert (
         q.dtype == k.dtype == v.dtype == output.dtype
     ), "Q, K, V, output should have same type."
 
-    __comptime_assert (
+    comptime assert (
         q.dtype == DType.float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
@@ -1523,7 +1553,7 @@ fn mha[
                 sink_weights,
             )
     elif is_amd_gpu():
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
 
@@ -1603,7 +1633,7 @@ fn mha_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -1616,7 +1646,7 @@ fn mha_single_batch[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -2372,7 +2402,7 @@ fn mha_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
@@ -2385,7 +2415,7 @@ fn mha_single_batch_pipelined[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -3227,7 +3257,7 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        __comptime_assert (
+        comptime assert (
             use_score_mod == False
         ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
@@ -3432,20 +3462,20 @@ fn mha_decoding_single_batch[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
-    __comptime_assert group <= 16, String(
+    comptime assert group <= 16, String(
         "Only support GQA with group <= 16 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -4145,18 +4175,18 @@ fn mha_decoding_single_batch_pipelined[
     comptime accum_type = get_accum_type[q_type]()
     comptime k_type = k_t.dtype
     comptime v_type = v_t.dtype
-    __comptime_assert q_type == k_type and k_type == v_type
+    comptime assert q_type == k_type and k_type == v_type
 
     comptime simd_size = simd_width_of[q_type]()
 
     comptime num_warps_m = BM // WM
     comptime num_warps_n = BN // WN
 
-    __comptime_assert num_warps_m * num_warps_n == (
+    comptime assert num_warps_m * num_warps_n == (
         num_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
-    __comptime_assert group <= 8, String(
+    comptime assert group <= 8, String(
         "Only support GQA with group <= 8 for Nvidia, but got a group = '",
         group,
         "'.",
@@ -4583,6 +4613,7 @@ fn mha_decoding_single_batch_pipelined[
 
 
 fn mha_splitk_reduce[
+    intermediate_type: DType,
     output_type: DType,
     depth: UInt,
     num_heads: UInt,
@@ -4590,7 +4621,7 @@ fn mha_splitk_reduce[
     group: UInt = 1,
     use_exp2: Bool = False,
 ](
-    intermediate_ptr: UnsafePointer[Scalar[output_type], ImmutAnyOrigin],
+    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     exp_sum_ptr: UnsafePointer[
         Scalar[get_accum_type[output_type]()], MutAnyOrigin
@@ -4602,7 +4633,7 @@ fn mha_splitk_reduce[
     num_partitions: Int,
 ):
     # we only reduce over a warp so limit number of warps to 1
-    __comptime_assert num_threads == UInt(WARP_SIZE), (
+    comptime assert num_threads == UInt(WARP_SIZE), (
         "num_threads: "
         + String(num_threads)
         + " should be equal to the warp_size:"
@@ -4645,7 +4676,9 @@ fn mha_splitk_reduce[
     comptime intermediate_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, Int(num_heads), Int(depth)
     )
-    var intermediate_output = LayoutTensor[output_type, intermediate_layout](
+    var intermediate_output = LayoutTensor[
+        intermediate_type, intermediate_layout
+    ](
         intermediate_ptr,
         RuntimeLayout[intermediate_layout].row_major(
             Index(num_partitions, batch_size, num_heads, depth)
@@ -4682,6 +4715,8 @@ fn mha_splitk_reduce[
     ]()
 
     var acc = SIMD[accum_type, Int(width)](0)
+    # Kahan summation compensation for improved precision with many partitions
+    var compensation = SIMD[accum_type, Int(width)](0)
     var depth_idx = thread_idx.x * width
 
     # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
@@ -4705,12 +4740,18 @@ fn mha_splitk_reduce[
             var ptr = base_ptr + (partition_idx + i) * partition_stride
             var x_load = ptr.load[
                 width = Int(width),
-                alignment = Int(width) * size_of[output_type](),
+                alignment = Int(width) * size_of[intermediate_type](),
             ]().cast[accum_type]()
             var scale = partition_exp_sum[i]
             var mask = SIMD[DType.bool, Int(width)](fill=scale > 0)
             var safe_load = mask.select(x_load, type_of(x_load)(0))
-            acc += safe_load * type_of(safe_load)(scale)
+            var term = safe_load * type_of(safe_load)(scale)
+
+            # Kahan summation: compensate for lost low-order bits
+            var y = term - compensation
+            var t = acc + y
+            compensation = (t - acc) - y
+            acc = t
 
     if depth_idx < depth:
         # simd_width=8 is based on experimentation

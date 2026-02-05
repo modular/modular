@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -43,7 +43,7 @@ fn arg_nonzero[
         input_buffer: The tensor to count the non-zeros in.
         output_buffer: The indices of all non-zero elements.
     """
-    __comptime_assert output_buffer.rank == 2, "output_buffer must be of rank 2"
+    comptime assert output_buffer.rank == 2, "output_buffer must be of rank 2"
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")]("arg_nonzero"):
         var numel = input_buffer.numel()
@@ -53,7 +53,7 @@ fn arg_nonzero[
         var j: Int = 0
         for i in range(numel):
             var indices = _get_start_indices_of_nth_subvolume[0](
-                i, coord_to_index_list(input_buffer.layout.shape)
+                i, coord_to_index_list(input_buffer.layout.shape_coord())
             )
             var offset = input_buffer.layout(Coord(indices))
             if input_buffer.ptr.load(offset) != 0:

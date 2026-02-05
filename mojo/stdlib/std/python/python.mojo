@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from python import Python
 
 from collections.dict import OwnedKwargsDict
 from os import abort
-from sys.ffi import _Global
+from ffi import _Global
 
 from ._cpython import (
     CPython,

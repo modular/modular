@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from .max import MaxProviderOptions
-from .modality import PixelModalityOptions
+from .modality import ImageProviderOptions, VideoProviderOptions
 
 
 class ProviderOptions(BaseModel):
@@ -27,7 +27,7 @@ class ProviderOptions(BaseModel):
     Example:
         {
             "max": {"target_endpoint": "instance-123"},
-            "pixel": {"type": "pixel", "dummy_param": "value"}
+            "image": {"width": 1024, "height": 768}
         }
     """
 
@@ -38,9 +38,14 @@ class ProviderOptions(BaseModel):
         description="Universal MAX platform options.",
     )
 
-    pixel: PixelModalityOptions | None = Field(
+    image: ImageProviderOptions | None = Field(
         None,
-        description="Pixel-based (vision) modality options.",
+        description="Image generation modality options.",
+    )
+
+    video: VideoProviderOptions | None = Field(
+        None,
+        description="Video generation modality options.",
     )
 
     # Add more modality fields here as needed:
@@ -49,7 +54,8 @@ class ProviderOptions(BaseModel):
 
 
 __all__ = [
+    "ImageProviderOptions",
     "MaxProviderOptions",
-    "PixelModalityOptions",
     "ProviderOptions",
+    "VideoProviderOptions",
 ]

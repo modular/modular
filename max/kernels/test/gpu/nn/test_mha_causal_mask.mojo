@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import isclose
 from random import rand
-from sys import argv, size_of, has_amd_gpu_accelerator
+from sys import argv, size_of
 
 from bit import count_trailing_zeros
 from gpu import *
@@ -204,7 +204,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
@@ -251,8 +253,7 @@ fn test[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
 
-    # amd uses more aggressive split-k partitioning
-    var rtol = 2e-2 if has_amd_gpu_accelerator() else 1e-2
+    var rtol = 1e-2
     for s in range(seq_len):
         for h in range(num_heads):
             for d in range(depth):

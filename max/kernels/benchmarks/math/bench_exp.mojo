@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,8 @@
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from math.polynomial import polynomial_evaluate
-from sys import external_call, llvm_intrinsic, simd_width_of, size_of
+from ffi import external_call
+from sys import llvm_intrinsic, simd_width_of, size_of
 from sys.arg import argv
 
 from algorithm.functional import vectorize
@@ -233,9 +234,7 @@ fn _exp_taylor0[
 fn exp_mojo_opt[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -263,9 +262,7 @@ fn exp_mojo_opt[
 fn exp_mojo_opt2[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -305,9 +302,7 @@ fn _exp_taylor3[
 fn exp_mojo_opt3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -348,9 +343,7 @@ fn _exp_taylor_mlas[
 fn exp_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -380,9 +373,7 @@ fn llvm_ldexp[
 fn mlas_llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 

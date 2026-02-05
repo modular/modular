@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@
 from math import iota
 
 from random import random_float64
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
@@ -41,9 +41,7 @@ fn top_p_sampling[
     samples tokens based on the cumulative probability mass (Top-P).
     """
     # TODO: Implement rank generalization
-    __comptime_assert (
-        input_logits.rank == 2
-    ), "Only rank 2 tensors are supported"
+    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
     _topp_minp_sampling[is_top_p=True, _test_sort=_test_sort](
         top_ps, input_logits, out_token_ids, temperature
     )
@@ -103,14 +101,10 @@ fn _topp_minp_sampling[
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
         temperature: Scalar[dtype] - Temperature for logits scaling.
     """
-    __comptime_assert (
-        input_logits.rank == 2
-    ), "Only rank 2 tensors are supported"
-    __comptime_assert (
-        out_token_ids.rank == 2
-    ), "Only rank 2 tensors are supported"
-    __comptime_assert p_thresholds.rank == 1
-    var input_shape = coord_to_index_list(input_logits.layout.shape)
+    comptime assert input_logits.rank == 2, "Only rank 2 tensors are supported"
+    comptime assert out_token_ids.rank == 2, "Only rank 2 tensors are supported"
+    comptime assert p_thresholds.rank == 1
+    var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -126,8 +120,8 @@ fn _topp_minp_sampling[
         row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
 
-    __comptime_assert sorted_probs.element_size == out_token_ids.element_size
-    __comptime_assert out_token_ids.element_size == 1
+    comptime assert sorted_probs.element_size == out_token_ids.element_size
+    comptime assert out_token_ids.element_size == 1
 
     # Initialize sorted_ids with iota values
     for batch_id in range(batch_size):
@@ -152,7 +146,7 @@ fn _topp_minp_sampling[
 
     @parameter
     for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i].value()
+        shape[i] = input_logits.layout.shape[i]().value()
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
@@ -231,7 +225,7 @@ fn sort_buf_descending[
 ):
     """Sort each batch separately in descending order using parallel merge sort.
     """
-    __comptime_assert buf_keys.rank == 2, "rank must be 2"
+    comptime assert buf_keys.rank == 2, "rank must be 2"
     var batch_size = buf_keys.numel() // vocab_size
 
     for batch_id in range(batch_size):

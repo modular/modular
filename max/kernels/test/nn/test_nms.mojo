@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,7 +46,7 @@ fn fill_boxes[
     box_list: VariadicList[BoxCoords[dtype]],
     boxes: TileTensor[mut=True, dtype, ...],
 ):
-    __comptime_assert boxes.rank == 3
+    comptime assert boxes.rank == 3
     var num_boxes = len(box_list) // batch_size
     for i in range(len(box_list)):
         var coords = linear_offset_to_coords(
@@ -78,7 +78,7 @@ fn fill_scores[
     scores_list: VariadicList[Scalar[dtype]],
     scores: TileTensor[mut=True, dtype, ...],
 ):
-    __comptime_assert scores.rank == 3
+    comptime assert scores.rank == 3
     var num_boxes = len(scores_list) // batch_size // num_classes
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
     for i in range(len(scores_list)):
@@ -138,7 +138,7 @@ fn test_case[
         score_threshold,
     )
 
-    for i in range(selected_idxs.layout.shape[0].value()):
+    for i in range(selected_idxs.layout.shape[0]().value()):
         print(selected_idxs[i, 0], end="")
         print(",", end="")
         print(selected_idxs[i, 1], end="")

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@
 # Before this fix, compiling for 32-bit targets would fail with:
 #   constraint failed: size of C `long` is unknown on this target
 
-from sys.ffi import c_long, c_long_long, c_ulong, c_ulong_long
+from ffi import c_long, c_long_long, c_ulong, c_ulong_long
 from sys.info import size_of
 
 # CHECK: target datalayout = "e-m:e-p:32:32

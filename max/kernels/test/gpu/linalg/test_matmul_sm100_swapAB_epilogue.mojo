@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -229,14 +229,16 @@ def test_matmul_sm100_epilogue[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
     else:
         kernel_launch(ctx)
 
     if not is_benchmark:
-        __comptime_assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )

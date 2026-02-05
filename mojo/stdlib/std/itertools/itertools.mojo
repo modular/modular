@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,8 +15,11 @@
 This module includes functions for creating specialized iterators:
 
 - `count()` - Creates an infinite counter with customizable start and step values
+- `cycle()` - Cycles through an iterable indefinitely
+- `drop_while()` - Drops elements while predicate is true, then yields the rest
 - `product()` - Computes the Cartesian product of two, three, or four iterables
 - `repeat()` - Repeats an element a specified number of times
+- `take_while()` - Yields elements while predicate is true
 
 These utilities enable functional-style iteration patterns and composable iterator
 operations.
@@ -493,6 +496,350 @@ fn product[
             iter(iterable_d)
         ),
     }
+
+
+# ===-----------------------------------------------------------------------===#
+# cycle
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _CycleIterator[InnerIteratorType: Iterator & Copyable](
+    Copyable, Iterable, Iterator
+):
+    """Iterator that cycles through an iterable indefinitely.
+
+    This iterator keeps a copy of the original iterator and resets to it
+    when the current iterator is exhausted. This is a lazy implementation
+    that does no work at construction time.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var _orig: Self.InnerIteratorType
+    var _iter: Self.InnerIteratorType
+
+    fn __init__(out self, var iterator: Self.InnerIteratorType):
+        """Creates a cycle iterator from an iterator.
+
+        Args:
+            iterator: The iterator to cycle through.
+        """
+        self._orig = iterator.copy()
+        self._iter = iterator^
+
+    fn __copyinit__(out self, existing: Self):
+        self._orig = existing._orig.copy()
+        self._iter = existing._iter.copy()
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn copy(self) -> Self:
+        var result = Self(self._orig.copy())
+        result._iter = self._iter.copy()
+        return result^
+
+    @always_inline
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            # Reset to original and try again
+            self._iter = self._orig.copy()
+            # If this also raises StopIteration, the original was empty
+            return next(self._iter)
+
+
+@always_inline
+fn cycle[
+    IterableType: Iterable
+](ref iterable: IterableType) -> _CycleIterator[
+    downcast[type_of(iter(iterable)), Copyable & Iterator]
+]:
+    """Creates an iterator that cycles through an iterable indefinitely.
+
+    This function returns an iterator that yields elements from the input
+    iterable repeatedly in an infinite loop. The elements are yielded in
+    the same order as they appear in the original iterable.
+
+    This is a lazy implementation - no work is done at construction time.
+    The iterator keeps a copy of the original iterator and resets to it
+    when exhausted.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to cycle through.
+
+    Returns:
+        An iterator that yields elements from the iterable forever.
+
+    Examples:
+
+    ```mojo
+    # Cycle through a list
+    var colors = ["red", "green", "blue"]
+    var color_cycle = cycle(colors)
+
+    # Get 6 elements (cycles twice)
+    var count = 0
+    for color in color_cycle:
+        print(color)
+        count += 1
+        if count >= 6:
+            break
+    # Output: red, green, blue, red, green, blue
+    ```
+    """
+    return _CycleIterator(
+        rebind_var[downcast[type_of(iter(iterable)), Copyable & Iterator]](
+            iter(iterable)
+        )
+    )
+
+
+# ===-----------------------------------------------------------------------===#
+# take_while
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _TakeWhileIterator[
+    InnerIteratorType: Iterator,
+    //,
+    predicate: fn(InnerIteratorType.Element) -> Bool,
+](Copyable, Iterable, Iterator):
+    """Iterator that yields elements while predicate returns True.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+        predicate: A function that takes an element and returns True if the
+            element should be yielded.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _exhausted: Bool
+
+    fn __init__(out self, var inner: Self.InnerIteratorType):
+        """Creates a take_while iterator from an inner iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+        """
+        self._inner = inner^
+        self._exhausted = False
+
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIteratorType, Copyable),
+            Parent=Self,
+            Element = Self.InnerIteratorType,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](existing._inner).copy()
+        )
+        self._exhausted = existing._exhausted
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self._exhausted:
+            raise StopIteration()
+        var elem = next(self._inner)
+        if not Self.predicate(elem):
+            self._exhausted = True
+            # Discard the element that failed the predicate
+            _ = rebind_var[
+                downcast[Self.Element, Movable & ImplicitlyDestructible]
+            ](elem^)
+            raise StopIteration()
+        return elem^
+
+
+@always_inline
+fn take_while[
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+    predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
+](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
+    InnerIteratorType = IterableType.IteratorType[origin],
+    predicate=predicate,
+] where conforms_to(
+    IterableType.IteratorType[origin].Element,
+    ImplicitlyDestructible,
+):
+    """Creates an iterator that yields elements while predicate returns True.
+
+    This function returns an iterator that yields elements from the input
+    iterable as long as the predicate function returns True for each element.
+    Once the predicate returns False, the iterator stops immediately and does
+    not yield any more elements.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        predicate: A function that takes an element and returns True if the
+            element should be yielded.
+
+    Args:
+        iterable: The iterable to take elements from.
+
+    Returns:
+        An iterator that yields elements while predicate returns True.
+
+    Examples:
+
+    ```mojo
+    from itertools import take_while
+
+    # Take while less than 5
+    fn less_than_5(x: Int) -> Bool:
+        return x < 5
+
+    var nums = [1, 2, 3, 4, 5, 6, 7]
+    for num in take_while[less_than_5](nums):
+        print(num)  # Prints: 1, 2, 3, 4
+    ```
+    """
+    return _TakeWhileIterator[predicate=predicate](iter(iterable))
+
+
+# ===-----------------------------------------------------------------------===#
+# drop_while
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _DropWhileIterator[
+    InnerIteratorType: Iterator,
+    //,
+    predicate: fn(InnerIteratorType.Element) -> Bool,
+](Copyable, Iterable, Iterator):
+    """Iterator that drops elements while predicate returns True, then yields rest.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+        predicate: A function that takes an element and returns True if the
+            element should be dropped.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _dropping: Bool
+
+    fn __init__(out self, var inner: Self.InnerIteratorType):
+        """Creates a drop_while iterator from an inner iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+        """
+        self._inner = inner^
+        self._dropping = True
+
+    fn __copyinit__(out self, existing: Self):
+        _constrained_conforms_to[
+            conforms_to(Self.InnerIteratorType, Copyable),
+            Parent=Self,
+            Element = Self.InnerIteratorType,
+            ParentConformsTo="Copyable",
+        ]()
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](existing._inner).copy()
+        )
+        self._dropping = existing._dropping
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    fn __next__(mut self) raises StopIteration -> Self.Element:
+        if self._dropping:
+            while True:
+                var elem = next(self._inner)
+                if Self.predicate(elem):
+                    # Discard the element that matched the predicate
+                    _ = rebind_var[
+                        downcast[Self.Element, Movable & ImplicitlyDestructible]
+                    ](elem^)
+                    continue
+                self._dropping = False
+                return elem^
+        return next(self._inner)
+
+
+@always_inline
+fn drop_while[
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+    predicate: fn(IterableType.IteratorType[origin].Element) -> Bool,
+](ref[origin] iterable: IterableType) -> _DropWhileIterator[
+    InnerIteratorType = IterableType.IteratorType[origin],
+    predicate=predicate,
+] where conforms_to(
+    IterableType.IteratorType[origin].Element,
+    ImplicitlyDestructible,
+):
+    """Creates an iterator that drops elements while predicate returns True.
+
+    This function returns an iterator that drops elements from the input
+    iterable as long as the predicate function returns True for each element.
+    Once the predicate returns False, the iterator starts yielding all
+    remaining elements unconditionally.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        predicate: A function that takes an element and returns True if the
+            element should be dropped.
+
+    Args:
+        iterable: The iterable to drop elements from.
+
+    Returns:
+        An iterator that drops elements while predicate returns True, then
+        yields all remaining elements.
+
+    Examples:
+
+    ```mojo
+    from itertools import drop_while
+
+    # Drop while less than 5
+    fn less_than_5(x: Int) -> Bool:
+        return x < 5
+
+    var nums = [1, 2, 3, 4, 5, 6, 1, 2]
+    for num in drop_while[less_than_5](nums):
+        print(num)  # Prints: 5, 6, 1, 2
+    ```
+    """
+    return _DropWhileIterator[predicate=predicate](iter(iterable))
 
 
 # ===-----------------------------------------------------------------------===#

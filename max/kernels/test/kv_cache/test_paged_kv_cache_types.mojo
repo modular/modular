@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -232,7 +232,7 @@ fn test_paged_kv_cache_offset_correctness() raises:
     comptime layout_2d = Layout.row_major[2]()
     var lookup_table_ptr = alloc[UInt32](batch_size * num_blocks)
     for i in range(num_blocks):
-        lookup_table_ptr[i] = i  # Identity mapping
+        lookup_table_ptr[i] = UInt32(i)  # Identity mapping
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(

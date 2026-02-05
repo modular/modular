@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -50,11 +50,11 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    __comptime_assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
-    __comptime_assert (
+    comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
+    comptime assert (
         dilation[0] > 0 and dilation[1] > 0
     ), "Dilation must be positive"
-    __comptime_assert (
+    comptime assert (
         padding[0] >= 0 and padding[1] >= 0
     ), "Padding must be non-negative"
 
@@ -111,7 +111,7 @@ fn fold[
     fn fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
-        __comptime_assert rank_ == 4, "fold_fn: rank must be 4"
+        comptime assert rank_ == 4, "fold_fn: rank must be 4"
         var idx = rebind[IndexList[4]](idx_arg)
 
         var batch = idx[0]
@@ -149,7 +149,7 @@ fn fold[
                     var patch_offset = h * width_col + w
 
                     # Load and accumulate
-                    __comptime_assert input.element_size == 1
+                    comptime assert input.element_size == 1
                     output_val += input[
                         batch, channel_offset + kernel_offset, patch_offset
                     ][0]

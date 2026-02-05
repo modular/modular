@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from sys.ffi import _Global, c_int
+from ffi import _Global, c_int
 from sys.info import size_of
 
 from builtin._startup import _ensure_current_or_global_runtime_init
@@ -612,7 +612,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[sys.ffi.c_char](),
+            self.type_name.unsafe_ptr().bitcast[ffi.c_char](),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -1188,22 +1188,24 @@ fn check_arguments_arity(
             var missing_arg_count = arity - arg_count
 
             raise Error(
-                String.format(
-                    "TypeError: {}() missing {} required positional {}",
-                    func_name,
-                    missing_arg_count,
-                    _pluralize(missing_arg_count, "argument", "arguments"),
-                )
+                "TypeError: ",
+                func_name,
+                "() missing ",
+                missing_arg_count,
+                " required positional ",
+                _pluralize(missing_arg_count, "argument", "arguments"),
             )
         else:
             raise Error(
-                String.format(
-                    "TypeError: {}() takes {} positional {} but {} were given",
-                    func_name,
-                    arity,
-                    _pluralize(arity, "argument", "arguments"),
-                    arg_count,
-                )
+                "TypeError: ",
+                func_name,
+                "() takes ",
+                arity,
+                " positional ",
+                _pluralize(arity, "argument", "arguments"),
+                " but ",
+                arg_count,
+                " were given",
             )
 
 
@@ -1241,18 +1243,17 @@ fn _try_convert_arg[
         result = T(py=py_args[argidx])
     except convert_err:
         raise Error(
-            String.format(
-                (
-                    "TypeError: {}() expected argument at position {} to be"
-                    " instance of (or convertible to) Mojo '{}'; got '{}'."
-                    " (Note: attempted conversion failed due to: {})"
-                ),
-                func_name,
-                argidx,
-                get_type_name[T](),
-                _get_type_name(py_args[argidx]),
-                convert_err,
-            )
+            "TypeError: ",
+            func_name,
+            "() expected argument at position ",
+            argidx,
+            " to be instance of (or convertible to) Mojo '",
+            get_type_name[T](),
+            "'; got '",
+            _get_type_name(py_args[argidx]),
+            "'. (Note: attempted conversion failed due to: ",
+            convert_err,
+            ")",
         )
 
 

@@ -25,9 +25,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_fp8_quantization.mojo": select({
-        "//:h100_gpu": ["//:h100_gpu"],
-        "//:b200_gpu": ["//:b200_gpu"],
-        "//conditions:default": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     "test_scaled_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
@@ -61,12 +60,23 @@ _EXTRA_CONSTRAINTS = {
     for src in _FP8_FP4_TESTS
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+
+_APPLE_GPU_INCOMPATIBLE_TESTS = [
+    "test_int4tobf16.mojo",
+]
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"],
+        target_compatible_with = ["//:has_gpu"] + (
+            _APPLE_GPU_INCOMPATIBLE if src in _APPLE_GPU_INCOMPATIBLE_TESTS else []
+        ),
         deps = _DEPS,
     )
     for src in glob(

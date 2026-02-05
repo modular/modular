@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -89,7 +89,7 @@ fn fill_iota[dtype: DType](mut buf: TileTensor[mut=True, dtype, ...]):
 fn test_is_sorted_descending[
     dtype: DType
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
-    __comptime_assert buf.rank == 2, "rank must be 2"
+    comptime assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.numel() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 

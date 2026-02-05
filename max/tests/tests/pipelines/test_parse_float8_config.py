@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
 
@@ -747,3 +748,44 @@ def test_parse_fp8_bias_dtype(
     assert float8_config is not None
     assert float8_config.quant_method == "fp8"
     assert float8_config.bias_dtype == DType.float16
+
+
+def test_parse_float4_from_standalone_hf_quant_config(
+    hf_config_instruct_fbgemm: AutoConfig,
+    tmp_path: Path,
+) -> None:
+    """Tests parsing FP4 config from standalone hf_quant_config.json.
+
+    Emulates nvidia/DeepSeek-R1-0528-NVFP4-v2.
+    """
+    repo_id = "nvidia/DeepSeek-R1-0528-NVFP4-v2"
+    repo_dir = tmp_path / "nvidia" / "DeepSeek-R1-0528-NVFP4-v2"
+    repo_dir.mkdir(parents=True)
+    hf_quant_config = {
+        "producer": {"name": "modelopt", "version": "0.0"},
+        "quantization": {"quant_algo": "NVFP4"},
+    }
+    (repo_dir / "hf_quant_config.json").write_text(json.dumps(hf_quant_config))
+
+    hf_config = deepcopy(hf_config_instruct_fbgemm)
+    if hasattr(hf_config, "quantization_config"):
+        del hf_config.quantization_config
+    hf_config._name_or_path = str(repo_dir)
+
+    float8_config = parse_float8_config(hf_config, {}, DType.uint8)
+
+    assert float8_config is not None
+    assert float8_config.quant_method == "modelopt"
+    assert float8_config.quant_algo == "NVFP4"
+
+
+def test_parse_float4_skips_gptq_quant_method(
+    hf_config_instruct_fbgemm: AutoConfig,
+) -> None:
+    """Tests FP4 parsing ignores GPTQ quantization configs."""
+    hf_config = deepcopy(hf_config_instruct_fbgemm)
+    hf_config.quantization_config = {"quant_method": "gptq"}
+
+    float8_config = parse_float8_config(hf_config, {}, DType.uint8)
+
+    assert float8_config is None

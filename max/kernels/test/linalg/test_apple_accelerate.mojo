@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -62,11 +62,11 @@ def test_matmul(
 
     for i in range(m):
         for j in range(k):
-            a[i, j] = (i + j) * Scalar[a.type](0.001)
+            a[i, j] = Scalar[a.type](i + j) * Scalar[a.type](0.001)
 
     for i in range(k):
         for j in range(n):
-            b[i, j] = (i + k) * Scalar[b.type](0.001)
+            b[i, j] = Scalar[b.type](i + k) * Scalar[b.type](0.001)
 
     for i in range(m):
         for j in range(n):
@@ -163,12 +163,12 @@ def test_batched_matmul(
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[batch, i, j] = (i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = Scalar[a.type](i + j) * Scalar[a.type](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[batch, i, j] = (i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = Scalar[b.type](i + k) * Scalar[b.type](0.001)
 
     for batch in range(batches):
         for i in range(m):

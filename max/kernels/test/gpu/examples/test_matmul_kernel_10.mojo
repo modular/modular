@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -355,51 +355,51 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     comptime K10_TN = 4
     comptime K10_TM = 8
 
-    comptime NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    comptime NUM_WARPS = K10_NUM_THREADS // WARP_SIZE
     comptime K10_WMITER = (K10_WM * K10_WN) // (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     )
 
     # Warptile in threadblocktile.
-    __comptime_assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
-    __comptime_assert (K10_BN / K10_WN) * (K10_BM / K10_WM) == NUM_WARPS
+    comptime assert (K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)
+    comptime assert (K10_BN // K10_WN) * (K10_BM // K10_WM) == NUM_WARPS
 
     # Threads in the warp sub-tile.
-    __comptime_assert (K10_WM * K10_WN) % (
+    comptime assert (K10_WM * K10_WN) % (
         WARP_SIZE * K10_TM * K10_TN * K10_WNITER
     ) == 0
 
     # Warp sub-tile in warp tile.
-    __comptime_assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
+    comptime assert (K10_WM % K10_WMITER == 0) and (K10_WN % K10_WNITER == 0)
 
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BK == 0, (
         "NUM_THREADS*4 must be multiple of K9_BK to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of Bs during each iteration)"
     )
-    __comptime_assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
+    comptime assert (K10_NUM_THREADS * 4) % K10_BN == 0, (
         "NUM_THREADS*4 must be multiple of K9_BN to avoid quantization "
         "issues during GMEM->SMEM tiling (loading only parts of the "
         "final row of As during each iteration)"
     )
 
-    __comptime_assert (
+    comptime assert (
         K10_BN % (16 * K10_TN) == 0
     ), "BN must be a multiple of 16*TN to avoid quantization effects"
-    __comptime_assert (
+    comptime assert (
         K10_BM % (16 * K10_TM) == 0
     ), "BM must be a multiple of 16*TM to avoid quantization effects"
 
-    __comptime_assert (K10_BM * K10_BK) % (
+    comptime assert (K10_BM * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BM*BK must be a multiple of 4*256 to vectorize loads"
-    __comptime_assert (K10_BN * K10_BK) % (
+    comptime assert (K10_BN * K10_BK) % (
         4 * K10_NUM_THREADS
     ) == 0, "BN*BK must be a multiple of 4*256 to vectorize loads"
 
-    __comptime_assert K10_TM % 4 == 0, "TM must be a multiple of 4"
+    comptime assert K10_TM % 4 == 0, "TM must be a multiple of 4"
 
-    __comptime_assert K10_TN % 4 == 0, "TN must be a multiple of 4"
+    comptime assert K10_TN % 4 == 0, "TN must be a multiple of 4"
 
     var a_host = alloc[Float32](M * K)
     var b_host = alloc[Float32](K * N)

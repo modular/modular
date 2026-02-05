@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,6 +31,9 @@ from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.tile_writer import store_fragment_to_smem
 from linalg.structuring import SMemTileArray
 
+# TileTensor-based types for C tiles
+from ..structured_kernels.tile_types import SMemTileArray2DRowMajor
+
 
 # =============================================================================
 # BlockwiseFP8TileWriter - Write register accumulators to GMEM
@@ -39,7 +42,8 @@ from linalg.structuring import SMemTileArray
 
 struct BlockwiseFP8TileWriter[
     c_type: DType,
-    c_smem_layout: Layout,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
     accum_type: DType,
     accum_layout: Layout,
     /,
@@ -54,9 +58,23 @@ struct BlockwiseFP8TileWriter[
 ]:
     """Write register accumulators to GMEM via SMEM and TMA."""
 
-    # ========== Tile Array Type ==========
+    # ========== Layout from dimensions ==========
+    comptime c_smem_layout = Layout.row_major(
+        Self.c_smem_dim0, Self.c_smem_dim1
+    )
+
+    # ========== Tile Array Types ==========
+    # LayoutTensor-based C tile array (used internally for .tile[] operations)
     comptime CTileArray = SMemTileArray[
         Self.c_type, Self.c_smem_layout, Self.num_output_stages, alignment=128
+    ]
+    # TileTensor-based C tile array (for TileTensor overloads)
+    comptime CTileArrayTT = SMemTileArray2DRowMajor[
+        Self.c_type,
+        Self.c_smem_dim0,
+        Self.c_smem_dim1,
+        Self.num_output_stages,
+        128,
     ]
 
     comptime BM = Self.block_tile_shape[0]
@@ -80,10 +98,43 @@ struct BlockwiseFP8TileWriter[
     comptime swizzle = make_swizzle[Self.c_type, Self.c_swizzle]()
 
     # TMA tile height calculation
-    comptime c_smem_shape0 = Self.c_smem_layout.shape[0].value()
-    comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
-    comptime CG1_TMA_BM = Self.c_smem_shape0
+    comptime CG2_TMA_BM = Self.c_smem_dim0 if Self.MMA_M == 256 else Self.BM
+    comptime CG1_TMA_BM = Self.c_smem_dim0
     comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
+
+    # ========== TileTensor Overload ==========
+    # Accepts TileTensor-based C tiles and converts to LayoutTensor internally.
+
+    @staticmethod
+    @always_inline
+    fn write[
+        c_layout: Layout,
+        c_desc_layout: Layout,
+        cluster_size: Int,
+    ](
+        accum: BlockwiseFP8Accumulator[
+            Self.accum_type,
+            Self.accum_layout,
+            Self.is_lower_frag_required,
+            Self.block_tile_shape,
+            Self.mma_shape,
+            cluster_size,
+        ],
+        c_tiles: Self.CTileArrayTT,
+        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_coord: Tuple[UInt, UInt],
+    ):
+        """Write accumulated register tiles to GMEM via double-buffered SMEM.
+
+        TileTensor overload - converts to LayoutTensor internally.
+        """
+        # Convert TileTensor array to LayoutTensor array via shared pointer
+        var c_tiles_lt = Self.CTileArray(c_tiles.ptr)
+        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+            accum, c_tiles_lt, c_tma_op, c_coord
+        )
+
+    # ========== LayoutTensor Overload (Original) ==========
 
     @staticmethod
     @always_inline
@@ -105,6 +156,32 @@ struct BlockwiseFP8TileWriter[
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
+        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+            accum, c_tiles, c_tma_op, c_coord
+        )
+
+    # ========== Internal Implementation ==========
+
+    @staticmethod
+    @always_inline
+    fn _write_impl[
+        c_layout: Layout,
+        c_desc_layout: Layout,
+        cluster_size: Int,
+    ](
+        accum: BlockwiseFP8Accumulator[
+            Self.accum_type,
+            Self.accum_layout,
+            Self.is_lower_frag_required,
+            Self.block_tile_shape,
+            Self.mma_shape,
+            cluster_size,
+        ],
+        c_tiles: Self.CTileArray,
+        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_coord: Tuple[UInt, UInt],
+    ):
+        """Internal implementation for writing accumulated register tiles."""
         var warp_id = get_warp_id()
 
         @parameter

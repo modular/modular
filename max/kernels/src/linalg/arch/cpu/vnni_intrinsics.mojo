@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,7 +32,7 @@ fn vpdpwssd[
     a: SIMD[a_type, width * 2],
     b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
-    __comptime_assert c_type == DType.int32, "the type of C must be int32"
+    comptime assert c_type == DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -44,7 +44,7 @@ fn vpdpwssd[
             "llvm.x86.avx512.vpdpwssd.256", SIMD[c_type, width]
         ](src, a, b)
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssd.128", SIMD[c_type, width]
         ](src, a, b)
@@ -62,7 +62,7 @@ fn vpdpwssds[
     a: SIMD[a_type, width * 2],
     b: SIMD[b_type, width * 2],
 ) -> SIMD[c_type, width]:
-    __comptime_assert c_type == DType.int32, "the type of C must be int32"
+    comptime assert c_type == DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -74,7 +74,7 @@ fn vpdpwssds[
             "llvm.x86.avx512.vpdpwssds.256", SIMD[c_type, width]
         ](src, a, b)
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpwssds.128", SIMD[c_type, width]
         ](src, a, b)
@@ -90,7 +90,7 @@ fn vpdpbusd[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    __comptime_assert c_type == DType.int32, "the type of C must be int32"
+    comptime assert c_type == DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -110,7 +110,7 @@ fn vpdpbusd[
             bitcast[DType.uint8, width * 4](b),
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusd.128", SIMD[c_type, width]
         ](
@@ -130,7 +130,7 @@ fn vpdpbusds[
 ](
     src: SIMD[c_type, width], a: SIMD[a_type, width], b: SIMD[b_type, width]
 ) -> SIMD[c_type, width]:
-    __comptime_assert c_type == DType.int32, "the type of C must be int32"
+    comptime assert c_type == DType.int32, "the type of C must be int32"
 
     @parameter
     if width == 16:
@@ -150,7 +150,7 @@ fn vpdpbusds[
             bitcast[DType.uint8, width * 4](b),
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return llvm_intrinsic[
             "llvm.x86.avx512.vpdpbusds.128", SIMD[c_type, width]
         ](
@@ -269,7 +269,7 @@ fn pmaddubs[
             )
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 4](
                 llvm_intrinsic[
@@ -311,7 +311,7 @@ fn pmaddw[
             )
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return rebind[SIMD[DType.int32, width]](
             bitcast[DType.int32, 16](
                 llvm_intrinsic[
@@ -408,7 +408,7 @@ fn dot_i8_to_i32_AVX2[
             )
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_4(
                 rebind[SIMD[DType.int32, 4]](src),
@@ -464,7 +464,7 @@ fn dot_i8_to_i32_saturated_AVX2[
             )
         )
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         return rebind[SIMD[c_type, width]](
             _dot_i8_to_i32_saturated_4(
                 rebind[SIMD[DType.int32, 4]](src),
@@ -583,7 +583,7 @@ fn dot_i16_to_i32_AVX2[
     elif width == 8:
         t = llvm_intrinsic["llvm.x86.avx2.pmadd.wd", SIMD[c_type, width]](a, b)
     else:
-        __comptime_assert width == 4
+        comptime assert width == 4
         t = llvm_intrinsic["llvm.x86.sse2.pmadd.wd", SIMD[c_type, width]](a, b)
 
     return src + t

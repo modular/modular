@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -244,7 +244,7 @@ class EagerRealizationContext(RealizationContext):
             # Lazy import to avoid circular dependency
             from ._interpreter import MOInterpreter
 
-            interp = MOInterpreter(devices=_session().devices)
+            interp = MOInterpreter()
             inputs = [self.sources[input._mlir_value] for input in graph.inputs]
             results = interp.execute(
                 graph,

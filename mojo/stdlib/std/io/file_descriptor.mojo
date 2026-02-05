@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,7 @@ from sys import (
     is_gpu,
     is_nvidia_gpu,
 )
-from sys.ffi import (
+from ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -108,7 +108,7 @@ struct FileDescriptor(TrivialRegisterType, Writer):
             If the operation fails.
         """
 
-        __comptime_assert (
+        comptime assert (
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 

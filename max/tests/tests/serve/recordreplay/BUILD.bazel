@@ -11,6 +11,11 @@ modular_py_test(
     name = "test_recordreplay",
     size = "small",
     srcs = glob(["**/*.py"]),
+    # TODO(SERVOPT-949): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/serve/recordreplay",
         requirement("fastapi"),

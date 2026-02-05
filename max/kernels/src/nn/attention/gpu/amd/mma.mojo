@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,7 +38,7 @@ fn mma[
     mut a_tile: a_register_buffer_type,
     mut b_tile: b_buffer_type,
 ):
-    __comptime_assert (
+    comptime assert (
         b_buffer_type._num_stages == 2
     ), "b_tile.num_stages must be 2"
     comptime num_k_mmas2 = ceildiv(

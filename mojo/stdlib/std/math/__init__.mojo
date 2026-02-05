@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,11 +32,16 @@ from .constants import e, pi, tau
 
 # These are not part of Python's `math` package, but we define them here.
 from .math import (
+    Absable,
     Ceilable,
     CeilDivable,
     CeilDivableRaising,
+    DivModable,
     Floorable,
+    Powable,
+    Roundable,
     Truncable,
+    abs,
     acos,
     acosh,
     align_down,
@@ -53,6 +58,7 @@ from .math import (
     copysign,
     cos,
     cosh,
+    divmod,
     erf,
     erfc,
     exp,
@@ -78,9 +84,13 @@ from .math import (
     log2,
     log10,
     logb,
+    max,
+    min,
     modf,
+    pow,
     recip,
     remainder,
+    round,
     scalb,
     sin,
     sinh,

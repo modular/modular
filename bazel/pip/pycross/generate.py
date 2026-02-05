@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -37,15 +37,16 @@ _ALLOWED_DUPLICATE_PACKAGES = _TORCH_PACKAGES | {
 def _should_ignore(package: dict[str, Any]) -> bool:
     # Ignores pypi torch versions because uv is too aggressive about pulling
     # those in even though a group will always be specified.
+    registry = package["source"].get("registry", "")
     return package["name"] == "bazel-pyproject" or (
         package["name"] in _TORCH_PACKAGES
         and (
             # Ignore torch versions from pypi that should not be in the lockfile
-            "https://pypi.org/simple" in package["source"].get("registry", "")
+            "https://pypi.org/simple" in registry
             or (
-                # Ignore torch versions that are not GPU specific but are from the GPU registry and should not be in the lockfile
-                "+" not in package["version"]
-                and "cpu" not in package["source"].get("registry", "")
+                # Ignore torch versions that are not GPU specific but are from
+                # a GPU registry (except cuda registries which use plain versions)
+                "+" not in package["version"] and "cpu" not in registry
             )
         )
     )

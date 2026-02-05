@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,7 +31,7 @@ def test_rope_ragged_gpu[
 ](ctx: DeviceContext) -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 

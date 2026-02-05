@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -49,7 +49,14 @@ fn next_power_of_two_int_v3(val: Int) -> Int:
     var v = Scalar[DType.int](val)
     return Int(
         mlir_value=v.gt(1)
-        .select(1 << (bit_width_of[Int]() - count_leading_zeros(v - 1)), 1)
+        .select(
+            1
+            << (
+                Scalar[DType.int](bit_width_of[Int]())
+                - count_leading_zeros(v - 1)
+            ),
+            1,
+        )
         .__mlir_index__()
     )
 
@@ -71,7 +78,12 @@ fn next_power_of_two_uint_v1(val: UInt) -> UInt:
 fn next_power_of_two_uint_v2(val: UInt) -> UInt:
     return UInt(
         val.eq(0).select(
-            1 << (bit_width_of[UInt]() - count_leading_zeros(val - 1)), 1
+            1
+            << (
+                Scalar[DType.uint](bit_width_of[UInt]())
+                - count_leading_zeros(val - 1)
+            ),
+            1,
         )
     )
 
@@ -99,7 +111,7 @@ fn next_power_of_two_uint_v4(val: UInt) -> UInt:
 fn _build_list[start: Int, stop: Int]() -> List[Int]:
     var values = List[Int](capacity=10_000)
     for _ in range(10_000):
-        values.append(Int(random_ui64(start, stop)))
+        values.append(Int(random_ui64(UInt64(start), UInt64(stop))))
     return values^
 
 
@@ -172,7 +184,10 @@ def main():
         n = info.name
         time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
     print("")
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,10 +16,10 @@ from os import Atomic
 from sys.intrinsics import (
     ballot,
     implicitarg_ptr,
+    llvm_intrinsic,
     readfirstlane,
     sendmsg,
 )
-from time import sleep
 
 from gpu.primitives.id import lane_id
 from memory import Span
@@ -595,7 +595,7 @@ struct Header(TrivialRegisterType):
             if ready_flag == 0:
                 break
 
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
         ref ptr = payload._handle[].slots[Int(me)]
         var value0 = ptr[0]
@@ -664,8 +664,7 @@ struct Buffer(TrivialRegisterType):
             )
             if Atomic.compare_exchange(top, f, n):
                 break
-
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
 
     fn pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
@@ -697,7 +696,7 @@ struct Buffer(TrivialRegisterType):
             p._handle[].next = f
             if Atomic.compare_exchange(top, f, ptr):
                 break
-            sleep(UInt(1))
+            llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
     fn push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """

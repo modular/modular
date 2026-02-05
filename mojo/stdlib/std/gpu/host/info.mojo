@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -434,7 +434,7 @@ Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
 ```mojo
-__comptime_assert StaticString(target_arch)
+comptime assert StaticString(target_arch)
     in (
         # NVIDIA
         StaticString("cuda"),
@@ -2382,7 +2382,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         .replace("metal:", "apple-m")
     )
 
-    __comptime_assert (
+    comptime assert (
         StaticString(target_arch) in _all_targets
     ), _build_unsupported_arch_error[target_arch0]()
 

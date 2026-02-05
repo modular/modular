@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,11 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements tempfile methods.
+"""Temporary file and directory creation.
 
-You can import a method from the `tempfile` package. For example:
+This module provides a safe API for creating temporary files and directories.
+It includes helpers for creating temporary directories (`mkdtemp`),
+temporary files (`NamedTemporaryFile`), querying the default temporary
+directory (`gettempdir`), and a context manager for managing the lifetime of
+temporary directories (`TemporaryDirectory`).
+
+To use these features, import the desired functions or classes from this module.
 
 ```mojo
+# Import from the tempfile module
 from tempfile import gettempdir
 ```
 """
@@ -118,6 +125,14 @@ fn gettempdir() -> Optional[String]:
 
     Returns:
         The name of the default temporary directory.
+
+    Example:
+
+    ```mojo
+    from tempfile import gettempdir
+
+    print(gettempdir())
+    ```
     """
     # TODO In python _get_default_tempdir is called exactly once so that the default
     # tmp dir is the same throughout the program execution/
@@ -132,6 +147,7 @@ fn mkdtemp(
     suffix: String = "", prefix: String = "tmp", dir: Optional[String] = None
 ) raises -> String:
     """Create a temporary directory.
+
     Caller is responsible for deleting the directory when done with it.
 
     Args:
@@ -144,6 +160,17 @@ fn mkdtemp(
 
     Raises:
         If the directory can not be created.
+
+    Example:
+
+    ```mojo
+    from tempfile import mkdtemp
+    from import os import rmdir
+
+    var temp_dir = mkdtemp()
+    print(temp_dir)
+    os.rmdir(temp_dir)
+    ```
     """
     var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
 
@@ -174,6 +201,22 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
     Args:
         path: The path to the directory.
         ignore_errors: Whether to ignore errors.
+
+    Raises:
+        If the operation fails.
+
+    Example:
+
+    ```mojo
+    from tempfile import mkdtemp, _rmtree
+    import os
+
+    var dir_path = mkdtemp()
+
+    # Add files and directories to dir_path
+
+    _rmtree(dir_path)
+    ```
     """
     if os.path.islink(path):
         raise Error("`path`can not be a symbolic link: ", path)
@@ -202,7 +245,26 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
 
 
 struct TemporaryDirectory:
-    """A temporary directory."""
+    """Temporary directory that cleans up automatically.
+
+    Creates a directory that's deleted when the context exits:
+    ```mojo
+    from tempfile import TemporaryDirectory
+    import os
+
+    def main():
+        var temp_path: String
+        with TemporaryDirectory() as tmpdir:
+            temp_path = tmpdir
+            print(os.path.exists(tmpdir))  # True
+            # Use tmpdir for temporary work
+
+        print(os.path.exists(temp_path))  # False - cleaned up
+    ```
+
+    The directory and all its contents are removed on exit, even if an error occurs.
+    Set `ignore_cleanup_errors=True` to suppress cleanup failures.
+    """
 
     var name: String
     """The name of the temporary directory."""
@@ -267,24 +329,22 @@ struct TemporaryDirectory:
 
 
 struct NamedTemporaryFile(Movable):
-    """A handle to a temporary file.
+    """Temporary file with automatic cleanup.
 
-    Example:
+    Creates a file that's deleted when closed (by default):
     ```mojo
     from tempfile import NamedTemporaryFile
-    from pathlib import Path
-    def main():
-        var p: Path
-        with NamedTemporaryFile(mode="rw") as f:
-            p = f.name
-            f.write("Hello world!")
-            f.seek(0)
-            print(
-                f.read() == "Hello world!"
-            )
-        print(String(p), p.exists()) #Removed by default
+
+    with NamedTemporaryFile(mode="rw") as f:
+        f.write("Hello world!")
+        f.seek(0)
+        print(f.read())  # "Hello world!"
+        print(f.name)    # Access path while open
+    # File deleted automatically
     ```
-    Note: `NamedTemporaryFile.__init__` document the arguments.
+
+    Set `delete=False` to keep the file after closing.
+    Use `mode="r"` for reading, `mode="w"` for writing, `mode="rw"` for both.
     """
 
     var _file_handle: FileHandle
@@ -360,6 +420,24 @@ struct NamedTemporaryFile(Movable):
 
         Raises:
             If the operation fails.
+
+        Example:
+
+        ```mojo
+        from tempfile import NamedTemporaryFile
+        import os
+
+        var temp_file = NamedTemporaryFile() # delete=True by default
+        temp_file.write("Temporary data")
+        temp_file.close() # File is deleted if delete=True
+        print(os.path.exists(temp_file.name)) # False
+
+        temp_file = NamedTemporaryFile(delete=False)
+        temp_file.write("Temporary data")
+        temp_file.close() # File is not deleted
+        print(os.path.exists(temp_file.name)) # True
+        os.remove(temp_file.name) # Clean up manually
+        ```
         """
         self._file_handle.close()
         if self._delete:
@@ -376,6 +454,23 @@ struct NamedTemporaryFile(Movable):
 
         Raises:
             If the operation fails.
+
+        Example:
+
+        ```mojo
+        from tempfile import NamedTemporaryFile
+        from pathlib import Path
+
+        var p: Path
+        with NamedTemporaryFile(mode="rw") as f:
+            p = f.name.copy()
+            f.write("Hello world!")
+            _ = f.seek(0)
+            print(
+                f.read() == "Hello world!"
+            )
+        print(p.exists()) # False
+        ```
         """
         return self._file_handle.read(size)
 
@@ -391,6 +486,29 @@ struct NamedTemporaryFile(Movable):
 
         Raises:
             If the operation fails.
+
+        Example:
+
+        ```mojo
+        from tempfile import NamedTemporaryFile
+        from pathlib import Path
+
+        var p: Path
+        var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
+
+        with NamedTemporaryFile(mode="rw") as f:
+            p = f.name.copy()
+            f.write_bytes(bytes[:])
+            _ = f.seek(0)
+
+            var b = f.read_bytes()
+            print(b == bytes) # True
+
+            var s = String(from_utf8_lossy=b)
+            print(s) # "Hello"
+
+        print(p.exists()) # False
+        ```
         """
         return self._file_handle.read_bytes(size)
 
@@ -410,6 +528,25 @@ struct NamedTemporaryFile(Movable):
 
         Returns:
             The resulting byte offset from the start of the file.
+
+        Example:
+
+        ```mojo
+        from tempfile import NamedTemporaryFile
+        from pathlib import Path
+
+        var p: Path
+        var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
+
+        with NamedTemporaryFile(mode="rw") as f:
+            p = f.name.copy()
+            f.write_bytes(bytes[:])
+            _ = f.seek(0)
+
+            var b = f.read_bytes()
+            print(b == bytes) # True
+            print(String(from_utf8_lossy=b)) # "Hello"
+        ```
         """
         return self._file_handle.seek(offset, whence)
 
@@ -421,6 +558,21 @@ struct NamedTemporaryFile(Movable):
 
         Args:
             args: Sequence of arguments to write to this Writer.
+
+        Example:
+        ```mojo
+        from tempfile import NamedTemporaryFile
+        from pathlib import Path
+
+        var p: Path
+        with NamedTemporaryFile(mode="rw") as f:
+            p = f.name
+            f.write("Hello world!")
+            _ = f.seek(0)
+            print(
+                f.read() == "Hello world!"
+            )
+        ```
         """
         var file = FileDescriptor(self._file_handle._get_raw_fd())
         var buffer = _WriteBufferStack(file)
@@ -438,6 +590,24 @@ struct NamedTemporaryFile(Movable):
 
         Args:
             bytes: The byte span to write to this file.
+
+        Example:
+
+        ```mojo
+        from tempfile import NamedTemporaryFile
+
+        var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello" in ASCII
+
+        with NamedTemporaryFile(mode="rw") as f:
+            f.write_bytes(bytes[:])
+            _ = f.seek(0)
+
+            var b = f.read_bytes()
+            print(b == bytes) # True
+
+            var s = String(from_utf8_lossy=b)
+            print(s) # "Hello"
+        ```
         """
         self._file_handle.write_bytes(bytes)
 

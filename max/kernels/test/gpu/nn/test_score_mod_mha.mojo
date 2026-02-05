@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -53,6 +53,7 @@ fn generate_alibi_bias[
     k_idx: SIMD[DType.int, width],
     max_prompt_len: Int = 0,
 ) -> SIMD[dtype, width]:
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
     var scale: SIMD[dtype, width]
 
     @parameter

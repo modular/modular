@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -295,22 +295,20 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     fn validate_constraints():
         """Validate common constraints for all kernel variants."""
-        __comptime_assert (
+        comptime assert (
             Self.a_type == Self.b_type
         ), "A and B must have the same type"
 
-        __comptime_assert (
-            Self.transpose_b
-        ), "Only support transposed B in layout"
+        comptime assert Self.transpose_b, "Only support transposed B in layout"
 
-        __comptime_assert (
+        comptime assert (
             not Self.partitioned_multicast
             or Self.a_swizzle.bytes() // size_of[Self.a_type]() == Self.BK
         ), (
             "Currently partitioned multi-casting is only supported when BK"
             " == (a_swizzle.bytes // size_of[a_type])"
         )
-        __comptime_assert (
+        comptime assert (
             not Self.partitioned_multicast
             or Self.b_swizzle.bytes() // size_of[Self.b_type]() == Self.BK
         ), (
@@ -318,11 +316,11 @@ struct HopperMatmulSM90Kernel[
             " == (b_swizzle.bytes // size_of[b_type])"
         )
 
-        __comptime_assert (
+        comptime assert (
             Self.num_pipeline_stages % Self.k_group_size == 0
         ), "num_pipeline_stages must be a multiple of k_group_size"
         comptime K = Self.b_layout.shape[1].value()
-        __comptime_assert (
+        comptime assert (
             K % Self.k_group_size == 0
         ), "K must be a multiple of k_group_size"
 
@@ -1130,7 +1128,7 @@ struct HopperMatmulSM90Kernel[
             if warp_id == 0 and lane_predicate and not skip_matmul:
                 var m_coord = block_idx.y * UInt(
                     Self.BM
-                ) if CLUSTER_N > 1 else UInt(Int(a_start_row)) + UInt(
+                ) if CLUSTER_N > 1 else UInt(a_start_row) + UInt(
                     block_idx_swizzle[1]
                 ) * UInt(
                     Self.BM
@@ -1138,7 +1136,7 @@ struct HopperMatmulSM90Kernel[
 
                 var n_coord = block_idx.x * UInt(
                     Self.BN
-                ) if CLUSTER_M > 1 else UInt(Int(b_start_row)) + UInt(
+                ) if CLUSTER_M > 1 else UInt(b_start_row) + UInt(
                     block_idx_swizzle[0]
                 ) * UInt(
                     Self.BN

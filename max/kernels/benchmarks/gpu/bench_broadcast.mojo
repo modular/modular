@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -87,8 +87,8 @@ fn bench_broadcast[
     root: Int,
     max_num_blocks: Optional[Int],
 ) raises:
-    __comptime_assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
-    __comptime_assert rank == 1, "this test code currently assumes rank 1"
+    comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
@@ -277,11 +277,13 @@ fn bench_broadcast[
         "GB/s |",
     )
 
-    # Zero output buffers and run one more broadcast for verification.
+    # Zero output and signal buffers, then run one more broadcast for verification.
     # This ensures we're verifying fresh results, not stale data from
     # a previous iteration that might mask a broken kernel.
+    # Signal buffers must also be zeroed since 2-stage uses the payload as scratch.
     @parameter
     for i in range(ngpus):
+        list_of_ctx[i].enqueue_memset(signal_buffers[i], 0)
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
 

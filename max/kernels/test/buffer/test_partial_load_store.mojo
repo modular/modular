@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,7 +41,7 @@ def test_partial_load_store():
 
     for idx in range(total_buffer_size):
         # Fill read_buffer with 0->15
-        read_buffer[idx] = idx
+        read_buffer[idx] = Scalar[DType.int](idx)
         # Fill write_buffer with 0
         write_buffer[idx] = 0
 

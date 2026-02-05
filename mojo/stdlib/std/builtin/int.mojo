@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ from sys.info import is_32bit
 from sys.info import bit_width_of
 
 from builtin.device_passable import DevicePassable
-from builtin.math import Absable, DivModable, Powable
+from math import Absable, DivModable, Powable
 from python import (
     ConvertibleFromPython,
     ConvertibleToPython,
@@ -42,7 +42,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 # ===----------------------------------------------------------------------=== #
 
 
-trait Indexer:
+trait Indexer(ImplicitlyDestructible):
     """
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
@@ -84,7 +84,7 @@ fn index[T: Indexer](idx: T, /) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Intable:
+trait Intable(ImplicitlyDestructible):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
@@ -460,16 +460,21 @@ struct Int(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    fn __truediv__(self, rhs: Int) -> Float64:
-        """Return the floating point division of `self` and `rhs`.
+    @always_inline("builtin")
+    fn __truediv__(self, rhs: Int) -> Self:
+        """Return the result of the division of `self` and `rhs`.
+
+        Performs truncating division (toward zero) for integers.
 
         Args:
             rhs: The value to divide on.
 
         Returns:
-            `Float64(self)/Float64(rhs)` value.
+            `self / rhs` value.
         """
-        return Float64(self) / Float64(rhs)
+        return Int(
+            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
+        )
 
     @always_inline("nodebug")
     fn __floordiv__(self, rhs: Int) -> Int:
@@ -484,7 +489,7 @@ struct Int(
         """
         # This should raise an exception
         var denom = select(rhs == 0, 1, rhs)
-        var div = self._positive_div(denom)
+        var div = self / denom
         var rem = self._positive_rem(denom)
         var res = select(((rhs < 0) ^ (self < 0)) & (rem != 0), div - 1, div)
         return select(rhs == 0, 0, res)
@@ -517,7 +522,7 @@ struct Int(
         """
         # this should raise an exception
         var denom = select(rhs == 0, 1, rhs)
-        var div = self._positive_div(denom)
+        var div = self / denom
         var rem = self._positive_rem(denom)
         var neg = ((rhs < 0) ^ (self < 0)) & Bool(rem)
         div = select(neg, div - 1, div)
@@ -1087,21 +1092,6 @@ struct Int(
             If the Python runtime is not initialized or conversion fails.
         """
         return PythonObject(self)
-
-    @always_inline("builtin")
-    fn _positive_div(self, rhs: Int) -> Int:
-        """Return the division of `self` and `rhs` assuming that the arguments
-        are both positive.
-
-        Args:
-            rhs: The value to divide on.
-
-        Returns:
-            The integer division of `self` and `rhs` .
-        """
-        return Int(
-            mlir_value=__mlir_op.`index.divs`(self._mlir_value, rhs._mlir_value)
-        )
 
     @always_inline("builtin")
     fn _positive_rem(self, rhs: Int) -> Int:

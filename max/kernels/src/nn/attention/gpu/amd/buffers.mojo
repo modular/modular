@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -303,7 +303,7 @@ struct KVBufferImpl[
             address_space = AddressSpace.SHARED,
         ],
     ):
-        # __comptime_assert
+        # comptime assert
         self.load_tile = type_of(self.load_tile).stack_allocation()
         self.mma_tile = type_of(self.mma_tile).stack_allocation()
         self.smem_iter = type_of(self.smem_iter)(shared_ptr, 0)
@@ -566,12 +566,12 @@ struct VBufferTransposeLoads[
             address_space = AddressSpace.SHARED,
         ],
     ):
-        __comptime_assert Self.depth in (
+        comptime assert Self.depth in (
             64,
             128,
             256,
         ), "depth must be 64, 128, or 256"
-        __comptime_assert (
+        comptime assert (
             Self.tensor_core_mma.shape[2] * Self.tensor_core_mma.group_size
             == 16
         ), "tensor_core_mma.shape[2] * tensor_core_mma.group_size must be 16"
@@ -603,7 +603,7 @@ struct VBufferTransposeLoads[
         var global_tile = self.global_iterator[]
         var warp_id = get_warp_id()
 
-        __comptime_assert (
+        comptime assert (
             Self.loads_per_thread_per_depth_tile == 2
         ), "loads_per_thread_per_depth_tile must be 2"
         var load_tile = self.load_tile.split[Self.num_stages]()[
@@ -997,7 +997,7 @@ struct PRegisterBuffer[
 
             @parameter
             if Self.mma_shape[0] == 32:
-                __comptime_assert (
+                comptime assert (
                     Self.output_frag_size == 16
                 ), "output_frag_size must be 16 for 32x32 mma shape"
 
@@ -1005,7 +1005,7 @@ struct PRegisterBuffer[
                 for j in range(Self.output_frag_size):
                     out[0, j] = reg_tile[tile_idx, j].cast[Self.mma_dtype]()
             elif Self.mma_shape[0] == 16:
-                __comptime_assert (
+                comptime assert (
                     Self.output_frag_size == 4
                 ), "output_frag_size must be 4 for 16x16 mma shape"
 
@@ -1127,7 +1127,7 @@ struct PRegisterBuffer[
         comptime num_n_mmas_per_bk = Self.num_n_mmas // (Self.WN // Self.BK)
 
         # for the following indexing logic, WN must be equal to BN or BK
-        __comptime_assert (
+        comptime assert (
             Self.WN == Self.BK or Self.WN == Self.BN
         ), "WN must be equal to BN or BK"
 

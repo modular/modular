@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -119,8 +119,8 @@ fn block_scaled_mxfp8_kernel[
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    __comptime_assert num_threads == 256
-    __comptime_assert (
+    comptime assert num_threads == 256
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -163,7 +163,7 @@ fn block_scaled_mxfp8_kernel[
         alignment=128,
     ]
 
-    __comptime_assert BM == BK == 128 and BN in (
+    comptime assert BM == BK == 128 and BN in (
         128,
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
@@ -195,16 +195,16 @@ fn block_scaled_mxfp8_kernel[
     comptime a_scales_size = a_scales_smem_layout.size()
     comptime b_scales_size = b_scales_smem_layout.size()
 
-    __comptime_assert (
+    comptime assert (
         (a_size * size_of[a_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_size * size_of[b_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (a_scales_size * size_of[a_scales_type]()) % 128
     ) == 0, "preserve alignment"
-    __comptime_assert (
+    comptime assert (
         (b_scales_size * size_of[b_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
@@ -521,9 +521,9 @@ fn sm100_block_scaled_mxfp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    __comptime_assert transpose_b, "Only support transposed B"
+    comptime assert transpose_b, "Only support transposed B"
 
-    __comptime_assert (
+    comptime assert (
         a_type == b_type and a_type == DType.float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
@@ -535,7 +535,7 @@ fn sm100_block_scaled_mxfp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    __comptime_assert BM == BK == 128 and BN in (
+    comptime assert BM == BK == 128 and BN in (
         128,
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
@@ -546,23 +546,23 @@ fn sm100_block_scaled_mxfp8[
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    __comptime_assert (
+    comptime assert (
         a_scales_type == b_scales_type and a_scales_type == MXFP8_SF_DTYPE
     ), "Only support F8-UE8M0 scales"
-    __comptime_assert (
+    comptime assert (
         a_scales.rank == b_scales.rank == 5
     ), "a_scales and b_scales must be 5D tensors"
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[2].value()
         == b_scales_layout.shape[2].value()
         == SF_ATOM_M[0]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[3].value()
         == b_scales_layout.shape[3].value()
         == SF_ATOM_M[1]
     ), ""
-    __comptime_assert (
+    comptime assert (
         a_scales_layout.shape[4].value()
         == b_scales_layout.shape[4].value()
         == SF_ATOM_K
@@ -676,7 +676,7 @@ def test_block_scaled_mxfp8[
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    __comptime_assert transpose_b, "transpose_b must be true"
+    comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value

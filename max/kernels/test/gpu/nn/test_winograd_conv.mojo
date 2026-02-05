@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -218,7 +218,7 @@ fn winograd_conv2d_gpu_nhwc[
     - NHWC input layout
     - RSCF filter layout
     """
-    __comptime_assert input.rank == filter.rank == output.rank == 4
+    comptime assert input.rank == filter.rank == output.rank == 4
 
     # Dimensions
     var C_in = input.dim[3]()  # input channels

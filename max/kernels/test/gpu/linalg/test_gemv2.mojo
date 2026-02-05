@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -51,10 +51,9 @@ fn epilogue_test_fn[
     for i in range(width):
         bias[i] = (
             0.5
-            + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                dtype
-            ]()
-        )
+            + Float64(idx[0] + idx[1] + i)
+            / Float64(dim_space[0] + dim_space[1])
+        ).cast[dtype]()
 
     return val + bias
 
@@ -67,7 +66,7 @@ fn test[
     N: Optional[Int],
     K: Optional[Int],
 ](mut bench: Bench, ctx: DeviceContext, m: Int, n: Int, k: Int,) raises:
-    __comptime_assert Bool(N) and Bool(
+    comptime assert Bool(N) and Bool(
         K
     ), "This test currently requires static N and K."
 

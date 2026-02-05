@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,6 @@
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import OptionalReg
 from math import ceildiv, isclose
 from random import randn
 from sys import argv, has_nvidia_gpu_accelerator
@@ -53,7 +52,7 @@ fn test[
     group: Int = 1,
     against_gpu_naive: Bool = False,
     batch_size: Int = 1,
-    num_partitions: OptionalReg[Int] = None,
+    num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
     use_causal_mask: Bool = True,
 ](
@@ -80,8 +79,8 @@ fn test[
         mask_rank,
     )
 
-    __comptime_assert mask_rank in (3, 4), "mha only support rank 3 or 4."
-    __comptime_assert (
+    comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."
+    comptime assert (
         against_gpu_naive or mask_rank == 3
     ), "Testing against cpu requires mask of rank 3."
 
@@ -174,7 +173,7 @@ fn test[
 
     @parameter
     if not against_gpu_naive:
-        __comptime_assert (
+        comptime assert (
             qkv_type == mask_type
         ), "expect qkv and mask have same type for CPU."
         _naive_attention_with_transpose[qkv_type](
@@ -281,7 +280,9 @@ fn test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
         print(nrun, "runs avg", sectime, "ms")
 
@@ -591,7 +592,7 @@ fn test_prefill[
         output_device,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
-        flare_mla_prefill[rank = q.rank](
+        flare_mla_prefill[rank = q.rank, use_fa4=True](
             output_device,
             q_device,
             k_device,
@@ -613,7 +614,9 @@ fn test_prefill[
         for i in range(20):
             kernel_launch(ctx)
 
-        var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+            nrun
+        )
         var sectime = nstime / 1000000
 
         var tflops = (
@@ -813,7 +816,7 @@ fn test_prefill[
 
 fn test_decoding[
     batch_size: Int,
-    num_partitions: OptionalReg[Int],
+    num_partitions: Optional[Int],
     split_k: Bool,
     use_causal_mask: Bool = True,
     qkv_type: DType = DType.bfloat16,
