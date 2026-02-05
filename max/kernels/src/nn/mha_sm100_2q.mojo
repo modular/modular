@@ -1390,30 +1390,39 @@ fn fma_ftz(
 
 
 @always_inline
-fn exp2_emulation(x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
-    comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
-    clamped = max(x, -127)
-    # We want to round down here, so that the fractional part is in [0, 1)
-    rounded = add_ftz_rm(clamped, fp32_round_int)
-    rounded_back = sub_ftz(rounded, fp32_round_int)
-    frac = sub_ftz(clamped, rounded_back)
-    # Tri Dao assumes x <= 127.0 and y <= 127.0
-    frac_ex2 = fma_ftz(
-        fma_ftz(
+fn exp2_emulation[
+    use_exp2_emulation: Bool = False
+](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
+    @parameter
+    if use_exp2_emulation:
+        comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
+        clamped = max(x, -127)
+        # We want to round down here, so that the fractional part is in [0, 1)
+        rounded = add_ftz_rm(clamped, fp32_round_int)
+        rounded_back = sub_ftz(rounded, fp32_round_int)
+        frac = sub_ftz(clamped, rounded_back)
+        # Tri Dao assumes x <= 127.0 and y <= 127.0
+        frac_ex2 = fma_ftz(
             fma_ftz(
-                0.077119089663028717041015625, frac, 0.227564394474029541015625
+                fma_ftz(
+                    0.077119089663028717041015625,
+                    frac,
+                    0.227564394474029541015625,
+                ),
+                frac,
+                0.695146143436431884765625,
             ),
             frac,
-            0.695146143436431884765625,
-        ),
-        frac,
-        1.0,
-    )
-    # The integer floor of x & y are now in the last 8 bits of xy_rounded
-    # We want the next 2 ops to round to nearest even. The rounding mode is important.
-    return bitcast[DType.float32](
-        bitcast[DType.int32](frac_ex2) + (bitcast[DType.int32](rounded) << 23)
-    )
+            1.0,
+        )
+        # The integer floor of x & y are now in the last 8 bits of xy_rounded
+        # We want the next 2 ops to round to nearest even. The rounding mode is important.
+        return bitcast[DType.float32](
+            bitcast[DType.int32](frac_ex2)
+            + (bitcast[DType.int32](rounded) << 23)
+        )
+    else:
+        return exp2(x)
 
 
 @always_inline
