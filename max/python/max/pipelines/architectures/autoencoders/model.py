@@ -78,15 +78,10 @@ class BaseAutoencoderModel(ComponentModel):
         for key, value in self.weights.items():
             weight_data = value.data()
             if weight_data.dtype != target_dtype:
-                if (
-                    not weight_data.dtype.is_float()
-                    or not target_dtype.is_float()
-                ):
-                    raise TypeError(
-                        "Weight adapter in VAE only casts between float dtypes (e.g. float32 -> bfloat16). "
-                        f"Got {key}: {weight_data.dtype} -> {target_dtype}. "
-                    )
-                weight_data = weight_data.astype(target_dtype)
+                if weight_data.dtype.is_float() and target_dtype.is_float():
+                    weight_data = weight_data.astype(target_dtype)
+                # Non-float weights (e.g. bn.num_batches_tracked int64) are left as-is and
+                # skipped for decoder/encoder state dicts (no prefix match).
 
             if key.startswith("decoder."):
                 decoder_state_dict[key.removeprefix("decoder.")] = weight_data

@@ -135,12 +135,9 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
                 weight_data = value.data()
                 target_dtype = self.config.dtype
                 if weight_data.dtype != target_dtype:
-                    if not weight_data.dtype.is_float() or not target_dtype.is_float():
-                        raise TypeError(
-                            "Weight adapter in VAE only casts between float dtypes (e.g. float32 -> bfloat16). "
-                            f"Got {key}: {weight_data.dtype} -> {target_dtype}."
-                        )
-                    weight_data = weight_data.astype(target_dtype)
+                    if weight_data.dtype.is_float() and target_dtype.is_float():
+                        weight_data = weight_data.astype(target_dtype)
+                    # Non-float left as-is; running_mean/var are typically float.
                 bn_stats[key] = weight_data.data
 
         bn_mean_data = bn_stats.get("bn.running_mean")
