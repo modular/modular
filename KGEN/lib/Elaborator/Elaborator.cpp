@@ -607,7 +607,16 @@ Elaborator::getExpectedMangledName(
   }
   auto func = oldSymTab.lookup<GeneratorOp>(
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  assert(func && "expected a valid generator reference");
+
+  if (!func) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "'" << errorContext
+       << "' expected a valid generator reference, but got "
+       << symbol.getSymbol().getLeafReference().getValue() << "\n";
+    return ErrorTree(errorLoc, errMsg);
+  }
+
   return std::make_pair(getExpectedMangledName(func, symbol.getParamValues(),
                                                sanitize, getPrefix),
                         func);
