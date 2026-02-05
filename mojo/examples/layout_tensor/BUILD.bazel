@@ -16,16 +16,10 @@ modular_run_binary_test(
     binary = "layout_tensor_examples",
 )
 
-# TODO(GEX-3156): Investigate and enable on Apple GPU
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
-
 mojo_binary(
     name = "layout_tensor_gpu_examples",
     srcs = ["layout_tensor_gpu_examples.mojo"],
-    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:layout",
         "@mojo//:std",
