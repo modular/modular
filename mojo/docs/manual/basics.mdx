@@ -88,7 +88,7 @@ x = "Foo" # Error: Cannot convert "StringLiteral" value to "Int"
 ```
 
 For more details, see the page about
-[variables](/mojo/manual/variables).
+[variables](/mojo/docs/manual/variables.mdx).
 
 ## Blocks and statements
 
@@ -125,7 +125,7 @@ def print_hello():
 ```
 
 For more information on loops and conditional statements, see
-[Control flow](/mojo/manual/control-flow).
+[Control flow](/mojo/docs/manual/control-flow.mdx).
 
 ## Functions
 
@@ -139,7 +139,7 @@ def greet(name: String) -> String:
 ```
 
 Where `def` and `fn` differ is error handling and argument mutability defaults.
-Refer to the [Functions](/mojo/manual/functions) page for more details on
+Refer to the [Functions](/mojo/docs/manual/functions.mdx) page for more details on
 defining and calling functions.
 
 ## Code comments
@@ -176,8 +176,8 @@ from docstrings using the [`mojo doc` command](/mojo/cli/doc).
 
 Technically, docstrings aren't _comments_, they're a special use of Mojo's
 syntax for multi-line string literals. For details, see
-[String literals](/mojo/manual/types#string-literals) in the page on
-[Types](/mojo/manual/types).
+[String literals](/mojo/docs/manual/types.mdx#string-literals) in the page on
+[Types](/mojo/docs/manual/types.mdx).
 
 :::
 
@@ -243,7 +243,7 @@ struct MyPair(Copyable):
 ```
 
 For more details, see the page about
-[structs](/mojo/manual/structs).
+[structs](/mojo/docs/manual/structs.mdx).
 
 ### Traits
 
@@ -311,7 +311,7 @@ can accept any type for `x` as long as it conforms to (it "implements")
 `SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
 it accepts a *generalized* type instead of a specific type.
 
-For more details, see the page about [traits](/mojo/manual/traits).
+For more details, see the page about [traits](/mojo/docs/manual/traits.mdx).
 
 ## Parameterization
 
@@ -326,7 +326,7 @@ talking about these compile-time parameters. Whereas, a function "argument" is
 a runtime value that's declared in parentheses.
 
 Parameterization is a complex topic that's covered in much more detail in the
-[Metaprogramming](/mojo/manual/parameters/) section, but we want to break the
+[Metaprogramming](/mojo/docs/manual/parameters/) section, but we want to break the
 ice just a little bit here. To get you started, let's look at a parametric
 function:
 
@@ -361,7 +361,7 @@ you to define variants of that type at compile-time, depending on the parameter
 values.
 
 For more detail on parameters, see the section on
-[Metaprogramming](/mojo/manual/parameters/).
+[Metaprogramming](/mojo/docs/manual/parameters/).
 
 ## Python integration
 
@@ -383,7 +383,7 @@ You must have the Python module (such as `numpy`) installed in the environment
 where you're using Mojo.
 
 For more details, see the page on
-[Python integration](/mojo/manual/python/).
+[Python integration](/mojo/docs/manual/python/).
 
 ## Next steps
 
@@ -391,11 +391,11 @@ Hopefully this page has given you enough information to start experimenting with
 Mojo, but this is only touching the surface of what's available in Mojo.
 
 If you're in the mood to read more, continue through each page of this
-Mojo Manual—the next page from here is [Functions](/mojo/manual/functions).
+Mojo Manual—the next page from here is [Functions](/mojo/docs/manual/functions).
 
 Otherwise, here are some other resources to check out:
 
-* See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
+* See [Get started with Mojo](/mojo/docs/manual/get-started) for a hands-on
   tutorial that will get you up and running with Mojo.
 
 * If you want to experiment with some code, clone [our GitHub
