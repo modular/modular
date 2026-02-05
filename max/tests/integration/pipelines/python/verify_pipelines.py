@@ -29,7 +29,10 @@ from typing import TextIO
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
-from max.entrypoints.cli import DevicesOptionType
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
@@ -407,8 +410,9 @@ def generate_llm_logits_with_optional_retry(
 
     If retry_on_flake is True, will retry once after 60 seconds on Flake exception.
     """
-    parsed_device = DevicesOptionType.parse_from_str(device)
-    device_specs = DevicesOptionType.device_specs(parsed_device)
+    device_specs = device_specs_from_normalized_device_handle(
+        normalize_device_specs_input(device)
+    )
 
     def attempt() -> None:
         run_in_isolated_process(

@@ -165,7 +165,7 @@ modular_py_binary(
     },
     deps = [
         ":verify",
-        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:generate_llm_logits",
         requirement("click"),
         "//max/tests/integration/pipelines/python/test_common:evaluate",

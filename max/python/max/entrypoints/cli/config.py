@@ -383,9 +383,11 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
             )
             set_virtual_device_count(virtual_count)
 
-        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
+        # The type ignores are necessary because "devices" is a str, but in
+        # device_specs() we accept them as a DeviceHandle.
+        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
         kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
-            draft_devices
+            draft_devices  # type: ignore[arg-type]
         )
 
         return func(*args, **kwargs)

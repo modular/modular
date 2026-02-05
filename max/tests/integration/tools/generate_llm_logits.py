@@ -29,6 +29,10 @@ from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from run_models import (
     Flake,
     _detect_hf_flakes,
@@ -177,7 +181,9 @@ def main(
         )
     try:
         generate_llm_logits(
-            device_specs=DevicesOptionType.device_specs(device_type),
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
+            ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,
             encoding_name=encoding_name,

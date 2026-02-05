@@ -41,7 +41,6 @@ from max.benchmark.benchmark_shared.datasets import (
     CodeDebugBenchmarkDataset,
 )
 from max.config import ConfigFileModel
-from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
     PipelineTask,
@@ -52,6 +51,10 @@ from max.interfaces import (
 )
 from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     EmbeddingsGenerationOutput,
@@ -446,11 +449,9 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
     pipeline_config = benchmark_config.pipeline
     if benchmark_config.devices is not None:
-        devices_input: str | list[int] = benchmark_config.devices
-        if isinstance(devices_input, str):
-            devices_input = DevicesOptionType.parse_from_str(devices_input)
-        pipeline_config.model.device_specs = DevicesOptionType.device_specs(
-            devices_input
+        device_handle = normalize_device_specs_input(benchmark_config.devices)
+        pipeline_config.model.device_specs = (
+            device_specs_from_normalized_device_handle(device_handle)
         )
 
     defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()

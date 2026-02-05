@@ -28,11 +28,18 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from pydantic import ConfigDict, Field, PrivateAttr, computed_field
+from pydantic import (
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    computed_field,
+    field_validator,
+)
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
+from .device_specs import coerce_device_specs_input
 from .hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
@@ -152,6 +159,11 @@ class MAXModelConfig(MAXModelConfigBase):
             "directly via the CLI entrypoint."
         ),
     )
+
+    @field_validator("device_specs", mode="before")
+    @classmethod
+    def _coerce_device_specs(cls, value: Any) -> list[DeviceSpec]:
+        return coerce_device_specs_input(value)
 
     force_download: bool = Field(
         default=False,
