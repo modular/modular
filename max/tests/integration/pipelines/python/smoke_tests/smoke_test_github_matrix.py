@@ -107,6 +107,8 @@ MODELS = {
     "qwen/qwen2.5-vl-3b-instruct": ["multi"],
     "qwen/qwen2.5-vl-7b-instruct": ["multi"],
     "qwen/qwen3-30b-a3b-instruct-2507": [
+        "max-ci@H100",  # MODELS-1020: server startup timeout
+        "max-ci@B200",  # MODELS-1020: server startup timeout
         "multi",
     ],
     "qwen/qwen3-8b": ["multi"],
@@ -114,6 +116,7 @@ MODELS = {
         "8xB200",
         "8xMI355",
         "vllm@B200",
+        "max-ci@H100",  # MODELS-1020: flaky, server crashes & eval timeouts
     ],
     "qwen/qwen3-vl-4b-instruct-fp8": [
         "8xB200",
@@ -138,6 +141,7 @@ MODELS = {
         "MI355",  # FP8 not supported
         "max-ci@H100",
         "max-ci@2xH100",
+        "max-ci@B200",  # MODELS-1020: chartqa eval timeout
         "sglang@B200",  # FlashInfer B200 build error
     ],
     "qwen/qwen3-vl-30b-a3b-thinking": [
