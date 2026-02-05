@@ -37,13 +37,13 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config_enums import PipelineRole
 from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Inputs, DeepseekV2Model
-from ..llama3.data_parallel_llama import compute_data_parallel_splits
 from .deepseekV3 import DeepseekV3
 from .model_config import DeepseekV3Config
 

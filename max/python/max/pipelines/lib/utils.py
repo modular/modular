@@ -16,8 +16,37 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
 
 logger = logging.getLogger("max.pipelines")
+
+
+def compute_data_parallel_splits(
+    replica_batches: Sequence[Sequence[Any]],
+) -> npt.NDArray[np.int64]:
+    """Constructs splits for the data parallel execution.
+
+    Args:
+        replica_batches: A list of batches, each containing a sequence of contexts
+        that are on the same replica.
+
+    Returns:
+        Buffer: An int64 tensor with shape (self.num_replicas + 1) that
+        contains the number of requests on each device:
+        [0, num_requests_on_replica_0, num_requests_on_replica_1, ...]
+        or None if there is only one replica.
+    """
+    dp = len(replica_batches)
+    splits = np.zeros(dp + 1, dtype=np.int64)
+    for replica_idx, replica_batch in enumerate(replica_batches):
+        splits[replica_idx + 1] += len(replica_batch)
+    splits_summed = np.cumsum(splits)
+
+    return splits_summed
 
 
 class CompilationTimer:

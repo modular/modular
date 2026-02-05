@@ -38,6 +38,7 @@ from max.pipelines.lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
 
 from ..sampling import token_sampler
@@ -583,6 +584,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_tokens: Buffer | None = None,
         merged_offsets: Buffer | None = None,
         host_merged_offsets: Buffer | None = None,
+        data_parallel_splits_np: npt.NDArray[np.int64] | None = None,
     ) -> tuple[
         npt.NDArray[np.integer[Any]],
         npt.NDArray[np.integer[Any]],
@@ -657,15 +659,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         assert target_outputs.hidden_states is not None
         assert target_outputs.logit_offsets is not None
-
-        data_parallel_splits_np = None
-        if (
-            hasattr(draft_inputs, "data_parallel_splits")
-            and draft_inputs.data_parallel_splits is not None
-        ):
-            data_parallel_splits_np = (
-                draft_inputs.data_parallel_splits.to_numpy()
-            )
 
         self._draft_input_hidden_states = self._extract_accepted_hidden_states(
             target_outputs.hidden_states,
@@ -926,6 +919,12 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         context_batch = inputs.flat_batch
         replica_batches = inputs.batches
 
+        data_parallel_splits_np = (
+            compute_data_parallel_splits(replica_batches)
+            if len(replica_batches) > 1
+            else None
+        )
+
         needs_ce = context_batch[0].tokens.generated_length == 0
         if needs_ce:
             target_outputs, target_sampled_tokens = self._target_extend(
@@ -1004,18 +1003,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 merged_tokens,
                 merged_offsets,
                 host_merged_offsets,
+                data_parallel_splits_np,
             )
         )
-
-        # Extract data_parallel_splits for DP mode
-        data_parallel_splits_np = None
-        if (
-            hasattr(draft_inputs, "data_parallel_splits")
-            and draft_inputs.data_parallel_splits is not None
-        ):
-            data_parallel_splits_np = (
-                draft_inputs.data_parallel_splits.to_numpy()
-            )
 
         self.update_contexts(
             context_batch=context_batch,

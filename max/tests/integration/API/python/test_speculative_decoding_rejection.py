@@ -59,6 +59,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
         quantization_encoding=SupportedEncoding.float32,
         device_specs=[DeviceSpec.accelerator()],
         draft_model_path=model_name,
+        draft_device_specs=[DeviceSpec.accelerator()],
         max_batch_size=4,
         max_num_steps=num_steps,
         max_length=1024,

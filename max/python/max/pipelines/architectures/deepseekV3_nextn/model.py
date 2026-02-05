@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -47,7 +48,6 @@ from ..deepseekV3.model import (
     DeepseekV3Model,
     _choose_correct_data_parallel_degree,
 )
-from ..llama3.data_parallel_llama import compute_data_parallel_splits
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
 
