@@ -48,6 +48,17 @@ def find_repo_root() -> Path:
     raise RuntimeError("Could not find repository root")
 
 
+def clear_caches() -> None:
+    """Clear build caches to ensure clean state after switching commits."""
+    repo_root = find_repo_root()
+    cache_dir = repo_root / ".derived" / "cache"
+    if cache_dir.exists():
+        print(f"Clearing cache: {cache_dir}")
+        shutil.rmtree(cache_dir)
+    else:
+        print(f"Cache directory does not exist: {cache_dir}")
+
+
 def run_smoke_test(model: str, output_path: Path) -> bool | None:
     """Returns True on success, False on failure, None on timeout."""
 
@@ -120,6 +131,7 @@ def test_commit(
     vision_threshold: float | None,
 ) -> int:
     """Called by git bisect to test each commit and return appropriate exit code."""
+    clear_caches()
     has_thresholds = text_threshold is not None or vision_threshold is not None
 
     with tempfile.TemporaryDirectory() as tmpdir:
