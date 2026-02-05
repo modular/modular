@@ -394,6 +394,7 @@ fn generic_function_1[T: AnyType](var value: T):
 fn generic_function_2[T: ImplicitlyDestructible](var value: T):
     # OK: T can be implicitly destroyed
     pass  # value.__del__() called automatically
+```
 
 If a generic function may consume its argument, it must ensure that the value
 can be safely destroyed at the end of its lifetime. Generic code has no way to
