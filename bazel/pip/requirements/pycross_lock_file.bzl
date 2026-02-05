@@ -56,6 +56,7 @@ PINS = {
     "filelock": "filelock@3.16.1",
     "fire": "fire@0.7.0",
     "flashinfer-cubin": "flashinfer-cubin@0.6.1",
+    "flashinfer-python": "flashinfer-python@0.5.3",
     "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.29.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.22.0",
@@ -1441,27 +1442,8 @@ def targets():
     )
 
     _cuda_bindings_13_0_3_deps = [
-    ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-pathfinder@1.3.2",
-        ],
-        "//conditions:default": [],
-    })
+        ":cuda-pathfinder@1.3.2",
+    ]
 
     native.alias(
         name = "_wheel_cuda-bindings@13.0.3",
@@ -1500,33 +1482,9 @@ def targets():
     )
 
     _cuda_python_13_0_3_deps = [
-    ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-bindings@13.0.3",
-            ":cuda-pathfinder@1.3.2",
-        ],
-        "//conditions:default": [],
-    })
+        ":cuda-bindings@13.0.3",
+        ":cuda-pathfinder@1.3.2",
+    ]
 
     native.alias(
         name = "_wheel_cuda-python@13.0.3",
@@ -2234,76 +2192,20 @@ def targets():
     )
 
     _flashinfer_python_0_5_3_deps = [
+        ":apache-tvm-ffi@0.1.3",
+        ":click@8.1.7",
+        ":einops@0.8.0",
+        ":ninja@1.13.0",
         ":numpy@multiple",
+        ":nvidia-cudnn-frontend@1.16.0",
+        ":nvidia-cutlass-dsl@4.3.0",
+        ":nvidia-ml-py@12.560.30",
+        ":packaging@25.0",
+        ":requests@2.32.3",
+        ":tabulate@0.9.0",
         ":torch@multiple",
-    ] + select({
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":apache-tvm-ffi@0.1.3",
-            ":click@8.1.7",
-            ":einops@0.8.0",
-            ":ninja@1.13.0",
-            ":nvidia-cudnn-frontend@1.16.0",
-            ":nvidia-cutlass-dsl@4.3.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-            ":tqdm@4.66.5",
-        ],
-        "//conditions:default": [],
-    })
+        ":tqdm@4.66.5",
+    ]
 
     native.alias(
         name = "_wheel_flashinfer-python@0.5.3",
@@ -5772,34 +5674,10 @@ def targets():
     )
 
     _nvidia_cutlass_dsl_4_3_0_deps = [
+        ":cuda-python@13.0.3",
         ":numpy@multiple",
-    ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-python@13.0.3",
-            ":typing-extensions@4.15.0",
-        ],
-        "//conditions:default": [],
-    })
+        ":typing-extensions@4.15.0",
+    ]
 
     native.alias(
         name = "_wheel_nvidia-cutlass-dsl@4.3.0",

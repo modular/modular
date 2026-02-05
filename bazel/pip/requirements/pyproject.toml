@@ -112,6 +112,7 @@ dependencies = [
 
   # Blackwell external baseline benchmarks (flashinfer runtime deps)
   "apache-tvm-ffi>=0.1,<0.2",
+  "flashinfer-python",
   "ninja",  # JIT compilation at runtime
 
   # nsight-sql-tool

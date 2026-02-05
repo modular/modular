@@ -25,6 +25,7 @@ modular_py_test(
         exclude = [
             "conftest.py",
             "test_functional_custom_gpu.py",
+            "test_flashinfer_fp4_gemm.py",
         ],
     ),
     args = [
@@ -87,5 +88,33 @@ modular_py_test(
         ":conftest",
         "//max/python/max:tensor",
         "//max/python/max/dtype",
+    ],
+)
+
+modular_py_test(
+    name = "test_flashinfer_fp4_gemm",
+    srcs = ["test_flashinfer_fp4_gemm.py"],
+    data = ["//max/tests/integration:flashinfer_fp4_gemm_ops"],
+    env = {
+        "FLASHINFER_FP4_GEMM_OPS_PATH": "$(rootpath //max/tests/integration:flashinfer_fp4_gemm_ops)",
+    },
+    imports = ["."],
+    tags = [
+        "gpu",
+        "no-pydeps",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:b200_gpu"],  # SM100 only
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        requirement("apache-tvm-ffi"),
+        requirement("flashinfer-python"),
+        requirement("ninja"),
+        requirement("torch"),
     ],
 )
