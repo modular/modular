@@ -94,13 +94,13 @@ fn run_causal_conv1d[
     var result_unfused_buf = result_unfused_h
 
     # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = dim * seqlen
-    var x_c_stride: UInt32 = seqlen
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var x_c_stride: UInt32 = UInt32(seqlen)
     var x_l_stride: UInt32 = 1
-    var weight_c_stride: UInt32 = width
+    var weight_c_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = dim * seqlen
-    var out_c_stride: UInt32 = seqlen
+    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
     var bias_stride: UInt32 = 1
 
@@ -148,13 +148,14 @@ fn run_causal_conv1d[
                     var input_l: Int = l - (width_minus_1 - w)
                     if input_l >= 0:
                         var x_offset = (
-                            b * x_batch_stride
-                            + c * x_c_stride
-                            + input_l * x_l_stride
+                            UInt32(b) * x_batch_stride
+                            + UInt32(c) * x_c_stride
+                            + UInt32(input_l) * x_l_stride
                         )
                         var input_val = input_buf.ptr.load(x_offset)
                         var weight_offset = (
-                            c * weight_c_stride + w * weight_width_stride
+                            UInt32(c) * weight_c_stride
+                            + UInt32(w) * weight_width_stride
                         )
                         var weight_val = weight_buf.ptr.load(weight_offset)
                         conv_sum = conv_sum + input_val * weight_val
@@ -164,7 +165,9 @@ fn run_causal_conv1d[
                     out_val = silu_ref[dtype](out_val)
 
                 var out_offset = (
-                    b * out_batch_stride + c * out_c_stride + l * out_l_stride
+                    UInt32(b) * out_batch_stride
+                    + UInt32(c) * out_c_stride
+                    + UInt32(l) * out_l_stride
                 )
                 result_unfused_buf.ptr.store(out_offset, out_val)
 
