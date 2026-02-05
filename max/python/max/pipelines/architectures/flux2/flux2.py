@@ -514,9 +514,6 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
     def input_types(self) -> tuple[TensorType, ...]:
         """Define input tensor types for the model with symbolic shapes.
 
-        Note: This uses symbolic shapes which may cause excessive memory allocation.
-        For production use, prefer input_types_with_shapes() with concrete dimensions.
-
         Returns:
             Tuple of TensorType specifications for all model inputs.
         """
@@ -545,61 +542,6 @@ class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
         )
         guidance_type = TensorType(
             self.max_dtype, shape=["batch_size"], device=self.max_device
-        )
-
-        return (
-            hidden_states_type,
-            encoder_hidden_states_type,
-            timestep_type,
-            img_ids_type,
-            txt_ids_type,
-            guidance_type,
-        )
-
-    def input_types_with_shapes(
-        self,
-        batch_size: int,
-        image_seq_len: int,
-        text_seq_len: int,
-    ) -> tuple[TensorType, ...]:
-        """Define input tensor types with concrete shapes for memory-efficient compilation.
-
-        This method creates TensorTypes with fixed dimensions instead of symbolic shapes,
-        allowing the compiler to allocate exact memory sizes and optimize better.
-
-        Args:
-            batch_size: Batch size for inference.
-            image_seq_len: Number of image tokens (height * width for packed latents).
-            text_seq_len: Number of text tokens from the encoder.
-
-        Returns:
-            Tuple of TensorType specifications with concrete shapes.
-        """
-        hidden_states_type = TensorType(
-            self.max_dtype,
-            shape=[batch_size, image_seq_len, self.in_channels],
-            device=self.max_device,
-        )
-        encoder_hidden_states_type = TensorType(
-            self.max_dtype,
-            shape=[batch_size, text_seq_len, self.joint_attention_dim],
-            device=self.max_device,
-        )
-        timestep_type = TensorType(
-            self.max_dtype, shape=[batch_size], device=self.max_device
-        )
-        img_ids_type = TensorType(
-            DType.int64,
-            shape=[batch_size, image_seq_len, 4],
-            device=self.max_device,
-        )
-        txt_ids_type = TensorType(
-            DType.int64,
-            shape=[batch_size, text_seq_len, 4],
-            device=self.max_device,
-        )
-        guidance_type = TensorType(
-            self.max_dtype, shape=[batch_size], device=self.max_device
         )
 
         return (
