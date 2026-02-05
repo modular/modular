@@ -586,9 +586,8 @@ struct TestAutoParamsAndSugar[f1: HasSize]:
         takes4(HasSize[f2.size]())
         # expected-error @+1 {{cannot be converted from 'HasSize[size]' to 'HasSize[4]'}}
         takes4(HasSize[f3.size]())
-        # expected-error @below {{converted from 'HasSize[size._positive_div(4)]' to 'HasSize[4]'}}
-        # expected-note @below {{.size of left value is 'size._positive_div(4)' but the right value is '4'}}
-        takes4(HasSize[f3.size._positive_div(4)]())
+        # expected-error @below {{converted from 'HasSize[(size / 4)]' to 'HasSize[4]'}}
+        takes4(HasSize[f3.size / 4]())
         # expected-error @below {{converted from 'HasSize[complex((size * 1234))]' to 'HasSize[4]'}}
         # expected-note @below {{.size of left value is 'complex((size * 1234))' but the right value is '4'}}
         # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
