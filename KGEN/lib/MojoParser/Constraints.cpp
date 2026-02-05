@@ -26,17 +26,14 @@ using namespace M::KGEN::LIT;
 void LIT::emitConstraintInconclusive(DeclResolver &resolver,
                                      MojoInflightDiag &diag,
                                      ConstraintAttr constraint) {
-  TypedAttr canonProp = getCanonicalAttr(constraint.getProposition());
-  // Strip the outermost conversion from Bool to i1.
-  if (auto structExtract = dyn_cast<LIT::StructExtractAttr>(canonProp))
-    if (structExtract.getField() == "_mlir_value")
-      canonProp = structExtract.getStructValue();
+  TypedAttr prop = stripStructExtractFromBool(constraint.getProposition());
 
   // First point to the constraint declaration and explain what it folded into.
   diag.attachNote(constraint.getLoc())
-      << "constraint declared here needs evidence for " << canonProp;
+      << "constraint declared here needs evidence for " << prop;
 
   // Walk the proposition to look for signs of inconclusiveness.
+  TypedAttr canonProp = getCanonicalAttr(prop);
   canonProp.walk([&](ParamOperatorAttr op) {
     // If the constraint involves a function call, it must be inconclusive
     // because it calls a function that is not always_inline("builtin").
@@ -50,27 +47,6 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
     }
     return WalkResult::skip();
   });
-}
-
-static TypedAttr stripStructExtractFromBool(TypedAttr prop) {
-  if (auto sugar = dyn_cast<SugarAttr>(prop)) {
-    // If the prop is sugared, attempt to strip from both sides, but it's highly
-    // likely only the sugared form will be un-canonicalized (and therefore
-    // strippable). In that case, rebind the sugared form to have the same type
-    // as the original input.
-    TypedAttr sugared = stripStructExtractFromBool(sugar.getSugared());
-    TypedAttr expanded = stripStructExtractFromBool(sugar.getExpanded());
-    if (sugared.getType() != expanded.getType())
-      sugared = ParamOperatorAttr::getRebind(sugared, expanded.getType());
-    return SugarAttr::get(prop.getContext(), sugar.getKind(),
-                          sugar.getMemberName(), sugared, expanded);
-  }
-
-  if (auto extract = dyn_cast<LIT::StructExtractAttr>(prop))
-    if (extract.getField() == "_mlir_value")
-      return extract.getStructValue();
-
-  return prop;
 }
 
 bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
@@ -149,14 +125,13 @@ ConstraintResult LIT::checkConstraints(
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;
   for (auto [idx, constraint] : llvm::enumerate(constraints)) {
-    TypedAttr prop = constraint.getProposition();
-    prop = getCanonicalAttr(prop);
+    TypedAttr origProp = constraint.getProposition();
     if (evaluator)
-      prop = evaluator->getReboundAttribute(prop);
-    prop = getCanonicalAttr(prop);
+      origProp = evaluator->getReboundAttribute(origProp);
+    TypedAttr canonProp = getCanonicalAttr(origProp);
 
     // If the constraint evaluated to a constant, check its value directly.
-    if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+    if (auto intValue = dyn_cast<IntegerAttr>(canonProp)) {
       if (intValue.getValue().isZero())
         failedConstraints.emplace_back(idx, constraint);
       continue;
@@ -165,12 +140,12 @@ ConstraintResult LIT::checkConstraints(
     // If there are contextual assumptions, and the constraint is implied by
     // them, skip it. Use constraintImplies for better implication checking
     // (handles weakening rules, conjunction elimination, etc.)
-    if (overallAssumption && constraintImplies(overallAssumption, prop))
+    if (overallAssumption && constraintImplies(overallAssumption, canonProp))
       continue;
 
     // Unprovable constraint.
     localUnprovableConstraints.push_back(
-        ConstraintAttr::get(prop, constraint.getLoc()));
+        ConstraintAttr::get(origProp, constraint.getLoc()));
   }
 
   if (!failedConstraints.empty()) {
