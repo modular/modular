@@ -1,0 +1,233 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Tests for OpenResponsesRequest factory methods."""
+
+import json
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from max.interfaces.request import (
+    CreateResponseBody,
+    OpenResponsesRequest,
+    RequestID,
+)
+from pydantic import ValidationError
+
+
+@pytest.fixture
+def mock_fastapi_request() -> Any:
+    """Create a mock FastAPI Request object."""
+    request = MagicMock()
+    request.state = MagicMock()
+    request.state.request_id = "test-request-id-123"
+    return request
+
+
+@pytest.fixture
+def minimal_request_body() -> str:
+    """Create a minimal CreateResponseBody JSON."""
+    return json.dumps(
+        {
+            "model": "test-model",
+            "input": "Generate an image of a cat",
+        }
+    )
+
+
+@pytest.fixture
+def full_request_body() -> str:
+    """Create a full CreateResponseBody JSON with provider options."""
+    return json.dumps(
+        {
+            "model": "test-model",
+            "input": "Generate an image of a cat",
+            "seed": 42,
+            "provider_options": {
+                "image": {
+                    "width": 1024,
+                    "height": 768,
+                    "negative_prompt": "blurry, low quality",
+                    "guidance_scale": 7.5,
+                    "steps": 50,
+                }
+            },
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_minimal(
+    mock_fastapi_request: Any, minimal_request_body: str
+) -> None:
+    """Test creating OpenResponsesRequest from minimal FastAPI request."""
+    mock_fastapi_request.body = AsyncMock(
+        return_value=minimal_request_body.encode()
+    )
+
+    request = await OpenResponsesRequest.from_fastapi_request(
+        mock_fastapi_request
+    )
+
+    assert request.request_id.value == "test-request-id-123"
+    assert request.body.model == "test-model"
+    assert request.body.input == "Generate an image of a cat"
+    assert request.body.seed is None
+    assert request.body.provider_options is None
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_with_provider_options(
+    mock_fastapi_request: Any, full_request_body: str
+) -> None:
+    """Test creating OpenResponsesRequest with full provider options."""
+    mock_fastapi_request.body = AsyncMock(
+        return_value=full_request_body.encode()
+    )
+
+    request = await OpenResponsesRequest.from_fastapi_request(
+        mock_fastapi_request
+    )
+
+    assert request.request_id.value == "test-request-id-123"
+    assert request.body.model == "test-model"
+    assert request.body.input == "Generate an image of a cat"
+    assert request.body.seed == 42
+
+    # Check provider options
+    assert request.body.provider_options is not None
+    assert request.body.provider_options.image is not None
+    assert request.body.provider_options.image.width == 1024
+    assert request.body.provider_options.image.height == 768
+    assert (
+        request.body.provider_options.image.negative_prompt
+        == "blurry, low quality"
+    )
+    assert request.body.provider_options.image.guidance_scale == 7.5
+    assert request.body.provider_options.image.steps == 50
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_missing_request_id(
+    minimal_request_body: str,
+) -> None:
+    """Test that missing request_id raises ValueError."""
+    mock_request = MagicMock()
+    mock_request.state = MagicMock(spec=[])  # state exists but no request_id
+    mock_request.body = AsyncMock(return_value=minimal_request_body.encode())
+
+    with pytest.raises(ValueError, match=r"request.state.request_id not found"):
+        await OpenResponsesRequest.from_fastapi_request(mock_request)
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_invalid_body(
+    mock_fastapi_request: Any,
+) -> None:
+    """Test that invalid JSON body raises ValidationError."""
+    invalid_body = json.dumps({"invalid": "missing required fields"})
+    mock_fastapi_request.body = AsyncMock(return_value=invalid_body.encode())
+
+    with pytest.raises(ValidationError):
+        await OpenResponsesRequest.from_fastapi_request(mock_fastapi_request)
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_with_message_input(
+    mock_fastapi_request: Any,
+) -> None:
+    """Test creating OpenResponsesRequest with message list input."""
+    message_body = json.dumps(
+        {
+            "model": "test-model",
+            "input": [
+                {"role": "user", "content": "Generate an image of a cat"},
+                {"role": "assistant", "content": "What style?"},
+                {"role": "user", "content": "Realistic"},
+            ],
+        }
+    )
+    mock_fastapi_request.body = AsyncMock(return_value=message_body.encode())
+
+    request = await OpenResponsesRequest.from_fastapi_request(
+        mock_fastapi_request
+    )
+
+    assert request.request_id.value == "test-request-id-123"
+    assert request.body.model == "test-model"
+    assert isinstance(request.body.input, list)
+    assert len(request.body.input) == 3
+    assert request.body.input[0].role == "user"
+    assert request.body.input[0].content == "Generate an image of a cat"
+
+
+@pytest.mark.asyncio
+async def test_from_fastapi_request_preserves_all_fields(
+    mock_fastapi_request: Any,
+) -> None:
+    """Test that all CreateResponseBody fields are preserved."""
+    complex_body = json.dumps(
+        {
+            "model": "test-model",
+            "input": "Test prompt",
+            "seed": 42,
+            "temperature": 0.8,
+            "max_output_tokens": 1024,
+            "stop": ["END"],
+            "provider_options": {
+                "image": {
+                    "width": 512,
+                    "height": 512,
+                    "secondary_prompt": "detailed",
+                    "true_cfg_scale": 2.0,
+                }
+            },
+        }
+    )
+    mock_fastapi_request.body = AsyncMock(return_value=complex_body.encode())
+
+    request = await OpenResponsesRequest.from_fastapi_request(
+        mock_fastapi_request
+    )
+
+    # Verify all fields are accessible through body
+    assert request.body.seed == 42
+    assert request.body.temperature == 0.8
+    assert request.body.max_output_tokens == 1024
+    assert request.body.stop == ["END"]
+    assert request.body.provider_options is not None
+    assert request.body.provider_options.image is not None
+    assert request.body.provider_options.image.secondary_prompt == "detailed"
+    assert request.body.provider_options.image.true_cfg_scale == 2.0
+
+
+def test_openresponses_request_is_frozen() -> None:
+    """Test that OpenResponsesRequest is immutable."""
+    body = CreateResponseBody(model="test", input="test")
+    request = OpenResponsesRequest(request_id=RequestID(), body=body)
+
+    # Frozen dataclass raises AttributeError or FrozenInstanceError on assignment
+    with pytest.raises((AttributeError, Exception)):
+        request.body = CreateResponseBody(model="changed", input="changed")  # type: ignore[misc]
+
+
+def test_openresponses_request_inherits_from_request() -> None:
+    """Test that OpenResponsesRequest properly inherits from Request."""
+    from max.interfaces.request import Request
+
+    body = CreateResponseBody(model="test", input="test")
+    request = OpenResponsesRequest(request_id=RequestID(), body=body)
+
+    assert isinstance(request, Request)
+    assert hasattr(request, "request_id")
+    assert isinstance(request.request_id, RequestID)

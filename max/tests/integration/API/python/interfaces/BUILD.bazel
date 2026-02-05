@@ -21,5 +21,6 @@ modular_py_test(
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pydantic"),
+        requirement("pytest-asyncio"),
     ],
 )
