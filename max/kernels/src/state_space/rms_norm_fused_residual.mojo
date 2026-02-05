@@ -50,17 +50,15 @@ from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
 fn _rms_norm_fused_residual_cpu_2d[
     dtype: DType,
     //,
-    input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
-    residual_input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[
-        dtype, width
-    ],
-    output_fn: fn[width: Int, alignment: Int] (
+    input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
+    residual_input_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
+    output_fn: fn[width: Int, alignment: Int](
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, alignment: Int](
         Int, Int, SIMD[dtype, width]
     ) capturing -> None,
-    residual_read_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
+    residual_read_fn: fn[width: Int](Int, Int) capturing -> SIMD[dtype, width],
     multiply_before_cast: Bool = True,
 ](
     gamma: LayoutTensor[dtype, **_],
@@ -182,19 +180,19 @@ fn rms_norm_fused_residual_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int, rank: Int] (
+    residual_input_fn: fn[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: fn[width: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    residual_read_fn: fn[width: Int, rank: Int] (
+    residual_read_fn: fn[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     /,
@@ -287,16 +285,16 @@ fn rms_norm_fused_residual_gpu_block[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+    input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+    residual_input_fn: fn[width: Int](row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: fn[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -388,16 +386,16 @@ fn rms_norm_fused_residual_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    residual_input_fn: fn[width: Int, rank: Int] (
+    residual_input_fn: fn[width: Int, rank: Int](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
-    output_residual_fn: fn[width: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: fn[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -504,16 +502,16 @@ fn rms_norm_fused_residual_gpu[
 fn _rms_norm_fused_residual_impl[
     dtype: DType,
     rank: Int,
-    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    input_1_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: fn[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -620,16 +618,16 @@ fn rms_norm_fused_residual[
     dtype: DType,
     rank: Int,
     //,
-    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_0_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    input_1_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+    input_1_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_0_fn: fn[width: Int, rank: Int, alignment: Int] (
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
-    output_residual_fn: fn[width: Int, rank: Int, alignment: Int] (
+    output_residual_fn: fn[width: Int, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
     /,

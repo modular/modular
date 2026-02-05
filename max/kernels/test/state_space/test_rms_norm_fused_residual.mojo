@@ -25,9 +25,9 @@ from utils.index import Index, IndexList
 
 fn compute_rms_ref[
     dtype: DType
-](data_ptr: UnsafePointer[Scalar[dtype]], size: Int, eps: Scalar[dtype]) -> Scalar[
-    DType.float32
-]:
+](
+    data_ptr: UnsafePointer[Scalar[dtype]], size: Int, eps: Scalar[dtype]
+) -> Scalar[DType.float32]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
     for i in range(size):
@@ -102,7 +102,9 @@ fn run_rms_norm_fused_residual_cpu[
     fn residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return residual_tensor.load[width=width](rebind[IndexList[rank]](coords))
+        return residual_tensor.load[width=width](
+            rebind[IndexList[rank]](coords)
+        )
 
     # Define output functions
     @__copy_capture(output_tensor)
