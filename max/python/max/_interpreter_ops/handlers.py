@@ -219,10 +219,9 @@ def _handle_rebind(
 
 @register_op_handler(mo.StaticBroadcastToOp)
 def _handle_static_broadcast_to(
-    op: mo.StaticBroadcastToOp,
-    inputs: Sequence[Buffer | None],
+    op: mo.StaticBroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.static.broadcast_to by broadcasting to the target shape.
+    """Handle mo.static.broadcast_to using Mojo kernel.
 
     Args:
         op: The static broadcast operation.
@@ -231,7 +230,6 @@ def _handle_static_broadcast_to(
     Returns:
         List containing the broadcast tensor buffer.
     """
-    # Get target shape from result type
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
@@ -239,7 +237,6 @@ def _handle_static_broadcast_to(
     _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
 
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
@@ -248,11 +245,17 @@ def _handle_static_broadcast_to(
         )
     target_shape = graph.Shape(shape).static_dims
 
-    # Perform broadcast using numpy
-    broadcast_np = np.broadcast_to(input_np, target_shape)
-    # broadcast_to returns a view, make a copy
-    output_np = broadcast_np.copy()
-    return [Buffer.from_numpy(output_np)]
+    # Allocate output buffer
+    output = Buffer(
+        shape=target_shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.StaticBroadcastTo(output, inputs[0], target_shape)
+
+    return [output]
 
 
 @register_op_handler(mo.BroadcastToOp)

@@ -18,11 +18,13 @@ by comparing against numpy reference implementations.
 
 import numpy as np
 import pytest
+from max import _realization_context as rc
 from max._interpreter import MOInterpreter
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.tensor import Tensor, realization_context
 
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively
@@ -1107,6 +1109,186 @@ class TestInterpreterVsCompiled:
         np.testing.assert_array_almost_equal(
             interp_result.to_numpy(), compiled_result
         )
+
+
+class TestStaticBroadcastToOp:
+    """Tests for StaticBroadcastTo using the Tensor API with MO interpreter."""
+
+    @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
+    def test_broadcast_1d_to_2d(self, dtype: DType) -> None:
+        """Test broadcasting 1D tensor to 2D."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([1, 2, 3], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 3])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (2, 3))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_1d_to_3d(self, dtype: DType) -> None:
+        """Test broadcasting 1D tensor to 3D."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 3, 4])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (2, 3, 4))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_2d_to_3d(self, dtype: DType) -> None:
+        """Test broadcasting 2D tensor to 3D."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[3, 2, 2])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (3, 2, 2))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_size1_dim(self, dtype: DType) -> None:
+        """Test broadcasting with size-1 dimension."""
+        np_dtype = dtype.to_numpy()
+        # Shape [1, 3] -> [4, 3]
+        input_np = np.array([[1.0, 2.0, 3.0]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[4, 3])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (4, 3))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_multiple_size1_dims(self, dtype: DType) -> None:
+        """Test broadcasting with multiple size-1 dimensions."""
+        np_dtype = dtype.to_numpy()
+        # Shape [1, 3, 1] -> [2, 3, 4]
+        input_np = np.array([[[1.0], [2.0], [3.0]]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 3, 4])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (2, 3, 4))
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_scalar_like(self, dtype: DType) -> None:
+        """Test broadcasting a scalar-like tensor [1] to higher dimensions."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([42.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 3, 4])
+
+        result = np.from_dlpack(y)
+        expected = np.full((2, 3, 4), 42.0, dtype=np_dtype)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_same_shape(self, dtype: DType) -> None:
+        """Test broadcasting when shapes are already compatible (no-op)."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 2])
+
+        result = np.from_dlpack(y)
+        expected = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np_dtype)
+        np.testing.assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_broadcast_to_4d(self, dtype: DType) -> None:
+        """Test broadcasting to 4D tensor."""
+        np_dtype = dtype.to_numpy()
+        input_np = np.array([[1.0, 2.0]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=[2, 3, 1, 2])
+
+        result = np.from_dlpack(y)
+        expected = np.broadcast_to(input_np, (2, 3, 1, 2))
+        np.testing.assert_array_equal(result, expected)
+
+    def test_broadcast_integer_types(self) -> None:
+        """Test broadcasting with integer types."""
+        for dtype in INT_DTYPES:
+            np_dtype = dtype.to_numpy()
+            input_np = np.array([1, 2, 3], dtype=np_dtype)
+
+            x = Tensor.from_dlpack(input_np)
+            with (
+                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                y = x.broadcast_to(shape=[2, 3])
+
+            result = np.from_dlpack(y)
+            expected = np.broadcast_to(input_np, (2, 3))
+            np.testing.assert_array_equal(result, expected)
+
+    def test_broadcast_preserves_values(self) -> None:
+        """Test that broadcast preserves exact values during chained operations."""
+        input_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        ones_np = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(input_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            # Broadcast then add
+            x_broadcast = x.broadcast_to(shape=[2, 3])
+            ones = Tensor.from_dlpack(ones_np)
+            y = x_broadcast + ones
+
+        result = np.from_dlpack(y)
+        expected = np.array(
+            [[2.0, 3.0, 4.0], [2.0, 3.0, 4.0]], dtype=np.float32
+        )
+        np.testing.assert_array_equal(result, expected)
 
 
 class TestMatmulOp:

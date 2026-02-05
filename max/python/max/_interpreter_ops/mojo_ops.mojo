@@ -26,6 +26,9 @@ from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from reflection import get_base_type_name
 from runtime.asyncrt import DeviceContextPtr
+from tensor.managed_tensor_slice import ManagedTensorSlice
+from tensor.io_spec import Input, Output
+from compiler_internal import StaticTensorSpec
 from tensor import (
     ElementwiseBinaryOp,
     ElementwiseBinaryComparisonOp,
@@ -65,6 +68,7 @@ from MOGGKernelAPI.MOGGKernelAPI import (
     Trunc,
     Not,
     Select,
+    StaticBroadcastTo,
 )
 
 
@@ -263,6 +267,11 @@ fn PyInit_mojo_ops() -> PythonObject:
             "ReduceMax", docstring="Reduce max along axis"
         )
 
+        # Static broadcast to operation
+        b.def_function[static_broadcast_to_dispatcher](
+            "StaticBroadcastTo", docstring="Static broadcast to"
+        )
+
         return b.finalize()
     except e:
         abort(String("failed to create interpreter op bindings module: ", e))
@@ -295,7 +304,7 @@ fn _get_ctx(
     )
 
 
-alias MAX_RANK = 5
+comptime MAX_RANK = 5
 
 
 fn _get_shape(
@@ -305,6 +314,7 @@ fn _get_shape(
 
     Args:
         shape_obj: Python sequence containing the shape.
+        rank: The rank of the shape.
 
     Returns:
         The shape as an InlineArray (only first `rank` elements are valid).
@@ -1406,3 +1416,194 @@ fn reduce_max_op[
         target="cpu",
         single_thread_blocking_override=True,
     ](normalized_shape, 1, DeviceContextPtr(ctx))
+
+
+# ===----------------------------------------------------------------------=== #
+# StaticBroadcastTo operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn _pad_shape_to_rank5(
+    shape_obj: PythonObject, rank: Int
+) raises -> IndexList[MAX_RANK]:
+    """Pad shape with leading 1s to make it rank-5."""
+    var padded = IndexList[MAX_RANK]()
+    var pad_count = MAX_RANK - rank
+    for i in range(pad_count):
+        padded[i] = 1
+    for i in range(rank):
+        padded[pad_count + i] = Int(py=shape_obj[i])
+    return padded
+
+
+@always_inline
+fn static_broadcast_to_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_shape: IndexList[MAX_RANK],
+    out_shape: IndexList[MAX_RANK],
+) raises:
+    """Call StaticBroadcastTo.execute with rank-5 tensors."""
+    # Create ManagedTensorSlice wrappers
+    comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+    comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
+
+    var input_tensor = ManagedTensorSlice[io_spec=Input, static_spec=in_spec](
+        in_ptr, in_shape
+    )
+
+    var output_tensor = ManagedTensorSlice[
+        io_spec=Output, static_spec=out_spec
+    ](out_ptr, out_shape)
+
+    # Call the kernel (CPU target, no device context)
+    # TODO(MXF-108): Remove use_blocking_impl
+    StaticBroadcastTo.execute[
+        target="cpu",
+        dtype=dtype,
+        in_rank=MAX_RANK,
+        out_rank=MAX_RANK,
+        _trace_name="interpreter.static_broadcast_to",
+        use_blocking_impl=True,
+    ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
+
+
+fn static_broadcast_to_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    out_shape_obj: PythonObject,
+) raises:
+    """StaticBroadcastTo dispatcher - unwraps PythonObjects and dispatches.
+
+    Pads shapes to rank-5 with leading 1s and dispatches a single rank-5
+    broadcast operation.
+    """
+    # Unwrap all PythonObjects upfront
+    var dtype = _get_dtype(in_buffer)
+    var in_shape_obj = in_buffer.shape
+    var in_rank = Int(py=len(in_shape_obj))
+    var out_rank = Int(py=len(out_shape_obj))
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var in_addr = Int(py=in_buffer._data_ptr())
+
+    # Validate ranks
+    if in_rank > MAX_RANK or out_rank > MAX_RANK:
+        raise Error(
+            "Unsupported rank: in_rank="
+            + String(in_rank)
+            + ", out_rank="
+            + String(out_rank)
+            + ". Max supported rank is "
+            + String(MAX_RANK)
+        )
+
+    # Pad shapes to rank-5 with leading 1s
+    var padded_in_shape = _pad_shape_to_rank5(in_shape_obj, in_rank)
+    var padded_out_shape = _pad_shape_to_rank5(out_shape_obj, out_rank)
+
+    @always_inline
+    fn _make_ptr[
+        dtype: DType
+    ](addr: Int) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+        return UnsafePointer[Scalar[dtype], MutExternalOrigin](
+            unsafe_from_address=addr
+        )
+
+    # Dispatch by dtype
+    if dtype == DType.float32:
+        static_broadcast_to_op[DType.float32](
+            _make_ptr[DType.float32](out_addr),
+            _make_ptr[DType.float32](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.float64:
+        static_broadcast_to_op[DType.float64](
+            _make_ptr[DType.float64](out_addr),
+            _make_ptr[DType.float64](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.float16:
+        static_broadcast_to_op[DType.float16](
+            _make_ptr[DType.float16](out_addr),
+            _make_ptr[DType.float16](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.bfloat16:
+        static_broadcast_to_op[DType.bfloat16](
+            _make_ptr[DType.bfloat16](out_addr),
+            _make_ptr[DType.bfloat16](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.int8:
+        static_broadcast_to_op[DType.int8](
+            _make_ptr[DType.int8](out_addr),
+            _make_ptr[DType.int8](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.int16:
+        static_broadcast_to_op[DType.int16](
+            _make_ptr[DType.int16](out_addr),
+            _make_ptr[DType.int16](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.int32:
+        static_broadcast_to_op[DType.int32](
+            _make_ptr[DType.int32](out_addr),
+            _make_ptr[DType.int32](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.int64:
+        static_broadcast_to_op[DType.int64](
+            _make_ptr[DType.int64](out_addr),
+            _make_ptr[DType.int64](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.uint8:
+        static_broadcast_to_op[DType.uint8](
+            _make_ptr[DType.uint8](out_addr),
+            _make_ptr[DType.uint8](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.uint16:
+        static_broadcast_to_op[DType.uint16](
+            _make_ptr[DType.uint16](out_addr),
+            _make_ptr[DType.uint16](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.uint32:
+        static_broadcast_to_op[DType.uint32](
+            _make_ptr[DType.uint32](out_addr),
+            _make_ptr[DType.uint32](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.uint64:
+        static_broadcast_to_op[DType.uint64](
+            _make_ptr[DType.uint64](out_addr),
+            _make_ptr[DType.uint64](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    elif dtype == DType.bool:
+        static_broadcast_to_op[DType.bool](
+            _make_ptr[DType.bool](out_addr),
+            _make_ptr[DType.bool](in_addr),
+            padded_in_shape,
+            padded_out_shape,
+        )
+    else:
+        raise Error(
+            "Unsupported dtype for static_broadcast_to: " + String(dtype)
+        )
