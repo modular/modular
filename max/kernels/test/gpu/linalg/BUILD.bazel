@@ -122,6 +122,7 @@ _FILECHECK_TESTS = [
 _B200_SMOKE_TESTS = [
     "test_matmul_sm100_smoke.mojo",
     "test_matmul_sm100_blockwise_fp8_smoke.mojo",
+    "test_tma_im2col_unit.mojo",
 ]
 
 _B200_TESTS = [

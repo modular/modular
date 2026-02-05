@@ -361,3 +361,129 @@ fn create_tensormap[
     )
 
     return tensormap
+
+
+@always_inline
+fn create_tensormap_im2col[
+    dtype: DType,
+    rank: Int,
+    spatial_rank: Int,
+](
+    global_buf: DeviceBuffer[dtype],
+    global_shape: IndexList[rank],
+    global_strides: IndexList[rank],
+    lower_corner: IndexList[spatial_rank],
+    upper_corner: IndexList[spatial_rank],
+    channels_per_pixel: Int,
+    pixels_per_column: Int,
+    swizzle_mode: SwizzleMode = SwizzleMode.NONE,
+) raises -> TensorMap:
+    """Create a TMA descriptor for im2col transformation.
+
+    Creates a TensorMap descriptor that performs im2col coordinate transformation
+    in hardware during TMA loads. This is used for implicit GEMM convolution
+    where the activation tensor is accessed with im2col addressing.
+
+    The tensor is interpreted in CWHDN order (channels, width, height, depth, batch)
+    where the last spatial dimensions are optional based on rank.
+
+    For 2D convolution (rank=4): tensor shape is [N, H, W, C] (NHWC)
+    - Dimensions are reordered to CWHDN: [C, W, H, N]
+    - Spatial dimensions are [W, H] (spatial_rank=2)
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        rank: Total number of tensor dimensions (4 for 2D conv, 5 for 3D conv).
+        spatial_rank: Number of spatial dimensions (2 for 2D, 3 for 3D).
+
+    Args:
+        global_buf: Device buffer containing the tensor data.
+        global_shape: Shape of the tensor in global memory [N, (D,) H, W, C].
+        global_strides: Stride values for each dimension.
+        lower_corner: Lower corner offsets for spatial dimensions (negative for padding).
+        upper_corner: Upper corner offsets for spatial dimensions.
+        channels_per_pixel: Number of channels per im2col column element.
+        pixels_per_column: Number of output pixels per im2col column.
+        swizzle_mode: Memory swizzling pattern. Defaults to SwizzleMode.NONE.
+
+    Returns:
+        A TensorMap descriptor configured for im2col access patterns.
+
+    Raises:
+        Error if the tensor configuration is invalid or driver call fails.
+    """
+    comptime assert (
+        rank >= 3
+    ), "Im2col requires at least 3D tensor (NHC or NHWC)"
+    comptime assert rank <= 5, "Im2col supports at most 5D tensor (NDHWC)"
+    comptime assert (
+        spatial_rank == rank - 2
+    ), "spatial_rank must equal rank - 2 (excluding batch and channel)"
+
+    var tensormap = TensorMap()
+    var tensormap_ptr = UnsafePointer(to=tensormap).bitcast[NoneType]()
+
+    # Convert from row-major NHWC to column-major CWHDN for TMA API
+    # Row-major NHWC: N is dim 0, H is dim 1, W is dim 2, C is dim 3
+    # TMA expects CWHDN order (least rapidly varying to most)
+    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
+    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
+    var lower_corner_arg = InlineArray[Int32, spatial_rank](uninitialized=True)
+    var upper_corner_arg = InlineArray[Int32, spatial_rank](uninitialized=True)
+    var element_stride_arg = InlineArray[Int32, rank](fill=1)
+
+    # Reverse dimension order for TMA API (CWHDN from NHWC)
+    @parameter
+    for i in range(rank):
+        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_strides_arg[i] = Int64(
+            global_strides[rank - i - 1] * size_of[dtype]()
+        )
+
+    # Reverse spatial corners (W, H, D from D, H, W or H, W)
+    @parameter
+    for i in range(spatial_rank):
+        lower_corner_arg[i] = Int32(lower_corner[spatial_rank - i - 1])
+        upper_corner_arg[i] = Int32(upper_corner[spatial_rank - i - 1])
+
+    # Call cuTensorMapEncodeIm2col via AsyncRT
+    _checked(
+        external_call[
+            "AsyncRT_cuda_tensorMapEncodeIm2col",
+            _ConstCharPtr,
+            OpaquePointer[MutAnyOrigin],  # tensorMap
+            Int32,  # tensorDataType
+            Int32,  # tensorRank
+            _DeviceBufferPtr,  # globalAddress
+            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
+            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
+            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxLowerCorner
+            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxUpperCorner
+            Int32,  # channelsPerPixel
+            Int32,  # pixelsPerColumn
+            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
+            Int32,  # interleave
+            Int32,  # swizzle
+            Int32,  # l2Promotion
+            Int32,  # oobFill
+        ](
+            tensormap_ptr,
+            DataType.from_dtype[dtype]()._value,
+            Int32(rank),
+            global_buf._handle,
+            global_dim_arg.unsafe_ptr(),
+            # global_strides_arg[0] is implicitly size_of[dtype]()
+            global_strides_arg.unsafe_ptr() + 1,
+            lower_corner_arg.unsafe_ptr(),
+            upper_corner_arg.unsafe_ptr(),
+            Int32(channels_per_pixel),
+            Int32(pixels_per_column),
+            element_stride_arg.unsafe_ptr(),
+            InterleaveMode.NONE._value,
+            swizzle_mode._value,
+            L2Promotion.NONE._value,
+            OOBFill.NONE._value,  # OOB returns 0 (matches CUTLASS OOBFill::ZERO)
+        )
+    )
+
+    return tensormap
