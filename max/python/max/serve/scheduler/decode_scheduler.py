@@ -49,6 +49,7 @@ from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
+from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .utils import SchedulerLogger, get_cancelled_reqs
 
@@ -105,6 +106,7 @@ class DecodeScheduler(Scheduler):
             scheduler_config=scheduler_config,
             pipeline=pipeline,
             kv_cache=kv_cache,
+            batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
         )
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
