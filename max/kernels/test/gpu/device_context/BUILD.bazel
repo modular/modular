@@ -14,7 +14,6 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_device_event.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2555
     "test_external_shared_mem.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
     "test_device_context_sub_buffer.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
-    "test_device_context.mojo": _APPLE_GPU_INCOMPATIBLE,  # TODO(GEX-3156)
 }
 
 [
