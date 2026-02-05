@@ -122,3 +122,54 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--max-length=100",
             ]
         )
+
+
+def test_pipelines_cli__set_kv_cache_dtype(
+    tiny_llama_local_path: str,
+    custom_architecture_path: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test that there is no issue when the KV cache datatype is overridden with parameter `--kv-cache-format`."""
+
+    with pytest.raises(SystemExit):
+        pipelines.main(
+            [
+                "generate",
+                "--model",
+                tiny_llama_local_path,
+                f"--custom-architectures={custom_architecture_path}",
+                "--no-use-legacy-module",
+                "--devices=cpu",
+                "--prompt",
+                "Why is the sky blue?",
+                "--quantization-encoding=float32",
+                "--top-k=1",
+                "--max-new-tokens=10",
+                "--max-length=100",
+                "--kv-cache-format=float8_e4m3fn",
+            ]
+        )
+    captured = capsys.readouterr()
+    assert "cache_memory       : 2.00 MiB" in captured.err
+
+    # Expect 2x the cache memory needed for Bfloat16 dtype.
+    with pytest.raises(SystemExit):
+        pipelines.main(
+            [
+                "generate",
+                "--model",
+                tiny_llama_local_path,
+                f"--custom-architectures={custom_architecture_path}",
+                "--no-use-legacy-module",
+                "--devices=cpu",
+                "--prompt",
+                "Why is the sky blue?",
+                "--quantization-encoding=float32",
+                "--top-k=1",
+                "--max-new-tokens=10",
+                "--max-length=100",
+                "--kv-cache-format=bfloat16",
+            ]
+        )
+    captured = capsys.readouterr()
+    assert "cache_memory       : 4.00 MiB" in captured.err

@@ -29,7 +29,12 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import (
+    KVCacheInputs,
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVCacheStrategy,
+)
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -175,11 +180,23 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
     ) -> KVCacheParams:
         num_kv_heads = cls._get_num_kv_heads(huggingface_config)
         hidden_size = cls._get_hidden_size(huggingface_config)
+        head_dim = hidden_size // num_kv_heads
+
+        kvcache_quant_config = None
+        if cache_dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
+            # Configure the KVCacheParams quantization parameters.
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32,
+                quantization_granularity=head_dim // 2,
+            )
 
         return KVCacheParams(
             dtype=cache_dtype,
             n_kv_heads=num_kv_heads,
-            head_dim=hidden_size // num_kv_heads,
+            head_dim=head_dim,
             num_layers=cls._get_num_layers(huggingface_config),
             cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
@@ -188,6 +205,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             page_size=kv_cache_config.kv_cache_page_size,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
         )
 
     def load_model(
