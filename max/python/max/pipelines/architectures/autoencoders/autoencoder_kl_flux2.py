@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from types import SimpleNamespace
-from typing import Any, ClassVar
+from typing import Any
 
 from max import functional as F
 from max.driver import Device
@@ -89,8 +89,6 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
     handling configuration, weight loading, model compilation, and BatchNorm
     statistics for Flux2's latent patchification.
     """
-
-    config_name: ClassVar[str] = AutoencoderKLFlux2Config.config_name
 
     def __init__(
         self,

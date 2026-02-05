@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar
+from typing import Any
 
 from max.driver import Device
 from max.dtype import DType
@@ -44,8 +44,6 @@ class AutoencoderKLConfigBase(MAXModelConfigBase):
 
 
 class AutoencoderKLConfig(AutoencoderKLConfigBase):
-    config_name: ClassVar[str] = "config.json"
-
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
@@ -67,16 +65,6 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
 
 
 class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
-    """Configuration for Flux2 VAE Autoencoder.
-
-    Extends AutoencoderKLConfigBase with Flux2-specific parameters:
-    - patch_size: Patch size for latent patchification (2x2 for Flux2)
-    - batch_norm_eps: Epsilon value for BatchNorm statistics
-    - batch_norm_momentum: Momentum value for BatchNorm statistics
-    - latent_channels: Number of latent channels (32 for Flux2, vs 4 for Flux1)
-    """
-
-    config_name: ClassVar[str] = "config.json"
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
     batch_norm_momentum: float = 0.1

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any
 
 from max import functional as F
 from max.driver import Device
@@ -23,8 +23,6 @@ from max.tensor import Tensor
 
 from .model_config import AutoencoderKLConfigBase
 from .vae import DiagonalGaussianDistribution
-
-TConfig = TypeVar("TConfig", bound=AutoencoderKLConfigBase)
 
 
 class BaseAutoencoderModel(ComponentModel):
@@ -41,7 +39,7 @@ class BaseAutoencoderModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
-        config_class: type[TConfig],
+        config_class: type[AutoencoderKLConfigBase],
         autoencoder_class: type,
     ) -> None:
         """Initialize base autoencoder model.
