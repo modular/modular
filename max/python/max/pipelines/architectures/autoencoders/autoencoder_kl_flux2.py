@@ -16,10 +16,8 @@ from typing import Any, ClassVar
 
 from max import functional as F
 from max.driver import Device
-from max.dtype import DType
-from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn import Conv2d, Module
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.tensor import Tensor
 
@@ -53,27 +51,10 @@ class AutoencoderKLFlux2(Module[[Tensor, Tensor | None], Tensor]):
             act_fn=config.act_fn,
             double_z=True,  # Output 2*latent_channels for mean and logvar
             mid_block_add_attention=config.mid_block_add_attention,
+            use_quant_conv=config.use_quant_conv,
             device=config.device,
             dtype=config.dtype,
         )
-
-        # Quantization convolution: encoder output -> latent distribution parameters
-        self.quant_conv: Conv2d | None = None
-        if config.use_quant_conv:
-            self.quant_conv = Conv2d(
-                kernel_size=1,
-                in_channels=2 * config.latent_channels,  # mean + logvar
-                out_channels=2 * config.latent_channels,
-                dtype=config.dtype,
-                stride=1,
-                padding=0,
-                dilation=1,
-                num_groups=1,
-                has_bias=True,
-                device=config.device,
-                permute=True,
-            )
-
         # Decoder: latents -> images
         self.decoder = Decoder(
             in_channels=config.latent_channels,

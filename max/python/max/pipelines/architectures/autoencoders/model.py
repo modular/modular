@@ -16,9 +16,7 @@ from typing import Any, TypeVar
 
 from max import functional as F
 from max.driver import Device
-from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn import Conv2d, Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from max.tensor import Tensor
@@ -60,7 +58,6 @@ class BaseAutoencoderModel(ComponentModel):
         self.config = config_class.generate(config, encoding, devices)  # type: ignore[attr-defined]
         self.autoencoder_class = autoencoder_class
         self.encoder_model: Callable[[Tensor], Tensor] | None = None
-        self.quant_conv_model: Callable[[Tensor], Tensor] | None = None
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -68,14 +65,13 @@ class BaseAutoencoderModel(ComponentModel):
 
         Extracts decoder weights (decoder.*, post_quant_conv.*) and encoder weights
         (encoder.*, quant_conv.*) from the full model weights and compiles them
-        for inference. Encoder is optional (only loaded if weights exist).
+        for inference. quant_conv is part of the encoder when present. Encoder is optional (only loaded if weights exist).
 
         Returns:
             Compiled decoder model callable.
         """
         decoder_state_dict = {}
         encoder_state_dict = {}
-        quant_conv_state_dict = {}
         target_dtype = self.config.dtype
 
         for key, value in self.weights.items():
@@ -90,7 +86,7 @@ class BaseAutoencoderModel(ComponentModel):
             elif key.startswith("encoder."):
                 encoder_state_dict[key.removeprefix("encoder.")] = weight_data
             elif key.startswith("quant_conv."):
-                quant_conv_state_dict[key] = weight_data
+                encoder_state_dict[key] = weight_data
 
         with F.lazy():
             autoencoder = self.autoencoder_class(self.config)
@@ -105,37 +101,6 @@ class BaseAutoencoderModel(ComponentModel):
                 self.encoder_model = autoencoder.encoder.compile(
                     *autoencoder.encoder.input_types(),
                     weights=encoder_state_dict,
-                )
-
-            if (
-                quant_conv_state_dict
-                and hasattr(autoencoder, "quant_conv")
-                and autoencoder.quant_conv is not None
-                and self.encoder_model is not None
-            ):
-
-                class QuantConvModule(Module[[Tensor], Tensor]):
-                    def __init__(self, quant_conv: Conv2d) -> None:
-                        super().__init__()
-                        self.quant_conv = quant_conv
-
-                    def forward(self, x: Tensor) -> Tensor:
-                        return self.quant_conv(x)
-
-                quant_conv_module = QuantConvModule(autoencoder.quant_conv)
-                quant_conv_module.to(self.devices[0])
-                quant_conv_input_type = TensorType(
-                    self.config.dtype,
-                    shape=[
-                        "batch_size",
-                        2 * self.config.latent_channels,
-                        "latent_height",
-                        "latent_width",
-                    ],
-                    device=DeviceRef.from_device(self.devices[0]),
-                )
-                self.quant_conv_model = quant_conv_module.compile(
-                    quant_conv_input_type, weights=quant_conv_state_dict
                 )
 
         return self.model
@@ -163,13 +128,7 @@ class BaseAutoencoderModel(ComponentModel):
                 "Encoder not loaded. Check if encoder weights exist in the model."
             )
 
-        h = self.encoder_model(sample)
-
-        if self.quant_conv_model is not None:
-            moments = self.quant_conv_model(h)
-        else:
-            moments = h
-
+        moments = self.encoder_model(sample)
         posterior = DiagonalGaussianDistribution(moments)
 
         if return_dict:

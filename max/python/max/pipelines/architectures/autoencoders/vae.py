@@ -424,6 +424,7 @@ class Encoder(Module[[Tensor], Tensor]):
         act_fn: str = "silu",
         double_z: bool = True,
         mid_block_add_attention: bool = True,
+        use_quant_conv: bool = False,
         device: DeviceRef | None = None,
         dtype: DType | None = None,
     ) -> None:
@@ -439,6 +440,7 @@ class Encoder(Module[[Tensor], Tensor]):
             act_fn: Activation function name (e.g., "silu").
             double_z: Whether to double output channels for the last block.
             mid_block_add_attention: Whether to add attention in the middle block.
+            use_quant_conv: Whether to add 1x1 conv after conv_out (encoder output -> latent moments).
             device: Device reference for module placement.
             dtype: Data type for module parameters.
         """
@@ -533,6 +535,22 @@ class Encoder(Module[[Tensor], Tensor]):
             permute=True,
         )
 
+        self.quant_conv: Conv2d | None = None
+        if use_quant_conv:
+            self.quant_conv = Conv2d(
+                kernel_size=1,
+                in_channels=conv_out_channels,
+                out_channels=conv_out_channels,
+                dtype=dtype,
+                stride=1,
+                padding=0,
+                dilation=1,
+                num_groups=1,
+                has_bias=True,
+                device=device,
+                permute=True,
+            )
+
     def forward(self, sample: Tensor) -> Tensor:
         r"""The forward method of the `Encoder` class.
 
@@ -552,6 +570,9 @@ class Encoder(Module[[Tensor], Tensor]):
         sample = self.conv_norm_out(sample)
         sample = F.silu(sample)
         sample = self.conv_out(sample)
+
+        if self.quant_conv is not None:
+            sample = self.quant_conv(sample)
 
         return sample
 
