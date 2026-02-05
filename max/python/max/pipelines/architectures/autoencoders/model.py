@@ -61,11 +61,12 @@ class BaseAutoencoderModel(ComponentModel):
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
-        """Load and compile the decoder and encoder models.
+        """Load and compile decoder and encoder from full model weights.
 
-        Extracts decoder weights (decoder.*, post_quant_conv.*) and encoder weights
-        (encoder.*, quant_conv.*) from the full model weights and compiles them
-        for inference. quant_conv is part of the encoder when present. Encoder is optional (only loaded if weights exist).
+        Splits weights by prefix (decoder/post_quant_conv vs encoder/quant_conv)
+        and compiles each subgraph. quant_conv is included in the encoder when
+        config.use_quant_conv is True. Encoder is compiled only when the model
+        has an encoder and encoder weights are present.
 
         Returns:
             Compiled decoder model callable.
@@ -95,7 +96,7 @@ class BaseAutoencoderModel(ComponentModel):
             self.model = autoencoder.decoder.compile(
                 *autoencoder.decoder.input_types(), weights=decoder_state_dict
             )
-
+            # Flux.1 does not have an encoder.
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(

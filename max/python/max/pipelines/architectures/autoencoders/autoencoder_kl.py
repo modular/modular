@@ -67,10 +67,10 @@ class AutoencoderKL(Module[[Tensor, Tensor | None], Tensor]):
 
 
 class AutoencoderKLModel(BaseAutoencoderModel):
-    """MaxModel wrapper for AutoencoderKL.
+    """ComponentModel wrapper for AutoencoderKL.
 
-    This class provides the MaxModel interface for AutoencoderKL, handling
-    configuration, weight loading, and model compilation.
+    This class provides the ComponentModel interface for AutoencoderKL,
+    handling configuration, weight loading, and model compilation.
     """
 
     config_name: ClassVar[str] = AutoencoderKLConfig.config_name
