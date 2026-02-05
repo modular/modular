@@ -190,10 +190,9 @@ what we publish.
   memory! It uses `global_constant` to store what would be heap allocated
   parsed formatting data.
 
-- The `Int.__truediv__` method is temporarily deprecated in favor of explicitly
-  casting the operands to Float64 before dividing. This deprecation is to help
-  prepare to migrate `Int.__truediv__` to return `Int`, which could be a quietly
-  breaking change.
+- `Int.__truediv__` now performs truncating integer division, returning `Int`
+  instead of the previously deprecated `Float64`. Use explicit `Float64` casts
+  for floating-point division.
 
 ### Tooling changes
 

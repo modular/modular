@@ -87,7 +87,7 @@ fn _get_nd_indices_from_flat_index(
             res[i] = 0
         else:
             res[i] = curr_index._positive_rem(shape[i])
-            curr_index = curr_index._positive_div(shape[i])
+            curr_index = curr_index / shape[i]
 
 
 # ===-----------------------------------------------------------------------===#

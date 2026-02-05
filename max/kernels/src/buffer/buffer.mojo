@@ -81,7 +81,7 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
     for i in reversed(range(buf.rank)):
         var dim = buf.dim[i]()
         result[i] = curr_index._positive_rem(dim)
-        curr_index = curr_index._positive_div(dim)
+        curr_index = curr_index / dim
 
     return result
 

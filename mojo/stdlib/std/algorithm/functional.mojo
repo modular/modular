@@ -1281,7 +1281,7 @@ fn _get_start_indices_of_nth_subvolume[
     @parameter
     for i in reversed(range(rank - subvolume_rank)):
         res[i] = curr_index._positive_rem(shape[i])
-        curr_index = curr_index._positive_div(shape[i])
+        curr_index = curr_index / shape[i]
 
 
 # TODO(KERN-637) - optimize this algorithm for UInt rather than delegating
