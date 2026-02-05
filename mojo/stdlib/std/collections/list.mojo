@@ -18,12 +18,7 @@ These APIs are imported automatically, just like builtins.
 
 from builtin.constrained import _constrained_conforms_to
 from builtin.rebind import downcast
-from format._utils import (
-    FormatStruct,
-    TypeNames,
-    write_sequence_to,
-    constrained_conforms_to_writable,
-)
+import format._utils as fmt
 from reflection import get_type_name
 from collections._index_normalization import normalize_index
 from collections._asan_annotations import (
@@ -674,22 +669,18 @@ struct List[T: Copyable](
         self.write_repr_to(string)
         return string^
 
-    fn _write_self_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
-        constrained_conforms_to_writable[Self.T, Parent=Self]()
+    fn _write_self_to[
+        f: fn(Self.T, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.T, Parent=Self]()
 
         var iterator = self.__iter__()
 
         @parameter
         fn iterate(mut w: Some[Writer]) raises StopIteration:
-            ref element = iterator.__next__()
+            f(iterator.__next__(), w)
 
-            @parameter
-            if is_repr:
-                trait_downcast[Writable](element).write_repr_to(w)
-            else:
-                trait_downcast[Writable](element).write_to(w)
-
-        write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
     @no_inline
@@ -702,7 +693,7 @@ struct List[T: Copyable](
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[is_repr=False](writer)
+        self._write_self_to[f = fmt.write_to[Self.T]](writer)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):
@@ -717,10 +708,10 @@ struct List[T: Copyable](
 
         @parameter
         fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[is_repr=True](w)
+            self._write_self_to[f = fmt.write_repr_to[Self.T]](w)
 
-        FormatStruct(writer, "List").params(
-            TypeNames[Self.T](),
+        fmt.FormatStruct(writer, "List").params(
+            fmt.TypeNames[Self.T](),
         ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#

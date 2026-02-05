@@ -14,7 +14,7 @@
 from sys.info import size_of
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import CopyCounter, DelRecorder, MoveCounter
+from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
 from testing import assert_equal, assert_true, assert_false, TestSuite
 
 
@@ -330,60 +330,56 @@ def test_str_and_repr():
 
     # Test __str__ method
     var str_result = array.__str__()
-    assert_equal(str_result, "InlineArray[Int, 3](1, 2, 3)")
+    assert_equal(str_result, "[1, 2, 3]")
 
     # Test __repr__ method
     var repr_result = array.__repr__()
-    assert_equal(repr_result, "InlineArray[Int, 3](1, 2, 3)")
-
-    # They should be equal
-    assert_equal(str_result, repr_result)
+    assert_equal(repr_result, "InlineArray[Int, 3]([Int(1), Int(2), Int(3)])")
 
 
 def test_different_types():
     """Test with different element types."""
-    # Test with String
-    var string_array: InlineArray[String, 2] = ["hello", "world"]
-    var str_result = string_array.__str__()
-    assert_equal(str_result, "InlineArray[String, 2]('hello', 'world')")
-
     # Test with single element
     var single: InlineArray[Int, 1] = [42]
     var single_str = single.__str__()
-    assert_equal(single_str, "InlineArray[Int, 1](42)")
+    assert_equal(single_str, "[42]")
 
     # Test with default values
     var default_array = InlineArray[Int, 3](fill=0)
     var default_str = default_array.__str__()
-    assert_equal(default_str, "InlineArray[Int, 3](0, 0, 0)")
+    assert_equal(default_str, "[0, 0, 0]")
 
     # Test with filled array
     var filled_array = InlineArray[Int, 4](fill=99)
     var filled_str = filled_array.__str__()
-    assert_equal(filled_str, "InlineArray[Int, 4](99, 99, 99, 99)")
+    assert_equal(filled_str, "[99, 99, 99, 99]")
 
 
 def test_write_to():
     """Test Writable trait implementation."""
     var array: InlineArray[Int, 3] = [10, 20, 30]
-    var output = String()
-    array.write_to(output)
+    check_write_to(array, expected="[10, 20, 30]", is_repr=False)
 
-    assert_equal(output, "InlineArray[Int, 3](10, 20, 30)")
+    var string_array: InlineArray[String, 2] = ["a", "b"]
+    check_write_to(string_array, expected="[a, b]", is_repr=False)
 
-    # Test with different types
-    var string_array: InlineArray[String, 2] = ["hello", "world"]
-    var string_output = String()
-    string_array.write_to(string_output)
+    var single_elem: InlineArray[Int, 1] = [42]
+    check_write_to(single_elem, expected="[42]", is_repr=False)
 
-    assert_equal(string_output, "InlineArray[String, 2]('hello', 'world')")
 
-    # Test empty array
-    var empty_array = InlineArray[Int, 0](fill=0)
-    var empty_output = String()
-    empty_array.write_to(empty_output)
+def test_write_repr_to():
+    """Test write_repr_to implementation."""
+    var array: InlineArray[Int, 3] = [1, 2, 3]
+    check_write_to(
+        array,
+        expected="InlineArray[Int, 3]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
 
-    assert_equal(empty_output, "InlineArray[Int, 0]()")
+    var single: InlineArray[Int, 1] = [1]
+    check_write_to(
+        single, expected="InlineArray[Int, 1]([Int(1)])", is_repr=True
+    )
 
 
 def test_inline_array_triviality():

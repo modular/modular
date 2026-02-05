@@ -40,6 +40,7 @@ from builtin.rebind import downcast
 from builtin.constrained import _constrained_conforms_to
 from builtin.repr import repr
 from compile import get_type_name
+import format._utils as fmt
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#
@@ -630,38 +631,52 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # String representation
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    fn _write_self_to[
+        f: fn(Self.ElementType, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+
+        var index = 0
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            if index >= Self.size:
+                raise StopIteration()
+            f(self.unsafe_get(index), w)
+            index += 1
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = index
+
     fn write_to(self, mut writer: Some[Writer]):
         """Writes the InlineArray representation to a Writer.
 
         Constraints:
-            ElementType must conform to `Representable`.
+            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
 
-        writer.write("InlineArray[")
-        writer.write(get_type_name[Self.ElementType]())
-        writer.write(", ")
-        writer.write(String(Self.size))
-        writer.write("](")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this InlineArray to a Writer.
 
-        for i in range(Self.size):
-            ref element = self.unsafe_get(i)
-            ref representable_element = trait_downcast[Representable](element)
-            writer.write(repr(representable_element))
-            if i < Self.size - 1:
-                writer.write(", ")
+        Constraints:
+            ElementType must conform to `Writable`.
 
-        writer.write(")")
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+
+        fmt.FormatStruct(writer, "InlineArray").params(
+            fmt.TypeNames[Self.ElementType](),
+            Self.size,
+        ).fields[FieldsFn=write_fields]()
 
     @always_inline
     fn __str__(self) -> String:
@@ -681,4 +696,6 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Returns:
             A string representation of the array.
         """
-        return self.__str__()
+        output = String()
+        self.write_repr_to(output)
+        return output^
