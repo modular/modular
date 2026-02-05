@@ -563,3 +563,19 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: f = #pop.simd<1, 4095> : !pop.simd<2, uindex>
   f = #pop.simd_shr< #pop.simd<65535, 65533> : !pop.simd<2, uindex>, #pop.simd<15, 4> : !pop.simd<2, uindex>> : !pop.simd<2, uindex>
 } : () -> ()
+
+
+"some.op"() {
+  // CHECK: a = #pop.simd<7, 7, 1, -2147483648>
+  a = #pop.simd_abs< #pop.simd<7, -7, -1, -2147483648> : !pop.simd<4, si32>>,
+  // CHECK: b = #pop.simd<"7", "7", "NaN", "+Inf">
+  b = #pop.simd_abs< #pop.simd<"7", "-7", "-NaN", "-inf"> : !pop.simd<4, f32> >,
+  // CHECK: c = #pop.simd_abs<#kgen.unknown :
+  c = #pop.simd_abs< #kgen.unknown : !pop.scalar<si32>>,
+  // CHECK: d = #pop.simd<true, false>
+  d = #pop.simd_abs< #pop.simd<true, false> : !pop.simd<2, bool>>,
+  // CHECK: e = #pop.simd<1, 8, 9223090564025548800, -9223372036854775808>
+  e = #pop.simd_abs<  #pop.simd<-1, -8, 9223090564025548800, -9223372036854775808> : !pop.simd<4, index>>,
+  // CHECK: f = #pop.simd_abs<#pop<simd 9223372036854775807>
+  f = #pop.simd_abs< #pop.simd<9223372036854775807> : !pop.scalar<index> >
+} : () -> ()

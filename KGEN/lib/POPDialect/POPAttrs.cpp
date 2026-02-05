@@ -2294,6 +2294,39 @@ LogicalResult SIMDDivAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDAbsAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDAbsAttr::get(MLIRContext *ctx, TypedAttr operand) {
+  // Fold if possible.
+  if (auto fold = POP::foldSIMDAbs(operand,
+                                   /*targetInfo=*/{})) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, operand);
+}
+
+TypedAttr SIMDAbsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                  MLIRContext *context, TypedAttr operand) {
+  if (failed(verify(emitError, operand)))
+    return {};
+  return SIMDAbsAttr::get(context, operand);
+}
+
+bool SIMDAbsAttr::isConstant() const { return false; }
+
+Type SIMDAbsAttr::getType() const { return getOperand().getType(); }
+
+LogicalResult SIMDAbsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  TypedAttr operand) {
+  auto simdType = dyn_cast<SIMDType>(operand.getType());
+  if (!simdType)
+    return emitError() << "requires a SIMD-typed operand";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDCmpAttr
 //===----------------------------------------------------------------------===//
 
