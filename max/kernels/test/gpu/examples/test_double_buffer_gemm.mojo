@@ -82,7 +82,7 @@ fn sgemm_double_buffer[
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
     comptime warp_dim_y = WM // TM
-    __comptime_assert (
+    comptime assert (
         warp_dim_x * warp_dim_y == WARP_SIZE
     ), "Warp 2d shape doesn't match 32 threads"
 

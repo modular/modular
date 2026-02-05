@@ -33,5 +33,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         requirement("scipy"),
         requirement("torch"),
+        requirement("transformers"),
     ],
 )

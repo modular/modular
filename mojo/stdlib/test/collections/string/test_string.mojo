@@ -81,7 +81,7 @@ def test_constructors():
 def test_copy():
     var s0 = "find"
     var s1 = String(s0)
-    s1.unsafe_ptr_mut()[3] = ord("e")
+    s1.unsafe_ptr_mut()[3] = Byte(ord("e"))
     assert_equal("find", s0)
     assert_equal("fine", s1)
 
@@ -1275,6 +1275,9 @@ def test_format_args():
 
     with assert_raises(contains=curly("}")):
         _ = String("}").format(1)
+
+    with assert_raises(contains=curly("}")):
+        _ = String("hello}world").format(42)
 
     with assert_raises(contains=""):
         _ = String("{}").format()

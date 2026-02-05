@@ -28,7 +28,7 @@ fn make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
 
         @parameter
         if random:
-            d[i] = Int(random_si64(0, size))
+            d[i] = Int(random_si64(0, Int64(size)))
         else:
             d[i] = i
     return d^
@@ -63,7 +63,7 @@ fn bench_dict_insert[size: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         for _ in range(10_000):
             for key in range(size, size + 10):
-                items[key] = Int(random_si64(0, size))
+                items[key] = Int(random_si64(0, Int64(size)))
 
     b.iter[call_fn]()
     keep(Bool(items))
@@ -161,7 +161,10 @@ def main():
         n = info.name
         time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
     print("")
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")

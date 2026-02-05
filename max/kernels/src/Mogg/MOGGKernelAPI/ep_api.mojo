@@ -115,7 +115,7 @@ struct Struct_ep_init:
             context: GPU device context
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
         var gpu_ctx = context.get_device_context()
 
         comptime gpu_target = get_gpu_target()
@@ -178,7 +178,7 @@ struct Struct_ep_init:
 
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
-        __comptime_assert (
+        comptime assert (
             atomic_counters_0.static_spec.to_layout().size()
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 0 size doesn't match expected size."
@@ -190,7 +190,7 @@ struct Struct_ep_init:
         )
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
-        __comptime_assert (
+        comptime assert (
             atomic_counters_1.static_spec.to_layout().size()
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 1 size doesn't match expected size."
@@ -434,7 +434,7 @@ struct Struct_ep_dispatch_wait:
         var output_tokens_tensor = output_tokens.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens.static_spec.shape.get[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -500,7 +500,7 @@ struct Struct_ep_dispatch_wait_fused_shared_expert:
             ),
         )
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens.static_spec.shape.get[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -563,7 +563,7 @@ struct Struct_ep_dispatch_wait_fp8:
         var output_scales_tensor = output_scales.to_layout_tensor()
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -636,7 +636,7 @@ struct Struct_ep_dispatch_wait_fp8_fused_shared_expert:
         )
 
         # Ensure the shape for the input tensors are correct
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -698,7 +698,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
         var output_scales_tensor = output_scales.to_layout_tensor()
         var scales_offsets_tensor = scales_offsets.to_layout_tensor()
 
-        __comptime_assert (
+        comptime assert (
             output_tokens_tensor.shape[1]() * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
@@ -759,7 +759,7 @@ struct Struct_ep_dispatch:
     ) raises:
         """Execute the fused Expert Parallelism dispatch kernel."""
 
-        __comptime_assert dispatch_dtype == DType.bfloat16
+        comptime assert dispatch_dtype == DType.bfloat16
 
         var output_tokens_tensor = output_tokens.to_layout_tensor()
         var format_handler = BF16TokenFormat[hidden_size, top_k](
@@ -1221,7 +1221,7 @@ struct Struct_ep_fused_silu:
         operation on the received tokens.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_layout_tensor()
         var input_tensor = input.to_layout_tensor().get_immutable()
@@ -1294,7 +1294,7 @@ struct Struct_ep_fused_silu_fp8:
         will be stored in a transposed way.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         comptime group_size = 128
 
@@ -1378,7 +1378,7 @@ struct Struct_ep_fused_silu_nvfp4:
         will be padded and zero-filled.
         """
         # Ensure this kernel only runs on GPU targets
-        __comptime_assert is_gpu[target](), "EP is only supported on GPU."
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
 
         var output_tensor = output.to_layout_tensor()
         var scales_tensor = scales.to_layout_tensor()

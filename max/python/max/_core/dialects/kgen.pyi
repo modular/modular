@@ -27,13 +27,6 @@ from max.mlir import Context, Location
 
 DiagnosticHandler = Callable
 
-class ContextuallyEvaluatedAttrInterface(Protocol):
-    """
-    This interface describes parameter attributes whose evaluation may require
-    additional context. This is in contrast to "simple" parameter attributes
-    that can be simplified context-free at construction time.
-    """
-
 class FnMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a `!kgen.func`

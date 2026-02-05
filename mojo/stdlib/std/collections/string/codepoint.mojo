@@ -377,7 +377,7 @@ struct Codepoint(
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        __comptime_assert (
+        comptime assert (
             codepoint.dtype.is_integral()
         ), "only integral codepoints exist"
         comptime ` ` = type_of(codepoint)(ord(" "))

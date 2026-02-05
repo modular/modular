@@ -83,7 +83,7 @@ fn _horner_evaluate[
         The polynomial specified by the coefficients evaluated at value x.
     """
     comptime num_coefficients = len(coefficients)
-    __comptime_assert num_coefficients > 0, (
+    comptime assert num_coefficients > 0, (
         "the number of coefficients for the polynomial evaluation should be"
         " a positive number"
     )

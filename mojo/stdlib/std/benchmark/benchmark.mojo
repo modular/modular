@@ -174,7 +174,7 @@ struct Batch(TrivialRegisterType):
         """
         return (
             Float64(self.duration)
-            / self.iterations
+            / Float64(self.iterations)
             / Float64(Unit._divisor(unit))
         )
 

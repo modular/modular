@@ -72,6 +72,53 @@ class ModelOutput(TypedDict):
     """Outputs from a text embedding model."""
 
 
+class ModelOutputView:
+    """Convenience accessors for ModelOutput values."""
+
+    def __init__(self, output: ModelOutput) -> None:
+        self._output = output
+
+    @property
+    def prompt(self) -> str:
+        return self._output["prompt"]
+
+    @property
+    def values(self) -> list[TokenInfo]:
+        values = self._output.get("values")
+        if values is None:
+            raise ValueError("ModelOutput has no token values")
+        return values
+
+    @property
+    def mode(self) -> str:
+        if not self.values:
+            return "logits"
+        token_info = self.values[0]
+        if "logits" in token_info:
+            return "logits"
+        if "logprobs" in token_info:
+            return "logprobs"
+        raise ValueError("ModelOutput values missing logits/logprobs")
+
+    @property
+    def logits(self) -> list[np.ndarray]:
+        if self.mode == "logprobs":
+            raise ValueError(
+                "ModelOutput stores logprobs; logits are unavailable"
+            )
+        return [token["logits"] for token in self.values]
+
+    @property
+    def logprobs(self) -> list[np.ndarray]:
+        if not self.values:
+            return []
+        if "logprobs" in self.values[0]:
+            return [token["logprobs"] for token in self.values]
+        if "logits" not in self.values[0]:
+            raise ValueError("ModelOutput has no logits or logprobs")
+        return [log_softmax(token["logits"]) for token in self.values]
+
+
 NUM_STEPS = 10
 
 T = TypeVar("T")

@@ -420,7 +420,7 @@ class PipelineConfig(ConfigFileModel):
             if filtered_kwargs:
                 self.speculative = SpeculativeConfig(**filtered_kwargs)
                 assert self.draft_model is not None
-                # We need to set the architecture to EagleLlamaForCausalLM for Eagle speculative decoding
+                # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
                 if self.speculative.is_eagle():
                     if self.draft_model.huggingface_config is None:
                         raise ValueError(
@@ -441,7 +441,7 @@ class PipelineConfig(ConfigFileModel):
                     ]
                     if hf_arch == "LlamaForCausalLM":
                         self.draft_model.huggingface_config.architectures[0] = (
-                            "EagleLlamaForCausalLM"
+                            "LlamaForCausalLMEagle"
                         )
 
     def _process_remaining_config_classes(

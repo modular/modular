@@ -364,6 +364,7 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     example_repo_ids=[
         "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
         "jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
+        "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
     default_encoding=SupportedEncoding.float32,
     supported_encodings={

@@ -28,8 +28,8 @@ fn _run_memset[
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Scalar[dtype](i)
+        out_host[i] = Scalar[dtype](length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(on_dev)

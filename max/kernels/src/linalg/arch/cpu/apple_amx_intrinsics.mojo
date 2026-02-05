@@ -332,9 +332,9 @@ fn transpose_z_to_x_or_y[
     #    z_row_suboffset needs to be 0-4.
 
     # The destination must be either "X" or "Y".
-    __comptime_assert destination == "X" or destination == "Y"
+    comptime assert destination == "X" or destination == "Y"
     # The type must be Float32.
-    __comptime_assert dtype == DType.float32
+    comptime assert dtype == DType.float32
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -374,9 +374,9 @@ fn fma[
     #  x_row_index, y_row_index : always in [0, 8).
 
     # The mode must be either "TILE" or "ROW".
-    __comptime_assert mode == "TILE" or mode == "ROW"
+    comptime assert mode == "TILE" or mode == "ROW"
     # The type must be Float32.
-    __comptime_assert dtype == DType.float32
+    comptime assert dtype == DType.float32
 
     comptime is_row_mode = mode == "ROW"
 
@@ -491,7 +491,7 @@ fn dot_at_b_impl(
 
 @always_inline
 fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
-    __comptime_assert (
+    comptime assert (
         c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"
 

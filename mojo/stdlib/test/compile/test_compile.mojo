@@ -108,7 +108,7 @@ def test_cross_compile():
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
     fn test_kernel():
-        __comptime_assert (
+        comptime assert (
             _cdna_4_or_newer()
         ), "test_kernel is only supported on CDNA4+"
 

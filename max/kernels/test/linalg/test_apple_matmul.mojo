@@ -90,7 +90,7 @@ fn gemm_naive_elementwise[
 
     for i in range(m):
         for j in range(n):
-            c[i, j] += val
+            c[i, j] += Scalar[c.dtype](val)
 
 
 def test_matmul[
@@ -195,7 +195,7 @@ def test_matmul[
             n,
             k,
             "): ",
-            1e-9 * ((2 * m * k * n) / matmul_perf.mean()),
+            1e-9 * (Float64((2 * m * k * n)) / matmul_perf.mean()),
         )
 
     @parameter
@@ -560,7 +560,8 @@ def test_batched_matmul[
             n,
             k,
             "): ",
-            1e-9 * ((2 * batches * m * k * n) / batched_matmul_perf.mean()),
+            1e-9
+            * (Float64((2 * batches * m * k * n)) / batched_matmul_perf.mean()),
         )
 
     @parameter

@@ -679,7 +679,7 @@ struct VariadicListMem[
                          list.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.is_owned
         ), "consume_elements may only be called on owned variadic lists"
 
@@ -881,7 +881,7 @@ struct VariadicPack[
                          pack.
         """
 
-        __comptime_assert (
+        comptime assert (
             Self.is_owned
         ), "consume_elements may only be called on owned variadic packs"
 

@@ -52,7 +52,12 @@ import click
 import numpy as np
 from test_common.custom_args import CommaSeparatedList
 from test_common.distance_metrics import kl_divergence_from_logits
-from test_common.evaluate import ModelOutput, TokenInfo, compare_values
+from test_common.evaluate import (
+    ModelOutput,
+    ModelOutputView,
+    TokenInfo,
+    compare_values,
+)
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.table import CONSOLE
 from test_common.verify_utils import construct_validator
@@ -308,6 +313,10 @@ def verify(
         torch_outputs.read_text()
     )
 
+    pipeline_results, torch_results = normalize_logit_outputs(
+        pipeline_results, torch_results
+    )
+
     results = []
     any_failed = False
 
@@ -394,6 +403,53 @@ def verify(
         passed=test_passed,
         discrepancy_report=report,
         error_message=error_message,
+    )
+
+
+def normalize_logit_outputs(
+    pipeline_results: list[ModelOutput],
+    torch_results: list[ModelOutput],
+) -> tuple[list[ModelOutput], list[ModelOutput]]:
+    """Normalize logit outputs to a consistent format for comparison.
+
+    Different frameworks (MAX, PyTorch, vLLM) may output logits or logprobs.
+    This function detects the output mode and converts both result sets to
+    a common format with explicit logits arrays, enabling apples-to-apples
+    comparison.
+
+    Returns the inputs unchanged if neither contains token values.
+    """
+    all_outputs = pipeline_results + torch_results
+    if not any("values" in output for output in all_outputs):
+        return pipeline_results, torch_results
+
+    modes = [
+        ModelOutputView(output).mode
+        for output in all_outputs
+        if "values" in output
+    ]
+    mode = "logprobs" if "logprobs" in modes else "logits"
+
+    def normalize(output: ModelOutput) -> ModelOutput:
+        if "values" not in output:
+            return output
+        view = ModelOutputView(output)
+        arrays = view.logits if mode == "logits" else view.logprobs
+        return {
+            "prompt": view.prompt,
+            "values": [
+                {
+                    "next_token": token_info["next_token"],
+                    "next_token_logits": float(arr[token_info["next_token"]]),
+                    "logits": arr,
+                }
+                for token_info, arr in zip(view.values, arrays, strict=True)
+            ],
+        }
+
+    return (
+        [normalize(output) for output in pipeline_results],
+        [normalize(output) for output in torch_results],
     )
 
 

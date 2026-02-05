@@ -279,7 +279,7 @@ struct SMemTileArray[
         Args:
             unsafe_ptr: Shared memory pointer.
         """
-        __comptime_assert (
+        comptime assert (
             Self.layout.all_dims_known()
         ), "Layout must be known at compile time."
 

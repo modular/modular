@@ -94,7 +94,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -152,7 +152,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)
@@ -210,7 +210,7 @@ def main():
 
         var data_ptr = alloc[Float32](5)
         for i in range(5):
-            data_ptr[i] = i + 1
+            data_ptr[i] = Float32(i + 1)
         var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
 
         var indices_ptr = alloc[Int32](2)

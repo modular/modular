@@ -259,9 +259,9 @@ def gemv_tma[
     var b = from_ndbuffer_row_major(b_device_nd)
     var c = from_ndbuffer_row_major(c_device_nd)
 
-    __comptime_assert c.rank == 2
-    __comptime_assert a.rank == 2
-    __comptime_assert b.rank == 1
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 1
 
     var tma_desc_a = create_tma_descriptor[dtype, 2](
         a_device,

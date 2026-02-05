@@ -311,7 +311,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     comptime cache_t = collection_t.CacheType
     comptime cache_dtype = cache_t.dtype
 
-    __comptime_assert cache_dtype == dtype, (
+    comptime assert cache_dtype == dtype, (
         "Expected cache dtype "
         + String(cache_dtype)
         + " to match input dtype "
@@ -347,7 +347,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
         # Skip writing to cache for padded positions
         var valid_len_for_batch_vec = valid_lengths[Int(b_idx)]
-        __comptime_assert valid_len_for_batch_vec.size == 1
+        comptime assert valid_len_for_batch_vec.size == 1
         var valid_len_for_batch = UInt(valid_len_for_batch_vec[0])
         if t_idx >= valid_len_for_batch:
             return
@@ -970,10 +970,10 @@ def rms_norm_kv_cache_ragged_paged[
     var kv_params = k_cache.kv_params
     comptime rms_norm_cols = Int(gamma.layout.shape[0])
 
-    __comptime_assert (
+    comptime assert (
         gamma.layout.shape[0] != UNKNOWN_VALUE
     ), "Need static shape for gamma"
-    __comptime_assert (
+    comptime assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
         or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
@@ -994,7 +994,7 @@ def rms_norm_kv_cache_ragged_paged[
     fn key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        __comptime_assert (
+        comptime assert (
             rank_ == rank
         ), "rms_norm_key_cache input lambda index should have rank " + String(
             rank

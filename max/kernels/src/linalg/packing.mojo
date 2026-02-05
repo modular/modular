@@ -110,7 +110,7 @@ struct PackMatrixRows[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        __comptime_assert Self.row_inner_size % Self.simd_size == 0
+        comptime assert Self.row_inner_size % Self.simd_size == 0
 
         var instance = Self(
             packed_matrix,
@@ -361,7 +361,7 @@ struct PackMatrixCols[
                 amount of valid data on the global buffer starting from the
                 offset.
         """
-        __comptime_assert Self.column_inner_size % Self.simd_size == 0
+        comptime assert Self.column_inner_size % Self.simd_size == 0
         debug_assert(
             pack_tile_dim[1] % Self.column_inner_size == 0,
             "Unimplemented tile pattern.",
@@ -456,7 +456,7 @@ struct PackMatrixCols[
     fn _pack_vnni(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
-        __comptime_assert Self.use_vnni
+        comptime assert Self.use_vnni
 
         comptime vnni_cols = 4
 
@@ -486,7 +486,7 @@ struct PackMatrixCols[
         comptime i8mm_rows = 2
         comptime i8mm_cols = 8
 
-        __comptime_assert Self.use_i8mm
+        comptime assert Self.use_i8mm
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         comptime nr = Self.column_inner_size // 2
@@ -515,7 +515,7 @@ struct PackMatrixCols[
     fn _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
-        __comptime_assert not Self.use_vnni and not Self.use_i8mm
+        comptime assert not Self.use_vnni and not Self.use_i8mm
         var valid_row_count = min(self.valid_data_dim[0], self.pack_tile_dim[0])
         comptime unroll_factor = get_packB_unroll_factor()
 
