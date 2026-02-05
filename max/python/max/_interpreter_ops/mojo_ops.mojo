@@ -19,6 +19,7 @@ from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator, simd_width_of
 
 from algorithm.functional import elementwise, IndexList
+from algorithm import max as reduce_max
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
@@ -257,6 +258,11 @@ fn PyInit_mojo_ops() -> PythonObject:
             "Matmul", docstring="Matrix multiplication"
         )
 
+        # Reduce max operation
+        b.def_function[reduce_max_dispatcher](
+            "ReduceMax", docstring="Reduce max along axis"
+        )
+
         return b.finalize()
     except e:
         abort(String("failed to create interpreter op bindings module: ", e))
@@ -287,6 +293,33 @@ fn _get_ctx(
     return OpaquePointer[MutExternalOrigin](
         unsafe_from_address=Int(py=device_context_ptr)
     )
+
+
+alias MAX_RANK = 5
+
+
+fn _get_shape(
+    shape_obj: PythonObject, rank: Int
+) raises -> InlineArray[Int, MAX_RANK]:
+    """Extract shape as InlineArray from Python sequence.
+
+    Args:
+        shape_obj: Python sequence containing the shape.
+
+    Returns:
+        The shape as an InlineArray (only first `rank` elements are valid).
+    """
+    if rank > MAX_RANK:
+        raise Error(
+            "Tensor rank "
+            + String(rank)
+            + " exceeds MAX_RANK "
+            + String(MAX_RANK)
+        )
+    var result = InlineArray[Int, MAX_RANK](fill=0)
+    for i in range(rank):
+        result[i] = Int(py=shape_obj[i])
+    return result^
 
 
 # Dtype dispatch wrappers - extract dtype value from buffer and dispatch
@@ -1172,3 +1205,204 @@ fn matmul_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# ReduceMax operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn reduce_max_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """ReduceMax dispatcher with dtype dispatch.
+
+    Args:
+        out_buffer: The output buffer object (reduced shape).
+        in_buffer: The input buffer object.
+        axis: The axis along which to reduce (integer).
+        device_context_ptr: Device context pointer (must be null for CPU).
+    """
+    var dtype = _get_dtype(in_buffer)
+    var axis_val = Int(py=axis)
+    var ctx = _get_ctx(device_context_ptr)
+
+    # CPU-only check
+    if ctx:
+        raise Error("GPU execution not supported for reduce_max in interpreter")
+
+    # Extract input shape and compute normalized rank-3 shape:
+    # dim0: product of dims before axis
+    # dim1: the reduction axis dimension
+    # dim2: product of dims after axis
+    var in_shape_py = in_buffer.shape
+    var rank = Int(py=len(in_shape_py))
+    var in_shape = _get_shape(in_shape_py, rank)
+
+    var dim0 = 1
+    for i in range(axis_val):
+        dim0 *= in_shape[i]
+
+    var dim1 = in_shape[axis_val]
+
+    var dim2 = 1
+    for i in range(axis_val + 1, rank):
+        dim2 *= in_shape[i]
+
+    var normalized_shape = IndexList[3](dim0, dim1, dim2)
+
+    # Float types
+    if dtype == DType.float16:
+        reduce_max_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.float16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.float32:
+        reduce_max_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.float32](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        reduce_max_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.float64](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        reduce_max_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bfloat16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    # Integer types
+    elif dtype == DType.int8:
+        reduce_max_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.int8](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.int16:
+        reduce_max_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.int16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.int32:
+        reduce_max_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.int32](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.int64:
+        reduce_max_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.int64](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    # Unsigned integer types
+    elif dtype == DType.uint8:
+        reduce_max_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.uint8](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.uint16:
+        reduce_max_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.uint16](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.uint32:
+        reduce_max_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.uint32](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    elif dtype == DType.uint64:
+        reduce_max_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.uint64](in_buffer),
+            normalized_shape,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for reduce_max: " + String(dtype))
+
+
+fn reduce_max_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    normalized_shape: IndexList[3],
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """ReduceMax operation on a rank-3 normalized tensor.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer.
+        in_ptr: Pointer to the input buffer.
+        normalized_shape: The normalized rank-3 shape [dim0, dim1, dim2] where
+            dim0 is the product of dims before the reduction axis,
+            dim1 is the reduction axis dimension,
+            dim2 is the product of dims after the reduction axis.
+        ctx: Device context pointer.
+    """
+
+    # Compute strides
+    var dim1 = normalized_shape[1]
+    var dim2 = normalized_shape[2]
+    var inStride0 = dim1 * dim2
+    var inStride1 = dim2
+    var outStride0 = dim2
+
+    # Define input function mapping rank-3 coords to flat index
+    @always_inline
+    @parameter
+    @__copy_capture(in_ptr, inStride0, inStride1)
+    fn input_fn[
+        width: Int, rank: Int
+    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
+        var c = rebind[IndexList[3]](coords)
+        var flat_idx = c[0] * inStride0 + c[1] * inStride1 + c[2]
+        return in_ptr.load[width=width](flat_idx)
+
+    # Define output function mapping rank-3 coords to flat index
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, inStride1)
+    fn output_fn[
+        width: Int, rank: Int
+    ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        var c = rebind[IndexList[3]](coords)
+        var flat_idx = c[0] * outStride0 + c[2]
+        out_ptr.store[width=width](flat_idx, val)
+
+    # Always dispatch rank-3 reduction with axis=1
+    # TODO(MXF-108): Remove single_thread_blocking_override
+    reduce_max[
+        dtype,
+        input_fn,
+        output_fn,
+        target="cpu",
+        single_thread_blocking_override=True,
+    ](normalized_shape, 1, DeviceContextPtr(ctx))

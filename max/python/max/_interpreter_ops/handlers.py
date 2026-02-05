@@ -677,3 +677,54 @@ def _handle_param_to_value(
     raise NotImplementedError(
         f"Unsupported param.to_value result type: {result_type}, attr: {value_attr}"
     )
+
+
+# Reduce operations
+
+
+@register_op_handler(mo.ReduceMaxOp)
+def _handle_reduce_max(
+    op: mo.ReduceMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.max by dispatching to Mojo reduce_max kernel.
+
+    Args:
+        op: The reduce max operation.
+        inputs: Input buffers - first is the tensor to reduce,
+            second is the axis tensor (scalar si64).
+
+    Returns:
+        List containing the reduced tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    axis_buffer = inputs[1]
+
+    # Extract axis value from the axis tensor (scalar si64)
+    axis_np = axis_buffer.to_numpy()
+    axis = int(axis_np.item())
+
+    # Calculate output shape (same as input with reduced axis dim = 1)
+    output_shape = list(input_buffer.shape)
+    output_shape[axis] = 1
+
+    # Allocate output buffer
+    output = Buffer(
+        shape=tuple(output_shape),
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.ReduceMax(
+        output, input_buffer, axis, target_device._device_context_ptr()
+    )
+
+    return [output]

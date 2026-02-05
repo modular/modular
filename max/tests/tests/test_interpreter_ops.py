@@ -1224,3 +1224,98 @@ class TestMatmulOp:
 
         expected = np.matmul(a_np, b_np)
         np.testing.assert_array_almost_equal(result.to_numpy(), expected)
+
+
+class TestReduceOps:
+    """Tests for reduction Mojo ops."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+    def test_reduce_max_last_axis(self, dtype: DType) -> None:
+        """Test reduce_max on the last axis matches numpy."""
+        device = CPU()
+        shape = [3, 4, 5]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph("reduce_max_test", input_types=[input_type]) as graph:
+            x = graph.inputs[0]
+            # ops.max with single input uses reduce_max (not elementwise max)
+            y = ops.max(x, axis=-1)
+            graph.output(y)
+
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.max(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_max_first_axis(self, dtype: DType) -> None:
+        """Test reduce_max on the first axis."""
+        device = CPU()
+        shape = [3, 4, 5]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph("reduce_max_axis0", input_types=[input_type]) as graph:
+            x = graph.inputs[0]
+            y = ops.max(x, axis=0)
+            graph.output(y)
+
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.max(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_max_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_max on a middle axis."""
+        device = CPU()
+        shape = [2, 3, 4]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph("reduce_max_axis1", input_types=[input_type]) as graph:
+            x = graph.inputs[0]
+            y = ops.max(x, axis=1)
+            graph.output(y)
+
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.max(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(result.to_numpy(), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_max_2d(self, dtype: DType) -> None:
+        """Test reduce_max on 2D tensor."""
+        device = CPU()
+        shape = [4, 5]
+        input_type = TensorType(dtype, shape, device)
+
+        with Graph("reduce_max_2d", input_types=[input_type]) as graph:
+            x = graph.inputs[0]
+            y = ops.max(x, axis=-1)
+            graph.output(y)
+
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        interp = MOInterpreter()
+        result = interp.execute(graph, [Buffer.from_numpy(x_np)])[0]
+        assert isinstance(result, Buffer)
+
+        expected = np.max(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
