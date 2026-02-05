@@ -21,12 +21,12 @@ This benchmark compares:
 SGLang's custom allreduce is optimized for small message sizes (<256KB) and uses
 P2P communication with NVLink for low latency.
 
-For MAX allreduce benchmarks, use kbench:
-    kbench bench_allreduce.yaml --param num_bytes:[16384,262144,1048576]
+Run the benchmarks using kbench:
+    kbench bench_allreduce_subgraph.yaml
 
 Usage:
     bazel run install_sglang
-    bazel run bench_allreduce --run_under="mpirun -np 8" -- --num_gpus=8 --num_bytes=16384
+    bazel run bench_allreduce_subgraph --run_under="mpirun -np 8" -- --num_gpus=8 --num_bytes=16384
 """
 
 from __future__ import annotations
@@ -255,7 +255,7 @@ def bench_nccl_allreduce(
     try:
         time_s = _bench_cuda_events(run_kernel, num_warmups=10, num_iters=100)
 
-        algbw = num_bytes  # / time_s / 1e9
+        algbw = num_bytes
         busbw = 2 * algbw * (num_gpus - 1) / num_gpus
 
         return time_s, busbw
@@ -300,7 +300,7 @@ def main() -> None:
         "--num-gpus",
         "--num_gpus",
         type=int,
-        help="Number of GPUs (default: auto-detect from WORLD_SIZE)",
+        help="Number of GPUs",
     )
     parser.add_argument(
         "--num-bytes",
