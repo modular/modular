@@ -15,6 +15,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorType
 from max.nn import Linear, Module
+from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
@@ -25,8 +26,6 @@ from .layers.flux2_attention import (
     Flux2ParallelSelfAttention,
     Flux2PosEmbed,
 )
-from max.nn.norm import LayerNorm
-
 from .layers.normalizations import AdaLayerNormContinuous
 from .model_config import Flux2ConfigBase
 

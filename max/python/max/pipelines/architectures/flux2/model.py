@@ -16,7 +16,6 @@ from typing import Any
 
 from max import functional as F
 from max.driver import Device
-from max.engine import Model
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -45,22 +44,15 @@ class Flux2TransformerModel(ComponentModel):
             encoding,
             devices,
         )
-        self._flux2: Flux2Transformer2DModel | None = None
-        self._state_dict: dict[str, Any] | None = None
-        self._compiled_model: Model | None = None
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
-        self._state_dict = {
-            key: value.data() for key, value in self.weights.items()
-        }
+        state_dict = {key: value.data() for key, value in self.weights.items()}
         with F.lazy():
-            self._flux2 = Flux2Transformer2DModel(self.config)
-            self._flux2.to(self.devices[0])
-        self._compiled_model = self._flux2.compile(
-            *self._flux2.input_types(), weights=self._state_dict
-        )  # type: ignore[assignment]
-        return self.__call__
+            flux = Flux2Transformer2DModel(self.config)
+            flux.to(self.devices[0])
+        self.model = flux.compile(*flux.input_types(), weights=state_dict)
+        return self.model
 
     def __call__(
         self,
@@ -70,10 +62,8 @@ class Flux2TransformerModel(ComponentModel):
         img_ids: Tensor,
         txt_ids: Tensor,
         guidance: Tensor,
-    ) -> tuple[Tensor]:
-        if self._compiled_model is None:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
-        return self._compiled_model(
+    ) -> Any:
+        return self.model(
             hidden_states,
             encoder_hidden_states,
             timestep,
@@ -81,7 +71,3 @@ class Flux2TransformerModel(ComponentModel):
             txt_ids,
             guidance,
         )
-
-    @property
-    def model(self) -> Model | None:
-        return self._compiled_model
