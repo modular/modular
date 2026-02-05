@@ -58,15 +58,3 @@ mojo_library(
         "@mojo//:std",
     ],
 )
-
-mojo_library(
-    name = "flashinfer_fp4_gemm_ops",
-    testonly = True,
-    srcs = glob(["Inputs/flashinfer_fp4_gemm_ops/*.mojo"]),
-    validate_missing_docs = False,
-    deps = [
-        "//max:compiler_internal",
-        "//max:tensor",
-        "@mojo//:std",
-    ],
-)
