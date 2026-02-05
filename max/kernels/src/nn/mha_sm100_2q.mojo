@@ -121,6 +121,7 @@ from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
+
 comptime logger = Logger()
 
 comptime LocalTensor[
@@ -1325,6 +1326,26 @@ fn add_ftz(
 
 
 @always_inline
+fn add_ftz_rm(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        add.rm.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
 fn mul_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
@@ -1366,6 +1387,33 @@ fn fma_ftz(
         constraints="=f,=f,f,f,f,f,f,f",
     ](a[0], a[1], b[0], b[1], c[0], c[1])
     return {ret[0], ret[1]}
+
+
+@always_inline
+fn exp2_emulation(x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
+    comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
+    clamped = max(x, -127)
+    # We want to round down here, so that the fractional part is in [0, 1)
+    rounded = add_ftz_rm(clamped, fp32_round_int)
+    rounded_back = sub_ftz(rounded, fp32_round_int)
+    frac = sub_ftz(clamped, rounded_back)
+    # Tri Dao assumes x <= 127.0 and y <= 127.0
+    frac_ex2 = fma_ftz(
+        fma_ftz(
+            fma_ftz(
+                0.077119089663028717041015625, frac, 0.227564394474029541015625
+            ),
+            frac,
+            0.695146143436431884765625,
+        ),
+        frac,
+        1.0,
+    )
+    # The integer floor of x & y are now in the last 8 bits of xy_rounded
+    # We want the next 2 ops to round to nearest even. The rounding mode is important.
+    return bitcast[DType.float32](
+        bitcast[DType.int32](frac_ex2) + (bitcast[DType.int32](rounded) << 23)
+    )
 
 
 @always_inline
@@ -3810,9 +3858,10 @@ struct SM100MHA2Q[
             var vrow_max: f32x2 = f32x2(row_max)
             var acc: f32x2 = exp2(sub_ftz(rebind[f32x2](vs[0]), vrow_max))
             vs[0] = rebind[vs.element_type](acc)
-            vsi = exp2(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
+            vsi = exp2_emulation(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
             vs[1] = rebind[vs.element_type](vsi)
             acc = add_ftz(acc, vsi)
+            comptime exp2_emulation_freq = 4
 
             @parameter
             for i in range(2, 8):
@@ -3822,22 +3871,37 @@ struct SM100MHA2Q[
 
             @parameter
             for i in range(2, 8):
-                vsi = exp2(rebind[f32x2](vs[i]))
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
+                else:
+                    vsi = exp2(rebind[f32x2](vs[i]))
                 vs[i] = rebind[vs.element_type](vsi)
                 acc = add_ftz(acc, vsi)
 
             @parameter
             for i in range(8, batch_size // 2):
-                vsi = exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vsi = exp2_emulation(diff)
+                else:
+                    vsi = exp2(diff)
                 vs[i] = rebind[vs.element_type](vsi)
                 acc = add_ftz(acc, vsi)
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
             for i in range(batch_size // 2, batch_size):
-                vs[i] = rebind[vs.element_type](
-                    exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                )
+                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                else:
+                    vs[i] = rebind[vs.element_type](exp2(diff))
 
             BatchTileType(p_tmem).store(
                 LocalTensor[
@@ -3858,9 +3922,13 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + batch_size):
-                    vs[i] = rebind[vs.element_type](
-                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                    )
+                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                    @parameter
+                    if i % exp2_emulation_freq == 0:
+                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                    else:
+                        vs[i] = rebind[vs.element_type](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -3878,9 +3946,13 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + remainder):
-                    vs[i] = rebind[vs.element_type](
-                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                    )
+                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                    @parameter
+                    if i % exp2_emulation_freq == 0:
+                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                    else:
+                        vs[i] = rebind[vs.element_type](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
