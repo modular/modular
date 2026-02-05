@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
@@ -51,9 +51,6 @@ class MistralConfig(ArchConfigWithKVCache):
 
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
-
-    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
-    """Whether to return hidden states from the model."""
 
     def get_kv_params(self) -> KVCacheParams:
         return self.kv_params

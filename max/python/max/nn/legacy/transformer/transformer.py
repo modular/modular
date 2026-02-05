@@ -86,7 +86,6 @@ class ReturnHiddenStates(str, Enum):
     ALL = "all"
     LAST_NORMALIZED = "last_normalized"
     ALL_NORMALIZED = "all_normalized"
-    ALL_LAYERS = "all_layers"
 
 
 Block = TypeVar("Block", bound=Module, covariant=True)
@@ -132,7 +131,6 @@ class Transformer(Module):
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         freqs_cis = self.rope.freqs_cis
-        all_hidden_states = []
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
@@ -141,8 +139,6 @@ class Transformer(Module):
                 freqs_cis=freqs_cis,
                 input_row_offsets=input_row_offsets,
             )
-            if self.return_hidden_states == ReturnHiddenStates.ALL_LAYERS:
-                all_hidden_states.append(h)
 
         # Retrieve a variable number of tokens
         last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
@@ -197,8 +193,6 @@ class Transformer(Module):
             ret_val += (self.norm(h),)
         elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
             ret_val += (self.norm(last_h),)
-        elif self.return_hidden_states == ReturnHiddenStates.ALL_LAYERS:
-            ret_val += tuple(all_hidden_states)
 
         return ret_val
 
