@@ -660,17 +660,34 @@ lit.struct.decl @String {
 // Struct alignment lowering
 //===----------------------------------------------------------------------===//
 
-// Test concrete alignment on struct propagates to stack_allocation and does not
-// result in a flattened struct.
-lit.struct.decl @AlignedStruct64 attributes {minAlignment = 64 : index} {
-  lit.struct.field value : index
-}
+!MyInt = !lit.struct<@struct_alignment::@MyInt>
+lit.file_module @struct_alignment {
+  lit.struct.decl @MyInt {
+    lit.struct.field value : index
+  }
 
-// CHECK-LABEL: kgen.generator @varDeclAligned64
-lit.fn @varDeclAligned64() {
-  // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(64)> align 64 marked
-  %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@AlignedStruct64>, mut *"life">
-  kgen.return
+  lit.fn @calculate_alignment(%my_int: !MyInt) -> index {
+    %0 = kgen.param.constant: index = <64>
+    kgen.return %0 : index
+  }
+
+  // Test concrete alignment on struct propagates to stack_allocation and does not
+  // result in a flattened struct.
+  lit.struct.decl @AlignedStruct64<my_int: !MyInt> attributes {
+      minAlignment = #kgen.param.expr<apply,
+                                      #kgen.symbol.constant<@struct_alignment::@calculate_alignment> : !lit.generator<("my_int": !MyInt) -> index>,
+                                      #kgen.param.decl.ref<"my_int">: !MyInt> : index
+  } {
+    lit.struct.field value : index
+  }
+
+  // CHECK-LABEL: kgen.generator @"struct_alignment::varDeclAligned64"
+  lit.fn @varDeclAligned64() {
+    // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }))>
+    // CHECK-SAME: align apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }) marked
+    %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@struct_alignment::@AlignedStruct64<:!MyInt {value = 32}>>, mut *"life">
+    kgen.return
+  }
 }
 
 // -----

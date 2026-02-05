@@ -918,6 +918,8 @@ static void lowerAttributesAndTypes(
     for (auto &field : decl.second.fields) {
       field.second = replacer.replace(field.second);
     }
+    decl.second.minAlignment =
+        cast<TypedAttr>(replacer.replace(decl.second.minAlignment));
   }
 }
 
