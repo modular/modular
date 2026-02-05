@@ -20,6 +20,7 @@ from max.engine import Model
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.tensor import Tensor
 
 from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
@@ -47,7 +48,6 @@ class Flux2Model(ComponentModel):
         self._flux2: Flux2Transformer2DModel | None = None
         self._state_dict: dict[str, Any] | None = None
         self._compiled_model: Model | None = None
-        self._compiled_shapes: tuple[int, int, int] | None = None
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
@@ -57,83 +57,23 @@ class Flux2Model(ComponentModel):
         with F.lazy():
             self._flux2 = Flux2Transformer2DModel(self.config)
             self._flux2.to(self.devices[0])
+        self._compiled_model = self._flux2.compile(
+            *self._flux2.input_types(), weights=self._state_dict
+        )  # type: ignore[assignment]
         return self.__call__
-
-    def _ensure_compiled(
-        self,
-        batch_size: int,
-        image_seq_len: int,
-        text_seq_len: int,
-    ) -> Model:
-        current_shapes = (batch_size, image_seq_len, text_seq_len)
-
-        # Recompile if shapes changed or not yet compiled
-        if (
-            self._compiled_model is None
-            or self._compiled_shapes != current_shapes
-        ):
-            if self._flux2 is None or self._state_dict is None:
-                raise RuntimeError("Model not loaded. Call load_model() first.")
-
-            input_types = self._flux2.input_types_with_shapes(
-                batch_size=batch_size,
-                image_seq_len=image_seq_len,
-                text_seq_len=text_seq_len,
-            )
-            compiled = self._flux2.compile(
-                *input_types, weights=self._state_dict
-            )
-            # compile returns a callable, but we need to store it as Model
-            # The actual Model is created when the callable is invoked
-            self._compiled_model = compiled  # type: ignore[assignment]
-            self._compiled_shapes = current_shapes
-
-        if self._compiled_model is None:
-            raise RuntimeError("Model compilation failed")
-        return self._compiled_model
 
     def __call__(
         self,
-        hidden_states: Any,
-        encoder_hidden_states: Any,
-        timestep: Any,
-        img_ids: Any,
-        txt_ids: Any,
-        guidance: Any,
-    ) -> Any:
-        # Extract shapes for compilation
-        # Handle both Tensor_v3 and driver.Tensor
-        if hasattr(hidden_states, "shape"):
-            hs_shape = hidden_states.shape
-            batch_size = (
-                hs_shape[0].dim if hasattr(hs_shape[0], "dim") else hs_shape[0]
-            )
-            image_seq_len = (
-                hs_shape[1].dim if hasattr(hs_shape[1], "dim") else hs_shape[1]
-            )
-        else:
-            raise ValueError("hidden_states must have a shape attribute")
-
-        if hasattr(encoder_hidden_states, "shape"):
-            enc_shape = encoder_hidden_states.shape
-            text_seq_len = (
-                enc_shape[1].dim
-                if hasattr(enc_shape[1], "dim")
-                else enc_shape[1]
-            )
-        else:
-            raise ValueError(
-                "encoder_hidden_states must have a shape attribute"
-            )
-
-        # Ensure model is compiled for these shapes
-        model = self._ensure_compiled(
-            batch_size=int(batch_size),
-            image_seq_len=int(image_seq_len),
-            text_seq_len=int(text_seq_len),
-        )
-
-        return model(
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor,
+    ) -> tuple[Tensor]:
+        if self._compiled_model is None:
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+        return self._compiled_model(
             hidden_states,
             encoder_hidden_states,
             timestep,
