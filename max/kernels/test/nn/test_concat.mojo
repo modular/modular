@@ -26,11 +26,11 @@ fn _tuple_to_list[
     dtype: DType,
 ](
     elems: StaticTuple[
-        TileTensor[dtype, ImmutAnyOrigin, LayoutType],
+        TileTensor[dtype, LayoutType, ImmutAnyOrigin],
         ...,
     ]
-) -> List[TileTensor[dtype, ImmutAnyOrigin, LayoutType]]:
-    var output = List[TileTensor[dtype, ImmutAnyOrigin, LayoutType]](
+) -> List[TileTensor[dtype, LayoutType, ImmutAnyOrigin]]:
+    var output = List[TileTensor[dtype, LayoutType, ImmutAnyOrigin]](
         capacity=len(elems)
     )
     for i in range(len(elems)):
@@ -63,7 +63,7 @@ def test_concat():
     var x1_dyn = x1.make_dynamic[DType.int64]()
 
     var input_tuple = StaticTuple[
-        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
+        TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),
@@ -133,7 +133,7 @@ def test_concat_parallel():
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     var input_tuple = StaticTuple[
-        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
+        TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),
@@ -205,7 +205,7 @@ def test_concat_inner():
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     var input_tuple = StaticTuple[
-        TileTensor[dtype, ImmutAnyOrigin, x1_dyn.LayoutType],
+        TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         3,
     ](
         x1_dyn.as_any_origin().as_immut(),

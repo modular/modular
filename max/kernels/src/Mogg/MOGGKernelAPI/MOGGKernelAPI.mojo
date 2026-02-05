@@ -4589,8 +4589,8 @@ struct Split:
         var output_bufs = StaticTuple[
             TileTensor[
                 output.dtype,
-                MutAnyOrigin,
                 TileLayout[shape_types=shape_types, stride_types=stride_types],
+                MutAnyOrigin,
             ],
             output.size,
         ]()

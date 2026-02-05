@@ -50,11 +50,11 @@ fn slice_dim_as_view[
     tensor: TileTensor[dtype, ...], start: Int, end: Int, step: Int
 ) -> TileTensor[
     dtype,
-    tensor.origin,
     Layout[
         shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
         stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     ],
+    tensor.origin,
     address_space = tensor.address_space,
 ]:
     var new_shape = coord_to_index_list(tensor.layout.shape_coord())
@@ -109,11 +109,11 @@ fn slice_as_view[
     steps: TileTensor[step_type, ...],
 ) -> TileTensor[
     dtype,
-    tensor.origin,
     Layout[
         shape_types = DynamicCoord[DType.int64, tensor.rank].element_types,
         stride_types = DynamicCoord[DType.int64, tensor.rank].element_types,
     ],
+    tensor.origin,
     address_space = tensor.address_space,
 ]:
     comptime assert starts.rank == 1

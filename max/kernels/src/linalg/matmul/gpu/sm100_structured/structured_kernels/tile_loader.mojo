@@ -150,8 +150,8 @@ struct TileLoaderTMA[
         self,
         dest: TileTensor[
             Self.dtype,
-            MutAnyOrigin,
             LayoutType,
+            MutAnyOrigin,
             address_space = AddressSpace.SHARED,
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,

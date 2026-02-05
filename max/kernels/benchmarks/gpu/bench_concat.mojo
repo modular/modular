@@ -91,7 +91,7 @@ fn bench_concat[
 
     # Create input tuple for kernel
     var inputs = StaticTuple[
-        TileTensor[type, ImmutAnyOrigin, input0_device.LayoutType],
+        TileTensor[type, input0_device.LayoutType, ImmutAnyOrigin],
         num_inputs,
     ](
         input0_device.as_any_origin().as_immut(),
@@ -113,7 +113,7 @@ fn bench_concat[
     )
 
     var inputs_host = StaticTuple[
-        TileTensor[type, MutAnyOrigin, input0_host.LayoutType],
+        TileTensor[type, input0_host.LayoutType, MutAnyOrigin],
         num_inputs,
     ](
         input0_host.as_any_origin(),

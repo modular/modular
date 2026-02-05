@@ -65,9 +65,9 @@ fn gemm_kernel[
     TM: Int where TM > -1,
     TN: Int where TN > -1,
 ](
-    mat_c: TileTensor[c_dtype, MutExternalOrigin, CLayoutType],
-    mat_a: TileTensor[a_dtype, MutExternalOrigin, ALayoutType],
-    mat_b: TileTensor[b_dtype, MutExternalOrigin, BLayoutType],
+    mat_c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
+    mat_a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
+    mat_b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
 ) where (
     mat_a.rank == 2
     and mat_b.rank == 2
@@ -507,9 +507,9 @@ fn matmul_kernel_naive[
     transpose_b: Bool = False,
     s_type: DType = get_accum_type[c_dtype](),
 ](
-    c: TileTensor[c_dtype, MutExternalOrigin, CLayoutType],
-    a: TileTensor[a_dtype, MutExternalOrigin, ALayoutType],
-    b: TileTensor[b_dtype, MutExternalOrigin, BLayoutType],
+    c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
+    a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
+    b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
     m: Int,
     n: Int,
     k: Int,

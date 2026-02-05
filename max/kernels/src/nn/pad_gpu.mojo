@@ -109,15 +109,15 @@ fn vector_copy_row[
 
 
 fn padded_copy_kernel[
-    input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
-    output_origin: MutOrigin,
+    input_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
     dtype: DType,
     simd_width: Int,
 ](
-    input_tensor: TileTensor[dtype, input_origin, InputLayoutType],
-    output_tensor: TileTensor[dtype, output_origin, OutputLayoutType],
+    input_tensor: TileTensor[dtype, InputLayoutType, input_origin],
+    output_tensor: TileTensor[dtype, OutputLayoutType, output_origin],
     rows_per_sm: Int,
     total_rows: Int,
     row_length: Int,

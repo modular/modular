@@ -57,8 +57,8 @@ struct TileTensor[
     mut: Bool,
     //,
     dtype: DType,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     linear_idx_type: DType = _get_index_type(address_space),
@@ -109,8 +109,8 @@ struct TileTensor[
 
     comptime GenericType = TileTensor[
         Self.dtype,
-        Self.origin,
         Self.LayoutType,
+        Self.origin,
         address_space = AddressSpace.GENERIC,
         linear_idx_type = Self.linear_idx_type,
     ]
@@ -128,11 +128,11 @@ struct TileTensor[
         buffer: NDBuffer[...],
         out self: TileTensor[
             buffer.dtype,
-            buffer.origin,
             Layout[
                 shape_types = _DimsToCoordLike[DType.int64, buffer.shape],
                 stride_types = _DimsToCoordLike[DType.int64, buffer.strides],
             ],
+            buffer.origin,
             address_space = buffer.address_space,
         ],
     ):
@@ -576,11 +576,11 @@ struct TileTensor[
         *slices: ContiguousSlice
     ](self) -> TileTensor[
         Self.dtype,
-        Self.origin,
         Layout[
             shape_types = _Slice[slices, Self.LayoutType._shape_types],
             stride_types = Self.LayoutType._stride_types,
         ],
+        Self.origin,
         address_space = Self.address_space,
         linear_idx_type = Self.linear_idx_type,
         element_shape_types = Self.element_shape_types,
@@ -670,11 +670,11 @@ struct TileTensor[
 
         return TileTensor[
             Self.dtype,
-            Self.origin,
             Layout[
                 shape_types=NewShapeTypes,
                 stride_types = Self.LayoutType._stride_types,
             ],
+            Self.origin,
             address_space = Self.address_space,
             linear_idx_type = Self.linear_idx_type,
             element_shape_types = Self.element_shape_types,
@@ -1031,14 +1031,14 @@ fn stack_allocation[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](var layout: LayoutType) -> TileTensor[
     dtype,
-    MutExternalOrigin,
     LayoutType,
+    MutExternalOrigin,
     address_space=address_space,
 ] where LayoutType.all_dims_known:
     return TileTensor[
         dtype,
-        MutExternalOrigin,
         LayoutType,
+        MutExternalOrigin,
         address_space=address_space,
     ](
         std.memory.stack_allocation[
@@ -1072,7 +1072,6 @@ fn _distribute[
     thread_id: Int,
 ) -> TileTensor[
     data_layout_tensor.dtype,
-    data_layout_tensor.origin,
     Layout[
         shape_types = _Divide[
             data_layout_tensor.LayoutType._shape_types,
@@ -1083,6 +1082,7 @@ fn _distribute[
             thread_layout.shape_types,
         ],
     ],
+    data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
     element_shape_types = data_layout_tensor.element_shape_types,
@@ -1147,6 +1147,7 @@ fn _distribute[
 
     return TileTensor[
         data_layout_tensor.dtype,
+        _,
         data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
@@ -1174,11 +1175,11 @@ fn _tile[
     tile_coords: Coord[*coord_types],
 ) -> TileTensor[
     dtype,
-    data_layout_tensor.origin,
     Layout[
         shape_types=tile_shape_types,
         stride_types = data_layout_tensor.LayoutType._stride_types,
     ],
+    data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
     element_shape_types=element_shape_types,
@@ -1231,11 +1232,11 @@ fn _tile[
 
     return TileTensor[
         dtype,
-        data_layout_tensor.origin,
         Layout[
             shape_types=tile_shape_types,
             stride_types = data_layout_tensor.LayoutType._stride_types,
         ],
+        data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
         element_shape_types=element_shape_types,
@@ -1255,7 +1256,6 @@ fn _vectorize[
     vector_shape: Coord[*vector_shape_types],
 ) -> TileTensor[
     dtype,
-    data_layout_tensor.origin,
     Layout[
         shape_types = _CeilDiv[
             data_layout_tensor.LayoutType._shape_types, vector_shape_types
@@ -1265,6 +1265,7 @@ fn _vectorize[
             vector_shape_types,
         ],
     ],
+    data_layout_tensor.origin,
     address_space = data_layout_tensor.address_space,
     linear_idx_type = data_layout_tensor.linear_idx_type,
     element_shape_types=vector_shape_types,
@@ -1307,11 +1308,11 @@ fn _vectorize[
 
     return TileTensor[
         dtype,
-        data_layout_tensor.origin,
         Layout[
             shape_types=NewShapeTypes,
             stride_types=NewStrideTypes,
         ],
+        data_layout_tensor.origin,
         address_space = data_layout_tensor.address_space,
         linear_idx_type = data_layout_tensor.linear_idx_type,
         element_shape_types=vector_shape_types,

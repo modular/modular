@@ -103,11 +103,11 @@ fn bench_topk_batched[
         local_topk_size
     )
 
-    var device_local_topk_vals = TileTensor[dtype, rank](
+    var device_local_topk_vals = TileTensor(
         device_local_topk_vals_buffer.unsafe_ptr(),
         row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
     )
-    var device_local_topk_idxs = TileTensor[out_idx_type, rank](
+    var device_local_topk_idxs = TileTensor(
         device_local_topk_idxs_buffer.unsafe_ptr(),
         row_major((Idx(batch_size), Idx(num_blocks_per_input * K))),
     )

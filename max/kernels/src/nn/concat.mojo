@@ -148,8 +148,8 @@ fn _canonical_reshape[
 
 
 fn _canonical_reshape_output[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
 ](
@@ -157,7 +157,7 @@ fn _canonical_reshape_output[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) -> _CanonicallyReshapedBuffer[out_buf.origin]:
     var input0_canon = _canonical_reshape(inputs[0], axis)
     var out_w = input0_canon.w
@@ -172,8 +172,8 @@ fn _canonical_reshape_output[
 
 
 fn _concat_parallel[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -182,7 +182,7 @@ fn _concat_parallel[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -319,8 +319,8 @@ fn _concat_parallel[
 
 @always_inline
 fn _concat[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -329,7 +329,7 @@ fn _concat[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     """Concatenate inputs along axis and store in output.
 
@@ -381,8 +381,8 @@ fn _concat[
 
 @always_inline
 fn _concat_inner[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -390,7 +390,7 @@ fn _concat_inner[
     output: TileTensor[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
@@ -409,11 +409,11 @@ fn _concat_inner[
 
 @always_inline
 fn _check_input_consistency[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
-](axis: Int, inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],):
+](axis: Int, inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],):
     @parameter
     if not is_debug_build():
         return
@@ -431,8 +431,8 @@ fn _check_input_consistency[
 
 @always_inline
 fn _concat_serial[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -441,7 +441,7 @@ fn _concat_serial[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     _check_input_consistency[dtype](axis, inputs)
 
@@ -462,8 +462,8 @@ fn _concat_serial[
 
 @always_inline
 fn _concat_small[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -472,7 +472,7 @@ fn _concat_small[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     comptime single_thread_blocking_override = True
     comptime simd_width = simd_width_of[dtype]()
@@ -544,8 +544,8 @@ fn _concat_small[
 
 @always_inline
 fn _concat_cpu[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -555,7 +555,7 @@ fn _concat_cpu[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     axis: Int,
-    inputs: List[TileTensor[dtype, input_origin, InputLayoutType]],
+    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     @parameter
     if single_thread_blocking_override:
@@ -583,13 +583,13 @@ fn _concat_cpu[
 
 @always_inline
 fn concat_shape[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     input_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_bufs: List[TileTensor[input_type, input_origin, InputLayoutType]],
+    input_bufs: List[TileTensor[input_type, InputLayoutType, input_origin]],
     axis: Int,
 ) raises -> IndexList[InputLayoutType.rank]:
     """
@@ -597,8 +597,8 @@ fn concat_shape[
     compatible.
 
     Parameters:
-        InputLayoutType: Layout type of the input tensor.
         input_origin: Origin of the input tensor.
+        InputLayoutType: Layout type of the input tensor.
         input_type: Type of the input tensor.
         single_thread_blocking_override: If True, then the operation is run
           synchronously using a single thread.
@@ -651,8 +651,8 @@ fn concat_shape[
 
 @always_inline
 fn concat[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     single_thread_blocking_override: Bool,
@@ -664,7 +664,7 @@ fn concat[
     ],
     axis: Int,
     inputs: StaticTuple[
-        TileTensor[dtype, input_origin, InputLayoutType],
+        TileTensor[dtype, InputLayoutType, input_origin],
         ...,
     ],
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -678,7 +678,7 @@ fn concat[
         @parameter
         if is_cpu[target]():
             var inputVec = List[
-                TileTensor[dtype, input_origin, InputLayoutType]
+                TileTensor[dtype, InputLayoutType, input_origin]
             ](capacity=len(inputs))
 
             for i in range(inputs.size):
@@ -703,19 +703,19 @@ fn concat[
 
 
 fn _concat_inner_most_single_dim[
-    output_origin: MutOrigin,
     OutputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
     //,
     dtype: DType,
     num_inputs: Int,
     block_size: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[dtype, output_origin, OutputLayoutType],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
     inputs: StaticTuple[
-        TileTensor[dtype, input_origin, InputLayoutType],
+        TileTensor[dtype, InputLayoutType, input_origin],
         num_inputs,
     ],
 ):
@@ -748,8 +748,8 @@ fn _concat_inner_most_single_dim[
 
 @always_inline
 fn _concat_gpu_elementwise[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     num_inputs: Int,
@@ -760,7 +760,7 @@ fn _concat_gpu_elementwise[
     ],
     axis: Int,
     inputs: StaticTuple[
-        TileTensor[dtype, input_origin, InputLayoutType],
+        TileTensor[dtype, InputLayoutType, input_origin],
         num_inputs,
     ],
     ctx: DeviceContext,
@@ -776,8 +776,8 @@ fn _concat_gpu_elementwise[
 
 @always_inline
 fn _concat_gpu_elementwise[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     axis: Int,
     dtype: DType,
@@ -788,7 +788,7 @@ fn _concat_gpu_elementwise[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     inputs: StaticTuple[
-        TileTensor[dtype, input_origin, InputLayoutType],
+        TileTensor[dtype, InputLayoutType, input_origin],
         num_inputs,
     ],
     ctx: DeviceContext,
@@ -837,8 +837,8 @@ fn _concat_gpu_elementwise[
 
 @always_inline
 fn _concat_gpu[
-    InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
+    InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
@@ -848,7 +848,7 @@ fn _concat_gpu[
     ],
     axis: Int,
     inputs: StaticTuple[
-        TileTensor[dtype, input_origin, InputLayoutType],
+        TileTensor[dtype, InputLayoutType, input_origin],
         ...,
     ],
     ctx: DeviceContext,
@@ -906,10 +906,10 @@ fn _concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _concat_inner_most_single_dim[
-                output_origin = output.origin,
                 OutputLayoutType = output.LayoutType,
-                input_origin=input_origin,
+                output_origin = output.origin,
                 InputLayoutType=InputLayoutType,
+                input_origin=input_origin,
                 dtype,
                 num_inputs,
                 block_size,
@@ -974,8 +974,8 @@ fn _fused_concat_cpu[
 
 @always_inline
 fn _fused_concat_inner_most_single_dim[
-    output_origin: MutOrigin,
     OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
     //,
     rank: Int,
     dtype: DType,
@@ -987,7 +987,7 @@ fn _fused_concat_inner_most_single_dim[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[dtype, output_origin, OutputLayoutType],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
 ):
     comptime num_inputs = input_shapes.size
 
@@ -1090,8 +1090,8 @@ fn _fused_concat_gpu[
         if inner_most_unit_dim:
             comptime block_size = 32
             comptime kernel = _fused_concat_inner_most_single_dim[
-                output_origin = output.origin,
                 OutputLayoutType = output.LayoutType,
+                output_origin = output.origin,
                 rank,
                 dtype,
                 block_size,

@@ -60,27 +60,27 @@ fn moe_create_indices_kernel[
     TopkIdsLayoutType: TensorLayout,
 ](
     token_expert_order: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, TokenExpertOrderLayoutType
+        mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
     expert_start_indices: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, ExpertStartIndicesLayoutType
+        mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
     restore_token_order: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, RestoreTokenOrderLayoutType
+        mut=True, DType.uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
     ],
     expert_ids: TileTensor[
-        mut=True, DType.int32, MutAnyOrigin, ExpertIdsLayoutType
+        mut=True, DType.int32, ExpertIdsLayoutType, MutAnyOrigin
     ],
     expert_usage_stats: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, ExpertUsageStatsLayoutType
+        mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
     indices_padded: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, IndicesPaddedLayoutType
+        mut=True, DType.uint32, IndicesPaddedLayoutType, MutAnyOrigin
     ],
     topk_ids_padded: TileTensor[
-        mut=True, input_type, MutAnyOrigin, PaddedInputLayoutType
+        mut=True, input_type, PaddedInputLayoutType, MutAnyOrigin
     ],
-    topk_ids: TileTensor[input_type, MutAnyOrigin, TopkIdsLayoutType],
+    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
 ):
     comptime assert topk_ids.rank == 1
     comptime assert expert_ids.rank == 1
@@ -116,9 +116,9 @@ fn moe_create_indices_kernel[
         InputLayoutType: TensorLayout,
     ](
         indices: TileTensor[
-            mut=True, DType.uint32, MutAnyOrigin, IndicesLayoutType
+            mut=True, DType.uint32, IndicesLayoutType, MutAnyOrigin
         ],
-        input: TileTensor[mut=True, input_type, MutAnyOrigin, InputLayoutType],
+        input: TileTensor[mut=True, input_type, InputLayoutType, MutAnyOrigin],
         n: Int,
         step: Int,
         stage: Int,
@@ -573,22 +573,22 @@ fn moe_create_indices_bucket_group_kernel[
     expected_count: Int = 8192,
 ](
     token_expert_order: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, TokenExpertOrderLayoutType
+        mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
-    lock: TileTensor[DType.uint32, MutAnyOrigin, LockLayoutType],
+    lock: TileTensor[DType.uint32, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, ExpertStartIndicesLayoutType
+        mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
     restore_token_order: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, RestoreTokenOrderLayoutType
+        mut=True, DType.uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
     ],
     expert_ids: TileTensor[
-        mut=True, DType.int32, MutAnyOrigin, ExpertIdsLayoutType
+        mut=True, DType.int32, ExpertIdsLayoutType, MutAnyOrigin
     ],
     expert_usage_stats: TileTensor[
-        mut=True, DType.uint32, MutAnyOrigin, ExpertUsageStatsLayoutType
+        mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
-    topk_ids: TileTensor[input_type, MutAnyOrigin, TopkIdsLayoutType],
+    topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -860,15 +860,15 @@ fn group_limited_router_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, MutAnyOrigin, ExpertIndicesLayoutType
+        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
-        mut=True, scores_type, MutAnyOrigin, ExpertWeightsLayoutType
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
     ],
     expert_scores: TileTensor[
-        scores_type, ImmutAnyOrigin, ExpertScoresLayoutType
+        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
     ],
-    expert_bias: TileTensor[bias_type, ImmutAnyOrigin, ExpertBiasLayoutType],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
 ):
     """

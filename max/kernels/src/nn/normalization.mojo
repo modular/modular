@@ -262,8 +262,8 @@ fn welford_block_all_reduce[
 
 fn layer_norm_gpu_warp_tiling[
     mut: Bool,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     dtype: DType,
     //,
     simd_width: UInt,
@@ -278,7 +278,7 @@ fn layer_norm_gpu_warp_tiling[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[dtype, origin, LayoutType],
+    beta: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -339,8 +339,8 @@ fn layer_norm_gpu_warp_tiling[
 
 fn layer_norm_gpu_block[
     mut: Bool,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     dtype: DType,
     //,
     simd_width: UInt,
@@ -355,7 +355,7 @@ fn layer_norm_gpu_block[
     ) capturing -> None,
 ](
     shape: IndexList[2],
-    beta: TileTensor[dtype, origin, LayoutType],
+    beta: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
@@ -510,8 +510,8 @@ fn layer_norm_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = layer_norm_gpu_warp_tiling[
                 mut = beta.mut,
-                origin = beta.origin,
                 LayoutType = beta.LayoutType,
+                origin = beta.origin,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -528,8 +528,8 @@ fn layer_norm_gpu[
         else:
             comptime kernel = layer_norm_gpu_block[
                 mut = beta.mut,
-                origin = beta.origin,
                 LayoutType = beta.LayoutType,
+                origin = beta.origin,
                 UInt(simd_width),
                 input_fn_2d,
                 gamma_fn,
@@ -546,8 +546,8 @@ fn layer_norm_gpu[
     else:
         comptime kernel = layer_norm_gpu_block[
             mut = beta.mut,
-            origin = beta.origin,
             LayoutType = beta.LayoutType,
+            origin = beta.origin,
             1,
             input_fn_2d,
             gamma_fn,
@@ -884,8 +884,8 @@ fn _rms_norm_warp_tiling_subkernel[
 
 fn rms_norm_gpu_warp_tiling_128[
     mut: Bool,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     dtype: DType,
     //,
     simd_width: Int,
@@ -898,7 +898,7 @@ fn rms_norm_gpu_warp_tiling_128[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, origin, LayoutType],
+    gamma: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_rows: Int,
@@ -946,8 +946,8 @@ fn rms_norm_gpu_warp_tiling_128[
 
 fn rms_norm_gpu_warp_tiling[
     mut: Bool,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     dtype: DType,
     //,
     simd_width: Int,
@@ -960,7 +960,7 @@ fn rms_norm_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, origin, LayoutType],
+    gamma: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1077,8 +1077,8 @@ fn _rms_norm_gpu_block_subkernel[
 
 fn rms_norm_gpu_block[
     mut: Bool,
-    origin: Origin[mut=mut],
     LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
     dtype: DType,
     //,
     simd_width: Int,
@@ -1091,7 +1091,7 @@ fn rms_norm_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma: TileTensor[dtype, origin, LayoutType],
+    gamma: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     num_cols: Int,
@@ -1181,8 +1181,8 @@ fn rms_norm_gpu[
 
             comptime kernel = rms_norm_gpu_warp_tiling_128[
                 mut = gamma.mut,
-                origin = gamma.origin,
                 LayoutType = gamma.LayoutType,
+                origin = gamma.origin,
                 simd_width,
                 warps_per_block,
                 input_fn_2d,
@@ -1202,8 +1202,8 @@ fn rms_norm_gpu[
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut = gamma.mut,
-                origin = gamma.origin,
                 LayoutType = gamma.LayoutType,
+                origin = gamma.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1225,8 +1225,8 @@ fn rms_norm_gpu[
         ):
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut = gamma.mut,
-                origin = gamma.origin,
                 LayoutType = gamma.LayoutType,
+                origin = gamma.origin,
                 simd_width * 2,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1245,8 +1245,8 @@ fn rms_norm_gpu[
         else:
             comptime kernel = rms_norm_gpu_block[
                 mut = gamma.mut,
-                origin = gamma.origin,
                 LayoutType = gamma.LayoutType,
+                origin = gamma.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1265,8 +1265,8 @@ fn rms_norm_gpu[
     else:
         comptime kernel = rms_norm_gpu_block[
             mut = gamma.mut,
-            origin = gamma.origin,
             LayoutType = gamma.LayoutType,
+            origin = gamma.origin,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -1480,11 +1480,11 @@ fn _rms_norm_impl[
 
 fn rms_norm_fused_residual_add_gpu_warp_tiling[
     mut1: Bool,
-    origin1: Origin[mut=mut1],
     LayoutType1: TensorLayout,
+    origin1: Origin[mut=mut1],
     mut2: Bool,
-    origin2: Origin[mut=mut2],
     LayoutType2: TensorLayout,
+    origin2: Origin[mut=mut2],
     dtype: DType,
     //,
     simd_width: Int,
@@ -1503,10 +1503,10 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[dtype, origin1, LayoutType1],
+    gamma1: TileTensor[dtype, LayoutType1, origin1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, origin2, LayoutType2],
+    gamma2: TileTensor[dtype, LayoutType2, origin2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -1565,11 +1565,11 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
 
 fn rms_norm_fused_residual_add_gpu_block[
     mut1: Bool,
-    origin1: Origin[mut=mut1],
     LayoutType1: TensorLayout,
+    origin1: Origin[mut=mut1],
     mut2: Bool,
-    origin2: Origin[mut=mut2],
     LayoutType2: TensorLayout,
+    origin2: Origin[mut=mut2],
     dtype: DType,
     //,
     simd_width: Int,
@@ -1588,10 +1588,10 @@ fn rms_norm_fused_residual_add_gpu_block[
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    gamma1: TileTensor[dtype, origin1, LayoutType1],
+    gamma1: TileTensor[dtype, LayoutType1, origin1],
     epsilon1: Scalar[dtype],
     weight_offset1: Scalar[dtype],
-    gamma2: TileTensor[dtype, origin2, LayoutType2],
+    gamma2: TileTensor[dtype, LayoutType2, origin2],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
     num_cols: Int,
@@ -1745,11 +1745,11 @@ fn rms_norm_fused_residual_add_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = rms_norm_fused_residual_add_gpu_warp_tiling[
                 mut1 = gamma1.mut,
-                origin1 = gamma1.origin,
                 LayoutType1 = gamma1.LayoutType,
+                origin1 = gamma1.origin,
                 mut2 = gamma2.mut,
-                origin2 = gamma2.origin,
                 LayoutType2 = gamma2.LayoutType,
+                origin2 = gamma2.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1777,11 +1777,11 @@ fn rms_norm_fused_residual_add_gpu[
 
             comptime kernel = rms_norm_fused_residual_add_gpu_block[
                 mut1 = gamma1.mut,
-                origin1 = gamma1.origin,
                 LayoutType1 = gamma1.LayoutType,
+                origin1 = gamma1.origin,
                 mut2 = gamma2.mut,
-                origin2 = gamma2.origin,
                 LayoutType2 = gamma2.LayoutType,
+                origin2 = gamma2.origin,
                 simd_width,
                 max_warps_per_block,
                 input_fn_2d,
@@ -1812,11 +1812,11 @@ fn rms_norm_fused_residual_add_gpu[
 
         comptime kernel = rms_norm_fused_residual_add_gpu_block[
             mut1 = gamma1.mut,
-            origin1 = gamma1.origin,
             LayoutType1 = gamma1.LayoutType,
+            origin1 = gamma1.origin,
             mut2 = gamma2.mut,
-            origin2 = gamma2.origin,
             LayoutType2 = gamma2.LayoutType,
+            origin2 = gamma2.origin,
             1,
             max_warps_per_block,
             input_fn_2d,
@@ -2167,11 +2167,11 @@ fn group_norm_reshape[
     spatial: Int,
     out result: TileTensor[
         dtype,
-        buf.origin,
         Layout[
             shape_types = DynamicCoord[DType.int64, 2].element_types,
             stride_types = DynamicCoord[DType.int64, 2].element_types,
         ],
+        buf.origin,
         address_space = buf.address_space,
     ],
 ):
@@ -2193,8 +2193,8 @@ fn group_norm_reshape[
 
 
 fn group_norm_gpu_warp_tiling[
-    origin: MutOrigin,
     LayoutType: TensorLayout,
+    origin: MutOrigin,
     //,
     dtype: DType,
     simd_width: Int,
@@ -2204,7 +2204,7 @@ fn group_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: TileTensor[dtype, origin, LayoutType],
+    output: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
@@ -2267,8 +2267,8 @@ fn group_norm_gpu_warp_tiling[
 
 
 fn group_norm_gpu_block[
-    origin: MutOrigin,
     LayoutType: TensorLayout,
+    origin: MutOrigin,
     //,
     dtype: DType,
     simd_width: UInt,
@@ -2278,7 +2278,7 @@ fn group_norm_gpu_block[
     gamma_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: fn[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
 ](
-    output: TileTensor[dtype, origin, LayoutType],
+    output: TileTensor[dtype, LayoutType, origin],
     epsilon: Scalar[dtype],
     num_groups: Int,
     channels_per_group: Int,
@@ -2458,8 +2458,8 @@ fn group_norm_gpu[
             WARP_SIZE * simd_width * max_warps_per_block
         ):
             comptime kernel = group_norm_gpu_warp_tiling[
-                origin = output_rs.origin,
                 LayoutType = output_rs.LayoutType,
+                origin = output_rs.origin,
                 dtype=dtype,
                 simd_width=simd_width,
                 input_fn=input_fn_2d,
@@ -2478,8 +2478,8 @@ fn group_norm_gpu[
             )
         else:
             comptime kernel = group_norm_gpu_block[
-                origin = output_rs.origin,
                 LayoutType = output_rs.LayoutType,
+                origin = output_rs.origin,
                 dtype=dtype,
                 simd_width = UInt(simd_width),
                 input_fn=input_fn_2d,
@@ -2498,8 +2498,8 @@ fn group_norm_gpu[
             )
     else:
         comptime kernel = group_norm_gpu_block[
-            origin = output_rs.origin,
             LayoutType = output_rs.LayoutType,
+            origin = output_rs.origin,
             dtype=dtype,
             simd_width=1,
             input_fn=input_fn_2d,

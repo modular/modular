@@ -41,7 +41,7 @@ fn split[
     input: TileTensor[dtype, ...],
     axis: Int,
     outputs: StaticTuple[
-        TileTensor[dtype, output_origin, OutputLayoutType],
+        TileTensor[dtype, OutputLayoutType, output_origin],
         num_outputs,
     ],
     ctx: DeviceContext,

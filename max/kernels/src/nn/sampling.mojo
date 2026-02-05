@@ -118,12 +118,12 @@ fn update_frequency_data_kernel[
     block_size: Int,
 ](
     compressed_frequency_data: TileTensor[
-        DType.int32, freq_data_origin, FreqDataLayoutType
+        DType.int32, FreqDataLayoutType, freq_data_origin
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, freq_offsets_origin, FreqOffsetsLayoutType
+        DType.uint32, FreqOffsetsLayoutType, freq_offsets_origin
     ],
-    new_tokens: TileTensor[token_type, new_tokens_origin, NewTokensLayoutType],
+    new_tokens: TileTensor[token_type, NewTokensLayoutType, new_tokens_origin],
 ):
     """
     GPU kernel to update token frequency data in CSR format.

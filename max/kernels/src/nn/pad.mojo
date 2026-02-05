@@ -37,7 +37,7 @@ fn _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor[dtype, layout](dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -321,7 +321,6 @@ fn _do_pad[
     output: TileTensor[
         mut=True,
         dtype,
-        _,
         OutputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,

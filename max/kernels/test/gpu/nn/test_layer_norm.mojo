@@ -98,8 +98,8 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
-            origin = beta.origin,
             LayoutType = beta.LayoutType,
+            origin = beta.origin,
             UInt(simd_width),
             input_fn,
             gamma_fn,
@@ -313,8 +313,8 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf, gamma, beta, epsilon)
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
-            origin = beta.origin,
             LayoutType = beta.LayoutType,
+            origin = beta.origin,
             UInt(simd_width),
             input_fn,
             gamma_fn,

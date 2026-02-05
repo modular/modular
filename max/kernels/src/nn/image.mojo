@@ -65,12 +65,12 @@ struct ImageData[
     """Utility class that generalizes conv2d data and filter tensor with a given
     data layout."""
 
-    var data: TileTensor[Self.dtype, Self.origin, Self.LayoutType]
+    var data: TileTensor[Self.dtype, Self.LayoutType, Self.origin]
     var dynamic_image_layout: Image2DLayout
 
     fn __init__(
         out self,
-        data: TileTensor[Self.dtype, Self.origin, Self.LayoutType],
+        data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
         _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
@@ -85,7 +85,7 @@ struct ImageData[
 
     fn __init__(
         out self,
-        data: TileTensor[Self.dtype, Self.origin, Self.LayoutType],
+        data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
     ):
         comptime assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data

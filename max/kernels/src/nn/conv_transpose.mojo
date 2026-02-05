@@ -401,22 +401,22 @@ struct ConvTransposedPacked[
 ](ImplicitlyCopyable):
     var output: TileTensor[
         Self.output_type,
-        Self.output_origin,
         Self.OutputLayoutType,
+        Self.output_origin,
         element_shape_types = Self.output_element_shape_types,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
-        Self.input_origin,
         Self.InputLayoutType,
+        Self.input_origin,
         element_shape_types = Self.input_element_shape_types,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
-        Self.filter_origin,
         Self.FilterLayoutType,
+        Self.filter_origin,
         element_shape_types = Self.filter_element_shape_types,
         linear_idx_type = Self.filter_linear_idx_type,
     ]
@@ -435,8 +435,8 @@ struct ConvTransposedPacked[
         output: TileTensor[
             mut=True,
             Self.output_type,
-            Self.output_origin,
             Self.OutputLayoutType,
+            Self.output_origin,
             element_shape_types = Self.output_element_shape_types,
             linear_idx_type = Self.output_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -444,8 +444,8 @@ struct ConvTransposedPacked[
         ],
         input: TileTensor[
             Self.input_type,
-            Self.input_origin,
             Self.InputLayoutType,
+            Self.input_origin,
             element_shape_types = Self.input_element_shape_types,
             linear_idx_type = Self.input_linear_idx_type,
             address_space = AddressSpace.GENERIC,
@@ -453,8 +453,8 @@ struct ConvTransposedPacked[
         ],
         filter: TileTensor[
             Self.filter_type,
-            Self.filter_origin,
             Self.FilterLayoutType,
+            Self.filter_origin,
             element_shape_types = Self.filter_element_shape_types,
             linear_idx_type = Self.filter_linear_idx_type,
             address_space = AddressSpace.GENERIC,
