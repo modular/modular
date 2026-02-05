@@ -361,7 +361,7 @@ fn batched_quantize_fp8_kernel[
     scale_ub: Scalar[scales_type],
 ):
     comptime use_warp_tiling = group_size <= num_threads * simd_width
-    comptime fp8_max = Scalar[out_type].MAX_FINITE
+    comptime fp8_max = max_finite[out_type]()
     comptime accum_type = get_accum_type[in_type]()
 
     var input_vec = SIMD[accum_type, simd_width](0)
