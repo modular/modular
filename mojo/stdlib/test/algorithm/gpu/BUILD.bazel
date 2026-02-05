@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:private"])
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
-})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+})
 
 _EXTRA_CONSTRAINTS = {
     "test_reduce_atomic.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2423

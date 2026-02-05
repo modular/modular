@@ -31,7 +31,7 @@ _EXTRA_COPTS = {
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
-})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+})
 
 _EXTRA_CONSTRAINTS = {
     "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled

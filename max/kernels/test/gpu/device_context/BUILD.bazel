@@ -5,7 +5,7 @@ package(default_visibility = ["//max:consumers"])
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
-})  # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
+})
 
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],

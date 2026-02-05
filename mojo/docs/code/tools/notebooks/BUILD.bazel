@@ -16,7 +16,7 @@ GPU_SRCS = [
     "vector_addition.mojo",
 ]
 
-# TODO(GEX-3156): Investigate and enable on Apple GPU
+# These examples use print() inside GPU kernels, which is not supported on Apple GPU
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
