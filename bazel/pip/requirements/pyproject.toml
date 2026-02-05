@@ -5,6 +5,7 @@ requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settin
 dependencies = [
   "levenshtein",
   "absl-py",
+  "aioboto3",
   "aiofiles",
   "aiohttp",
   "anyio>=4.12.1",
@@ -93,6 +94,8 @@ dependencies = [
   "tomli",
   "tqdm",
   "transformers>=4.57",
+  "types-aioboto3[essential]",
+  "types-boto3[essential]",
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
