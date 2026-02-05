@@ -744,7 +744,10 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw___comptime_assert: {
     rejectDecorator(); // Decorators not allowed.
     SMLoc kwLoc = consumeToken(Token::kw___comptime_assert).getLoc();
-    // TODO: Emit deprecation warning.
+    shared.emitWarning(kwLoc,
+                       "'__comptime_assert' is deprecated, use 'comptime "
+                       "assert' instead")
+        << FixIt::replaceToken(kwLoc, "comptime assert");
     return parseComptimeAssertStmtBody(startCursor, stmtIndent, kwLoc);
   }
   case Token::kw_continue:
