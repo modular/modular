@@ -453,6 +453,9 @@ fn broadcast[
         "Buffer shapes don't match",
     )
 
+    if not can_enable_p2p():
+        raise Error("Broadcast currently requires P2P access between GPUs")
+
     comptime BLOCK_SIZE = 256
     # Default max blocks if not specified.
     comptime sm_version = get_sm_version()
