@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,6 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+from typing import Any
+
+import PIL.Image
 
 # docstyle-ignore
 """
@@ -44,3 +48,76 @@ Rules:
 - Keep content PG-13
 
 Output only the final instruction in plain text and nothing else."""
+
+
+def format_input(
+    prompts: list[str],
+    system_message: str = SYSTEM_MESSAGE,
+    images: list[PIL.Image.Image] | list[list[PIL.Image.Image]] | None = None,
+) -> list[list[dict[str, Any]]]:
+    """Format a batch of text prompts into the conversation format expected by apply_chat_template.
+
+    Optionally, add images to the input.
+
+    Adapted from:
+    https://github.com/black-forest-labs/flux2/blob/5a5d316b1b42f6b59a8c9194b77c8256be848432/src/flux2/text_encoder.py#L68
+
+    Args:
+        prompts: List of text prompts.
+        system_message: System message to use (default: SYSTEM_MESSAGE).
+        images: Optional list of images to add to the input.
+
+    Returns:
+        List of conversations, where each conversation is a list of message dicts.
+    """
+    # Remove [IMG] tokens from prompts to avoid Pixtral validation issues
+    # when truncation is enabled. The processor counts [IMG] tokens and fails
+    # if the count changes after truncation.
+    cleaned_txt = [prompt.replace("[IMG]", "") for prompt in prompts]
+
+    if images is None or len(images) == 0:
+        return [
+            [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": system_message}],
+                },
+                {"role": "user", "content": [{"type": "text", "text": prompt}]},
+            ]
+            for prompt in cleaned_txt
+        ]
+    else:
+        assert len(images) == len(prompts), (
+            "Number of images must match number of prompts"
+        )
+        messages = [
+            [
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": system_message}],
+                },
+            ]
+            for _ in cleaned_txt
+        ]
+
+        for i, (el, img_list) in enumerate(zip(messages, images, strict=False)):
+            # optionally add the images per batch element.
+            if img_list is not None:
+                el.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "image": image_obj}
+                            for image_obj in img_list
+                        ],
+                    }
+                )
+            # add the text.
+            el.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": cleaned_txt[i]}],
+                }
+            )
+
+        return messages

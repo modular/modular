@@ -703,7 +703,6 @@ class PixelContext:
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
-    guidance: npt.NDArray[np.float32] | None = None
     true_cfg_scale: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)

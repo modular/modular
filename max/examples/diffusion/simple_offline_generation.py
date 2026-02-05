@@ -31,9 +31,11 @@ import asyncio
 import base64
 import os
 from io import BytesIO
+from typing import cast
 
 from max.driver import DeviceSpec
 from max.interfaces import (
+    PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
@@ -43,13 +45,14 @@ from max.interfaces.provider_options import (
 )
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import OpenResponsesRequestBody
-from max.pipelines import PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.architectures.flux1.pipeline_flux import (
     FluxPipeline,
 )
 from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
@@ -120,6 +123,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="output.png",
         help="Output filename for the generated image.",
     )
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=None,
+        help="Maximum length of tokenizer",
+    )
+    parser.add_argument(
+        "--secondary-max-length",
+        type=int,
+        default=None,
+        help="Maximum length of secondary tokenizer",
+    )
 
     args = parser.parse_args(argv)
 
@@ -173,32 +188,68 @@ async def generate_image(args: argparse.Namespace) -> None:
         device_specs=[DeviceSpec.accelerator()],
         use_legacy_module=False,
     )
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        config.model.huggingface_weight_repo,
+        use_legacy_module=config.use_legacy_module,
+        task=PipelineTask.PIXEL_GENERATION,
+    )
+    assert arch is not None, (
+        "No matching diffusion architecture found for the provided model."
+    )
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation
-    is_flux2 = "FLUX.2" in args.model
-    if is_flux2:
-        tokenizer = PixelGenerationTokenizer(
-            model_path=args.model,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=512,
+    has_tokenizer_2 = False
+    diffusers_config = config.model.diffusers_config
+    max_length = args.max_length
+    secondary_max_length = args.secondary_max_length
+    if (
+        max_length is None
+        and diffusers_config is not None
+        and (components_config := diffusers_config.get("components", None))
+        and (components_config.get("tokenizer", None) is not None)
+    ):
+        max_length = components_config["tokenizer"]["config_dict"].get(
+            "model_max_length", None
         )
-    else:
-        tokenizer = PixelGenerationTokenizer(
-            model_path=args.model,
-            pipeline_config=config,
-            subfolder="tokenizer",
-            max_length=77,
-            subfolder_2="tokenizer_2",
-            secondary_max_length=512,
+        if arch.name == "Flux2Pipeline":
+            max_length = 512
+        print(f"Using max length: {max_length} for tokenizer")
+
+    if (
+        secondary_max_length is None
+        and diffusers_config is not None
+        and (components_config := diffusers_config.get("components", None))
+        and (components_config.get("tokenizer_2", None) is not None)
+    ):
+        has_tokenizer_2 = True
+        secondary_max_length = components_config["tokenizer_2"][
+            "config_dict"
+        ].get("model_max_length", None)
+        print(
+            f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )
+
+    tokenizer = PixelGenerationTokenizer(
+        model_path=args.model,
+        pipeline_config=config,
+        subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
+        max_length=max_length,
+        subfolder_2="tokenizer_2" if has_tokenizer_2 else None,
+        secondary_max_length=secondary_max_length if has_tokenizer_2 else None,
+    )
 
     # Step 3: Initialize the pipeline
     # The pipeline executes the diffusion model
+    if not issubclass(arch.pipeline_model, DiffusionPipeline):
+        raise TypeError(
+            "Selected architecture does not implement DiffusionPipeline: "
+            f"{arch.pipeline_model}"
+        )
+    pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
-        pipeline_model=Flux2Pipeline if is_flux2 else FluxPipeline,
+        pipeline_model=pipeline_model,
     )
 
     print(f"Generating image for prompt: '{args.prompt}'")
