@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Embedding layers for Flux2."""
-
 import math
 from collections.abc import Callable
 
@@ -224,8 +222,6 @@ def get_1d_rotary_pos_embed(
 
 
 class Timesteps(Module[[Tensor], Tensor]):
-    """Timestep embeddings module."""
-
     def __init__(
         self,
         num_channels: int,
@@ -246,7 +242,7 @@ class Timesteps(Module[[Tensor], Tensor]):
         self.downscale_freq_shift = downscale_freq_shift
         self.scale = scale
 
-    def __call__(self, timesteps: Tensor) -> Tensor:
+    def forward(self, timesteps: Tensor) -> Tensor:
         """Convert timesteps to embeddings.
 
         Args:
@@ -266,8 +262,6 @@ class Timesteps(Module[[Tensor], Tensor]):
 
 
 class TimestepEmbedding(Module[[Tensor], Tensor]):
-    """MLP for processing timestep embeddings."""
-
     def __init__(
         self,
         in_channels: int,
@@ -316,7 +310,7 @@ class TimestepEmbedding(Module[[Tensor], Tensor]):
         else:
             self.post_act = None
 
-    def __call__(self, sample: Tensor) -> Tensor:
+    def forward(self, sample: Tensor) -> Tensor:
         """Process timestep embeddings through MLP.
 
         Args:

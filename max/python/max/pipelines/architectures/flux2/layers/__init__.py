@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Flux2 layers for transformer implementation."""
-
 from .flux2_attention import (
     Flux2Attention,
     Flux2FeedForward,

@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Activation functions for Flux2."""
-
 from functools import partial
 
 from max import functional as F

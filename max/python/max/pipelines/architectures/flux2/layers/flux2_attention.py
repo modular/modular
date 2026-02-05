@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Flux2 attention and feedforward layers."""
-
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module, module_dataclass
@@ -27,9 +25,7 @@ from .normalizations import WeightedRMSNorm
 
 @module_dataclass
 class Flux2SwiGLU(Module[[Tensor], Tensor]):
-    """SwiGLU activation function for Flux2 feedforward blocks."""
-
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply SwiGLU activation.
 
         Args:
@@ -43,8 +39,6 @@ class Flux2SwiGLU(Module[[Tensor], Tensor]):
 
 
 class Flux2FeedForward(Module[[Tensor], Tensor]):
-    """Feedforward network with SwiGLU activation for Flux2."""
-
     linear_in: Linear
     act_fn: Flux2SwiGLU
     linear_out: Linear
@@ -75,7 +69,7 @@ class Flux2FeedForward(Module[[Tensor], Tensor]):
         self.act_fn = Flux2SwiGLU()
         self.linear_out = Linear(inner_dim, dim_out, bias=bias)
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply feedforward transformation.
 
         Args:
@@ -91,8 +85,6 @@ class Flux2FeedForward(Module[[Tensor], Tensor]):
 
 
 class Flux2PosEmbed(Module[[Tensor], tuple[Tensor, Tensor]]):
-    """Flux2 positional embedding with per-axis RoPE dimensions."""
-
     theta: int
     axes_dim: tuple[int, ...]
 
@@ -106,7 +98,7 @@ class Flux2PosEmbed(Module[[Tensor], tuple[Tensor, Tensor]]):
         self.theta = theta
         self.axes_dim = tuple(axes_dim)
 
-    def __call__(self, ids: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, ids: Tensor) -> tuple[Tensor, Tensor]:
         """Compute rotary position embeddings.
 
         Args:
@@ -142,12 +134,6 @@ class Flux2PosEmbed(Module[[Tensor], tuple[Tensor, Tensor]]):
 
 
 class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
-    """Dual-stream attention with QK normalization and optional RoPE for Flux2.
-
-    Supports both single-stream (self-attention) and dual-stream modes
-    with separate projections for image and text conditioning.
-    """
-
     def __init__(
         self,
         query_dim: int,
@@ -246,7 +232,7 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
             self.add_v_proj = None
             self.to_add_out = None
 
-    def __call__(
+    def forward(
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor | None = None,
@@ -390,12 +376,6 @@ class Flux2Attention(Module[..., Tensor | tuple[Tensor, Tensor]]):
 
 
 class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
-    """Parallel self-attention with fused QKV and MLP projections for Flux2.
-
-    Computes attention and MLP in parallel with shared input projection
-    for improved efficiency in single-stream transformer blocks.
-    """
-
     def __init__(
         self,
         query_dim: int,
@@ -457,7 +437,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
             self.inner_dim + self.mlp_hidden_dim, out_dim, bias=out_bias
         )
 
-    def __call__(
+    def forward(
         self,
         hidden_states: Tensor,
         attention_mask: Tensor | None = None,

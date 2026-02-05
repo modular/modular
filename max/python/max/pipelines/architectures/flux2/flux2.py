@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
 from max import functional as F
 from max.dtype import DType
 from max.graph import TensorType
@@ -30,12 +29,10 @@ from .layers.normalizations import (
     AdaLayerNormContinuous,
     WeightedLayerNorm,
 )
-from .model_config import Flux2Config
+from .model_config import Flux2ConfigBase
 
 
 class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
-    """Combined timestep and guidance scale embeddings for Flux2."""
-
     def __init__(
         self,
         in_channels: int = 256,
@@ -65,7 +62,7 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
             sample_proj_bias=bias,
         )
 
-    def __call__(self, timestep: Tensor, guidance: Tensor) -> Tensor:
+    def forward(self, timestep: Tensor, guidance: Tensor) -> Tensor:
         """Compute combined timestep and guidance embeddings.
 
         Args:
@@ -96,8 +93,6 @@ class Flux2TimestepGuidanceEmbeddings(Module[[Tensor, Tensor], Tensor]):
 class Flux2Modulation(
     Module[[Tensor], tuple[tuple[Tensor, Tensor, Tensor], ...]]
 ):
-    """Generates adaptive normalization parameters (shift, scale, gate) from timestep embeddings."""
-
     def __init__(
         self,
         dim: int,
@@ -114,7 +109,7 @@ class Flux2Modulation(
         self.mod_param_sets = mod_param_sets
         self.linear = Linear(dim, dim * 3 * mod_param_sets, bias=bias)
 
-    def __call__(
+    def forward(
         self, temb: Tensor
     ) -> tuple[tuple[Tensor, Tensor, Tensor], ...]:
         """Generate modulation parameters from timestep embedding.
@@ -149,8 +144,6 @@ class Flux2Modulation(
 
 
 class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
-    """Dual-stream transformer block processing image and text separately with adaptive modulation."""
-
     def __init__(
         self,
         dim: int,
@@ -208,7 +201,7 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
             dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
         )
 
-    def __call__(
+    def forward(
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor,
@@ -252,9 +245,9 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         ) * norm_encoder_hidden_states + c_shift_msa
 
         # === Dual-stream attention ===
-        attn_result = self.attn(
-            hidden_states=norm_hidden_states,
-            encoder_hidden_states=norm_encoder_hidden_states,
+        attn_result = self.attn.forward(
+            norm_hidden_states,
+            norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
         )
         if isinstance(attn_result, tuple):
@@ -298,8 +291,6 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
 
 
 class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
-    """Single-stream transformer block with parallel attention and MLP for concatenated tokens."""
-
     def __init__(
         self,
         dim: int,
@@ -337,7 +328,7 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             mlp_mult_factor=2,
         )
 
-    def __call__(
+    def forward(
         self,
         hidden_states: Tensor,
         encoder_hidden_states: Tensor | None = None,
@@ -384,8 +375,8 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
         norm_hidden_states = (1 + mod_scale) * norm_hidden_states + mod_shift
 
         # Parallel attention+MLP
-        attn_output = self.attn(
-            hidden_states=norm_hidden_states,
+        attn_output = self.attn.forward(
+            norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
         )
 
@@ -406,11 +397,9 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
 
 
 class Flux2Transformer2DModel(Module[..., tuple[Tensor]]):
-    """Complete Flux2 transformer with dual-stream and single-stream blocks for text-to-image generation."""
-
     def __init__(
         self,
-        config: Flux2Config,
+        config: Flux2ConfigBase,
     ):
         """Initialize Flux2Transformer2DModel.
 

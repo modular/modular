@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Normalization layers for Flux2."""
-
 from max import functional as F
 from max.nn import Linear, Module, module_dataclass
 from max.nn.norm import rms_norm
@@ -21,11 +19,6 @@ from max.tensor import Tensor
 
 @module_dataclass
 class WeightedRMSNorm(Module[[Tensor], Tensor]):
-    """RMSNorm wrapper for Flux2.
-
-    Applies Root Mean Square Layer Normalization to the input tensor.
-    """
-
     def __init__(
         self,
         normalized_shape: int | tuple[int, ...],
@@ -51,7 +44,7 @@ class WeightedRMSNorm(Module[[Tensor], Tensor]):
         self.eps = eps
         self.elementwise_affine = elementwise_affine
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply RMSNorm.
 
         Args:
@@ -77,11 +70,6 @@ class WeightedRMSNorm(Module[[Tensor], Tensor]):
 
 
 class WeightedLayerNorm(Module[[Tensor], Tensor]):
-    """LayerNorm for Flux2.
-
-    Standard Layer Normalization with optional affine transformation.
-    """
-
     def __init__(
         self,
         normalized_shape: int | tuple[int, ...],
@@ -116,7 +104,7 @@ class WeightedLayerNorm(Module[[Tensor], Tensor]):
             self.weight = None
             self.bias = None
 
-    def __call__(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """Apply LayerNorm.
 
         Args:
@@ -148,12 +136,6 @@ class WeightedLayerNorm(Module[[Tensor], Tensor]):
 
 
 class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
-    """Adaptive Layer Normalization with continuous conditioning.
-
-    Used for the final output normalization in Flux2, where the normalization
-    is conditioned on the timestep embedding.
-    """
-
     def __init__(
         self,
         embedding_dim: int,
@@ -196,7 +178,7 @@ class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
                 f"Unsupported `norm_type` ({norm_type}) provided. Supported ones are: 'layer_norm', 'rms_norm'."
             )
 
-    def __call__(self, x: Tensor, conditioning_embedding: Tensor) -> Tensor:
+    def forward(self, x: Tensor, conditioning_embedding: Tensor) -> Tensor:
         """Apply adaptive layer normalization.
 
         Args:
