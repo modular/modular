@@ -57,7 +57,6 @@ from .pipeline_variants.overlap_text_generation import (
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
-    SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
@@ -116,9 +115,12 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
-        if spec_method == SpeculativeMethod.STANDALONE:
+        if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
-        elif spec_method == SpeculativeMethod.EAGLE:
+        elif (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        ):
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")

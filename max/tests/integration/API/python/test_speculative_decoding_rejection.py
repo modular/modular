@@ -144,6 +144,7 @@ def test_speculative_decoding_no_rejection(
     draft_inputs, draft_num_steps = pipeline.prepare_batch(
         pipeline._draft_model,
         context_batch,
+        [context_batch],
         num_steps,
         return_n_logits=1,
         is_draft=True,
@@ -169,6 +170,7 @@ def test_speculative_decoding_no_rejection(
         pipeline.verify_draft_tokens_with_target_model(
             draft_inputs,
             context_batch,
+            [context_batch],
             num_steps,
             draft_tokens,
             draft_logits,
@@ -220,6 +222,7 @@ def test_speculative_decoding_partial_rejection(
     draft_inputs, _draft_num_steps = pipeline.prepare_batch(
         pipeline._draft_model,
         context_batch,
+        [context_batch],
         num_steps,
         return_n_logits=1,
         is_draft=True,
@@ -263,6 +266,7 @@ def test_speculative_decoding_partial_rejection(
         pipeline.verify_draft_tokens_with_target_model(
             draft_inputs,
             context_batch,
+            [context_batch],
             num_steps,
             draft_tokens,
             draft_logits,

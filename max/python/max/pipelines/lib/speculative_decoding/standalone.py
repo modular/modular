@@ -49,6 +49,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         model: PipelineModel[TextContext],
         batch: list[TextContext],
+        replica_batches: list[list[TextContext]],
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
@@ -57,29 +58,36 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_offsets: Buffer | None = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
+        # Build request_id -> replica_idx mapping from replica_batches
+        request_to_replica: dict[RequestID, int] = {}
+        for r_idx, replica_batch in enumerate(replica_batches):
+            for ctx in replica_batch:
+                request_to_replica[ctx.request_id] = r_idx
+
         for i, context in enumerate(batch):  # noqa: B007
             # Calculate num_steps.
             num_steps = self.calculate_num_steps(
                 model, model.huggingface_config, num_steps, context, is_draft
             )
-            # For draft model: claim if not already claimed (target model is claimed by scheduler)
-            # For target model: scheduler handles claiming, so skip here
-            if is_draft:
-                if not model.kv_manager.contains(
-                    context.request_id, replica_idx=0
-                ):
-                    model.kv_manager.claim(context.request_id, replica_idx=0)
-            # For target model, scheduler handles claiming via batch_constructor
+            replica_idx = request_to_replica.get(context.request_id, 0)
+            if not model.kv_manager.contains(
+                context.request_id, replica_idx=replica_idx
+            ):
+                model.kv_manager.claim(
+                    context.request_id, replica_idx=replica_idx
+                )
+            self._draft_replica_idx[context.request_id] = replica_idx
 
         for ctx in batch:
-            model.kv_manager.alloc(ctx, replica_idx=0, num_steps=num_steps)
+            r_idx = self._draft_replica_idx.get(ctx.request_id, 0)
+            model.kv_manager.alloc(ctx, replica_idx=r_idx, num_steps=num_steps)
         kv_cache_inputs = model.kv_manager.get_runtime_inputs(
             [batch], num_steps
         )
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
-                    replica_batches=[batch],
+                    replica_batches=replica_batches,
                     kv_cache_inputs=KVCacheInputsSequence(
                         kv_cache_inputs=kv_cache_inputs
                     ),
@@ -201,6 +209,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         draft_inputs: ModelInputs,
         context_batch: list[TextContext],
+        replica_batches: list[list[TextContext]],
         num_draft_tokens_generated: int,
         draft_tokens: Buffer,
         draft_logits: Buffer,
@@ -215,6 +224,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             target_inputs, _target_num_steps = self.prepare_batch(
                 self._target_model,
                 context_batch,
+                replica_batches,
                 # num steps in this scenario is 1, as we are only
                 # generating at one token beyond the draft tokens.
                 num_steps=1,
@@ -263,16 +273,14 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         2. Target model verifies draft tokens
         3. Apply rejection sampling to accept/reject tokens
         """
-        # Flatten our batch for consistent indexing.
-        if len(inputs.batches) > 1:
-            raise ValueError(
-                "Standalone speculative decoding does not support data parallelism"
-            )
+        # Flatten batch and build replica batches for data parallelism
         context_batch = inputs.flat_batch
+        replica_batches = inputs.batches
 
         draft_inputs, draft_num_steps = self.prepare_batch(
             self._draft_model,
             context_batch,
+            replica_batches,
             self._num_draft_steps,
             return_n_logits=1,
             is_draft=True,
@@ -301,6 +309,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self.verify_draft_tokens_with_target_model(
                 draft_inputs,
                 context_batch,
+                replica_batches,
                 num_draft_tokens_generated,
                 draft_tokens,
                 draft_logits,
