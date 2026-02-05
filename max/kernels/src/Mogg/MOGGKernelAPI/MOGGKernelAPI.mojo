@@ -1850,6 +1850,7 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
         _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
     ](
         z: OutputTensor[dtype=dtype, rank=out_rank],
         x: InputTensor[dtype=dtype, rank=in_rank],
@@ -1864,6 +1865,7 @@ struct StaticBroadcastTo:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
+            use_blocking_impl=use_blocking_impl,
         ](z, x_view, ctx)
 
 
