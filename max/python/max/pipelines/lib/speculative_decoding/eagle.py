@@ -292,7 +292,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             return_n_logits=return_n_logits,
         )
 
-        base_inputs.hidden_states = hidden_states  # type: ignore[assignment]
+        base_inputs.hidden_states = hidden_states
 
         # Compute per-device context lengths for DP mode
         if (
@@ -495,7 +495,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         batch: list[TextContext],
         num_steps: int,
         model_inputs: ModelInputs,
-    ) -> tuple[int, Buffer, Buffer, Buffer, Buffer]:
+    ) -> tuple[int, Buffer, Buffer, Buffer, Buffer | list[Buffer]]:
         # Create sampling parameters once for the entire batch
         top_k, max_k, temperature, top_p, min_top_p, seed = (
             self._create_sampling_parameters(batch, self.draft_devices[0])

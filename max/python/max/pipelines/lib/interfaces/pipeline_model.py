@@ -103,8 +103,12 @@ class ModelOutputs:
     logit_offsets: Buffer | None = None
     """Offsets to access variable length logits for each sequence."""
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Hidden states for a variable number of tokens per sequence.
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    contains hidden states for the sequences assigned to that device.
+    """
 
 
 class ModelInputs:
@@ -144,8 +148,12 @@ class ModelInputs:
     lora_ranks: Buffer | None = None
     """Buffer containing the LoRA ranks"""
 
-    hidden_states: Buffer | None = None
-    """Hidden states for a variable number of tokens per sequence."""
+    hidden_states: Buffer | list[Buffer] | None = None
+    """Hidden states for a variable number of tokens per sequence.
+
+    For data parallel models, this can be a list of Buffers where each Buffer
+    contains hidden states for the sequences assigned to that device.
+    """
 
     def update(self, **kwargs) -> None:
         key: str

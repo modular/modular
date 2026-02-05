@@ -57,9 +57,14 @@ class DeepseekV3NextN(Module):
         num_devices = len(config.devices)
         devices = config.devices
 
+        self.use_data_parallel_attention = (
+            num_devices > 1 and config.data_parallel_degree == num_devices
+        )
+
         embedding_output_dtype = config.dtype
         if config.float8_config and config.float8_config.embedding_output_dtype:
             embedding_output_dtype = config.float8_config.embedding_output_dtype
+        self.embedding_output_dtype = embedding_output_dtype
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
             config.hidden_size,
@@ -94,6 +99,8 @@ class DeepseekV3NextN(Module):
             quantization_encoding=None,
             has_bias=False,
         )
+        self.eh_proj.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        self.eh_proj_shards = self.eh_proj.shard(devices)
 
         assert config.rope_scaling is not None
         scaling_params = DeepseekYarnRopeScalingParams(
@@ -127,6 +134,7 @@ class DeepseekV3NextN(Module):
             config,
             layer_idx=nextn_layer_idx,
             ep_manager=self.ep_manager,
+            is_nextn=True,
         )
 
         self.shared_head_norm = RMSNorm(
@@ -155,7 +163,7 @@ class DeepseekV3NextN(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        hidden_states: TensorValue,
+        hidden_states: list[TensorValue],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
@@ -170,45 +178,57 @@ class DeepseekV3NextN(Module):
         if not data_parallel_splits.device == DeviceRef.CPU():
             raise ValueError("data_parallel_splits must be located on CPU")
 
-        # Validate hidden_states shape matches tokens
-        if hidden_states.shape[0] != tokens.shape[0]:
-            raise ValueError(
-                f"hidden_states first dimension ({hidden_states.shape[0]}) must match "
-                f"tokens dimension ({tokens.shape[0]})"
-            )
-        if hidden_states.shape[1] != self.config.hidden_size:
-            raise ValueError(
-                f"hidden_states second dimension ({hidden_states.shape[1]}) must match "
-                f"hidden_size ({self.config.hidden_size})"
-            )
-
         devices = self.config.devices
 
+        if len(hidden_states) != len(devices):
+            raise ValueError(
+                f"hidden_states list length ({len(hidden_states)}) must match "
+                f"number of devices ({len(devices)})"
+            )
+
         h_embed = self.embed_tokens(tokens, signal_buffers)
-
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
-
-        hidden_states_distributed = distribute_value(hidden_states, devices)
-        norm_hidden = forward_sharded_layers(
-            self.hnorm_shards, hidden_states_distributed
-        )
-
-        # Fuse normalized embeddings and hidden states
-        fused = ops.concat([norm_embed[0], norm_hidden[0]], axis=-1)
-
-        h = [self.eh_proj(fused)]
-
+        norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = distribute_value(self.rope.freqs_cis, devices)
         input_row_offsets_ = distribute_value(input_row_offsets, devices)
-
-        if self.ep_manager is not None:
-            h, input_row_offsets_ = split_batch_replicated(
+        # Split embeddings FIRST to match already-split hidden_states from target model
+        # hidden_states are already data-parallel split (different sizes per device),
+        # while norm_embed is replicated (same size on all devices).
+        # We must split norm_embed before concatenating with norm_hidden.
+        if self.use_data_parallel_attention:
+            norm_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
-                h,
+                norm_embed,
                 input_row_offsets_,
                 host_input_row_offsets.cast(DType.int64),
                 data_parallel_splits,
             )
+            # Rebind split embeddings to match hidden_states dimension names
+            # split_batch_replicated uses 'input_split_{i}' but hidden_states use
+            # 'seq_len_device_{i}' - they're logically the same size at runtime
+            norm_embed = [
+                ops.rebind(
+                    norm_embed[i],
+                    [f"seq_len_device_{i}", self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+        else:
+            # Single-device case: rebind norm_embed to match hidden_states dimension names
+            # hidden_states uses 'seq_len_device_0' but norm_embed uses 'total_seq_len'
+            norm_embed = [
+                ops.rebind(
+                    norm_embed[i],
+                    [f"seq_len_device_{i}", self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+
+        concat_inputs = [
+            ops.concat([norm_embed[i], norm_hidden[i]], axis=-1)
+            for i in range(len(devices))
+        ]
+        h = forward_sharded_layers(self.eh_proj_shards, concat_inputs)
 
         # Create MLA prefill metadata if not in decode mode (similar to base DeepSeek V3)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -219,14 +239,12 @@ class DeepseekV3NextN(Module):
                 )
             )
 
-            # Replace each device's buffer_lengths with the batch context length
             assert len(mla_prefill_metadata) == len(batch_context_lengths)
             for i in range(len(batch_context_lengths)):
                 mla_prefill_metadata[i].buffer_lengths = batch_context_lengths[
                     i
                 ]
 
-        # Flatten MLAPrefillMetadata to list of TensorValues for decoder layer call
         mla_inputs: list[TensorValue] = []
         for metadata in mla_prefill_metadata:
             mla_inputs.extend(
@@ -270,43 +288,53 @@ class DeepseekV3NextN(Module):
         norm_last_token = forward_sharded_layers(
             self.shared_head_norm_shards, last_token_distributed
         )
-
         last_logits = ops.cast(
             self.lm_head(norm_last_token, signal_buffers)[0],
             DType.float32,
         )
-
         if self.logits_scaling != 1.0:
             last_logits = last_logits / self.logits_scaling
 
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
         if self.return_hidden_states == ReturnHiddenStates.ALL:
-            hidden_states = h[0] if isinstance(h, list) else h
-            ret_val += (hidden_states,)
+            ret_val += tuple(h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_h,)
+            if self.ep_manager is not None:
+                ret_val += tuple(last_token_per_dev)
+            else:
+                # For non-EP case, distribute the single tensor to match interface
+                ret_val += tuple(distribute_value(last_token_h, devices))
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)[0]
-            ret_val += (norm_h,)
+            norm_h = forward_sharded_layers(self.shared_head_norm_shards, h)
+            ret_val += tuple(norm_h)
         elif self.return_hidden_states == ReturnHiddenStates.LAST_NORMALIZED:
-            ret_val += (norm_last_token[0],)
+            ret_val += tuple(norm_last_token)
 
         return ret_val
 
     def input_types(
         self, kv_params: KVCacheParams
     ) -> tuple[TensorType | BufferType, ...]:
-        device_ref = self.config.devices[0]
+        devices = self.config.devices
+        device_ref = devices[0]
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
-        hidden_states_type = TensorType(
-            DType.bfloat16,
-            shape=["total_seq_len", self.config.hidden_size],
-            device=device_ref,
-        )
+
+        # Hidden states input types - one per device for data parallelism
+        # Each device receives a different slice of the batch (data parallel split)
+        # Using device-specific dimension names allows different sizes per device
+        hidden_states_types = [
+            TensorType(
+                self.embedding_output_dtype,
+                shape=[f"seq_len_device_{i}", self.config.hidden_size],
+                device=dev,
+            )
+            for i, dev in enumerate(devices)
+        ]
+
         device_input_row_offsets_type = TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
@@ -331,17 +359,19 @@ class DeepseekV3NextN(Module):
             kv_type for sublist in kv_inputs for kv_type in sublist
         ]
 
-        signals = Signals(devices=self.config.devices)
+        signals = Signals(devices=devices)
         signal_buffer_types: list[BufferType] = signals.input_types()
 
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            hidden_states_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
+        all_input_types: list[TensorType | BufferType] = [tokens_type]
+        all_input_types.extend(hidden_states_types)
+        all_input_types.extend(
+            [
+                device_input_row_offsets_type,
+                host_input_row_offsets_type,
+                return_n_logits_type,
+                data_parallel_splits_type,
+            ]
+        )
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(flattened_kv_types)
 
@@ -350,7 +380,7 @@ class DeepseekV3NextN(Module):
             DType.int32, shape=[1], device=DeviceRef.CPU()
         )
         all_input_types.extend(
-            [batch_context_length_type for _ in range(len(self.config.devices))]
+            [batch_context_length_type for _ in range(len(devices))]
         )
 
         if self.ep_manager is not None:
