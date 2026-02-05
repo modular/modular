@@ -19,7 +19,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.interfaces import GenerationStatus
+from max.interfaces import GenerationStatus, PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -50,6 +50,7 @@ def patch_pipeline_registry_context_type(
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 

@@ -456,15 +456,10 @@ class PipelineRegistry:
                             f"Using first registered architecture."
                         )
 
-            # Try task-specific lookup first
-            if inferred_task is not None:
-                task_key = (architecture_name, inferred_task)
-                if task_key in self._architectures_by_task:
-                    return self._architectures_by_task[task_key]
-
-            # Fall back to name-only match
-            if architecture_name in self.architectures:
-                return self.architectures[architecture_name]
+            if arch := self._resolve_architecture(
+                architecture_name, inferred_task
+            ):
+                return arch
 
         logger.debug(
             f"optimized architecture not available for {huggingface_repo.repo_id} in MAX REGISTRY"
@@ -578,16 +573,42 @@ class PipelineRegistry:
 
         return self._cached_huggingface_tokenizers[huggingface_repo]
 
+    def _resolve_architecture(
+        self, name: str, task: PipelineTask | None = None
+    ) -> SupportedArchitecture | None:
+        """Look up an architecture by name, optionally disambiguating by task.
+
+        When multiple architectures share the same name (e.g., a text generation
+        model and a TTS model both using LlamaForCausalLM), the task parameter
+        allows selecting the correct one.
+
+        Args:
+            name: The architecture name to look up.
+            task: Optional task to disambiguate when multiple architectures
+                share the same name.
+
+        Returns:
+            The matching SupportedArchitecture, or None if not found.
+        """
+        if task is not None:
+            task_key = (name, task)
+            if task_key in self._architectures_by_task:
+                return self._architectures_by_task[task_key]
+        return self.architectures.get(name)
+
     def retrieve_tokenizer(
         self,
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> PipelineTokenizer[Any, Any, Any]:
         """Retrieves a tokenizer for the given pipeline configuration.
 
         Args:
             pipeline_config: Configuration for the pipeline
             override_architecture: Optional architecture override string
+            task: Optional pipeline task to disambiguate when multiple
+                architectures share the same name but serve different tasks.
 
         Returns:
             PipelineTokenizer: The configured tokenizer
@@ -596,13 +617,13 @@ class PipelineRegistry:
             ValueError: If no architecture is found
         """
         # MAX pipeline
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures[override_architecture]
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_legacy_module=pipeline_config.use_legacy_module,
+                task=task,
             )
 
         if arch is None:
@@ -666,9 +687,8 @@ class PipelineRegistry:
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         # MAX pipeline
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures[override_architecture]
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
@@ -778,6 +798,7 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextGenerationContext] | type[EmbeddingsContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
@@ -791,6 +812,8 @@ class PipelineRegistry:
                 based on the model repository. This is useful for cases like audio generation
                 where the pipeline uses a different architecture (e.g., audio decoder) than
                 the underlying model repository.
+            task: Optional pipeline task to disambiguate when multiple architectures share
+                the same name but serve different tasks.
 
         Returns:
             The context class type associated with the architecture, which implements
@@ -800,24 +823,20 @@ class PipelineRegistry:
             ValueError: If no supported architecture is found for the given model repository
                 or override architecture name.
         """
-        arch: SupportedArchitecture | None = None
         if override_architecture:
-            arch = self.architectures.get(override_architecture)
-            if arch is None:
-                raise ValueError(
-                    f"Architecture '{override_architecture}' not found in registry"
-                )
+            arch = self._resolve_architecture(override_architecture, task)
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
                 use_legacy_module=pipeline_config.use_legacy_module,
+                task=task,
             )
 
         if arch:
             return arch.context_type
 
         raise ValueError(
-            f"MAX Optimized architecture not supported for {pipeline_config.model.huggingface_model_repo.repo_id}"
+            f"No architecture found for {pipeline_config.model.huggingface_model_repo.repo_id}"
         )
 
     def retrieve_pipeline_task(
