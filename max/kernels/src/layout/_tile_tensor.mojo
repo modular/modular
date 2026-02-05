@@ -294,7 +294,9 @@ struct TileTensor[
         for i in range(Variadic.size(IndexTypes)):
             UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
                 rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](index(items[i]))
+                    RuntimeInt[Self.linear_idx_type](
+                        Scalar[Self.linear_idx_type](index(items[i]))
+                    )
                 )
             )
 

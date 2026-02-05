@@ -2395,6 +2395,8 @@ fn group_norm_gpu[
         shape, output, channels_per_group, spatial
     )
 
+    comptime OutputLinearIdxType = Scalar[output_rs.linear_idx_type]
+
     var num_rows = output_rs.dim[0]()
     var num_cols = output_rs.dim[1]()
 
@@ -2428,7 +2430,7 @@ fn group_norm_gpu[
         return input_fn[simd_width, rank](indices)
 
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    if num_cols < simd_width:
+    if num_cols < OutputLinearIdxType(simd_width):
         raise Error(
             "group_norm_gpu requires num_cols >= simd_width; got num_cols="
             + String(num_cols)
@@ -2440,15 +2442,21 @@ fn group_norm_gpu[
 
     var grid_dim = num_rows
     var block_dim = min(
-        ceildiv(ceildiv(num_cols, simd_width), WARP_SIZE) * WARP_SIZE,
-        WARP_SIZE * max_warps_per_block,
+        ceildiv(
+            ceildiv(num_cols, OutputLinearIdxType(simd_width)),
+            OutputLinearIdxType(WARP_SIZE),
+        )
+        * OutputLinearIdxType(WARP_SIZE),
+        OutputLinearIdxType(WARP_SIZE * max_warps_per_block),
     )
 
-    if num_cols % simd_width == 0:
+    if num_cols % OutputLinearIdxType(simd_width) == 0:
         # When the number of columns is small enough that they can be placed in
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
-        if num_cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+        if num_cols <= OutputLinearIdxType(
+            WARP_SIZE * simd_width * max_warps_per_block
+        ):
             comptime kernel = group_norm_gpu_warp_tiling[
                 origin = output_rs.origin,
                 LayoutType = output_rs.LayoutType,

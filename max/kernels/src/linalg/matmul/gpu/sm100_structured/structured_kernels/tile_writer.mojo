@@ -1284,19 +1284,19 @@ fn shared_memory_epilogue_transpose[
                 if cta_group == 2 and MMA_M == 128:
                     # logical shared memory -> global layout Layout B:
                     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-                    local_i = cj + ci * UInt32(BN)
-                    local_j = ck
+                    local_i = UInt32(cj) + UInt32(ci) * UInt32(BN)
+                    local_j = UInt32(ck)
                 else:
                     # logical shared memory -> global layout Layout A:
                     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-a
-                    local_i = cj
-                    local_j = ci * swizzle_dim + ck
+                    local_i = UInt32(cj)
+                    local_j = UInt32(ci * swizzle_dim + ck)
 
                 # undo swizzle to get logical `c_smem[logical_crd]` value.
                 var ptr = (
                     c_smem.ptr
                     + swizzle(cj * swizzle_dim + ck)
-                    + ci * swizzle_dim * UInt32(Int(stageN))
+                    + UInt32(ci * swizzle_dim) * UInt32(Int(stageN))
                 )
                 var row = local_i + UInt32(gmem_col)
                 var col = local_j + UInt32(gmem_row)
@@ -1364,8 +1364,8 @@ fn shared_memory_epilogue_transpose[
 
                     # Undo swizzle to get logical value
                     var ptr = c_smem.ptr + swizzle(offset)
-                    var row = local_i + UInt32(gmem_col)
-                    var col = local_j + UInt32(gmem_row)
+                    var row = UInt32(local_i) + UInt32(gmem_col)
+                    var col = UInt32(local_j) + UInt32(gmem_row)
                     if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                         var val = ptr.load[
                             width=simd_size, alignment=alignment

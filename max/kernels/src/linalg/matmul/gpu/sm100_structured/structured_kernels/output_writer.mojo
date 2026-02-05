@@ -1030,8 +1030,8 @@ struct TileWriter[
                 var local_i = cmem_crd[0].value()
                 var local_j = cmem_crd[1].value()
                 var coord_m = m_abs + UInt32(i * TMA_BM)
-                var global_i = coord_m + local_i
-                var global_j = n_abs + local_j
+                var global_i = coord_m + UInt32(local_i)
+                var global_j = n_abs + UInt32(local_j)
 
                 # Bounds check: only store if within expert boundary
                 if global_i < m_end:

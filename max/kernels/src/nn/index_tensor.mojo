@@ -347,13 +347,17 @@ fn _index_tensor_impl[
     #   - the input data is contiguous
     #   - the slices at the end of the input are not scalars
     #   - the last dimension of the slices are evenly divisible by simd_width
-    var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
+    var slice_rank = (
+        Scalar[indices.linear_idx_type](data.rank - batch_dims)
+        - indices.dim[indices.rank - 1]()
+    )
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
     comptime assert data.rank > 0
     var use_simd = (
         data.static_stride[data.rank - 1] == 1
-        and (slice_last_dim % target_simd_width) == 0
+        and (slice_last_dim % Scalar[output.linear_idx_type](target_simd_width))
+        == 0
     )
 
     @parameter

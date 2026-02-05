@@ -374,6 +374,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.smem_used
+            UInt32(config.smem_used)
         ),
     )

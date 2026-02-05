@@ -126,10 +126,12 @@ struct MLAPositionSummary(TrivialRegisterType):
                 k_rope_lut.cache_length(Int(seq_info.prompt_idx))
             )
             var seq_len = warp.broadcast(seq_info.seq_len)
-            return cache_len - seq_len
+            return UInt32(cache_len) - seq_len
         else:
-            return warp.broadcast(
-                k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+            return UInt32(
+                warp.broadcast(
+                    k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+                )
             )
 
     @staticmethod
@@ -137,7 +139,9 @@ struct MLAPositionSummary(TrivialRegisterType):
     fn get_num_keys[
         KVLUTType: MHAOperand,
     ](kv_lut: KVLUTType, seq_info: SeqInfo) -> UInt32:
-        return warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+        return UInt32(
+            warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+        )
 
     @staticmethod
     @always_inline
@@ -1982,7 +1986,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime SchedulerType = TransientScheduler[
-        fa4_config.BM, fa4_config.num_q_heads
+        UInt32(fa4_config.BM), UInt32(fa4_config.num_q_heads)
     ]
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_type]
@@ -2055,7 +2059,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
         scale,
         UInt32(batch_size),
         pack,
-        grid_dim=SchedulerType.grid_dim(batch_size, num_blocks),
+        grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

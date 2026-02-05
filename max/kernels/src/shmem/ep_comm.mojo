@@ -136,25 +136,25 @@ fn block_prefix_sum[
     ]()
 
     var val = Scalar[dtype](0)
-    if thread_idx.x < num_elements:
+    if thread_idx.x < UInt(num_elements):
         val = _val
 
-    if thread_idx.x < n_elements_aligned:
+    if thread_idx.x < UInt(n_elements_aligned):
         val = warp.prefix_sum(val)
-        if lane_id() == WARP_SIZE - 1:
+        if lane_id() == UInt(WARP_SIZE - 1):
             warp_prefix_sum[warp_id()] = val
     barrier()
 
     if warp_id() == 0:
         var warp_sum = Scalar[dtype](0)
-        if lane_id() < n_warps:
+        if lane_id() < UInt(n_warps):
             warp_sum = warp_prefix_sum[lane_id()]
         warp_sum = warp.prefix_sum[exclusive=True](warp_sum)
-        if lane_id() < n_warps:
+        if lane_id() < UInt(n_warps):
             warp_prefix_sum[lane_id()] = warp_sum
     barrier()
 
-    if thread_idx.x < num_elements:
+    if thread_idx.x < UInt(num_elements):
         val += warp_prefix_sum[warp_id()]
     barrier()
 
@@ -728,27 +728,29 @@ struct NVFP4TokenFormat[
             @parameter
             for round_i in range(n_rounds):
                 var per_expert_m: UInt32 = 0
-                var group_idx = round_i * WARP_SIZE + tid
-                if group_idx < n_groups:
+                var group_idx = UInt(round_i * WARP_SIZE) + tid
+                if group_idx < UInt(n_groups):
                     per_expert_m = (
                         row_offsets[group_idx + 1] - row_offsets[group_idx]
                     )
 
-                var scales_blocks = ceildiv(per_expert_m, SF_MN_GROUP_SIZE)
+                var scales_blocks = ceildiv(
+                    per_expert_m, UInt32(SF_MN_GROUP_SIZE)
+                )
                 var group_scales_start = (
                     prev_round_blocks_num
                     + warp.prefix_sum[exclusive=True](scales_blocks)
                 )
 
-                if group_idx < n_groups:
+                if group_idx < UInt(n_groups):
                     self.output_scales_offset.store(
                         IndexList[1](Int(group_idx)),
                         group_scales_start
-                        - row_offsets[group_idx] // SF_MN_GROUP_SIZE,
+                        - row_offsets[group_idx] // UInt32(SF_MN_GROUP_SIZE),
                     )
 
                 prev_round_blocks_num = warp.shuffle_idx(
-                    group_scales_start + scales_blocks, WARP_SIZE - 1
+                    group_scales_start + scales_blocks, UInt32(WARP_SIZE - 1)
                 )
 
     @always_inline
@@ -765,20 +767,20 @@ struct NVFP4TokenFormat[
 
         var tid = thread_idx.x
         var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
-        var tid_in_group = sm_id_in_group * block_size + tid
+        var tid_in_group = UInt(sm_id_in_group * block_size) + tid
 
         if group_id >= n_groups:
             return
 
         var per_expert_m = row_offsets[group_id + 1] - row_offsets[group_id]
-        if per_expert_m % SF_MN_GROUP_SIZE == 0:
+        if per_expert_m % UInt32(SF_MN_GROUP_SIZE) == 0:
             return
-        var tokens_to_zero_pad = SF_MN_GROUP_SIZE - (
-            per_expert_m % SF_MN_GROUP_SIZE
+        var tokens_to_zero_pad = UInt32(SF_MN_GROUP_SIZE) - (
+            per_expert_m % UInt32(SF_MN_GROUP_SIZE)
         )
 
         var scales_block_id = (
-            row_offsets[group_id] // SF_MN_GROUP_SIZE
+            row_offsets[group_id] // UInt32(SF_MN_GROUP_SIZE)
             + self.output_scales_offset[group_id]
         )
         var _scales_tensor = Self.ScalesTensorType(
@@ -795,7 +797,7 @@ struct NVFP4TokenFormat[
         ), "hid_dim must be divisible by (NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)"
         for i in range(
             tid_in_group,
-            scales_simds_per_tok * tokens_to_zero_pad,
+            UInt32(scales_simds_per_tok) * tokens_to_zero_pad,
             block_size * n_sms_per_group,
         ):
             token_idx, scale_simd_idx = divmod(i, scales_simds_per_tok)
@@ -902,7 +904,8 @@ struct NVFP4TokenFormat[
                 self.output_scales_offset[expert_id]
             )
         var scales_block_id = (
-            expert_start_index // SF_MN_GROUP_SIZE + output_scales_offset
+            UInt32(expert_start_index // SF_MN_GROUP_SIZE)
+            + output_scales_offset
         )
 
         var _scales_tensor = Self.ScalesTensorType(
@@ -1510,7 +1513,7 @@ struct EPDispatchKernel[
                 shared_mem[] = 0
 
         var token_count: UInt32 = 0
-        if tid < Self.n_experts:
+        if tid < UInt(Self.n_experts):
             var target_count_ptr = recv_count_p + tid
             var _token_count = load_acquire[scope = Scope.SYSTEM](
                 target_count_ptr
@@ -1523,16 +1526,18 @@ struct EPDispatchKernel[
         barrier()
 
         token_count = block_prefix_sum[Self.n_experts](token_count)
-        if tid < Self.n_experts:
+        if tid < UInt(Self.n_experts):
             prefix_sum_arr[tid] = token_count
         barrier()
 
-        if tid < Self.n_local_experts:
+        if tid < UInt(Self.n_local_experts):
             var local_expert_id = tid
-            var last_rank_idx = tid * Self.n_ranks + Self.n_ranks - 1
+            var last_rank_idx = (
+                tid * UInt(Self.n_ranks) + UInt(Self.n_ranks) - 1
+            )
             var prev_expert_end = (
                 0 if local_expert_id
-                == 0 else prefix_sum_arr[last_rank_idx - Self.n_ranks]
+                == 0 else prefix_sum_arr[last_rank_idx - UInt(Self.n_ranks)]
             )
             var local_expert_tok_count = (
                 prefix_sum_arr[last_rank_idx] - prev_expert_end
@@ -1540,8 +1545,8 @@ struct EPDispatchKernel[
 
             @parameter
             if Self.expert_m_padding != 0:
-                local_expert_tok_count = align_up(
-                    Int(local_expert_tok_count), Self.expert_m_padding
+                local_expert_tok_count = UInt32(
+                    align_up(Int(local_expert_tok_count), Self.expert_m_padding)
                 )
 
             # Conduct a atomic add to get how many experts have already completed
@@ -1554,7 +1559,7 @@ struct EPDispatchKernel[
             var expert_idx = packed_expert_idx_offset >> 20
             var prev_expert_offset = packed_expert_idx_offset & 0x000FFFFF
 
-            expert_ids[Int(expert_idx)] = (
+            expert_ids[Int(expert_idx)] = Int32(
                 Int(local_expert_id) + shared_expert_offset
             )
             row_offsets[Int(expert_idx) + 1] = (
@@ -1569,10 +1574,12 @@ struct EPDispatchKernel[
         # Make sure row_offsets and expert_ids are visible to other threads.
         barrier()
 
-        if tid < Self.n_experts:
-            var expert_lut_idx = tid // Self.n_ranks + shared_expert_offset
-            var local_expert_id = (
-                expert_ids[expert_lut_idx] - shared_expert_offset
+        if tid < UInt(Self.n_experts):
+            var expert_lut_idx = tid // UInt(Self.n_ranks) + UInt(
+                shared_expert_offset
+            )
+            var local_expert_id = expert_ids[expert_lut_idx] - Int32(
+                shared_expert_offset
             )
 
             var aligned_expert_start_offset = rebind[UInt32](
@@ -1580,15 +1587,17 @@ struct EPDispatchKernel[
             )
             var raw_expert_start_offset = (
                 0 if local_expert_id
-                == 0 else prefix_sum_arr[local_expert_id * Self.n_ranks - 1]
+                == 0 else prefix_sum_arr[
+                    local_expert_id * Int32(Self.n_ranks) - 1
+                ]
             )
             var alignment_delta = Int32(aligned_expert_start_offset) - Int32(
                 raw_expert_start_offset
             )
 
-            var expert_rank_linear_idx = local_expert_id * Self.n_ranks + Int32(
-                tid % Self.n_ranks
-            )
+            var expert_rank_linear_idx = local_expert_id * Int32(
+                UInt(Self.n_ranks)
+            ) + Int32(tid % UInt(Self.n_ranks))
             atomic_counter.store(
                 expert_rank_linear_idx * 2 + 1,
                 Int32(aligned_expert_start_offset),
@@ -3322,7 +3331,7 @@ fn fused_silu_fp8_kernel[
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 fn fused_silu_nvfp4_kernel[
     fp4_dtype: DType,
@@ -3399,8 +3408,8 @@ fn fused_silu_nvfp4_kernel[
     var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
     var tid_in_group = (
         lane_id()
-        + sm_id_in_group * UInt(WARP_SIZE)
-        + warp_id() * WARP_SIZE * n_sms_per_group
+        + UInt(sm_id_in_group) * UInt(WARP_SIZE)
+        + warp_id() * UInt(WARP_SIZE) * UInt(n_sms_per_group)
     )
     if group_id >= n_groups:
         return

@@ -80,7 +80,7 @@ def test_set_and_get_items():
 
     for i in range(4):
         for j in range(4):
-            tensor[i, j] = i * 4 + j + 2
+            tensor[i, j] = Float32(i * 4 + j + 2)
 
     # CHECK: 2.0 3.0 4.0 5.0
     # CHECK: 6.0 7.0 8.0 9.0

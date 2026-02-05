@@ -173,7 +173,7 @@ fn _memmem_baseline[
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         while mask:
-            var offset = Int(i + count_trailing_zeros(mask))
+            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
                 return haystack + offset
             mask = mask & (mask - 1)

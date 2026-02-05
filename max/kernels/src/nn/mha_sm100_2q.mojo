@@ -2503,7 +2503,7 @@ struct RolePipeline[
         ]()
         return (
             self.producer_mbar_base
-            + self.state.index() * Self.producer_sub_stages
+            + self.state.index() * UInt32(Self.producer_sub_stages)
             + sub_stage_idx
         )
 
@@ -2520,7 +2520,7 @@ struct RolePipeline[
         ]()
         return (
             self.consumer_mbar_base
-            + self.state.index() * Self.consumer_sub_stages
+            + self.state.index() * UInt32(Self.consumer_sub_stages)
             + sub_stage_idx
         )
 
@@ -2746,7 +2746,7 @@ fn apply_mask[
                     var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
-                var score_col: Int32 = kv_tile_start_row + frag_col
+                var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
                 vs[frag_col_simd] = rebind[vs.element_type](
                     apply_oob_mask[
                         use_score_mod=use_score_mod,
@@ -2876,13 +2876,18 @@ struct FA4MiscMBars[
     fn init(self, *, lane_idx: Int32):
         @parameter
         if Self.size < WARP_SIZE:
-            if lane_idx < Self.size:
+            if lane_idx < Int32(Self.size):
                 self.mbar_base[lane_idx].init(
-                    128 if lane_idx < Self.number_warpgroup_count else 1
+                    Int32(
+                        128 if lane_idx
+                        < Int32(Self.number_warpgroup_count) else 1
+                    )
                 )
         elif Self.size == WARP_SIZE:
             self.mbar_base[lane_idx].init(
-                128 if lane_idx < Self.number_warpgroup_count else 1
+                Int32(
+                    128 if lane_idx < Int32(Self.number_warpgroup_count) else 1
+                )
             )
         else:
             comptime assert Self.number_warpgroup_count <= WARP_SIZE, String(
@@ -2894,10 +2899,12 @@ struct FA4MiscMBars[
                 "Number of count=1 barriers = ",
                 Self.size - Self.number_warpgroup_count,
             )
-            if lane_idx < Self.number_warpgroup_count:
+            if lane_idx < Int32(Self.number_warpgroup_count):
                 self.mbar_base[lane_idx].init(128)
-            if lane_idx < Self.size - Self.number_warpgroup_count:
-                self.mbar_base[Self.number_warpgroup_count + lane_idx].init(1)
+            if lane_idx < Int32(Self.size - Self.number_warpgroup_count):
+                self.mbar_base[
+                    Int32(Self.number_warpgroup_count) + lane_idx
+                ].init(1)
 
     # S pipeline type: 1 producer sub-stage, num_pv_stages consumer sub-stages
     comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
@@ -2924,7 +2931,7 @@ struct FA4MiscMBars[
         """Get S consumer for given warp group."""
         return {
             self.mbar_base + Self.S0_producer_offset + wg_idx,
-            self.mbar_base + Self.num_pv_stages * wg_idx,
+            self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx,
         }
 
     @always_inline
@@ -2943,7 +2950,7 @@ struct FA4MiscMBars[
 
     @always_inline
     fn producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
-        base = Self.C0_offset + 2 * wg_idx
+        base = UInt32(Self.C0_offset) + 2 * wg_idx
         return {self.mbar_base + base, self.mbar_base + base + 1}
 
     @always_inline
@@ -3569,7 +3576,7 @@ struct SM100MHA2Q[
         var o_cons_mbar: MBarType = (
             mbars.mbar_base + Self.MiscMBarsType.O_consumer_offset
         )
-        var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
+        var s_tmem: UInt32 = tmem_addr + UInt32(Self.config.TMEM_S0)
 
         # var tid = UInt32(thread_idx.x)
         var tid = llvm_opaque_tid()

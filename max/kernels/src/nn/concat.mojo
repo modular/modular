@@ -519,7 +519,11 @@ fn _concat_small[
     # We need to check it's safe to simd_load from each input.
     var inputs_simd_aligned = True
     for i in range(len(inputs)):
-        if inputs[i].dim(output.rank - 1) % simd_width != 0:
+        if (
+            inputs[i].dim(output.rank - 1)
+            % Scalar[inputs.T.linear_idx_type](simd_width)
+            != 0
+        ):
             inputs_simd_aligned = False
 
     # If we are concat'ing along the last dimension we can do a simd load.

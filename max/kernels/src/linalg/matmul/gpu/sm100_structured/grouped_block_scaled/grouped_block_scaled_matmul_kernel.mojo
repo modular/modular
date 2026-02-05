@@ -1029,21 +1029,23 @@ struct GroupedBlockScaledMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
             smem.tmem_dealloc().ptr[].init(
-                Self.EPILOGUE_THREADS * Self.cta_group
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
         fence_mbarrier_init()
@@ -1162,7 +1164,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -1231,7 +1233,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -1357,7 +1359,9 @@ struct GroupedBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
                     ),
@@ -1368,7 +1372,9 @@ struct GroupedBlockScaledMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
                         Int(batch_coord),
@@ -1579,34 +1585,38 @@ struct GroupedBlockScaledMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // 2  # cta_group=2
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // 2  # cta_group=2
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize CLC barriers
             @parameter
             for i in range(Self.num_clc_pipeline_stages_2sm):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Self.clc_consumer_arv_count)
+                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
             # Initialize throttle barriers
             @parameter
             for i in range(Self.num_clc_pipeline_stages_2sm * 2):
                 clc_throttle.ptr[i].init(
-                    Self.clc_throttle_producer_arv_count if i
-                    < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
+                    Int32(
+                        Self.clc_throttle_producer_arv_count if i
+                        < Self.num_clc_pipeline_stages_2sm else Self.clc_throttle_consumer_arv_count
+                    )
                 )
 
             # Initialize TMEM deallocation barrier (for cta_group=2)
-            smem.tmem_dealloc().ptr[].init(Self.EPILOGUE_THREADS * 2)
+            smem.tmem_dealloc().ptr[].init(Int32(Self.EPILOGUE_THREADS * 2))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -1762,7 +1772,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -1849,7 +1859,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, ctx.mma_complete_mask
+                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )

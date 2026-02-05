@@ -226,12 +226,14 @@ fn conv_transpose_shape[
         raise Error("[conv_transpose] requires (input_rank == 4 or 5)")
     if input.rank != kernel.rank:
         raise Error("[conv_transpose] requires (input_rank == kernel_rank)")
-    if strides.dim(0) != input.rank - 2 or dilations.dim(0) != input.rank - 2:
+    if strides.dim(0) != Scalar[strides.linear_idx_type](
+        input.rank - 2
+    ) or dilations.dim(0) != Scalar[dilations.linear_idx_type](input.rank - 2):
         raise Error(
             "[conv_transpose] requires (len(strides) == len(dilations) =="
             " input_rank - 2)"
         )
-    if pads.dim(0) != 2 * (input.rank - 2):
+    if pads.dim(0) != Scalar[pads.linear_idx_type](2 * (input.rank - 2)):
         raise Error(
             "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
         )

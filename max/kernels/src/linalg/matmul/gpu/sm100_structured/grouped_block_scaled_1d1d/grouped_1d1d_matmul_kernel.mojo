@@ -499,9 +499,11 @@ struct Grouped1D1DMatmulKernel[
         )
 
         # Peer CTA coordinates for multicast
-        var peer_rank_n = UInt(block_rank_in_cluster() % Self.CLUSTER_N)
+        var peer_rank_n = UInt(block_rank_in_cluster() % UInt32(Self.CLUSTER_N))
         var peer_rank_m = UInt(
-            block_rank_in_cluster() // Self.CLUSTER_N % Self.CLUSTER_M
+            block_rank_in_cluster()
+            // UInt32(Self.CLUSTER_N)
+            % UInt32(Self.CLUSTER_M)
         )
         var peer_m_rank = peer_rank_m % UInt(Self.cta_group)
         var peer_cta_coord = (peer_rank_n, peer_rank_m, peer_m_rank)
@@ -526,21 +528,23 @@ struct Grouped1D1DMatmulKernel[
             Self.InputTilePipelineType.init_barriers(
                 input_barriers.ptr,
                 Int32(1),
-                Self.config.cluster_shape[0] // Self.cta_group
-                + Self.config.cluster_shape[1]
-                - 1,
+                Int32(
+                    Self.config.cluster_shape[0] // Self.cta_group
+                    + Self.config.cluster_shape[1]
+                    - 1
+                ),
             )
 
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
                 Self.accum_pipeline_producer_arv_count,
-                Self.accum_pipeline_consumer_arv_count,
+                Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
             # Initialize TMEM deallocation barrier
             smem.tmem_dealloc().ptr[].init(
-                WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group
+                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
             )
 
         fence_mbarrier_init()
@@ -765,7 +769,9 @@ struct Grouped1D1DMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         sfa_m_coord,
                     ),
                 )
@@ -779,7 +785,9 @@ struct Grouped1D1DMatmulKernel[
                     (
                         0,
                         0,
-                        Int((iter_idx + j) * Self.config.num_sf_k_tiles),
+                        Int(
+                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
+                        ),
                         sfb_n_coord,
                     ),
                 )

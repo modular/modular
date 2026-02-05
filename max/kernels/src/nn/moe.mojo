@@ -825,7 +825,7 @@ fn _warp_bitonic_sort[
 
     var val = _val
     # Use modulo so merge direction is consistent across all lane groups
-    var i = UInt32(lane_id() % num_lanes)
+    var i = UInt32(lane_id() % UInt(num_lanes))
 
     @parameter
     for stage_i in range(1, log2_floor(num_lanes) + 1):
