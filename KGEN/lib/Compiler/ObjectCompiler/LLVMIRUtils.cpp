@@ -535,8 +535,8 @@ private:
   struct ValueInfo {
     const llvm::Value *value = nullptr;
     bool canBeSplit = true;
-    llvm::SmallPtrSet<const llvm::GlobalValue *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::GlobalValue *, 4> users;
+    llvm::DenseSet<const llvm::GlobalValue *> dependencies;
+    llvm::DenseSet<const llvm::GlobalValue *> users;
     /// Map each global value to its index in the module. We will use this to
     /// materialize global values from bitcode.
     unsigned gvIdx;
@@ -838,7 +838,10 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 
 /// Propagate use information through the module.
 void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
-  std::vector<ValueInfo *> worklist;
+  const size_t numValues = valueInfos.size();
+  SmallVector<ValueInfo *> worklist;
+  SmallVector<llvm::BitVector> deps(numValues, llvm::BitVector(numValues));
+  SmallVector<const llvm::GlobalValue *> gvIdxValueMap(numValues);
 
   // Each value depends on itself. Seed the iteration with that.
   for (auto &[value, info] : valueInfos) {
@@ -846,6 +849,9 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
       if (func->isDeclaration())
         continue;
     }
+
+    deps[info.gvIdx].set(info.gvIdx);
+    gvIdxValueMap[info.gvIdx] = value;
 
     info.dependencies.insert(value);
     info.value = value;
@@ -856,9 +862,16 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
     }
   }
 
+  // deps[idx1] := deps[idx1] u deps[idx2]
+  auto unite = [&](size_t idx1, size_t idx2) {
+    if (idx1 == idx2 || deps[idx1] == deps[idx2])
+      return false;
+    deps[idx1] |= deps[idx2];
+    return true;
+  };
+
   while (!worklist.empty()) {
-    ValueInfo *info = worklist.back();
-    worklist.pop_back();
+    ValueInfo *info = worklist.pop_back_val();
 
     // Propagate the dependencies of this value to its users.
     for (const llvm::GlobalValue *user : info->users) {
@@ -876,7 +889,7 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
 
       // If there is a change, add the user info to the worklist.
       if (mergeToUserDep) {
-        if (llvm::set_union(userInfo.dependencies, info->dependencies))
+        if (unite(userInfo.gvIdx, info->gvIdx))
           changed = true;
       }
 
@@ -885,7 +898,10 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
         userInfo.canBeSplit = false;
         changed = true;
         // If a value cannot be split, its users are also its dependencies.
-        llvm::set_union(userInfo.dependencies, userInfo.users);
+        for (const llvm::GlobalValue *uu : userInfo.users) {
+          const ValueInfo &uuInfo = valueInfos.find(uu)->second;
+          deps[userInfo.gvIdx].set(uuInfo.gvIdx);
+        }
       }
 
       if (changed) {
@@ -901,14 +917,20 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
 
     // If a value cannot be split, propagate its dependencies up to its
     // dependencies.
-    for (const llvm::GlobalValue *dep : info->dependencies) {
-      ValueInfo &depInfo = valueInfos.find(dep)->second;
-      if (info == &depInfo)
-        continue;
-      if (llvm::set_union(depInfo.dependencies, info->dependencies)) {
-        depInfo.value = dep;
-        worklist.push_back(&depInfo);
-      }
+    for (auto depIter = deps[info->gvIdx].set_bits_begin(),
+              depEnd = deps[info->gvIdx].set_bits_end();
+         depIter != depEnd; ++depIter) {
+      unite(info->gvIdx, *depIter);
+    }
+  }
+
+  // Reconstruct dependencies from the bit vector
+  for (size_t i = 0; i < numValues; ++i) {
+    ValueInfo &info = valueInfos.find(gvIdxValueMap[i])->second;
+    for (auto depIter = deps[i].set_bits_begin(),
+              depEnd = deps[i].set_bits_end();
+         depIter != depEnd; ++depIter) {
+      info.dependencies.insert(gvIdxValueMap[*depIter]);
     }
   }
 
