@@ -354,12 +354,26 @@ fn simple_constraints[x: Int, y: Int]()
 fn unfoldable_predicate(y: Int) -> Bool:
   return y > 2
 
+@always_inline("builtin")
+fn foldable_predicate(y: Int) -> Bool:
+  return y > 10
+
+# expected-note @below {{cannot prove constraint for candidate}}
+# expected-note @below {{constraint declared here needs evidence for 'foldable_predicate(x)'}}
+fn need_foldable_predicate[a: Int]() where foldable_predicate(a):
+  pass
+
+fn call_need_foldable_predicate[x: Int]():
+  # expected-error @below {{invalid call to 'need_foldable_predicate': lacking evidence to prove correctness}}
+  # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
+  need_foldable_predicate[x]()
+
 # expected-note @below {{function declared here}}
 # expected-note @below {{cannot prove constraint}}
 fn unprovable_constraints[x: Int, y: Int]()
   # expected-note @+1 {{constraint declared here evaluated to False, expected '(x > 1)'}}
   where x > 1
-  # expected-note @+1 {{constraint declared here needs evidence for}}
+  # expected-note @+1 {{constraint declared here needs evidence for 'unfoldable_predicate(0)'}}
   where unfoldable_predicate(y):
     pass
 
@@ -411,7 +425,7 @@ fn test_param_constraints():
 # expected-note @below {{'ConstraintStruct' declared here}}
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
-  # expected-note @below {{constraint declared here needs evidence for}}
+  # expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
   # expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
   a: Int where a > 0
 ]:
