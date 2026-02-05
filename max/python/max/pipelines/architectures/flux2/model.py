@@ -26,7 +26,7 @@ from .flux2 import Flux2Transformer2DModel
 from .model_config import Flux2Config
 
 
-class Flux2Model(ComponentModel):
+class Flux2TransformerModel(ComponentModel):
     def __init__(
         self,
         config: dict[str, Any],
