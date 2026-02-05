@@ -19,6 +19,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import A100
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout._tile_tensor import TileTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
@@ -695,7 +696,7 @@ fn run_batched_matmul(
         c_buf.store(Index(idx[0], idx[1], idx[2]), val.cast[c_buf.type]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
-        c_buf, a_buf, b_buf, ctx
+        TileTensor(c_buf), TileTensor(a_buf), TileTensor(b_buf), ctx
     )
 
     ctx.enqueue_copy(c_host, c_device)
@@ -718,7 +719,7 @@ fn run_batched_matmul(
         )
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](
-        c_buf_n, a_buf_n, b_buf_n, ctx
+        TileTensor(c_buf_n), TileTensor(a_buf_n), TileTensor(b_buf_n), ctx
     )
 
     ctx.enqueue_copy(c_host_n, c_device_n)

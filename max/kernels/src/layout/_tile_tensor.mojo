@@ -148,6 +148,9 @@ struct TileTensor[
                 shape[i] = rebind[shape.element_types[i]](
                     Scalar[DType.int64](buffer.dynamic_shape[i])
                 )
+
+            @parameter
+            if not stride.element_types[i].is_static_value:
                 stride[i] = rebind[stride.element_types[i]](
                     Scalar[DType.int64](buffer.dynamic_stride[i])
                 )
