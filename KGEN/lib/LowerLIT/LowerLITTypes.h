@@ -22,12 +22,14 @@ struct StructDecl {
   /// type, UNLESS @align is specified with a value > 1 - in that case we
   /// preserve the struct to maintain the alignment metadata.
   bool isSingleElement() const {
-    // Check if minAlignment is the default (1) by checking if it's an
-    // IntegerAttr with value 1.
-    bool hasExplicitAlign = false;
-    if (auto intAttr = dyn_cast_if_present<IntegerAttr>(minAlignment))
-      hasExplicitAlign = intAttr.getInt() > 1;
-    return isRegisterPassable && fields.size() == 1 && !hasExplicitAlign;
+    if (!isRegisterPassable || fields.size() != 1)
+      return false;
+    if (!minAlignment)
+      return true;
+    // An alignment of 1 means no explicit alignment.
+    if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment))
+      return intAttr.getInt() == 1;
+    return false;
   }
 
   /// The un-parameterized SourceNameAttr for the struct decl.

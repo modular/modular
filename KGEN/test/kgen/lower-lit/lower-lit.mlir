@@ -657,6 +657,46 @@ lit.struct.decl @String {
 // -----
 
 //===----------------------------------------------------------------------===//
+// Struct alignment lowering
+//===----------------------------------------------------------------------===//
+
+// Test concrete alignment on struct propagates to stack_allocation and does not
+// result in a flattened struct.
+lit.struct.decl @AlignedStruct64 attributes {minAlignment = 64 : index} {
+  lit.struct.field value : index
+}
+
+// CHECK-LABEL: kgen.generator @varDeclAligned64
+lit.fn @varDeclAligned64() {
+  // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(64)> align 64 marked
+  %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@AlignedStruct64>, mut *"life">
+  kgen.return
+}
+
+// -----
+
+// Test parametric alignment on struct propagates to stack_allocation.
+!Pair = !lit.struct<@Pair>
+lit.struct.decl @Pair register_passable {
+  lit.struct.field first : index
+  lit.struct.field second : index
+}
+
+lit.struct.decl @AlignedParam<N: !Pair> attributes {minAlignment = #lit.struct.extract<:!Pair N, "first"> : index} {
+  lit.struct.field data : index
+}
+
+// CHECK-LABEL: kgen.generator @varDeclAlignedParam
+lit.fn @varDeclAlignedParam<pair: !Pair>() {
+  // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(#kgen.struct.extract<:struct<(index, index)> pair, 0>)>
+  // CHECK-SAME: align #kgen.struct.extract<:struct<(index, index)> pair, 0> marked
+  %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@AlignedParam<:!Pair pair>>, mut *"life">
+  kgen.return
+}
+
+// -----
+
+//===----------------------------------------------------------------------===//
 // Struct Extensions
 //===----------------------------------------------------------------------===//
 

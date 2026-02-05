@@ -442,8 +442,14 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
             return failure();
           replacedTypes.push_back(*replaced);
         }
+        TypedAttr reboundAlignment =
+            evaluator.getReboundAttribute(decl.minAlignment);
+        FailureOr<TypedAttr> loweredAlignmentOr =
+            replacer.replaceParameter(reboundAlignment);
+        if (failed(loweredAlignmentOr))
+          return failure();
         return KGEN::StructType::get(
-            ctx, replacedTypes, !decl.isRegisterPassable, decl.minAlignment);
+            ctx, replacedTypes, !decl.isRegisterPassable, *loweredAlignmentOr);
       },
       TypeDomain::AsType);
 
@@ -676,6 +682,41 @@ static Value lowerOp(LIT::StructExtractOp op,
                                        b.getIndexAttr(index));
 }
 
+static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  // Lower a lit.var.decl to pop.stack_allocation.
+  // Check if the element type is a struct with explicit alignment.
+  TypedAttr alignment;
+  if (auto structType =
+          dyn_cast<LIT::StructType>(op.getType().getElementType())) {
+    StructDecl &decl = b.structDecls.get(structType.getName());
+    if ((alignment = decl.minAlignment)) {
+      // Substitute the alignment with struct parameters.
+      ParameterEvaluator evaluator(decl.decls, structType.getParamValues());
+      evaluator.setEvaluationContext(&b.evalContext);
+      alignment = evaluator.getReboundAttribute(alignment);
+    }
+  }
+
+  return POP::StackAllocationOp::create(
+      b, op.getLoc(), op.getType().getAsPointerType(),
+      /*count=*/1, alignment, /*markedLifetimes=*/true);
+}
+
+static Value lowerOp(VarLifetimeStartOp op, VarLifetimeStartOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(
+      op, op.getArg().getDefiningOp()->getOperand(0));
+  return {};
+}
+
+static Value lowerOp(VarLifetimeEndOp op, VarLifetimeEndOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(
+      op, op.getArg().getDefiningOp()->getOperand(0));
+  return {};
+}
+
 static Value lowerOp(RefImmutOp op, RefImmutOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   return adaptor.getRef();
@@ -902,8 +943,8 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
         .Case<MaterializeIntoOp, StructInsertOp, StructExtractOp, RefImmutOp,
               RefToPointerOp, RefFromPointerOp, RefFromPointerREPLOp,
               RefToKgenPtrOp, RefFromKgenPtrOp, RefStructGEROp, RefLoadOp,
-              RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp,
-              RefPackExtractOp>(
+              RefStoreOp, MemcpyOp, RebindOp, RefPackCreateOp, RefPackExtractOp,
+              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });
