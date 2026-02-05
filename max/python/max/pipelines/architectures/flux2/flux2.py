@@ -25,10 +25,9 @@ from .layers.flux2_attention import (
     Flux2ParallelSelfAttention,
     Flux2PosEmbed,
 )
-from .layers.normalizations import (
-    AdaLayerNormContinuous,
-    WeightedLayerNorm,
-)
+from max.nn.norm import LayerNorm
+
+from .layers.normalizations import AdaLayerNormContinuous
 from .model_config import Flux2ConfigBase
 
 
@@ -166,11 +165,11 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         self.mlp_hidden_dim = int(dim * mlp_ratio)
 
         # Normalizations (elementwise_affine=False for all)
-        self.norm1 = WeightedLayerNorm(
-            dim, eps=eps, elementwise_affine=False, bias=False
+        self.norm1 = LayerNorm(
+            dim, eps=eps, elementwise_affine=False, use_bias=False
         )
-        self.norm1_context = WeightedLayerNorm(
-            dim, eps=eps, elementwise_affine=False, bias=False
+        self.norm1_context = LayerNorm(
+            dim, eps=eps, elementwise_affine=False, use_bias=False
         )
 
         # Dual-stream attention
@@ -187,15 +186,15 @@ class Flux2TransformerBlock(Module[..., tuple[Tensor, Tensor]]):
         )
 
         # Feedforward layers
-        self.norm2 = WeightedLayerNorm(
-            dim, eps=eps, elementwise_affine=False, bias=False
+        self.norm2 = LayerNorm(
+            dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff = Flux2FeedForward(
             dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
         )
 
-        self.norm2_context = WeightedLayerNorm(
-            dim, eps=eps, elementwise_affine=False, bias=False
+        self.norm2_context = LayerNorm(
+            dim, eps=eps, elementwise_affine=False, use_bias=False
         )
         self.ff_context = Flux2FeedForward(
             dim=dim, dim_out=dim, mult=mlp_ratio, bias=bias
@@ -311,8 +310,8 @@ class Flux2SingleTransformerBlock(Module[..., Tensor | tuple[Tensor, Tensor]]):
             bias: Whether to use bias in linear layers.
         """
         # Single normalization (elementwise_affine=False)
-        self.norm = WeightedLayerNorm(
-            dim, eps=eps, elementwise_affine=False, bias=False
+        self.norm = LayerNorm(
+            dim, eps=eps, elementwise_affine=False, use_bias=False
         )
 
         # Parallel attention+MLP

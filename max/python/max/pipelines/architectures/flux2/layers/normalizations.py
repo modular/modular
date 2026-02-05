@@ -12,127 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max import functional as F
-from max.nn import Linear, Module, module_dataclass
-from max.nn.norm import rms_norm
+from max.nn import Linear, Module
+from max.nn.norm import LayerNorm, RMSNorm
 from max.tensor import Tensor
-
-
-@module_dataclass
-class WeightedRMSNorm(Module[[Tensor], Tensor]):
-    def __init__(
-        self,
-        normalized_shape: int | tuple[int, ...],
-        eps: float = 1e-6,
-        elementwise_affine: bool = True,
-    ):
-        """Initialize RMSNorm.
-
-        Args:
-            normalized_shape: shape of the input to normalize.
-            eps: Small value for numerical stability.
-            elementwise_affine: If True, learn affine parameters.
-        """
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-        self.normalized_shape = tuple(normalized_shape)
-
-        self.weight: Tensor | None
-        if elementwise_affine:
-            self.weight = Tensor.ones(self.normalized_shape)
-        else:
-            self.weight = None
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Apply RMSNorm.
-
-        Args:
-            x: Input tensor of shape (..., dim).
-
-        Returns:
-            Normalized tensor of same shape as input.
-        """
-        weight = (
-            self.weight
-            if self.weight is not None
-            else Tensor.ones(
-                self.normalized_shape, dtype=x.dtype, device=x.device
-            )
-        )
-        return rms_norm(
-            x,
-            weight,
-            self.eps,
-            weight_offset=0.0,
-            multiply_before_cast=self.elementwise_affine,
-        )
-
-
-class WeightedLayerNorm(Module[[Tensor], Tensor]):
-    def __init__(
-        self,
-        normalized_shape: int | tuple[int, ...],
-        eps: float = 1e-6,
-        elementwise_affine: bool = True,
-        bias: bool = True,
-    ):
-        """Initialize LayerNorm.
-
-        Args:
-            normalized_shape: Input shape to normalize (typically last dimension).
-            eps: Small value for numerical stability.
-            elementwise_affine: If True, learn affine parameters (weight and bias).
-            bias: Whether to use bias in the linear projection.
-        """
-        if isinstance(normalized_shape, int):
-            normalized_shape = (normalized_shape,)
-
-        self.normalized_shape = normalized_shape
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-
-        self.weight: Tensor | None
-        self.bias: Tensor | None
-        if elementwise_affine:
-            self.weight = Tensor.ones(list(normalized_shape))
-            if bias:
-                self.bias = Tensor.zeros(list(normalized_shape))
-            else:
-                self.bias = None
-        else:
-            self.weight = None
-            self.bias = None
-
-    def forward(self, x: Tensor) -> Tensor:
-        """Apply LayerNorm.
-
-        Args:
-            x: Input tensor where the last len(normalized_shape) dimensions will be normalized.
-
-        Returns:
-            Normalized tensor of same shape as input.
-        """
-        gamma = (
-            self.weight
-            if self.weight is not None
-            else Tensor.ones(
-                self.normalized_shape, dtype=x.dtype, device=x.device
-            )
-        )
-        bias = (
-            self.bias
-            if self.bias is not None
-            else Tensor.zeros(
-                self.normalized_shape, dtype=x.dtype, device=x.device
-            )
-        )
-        return F.layer_norm(
-            x,
-            gamma=gamma,
-            beta=bias,
-            epsilon=self.eps,
-        )
 
 
 class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
@@ -159,20 +41,16 @@ class AdaLayerNormContinuous(Module[[Tensor, Tensor], Tensor]):
         self.linear = Linear(
             conditioning_embedding_dim, embedding_dim * 2, bias=bias
         )
-        self.norm: WeightedLayerNorm | WeightedRMSNorm
+        self.norm: LayerNorm | RMSNorm
         if norm_type == "layer_norm":
-            self.norm = WeightedLayerNorm(
+            self.norm = LayerNorm(
                 embedding_dim,
                 eps=eps,
                 elementwise_affine=elementwise_affine,
-                bias=bias,
+                use_bias=bias,
             )
         elif norm_type == "rms_norm":
-            self.norm = WeightedRMSNorm(
-                embedding_dim,
-                eps=eps,
-                elementwise_affine=elementwise_affine,
-            )
+            self.norm = RMSNorm(embedding_dim, eps=eps)
         else:
             raise ValueError(
                 f"Unsupported `norm_type` ({norm_type}) provided. Supported ones are: 'layer_norm', 'rms_norm'."
