@@ -30,6 +30,25 @@ modular_py_library(
     ],
 )
 
+# Unit tests that don't require GPU
+modular_py_test(
+    name = "unit_tests",
+    srcs = [
+        "tests/test_embedding_merge_unit.py",
+        "tests/test_embeddings_unit.py",
+        "tests/test_weight_adapters.py",
+    ],
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+    ],
+)
+
+# Integration tests that require GPU
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
@@ -85,5 +104,12 @@ modular_py_library(
             requirement("transformers"),
         ],
     )
-    for src in glob(["tests/test_*.py"])
+    for src in glob(
+        ["tests/test_*.py"],
+        exclude = [
+            "tests/test_embedding_merge_unit.py",
+            "tests/test_embeddings_unit.py",
+            "tests/test_weight_adapters.py",
+        ],
+    )
 ]

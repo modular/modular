@@ -20,8 +20,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/architectures",
-        requirement("numpy"),
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("torch"),
         requirement("transformers"),
