@@ -146,6 +146,36 @@ def POP_TruncOp : POPOp<"trunc", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// AbsOp
+//===----------------------------------------------------------------------===//
+
+def POP_AbsOp : POPOp<"abs", [Pure, SameOperandsAndResultType, NoMemoryEffect,
+                DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "abs";
+  let description = [{
+    The `pop.abs` operation takes a `!pop.simd` value and returns the absolute
+    value of it. The operand and result types are the same and must be
+    index-like, arithmetic, or boolean dtypes. Unsigned integer, uindex, and
+    boolean values are returned unchanged. For signed integers, the absolute
+    value of INT_MIN is unchanged.
+
+    Example:
+
+    ```mlir
+    %r = pop.abs %x : !pop.simd<size, f32>
+    %r = pop.abs %x : !pop.simd<size, si32>
+    ```
+  }];
+
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinaryOp
 //===----------------------------------------------------------------------===//
 

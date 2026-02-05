@@ -1017,3 +1017,65 @@ kgen.generator @constexpr_memcpy() {
   %3 = kgen.param.constant = <apply(:(index) -> index @memcpy_1, 3)>
   kgen.return
 }
+
+// -----
+
+// COM: Check abs
+
+kgen.generator @abs_f32(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  %0 = pop.abs %arg0 : !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+kgen.generator @abs_si32(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  %0 = pop.abs %arg0 : !pop.simd<4, si32>
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+kgen.generator @abs_ui32(%arg0: !pop.simd<4, ui32>) -> !pop.simd<4, ui32> {
+  %0 = pop.abs %arg0 : !pop.simd<4, ui32>
+  kgen.return %0 : !pop.simd<4, ui32>
+}
+
+kgen.generator @abs_bool(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
+  %0 = pop.abs %arg0 : !pop.simd<2, bool>
+  kgen.return %0 : !pop.simd<2, bool>
+}
+
+kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.abs %arg0 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @callAbs() -> !pop.simd<4, f32> {
+  kgen.param.declare F0: simd<4, f32> = <<"7.0", "-7.0", "-NaN", "-inf">>
+  kgen.param.declare F1: simd<4, f32> = <apply(:(!pop.simd<4, f32>) -> !pop.simd<4, f32> @abs_f32, F0)>
+  // CHECK: <<"7", "7", "NaN", "+Inf">>
+  %0 = kgen.param.constant: !pop.simd<4, f32> = <F1>
+
+  // COM: abs(INT_MIN) -> INT_MIN
+  kgen.param.declare S0: simd<4, si32> = <<7, 7, 0, -2147483648>>
+  kgen.param.declare S1: simd<4, si32> = <apply(:(!pop.simd<4, si32>) -> !pop.simd<4, si32> @abs_si32, S0)>
+  // CHECK: <<7, 7, 0, -2147483648>>
+  %1 = kgen.param.constant: !pop.simd<4, si32> = <S1>
+
+  kgen.param.declare U0: simd<4, ui32> = <<7, 7, 0, 1>>
+  kgen.param.declare U1: simd<4, ui32> = <apply(:(!pop.simd<4, ui32>) -> !pop.simd<4, ui32> @abs_ui32, U0)>
+  // CHECK: <<7, 7, 0, 1>>
+  %2 = kgen.param.constant: !pop.simd<4, ui32> = <U1>
+
+  kgen.param.declare B0: simd<2, bool> = <<true, false>>
+  kgen.param.declare B1: simd<2, bool> = <apply(:(!pop.simd<2, bool>) -> !pop.simd<2, bool> @abs_bool, B0)>
+  // CHECK: <<true, false>>
+  %3 = kgen.param.constant: !pop.simd<2, bool> = <B1>
+
+  kgen.param.declare I0: simd<4, index> = <<-1, -8, 9223090564025548800, -9223372036854775808>>
+  kgen.param.declare I1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, I0)>
+  // COM: Even if we don't know the target index width, we can take the
+  // absoluate value of something like -1 at it returns the same thing no
+  // matter whether it's 32 or 64-bit.
+  // CHECK: <<1, 8, 9223090564025548800, -9223372036854775808>>
+  %4 = kgen.param.constant: !pop.simd<4, index> = <I1>
+
+  kgen.return %0 : !pop.simd<4, f32>
+}
