@@ -9,10 +9,6 @@ _APPLE_GPU_INCOMPATIBLE = select({
 
 _EXTRA_CONSTRAINTS = {
     "test_reduce_atomic.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2423
-    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
-    "test_binary_apply.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_reduce.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 [

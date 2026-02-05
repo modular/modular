@@ -173,11 +173,6 @@ modular_cc_test(
     },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
-    # TODO(GEX-3156): Investigate and enable on Apple GPU
-    target_compatible_with = select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":Utils",
         "//max:CAPI.headers",
