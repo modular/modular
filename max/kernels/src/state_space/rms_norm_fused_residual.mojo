@@ -28,14 +28,10 @@ from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import external_memory
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout import (
-    UNKNOWN_VALUE,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
+from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout._coord import Coord, CoordLike, Idx
+from layout._layout import Layout as TileLayout, row_major
+from layout._tile_tensor import TileTensor
 from random import Random
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
@@ -44,7 +40,7 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
-from nn.normalization import block_reduce, _sum_to_mean
+from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
 
 
 # rms_norm_fused_residual: Single RMSNorm with fused residual connection
@@ -367,63 +363,25 @@ fn rms_norm_fused_residual_gpu_block[
 
         barrier()
 
-        # Second stage: apply RMSNorm to the shared memory
-        # Inlined from _rms_norm_gpu_block_subkernel to work with LayoutTensor
-        comptime align = align_of[SIMD[dtype, simd_width]]()
-        comptime accum_type = get_accum_type[dtype]()
+        # Second stage: apply RMSNorm using shared memory as input
+        @parameter
+        @always_inline
+        @__copy_capture(shared_mem)
+        fn shared_mem_input_fn[
+            width: Int
+        ](row: Int, col: Int) -> SIMD[dtype, width]:
+            return shared_mem.load[width=width](col)
 
-        var thread_m2 = Scalar[accum_type](0)
-        var eps_accum = epsilon.cast[accum_type]()
-        var weight_offset_accum = weight_offset.cast[accum_type]()
+        # Construct a TileTensor from the LayoutTensor's pointer for the subkernel
+        var gamma_tile = TileTensor(gamma.ptr, row_major(Coord(Idx(num_cols))))
 
-        # First pass: compute sum of squares
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var offset = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
-            if offset < num_cols:
-                var vec_data = shared_mem.load[width=simd_width](offset).cast[
-                    accum_type
-                ]()
-                thread_m2 += (vec_data**2).reduce_add()
-
-        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
-            thread_m2
-        )
-        var norm_factor = rsqrt(
-            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
-        )
-
-        # Second pass: apply normalization
-        for x in range(ceildiv(num_cols // simd_width, Int(block_dim.x))):
-            var offset = x * Int(block_dim.x) * simd_width + Int(
-                tid * UInt(simd_width)
-            )
-
-            if offset < num_cols:
-                var vec_data = shared_mem.load[width=simd_width](offset).cast[
-                    accum_type
-                ]()
-                var norm_val: SIMD[dtype, simd_width]
-                var gamma_offset = gamma.runtime_layout(
-                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset)
-                )
-
-                var gamma_val = gamma.ptr.load[width=simd_width](gamma_offset)
-
-                if multiply_before_cast:
-                    var gamma_accum = (
-                        gamma_val.cast[accum_type]() + weight_offset_accum
-                    )
-                    norm_val = (vec_data * norm_factor * gamma_accum).cast[
-                        dtype
-                    ]()
-                else:
-                    norm_val = (vec_data * norm_factor).cast[dtype]() * (
-                        gamma_val + weight_offset
-                    )
-
-                output_fn[simd_width, align](Int(row), offset, norm_val)
+        _rms_norm_gpu_block_subkernel[
+            simd_width,
+            max_warps_per_block,
+            shared_mem_input_fn,
+            output_fn,
+            multiply_before_cast,
+        ](gamma_tile, epsilon, weight_offset, num_cols)
 
 
 fn rms_norm_fused_residual_gpu[
