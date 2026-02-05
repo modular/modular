@@ -952,3 +952,27 @@ fn fold_pop_simd_shr() -> POPUInt8x4T[POP_UI8x4_Fold]:
         )
     ]()
     return a
+
+
+# ===----------------------------------------------------------------------===##
+# Fold pop.simd_abs
+##===----------------------------------------------------------------------===##
+comptime POP_F32x4_Abs = __mlir_attr.`#pop.simd<"7.0", "7.0", "NaN", "inf"> : !pop.simd<4, f32>`
+
+
+@always_inline("builtin")
+fn pop_simd_abs(
+    x: __mlir_type.`!pop.simd<4, f32>`,
+) -> __mlir_type.`!pop.simd<4, f32>`:
+    return __mlir_op.`pop.abs`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_abs
+fn fold_pop_simd_abs() -> POPF32x4T[POP_F32x4_Abs]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x4T <:simd<4, f32> {{.*}} <"7", "7", "NaN", "+Inf">)>>
+    var a = POPF32x4T[
+        pop_simd_abs(
+            __mlir_attr.`#pop.simd<"7.0", "7.0", "-NaN", "-Inf"> : !pop.simd<4, f32>`,
+        )
+    ]()
+    return a
