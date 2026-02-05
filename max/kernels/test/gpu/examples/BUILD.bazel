@@ -16,13 +16,6 @@ _EXTRA_CONSTRAINTS = {
     "test_tiled_matmul_backtoback.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_matmul_int.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
     "test_double_buffer_gemm.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
-    # TODO(GEX-3156): Metal GPU execution crashes on Apple Silicon
-    "test_mandelbrot.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_matmul_1_sram.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_matmul_kernel_10.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_stencil1d.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_stencil2d.mojo": _APPLE_GPU_INCOMPATIBLE,
-    "test_stencil_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,
 }
 
 _TEST_SIZE = {
