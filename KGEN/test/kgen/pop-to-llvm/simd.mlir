@@ -419,4 +419,33 @@ kgen.func @simd_load_store(%i: index, %p0: !kgen.pointer<simd<4, f32>>) {
   kgen.return
 }
 
+// CHECK-LABEL: @abs_simd
+kgen.func @abs_simd(
+  %arg0: !pop.simd<4, f32>, %arg1 : !pop.scalar<uindex>,
+  %arg2 : !pop.scalar<index>, %arg3 : !pop.scalar<bool>
+) -> (
+  !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
+) {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG2:%.*]] = builtin.unrealized_conversion_cast %arg2
+
+  // CHECK: [[FABS:%.*]] = llvm.call_intrinsic "llvm.fabs"([[ARG0]])
+  // CHECK: [[FABS_RET:%.*]] = builtin.unrealized_conversion_cast [[FABS]]
+  %0 = pop.abs %arg0 : !pop.simd<4, f32>
+
+  // Deleted; replaced with %arg3 itself
+  %1 = pop.abs %arg1 : !pop.scalar<uindex>
+
+  // CHECK: [[IS_INT_MIN_POISON:%.*]] = llvm.mlir.constant(false) : i1
+  // CHECK: [[IABS:%.*]] = llvm.call_intrinsic "llvm.abs"([[ARG2]], [[IS_INT_MIN_POISON]])
+  // CHECK: [[IABS_RET:%.*]] = builtin.unrealized_conversion_cast [[IABS]]
+  %2 = pop.abs %arg2 : !pop.scalar<index>
+
+  // Deleted; replaced with %arg3 itself
+  %3 = pop.abs %arg3 : !pop.scalar<bool>
+
+  // CHECK: kgen.return [[FABS_RET]], %arg1, [[IABS_RET]], %arg3
+  kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
+}
+
 }

@@ -56,6 +56,9 @@ OpFoldResult foldSIMDShl(Attribute val, Attribute shft,
 OpFoldResult foldSIMDShr(Attribute val, Attribute shft,
                          TargetInfoAttr targetInfo);
 
+/// Fold a SIMD abs operation.
+OpFoldResult foldSIMDAbs(Attribute val, TargetInfoAttr targetInfo);
+
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
 //===----------------------------------------------------------------------===//
@@ -366,9 +369,16 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
                                          std::forward<OpFns>(ops)...);
 }
 
-/// Try to fold an index operation of the given result dtype for a given target.
-/// If the target is not specified, or the index bit width is not known, we only
-/// fold if the result is the same on 32 and 64 bit platforms.
+/// Try to fold a unary index operation of the given result dtype for a given
+/// target. If the target is not specified, or the index bit width is not known,
+/// we only fold if the result is the same on 32 and 64 bit platforms.
+OpFoldResult
+foldIndexForTarget(Attribute operand, KGENDType dtype, TargetInfoAttr target,
+                   llvm::function_ref<std::optional<APSInt>(APSInt)> fn);
+
+/// Try to fold a binary index operation of the given result dtype for a given
+/// target. If the target is not specified, or the index bit width is not known,
+/// we only fold if the result is the same on 32 and 64 bit platforms.
 OpFoldResult foldIndexForTarget(
     ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
     llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn);

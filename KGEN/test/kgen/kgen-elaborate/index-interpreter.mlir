@@ -591,3 +591,71 @@ kgen.generator export @main() -> !pop.scalar<index> {
   kgen.return %0 : !pop.scalar<index>
 }
 }
+
+// -----
+
+// COM: pop.abs with index on 32-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.abs %arg0 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @abs_uindex(%arg0: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
+  %0 = pop.abs %arg0 : !pop.simd<4, uindex>
+  kgen.return %0 : !pop.simd<4, uindex>
+}
+
+kgen.generator @callAbs() -> !pop.simd<4, index> {
+  // COM: 9223372036854775807 truncates to int32 -1 -> 1
+  // COM: -9223372036854775808 truncates to int32 0 -> 0
+  // CHECK: <<7, 7, 1, 0>>
+  kgen.param.declare S0: simd<4, index> = <<7, -7, 9223372036854775807, -9223372036854775808>>
+  kgen.param.declare S1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, S0)>
+  %1 = kgen.param.constant: !pop.simd<4, index> = <S1>
+
+  // COM: Unsigned parameters are just returned, hence we don't see truncation to 32 bits here
+  // CHECK: <<7, 0, 18446744073709551615, 9223372036854775807>>
+  kgen.param.declare U0: simd<4, uindex> = <<7, 0, 18446744073709551615, 9223372036854775807>>
+  kgen.param.declare U1: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>) -> !pop.simd<4, uindex> @abs_uindex, U0)>
+  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U1>
+
+  kgen.return %1 : !pop.simd<4, index>
+}
+
+}
+
+// -----
+
+// COM: pop.abs with index on 64-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.abs %arg0 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @abs_uindex(%arg0: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
+  %0 = pop.abs %arg0 : !pop.simd<4, uindex>
+  kgen.return %0 : !pop.simd<4, uindex>
+}
+
+kgen.generator @callAbs() -> !pop.simd<4, index> {
+  // COM: abs(INT64_MIN) returns INT64_MIN again
+  // CHECK: <<7, 7, 9223372036854775807, -9223372036854775808>>
+  kgen.param.declare S0: simd<4, index> = <<7, -7, 9223372036854775807, -9223372036854775808>>
+  kgen.param.declare S1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, S0)>
+  %1 = kgen.param.constant: !pop.simd<4, index> = <S1>
+
+  kgen.param.declare U0: simd<4, uindex> = <<7, 0, 18446744073709551615, 9223372036854775807>>
+  kgen.param.declare U1: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>) -> !pop.simd<4, uindex> @abs_uindex, U0)>
+  // CHECK: <<7, 0, 18446744073709551615, 9223372036854775807>>
+  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U1>
+
+  kgen.return %1 : !pop.simd<4, index>
+}
+
+}

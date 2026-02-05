@@ -212,6 +212,86 @@ struct ConvertPOPTrunc : public ConvertPOPToLLVMPattern<TruncOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPAbs
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPAbs : public ConvertPOPToLLVMPattern<AbsOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(AbsOp op, AbsOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (dtype.isUInt() || dtype.isBool()) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    Type type = this->convertType(op.getType());
+    if (!dtype.isFloat()) {
+      // As per LLVM, if is_int_min_poison == 0, then if the operand is INT_MIN
+      // the result is also INT_MIN.
+      auto isIntMinPoison = LLVM::ConstantOp::create(
+          rewriter, op.getLoc(), rewriter.getIntegerType(1), false);
+      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+          op, type, rewriter.getStringAttr("llvm.abs"),
+          SmallVector<Value>{adaptor.getOperand(), isIntMinPoison});
+      return success();
+    }
+
+    // For NVPTX, lower certain floating-point abs to NVVM intrinsics
+    if ((dtype == DType::f16 || dtype == DType::bf16) &&
+        getTypeConverter()->getTarget().getTriple().isNVPTX()) {
+      unsigned size = *op.getType().getResolvedSize();
+      assert(llvm::isPowerOf2_32(size) && "Unexpected vector width");
+
+      StringRef nvvmIntr = "llvm.nvvm.fabs";
+      if (size == 1) {
+        rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+            op, type, rewriter.getStringAttr(nvvmIntr),
+            SmallVector<Value>{adaptor.getOperand()});
+        return success();
+      }
+
+      Location loc = op.getLoc();
+      SmallVector<Value> resultVals;
+
+      // Work down the vector, extracting consecutive two-element subvectors,
+      // calling the appropriate 'abs' intrinsic on them, and re-inserting them
+      // into the result vector.
+      auto res =
+          LLVM::PoisonOp::create(rewriter, op.getLoc(), type).getResult();
+      auto subvecTy =
+          VectorType::get(2, cast<VectorType>(type).getElementType());
+      for (unsigned i = 0; i < size; i += 2) {
+        auto idx = LLVM::ConstantOp::create(rewriter, loc,
+                                            rewriter.getIntegerType(64), i);
+        auto subvec = LLVM::CallIntrinsicOp::create(
+                          rewriter, loc, subvecTy,
+                          rewriter.getStringAttr("llvm.vector.extract"),
+                          {adaptor.getOperand(), idx})
+                          .getResult(0);
+        auto abs = LLVM::CallIntrinsicOp::create(
+                       rewriter, loc, subvecTy,
+                       rewriter.getStringAttr(nvvmIntr), {subvec})
+                       .getResult(0);
+        res = LLVM::CallIntrinsicOp::create(
+                  rewriter, loc, type,
+                  rewriter.getStringAttr("llvm.vector.insert"), {res, abs, idx})
+                  .getResult(0);
+      }
+      rewriter.replaceOp(op, res);
+      return success();
+    }
+
+    // Else, just use the regular LLVM intrinsic
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, rewriter.getStringAttr("llvm.fabs"),
+        SmallVector<Value>{adaptor.getOperand()});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPShr
 //===----------------------------------------------------------------------===//
 
@@ -3050,6 +3130,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                       mlir::RewritePatternSet &patterns) {
   patterns.insert<
       // clang-format off
+      ConvertPOPAbs,
       ConvertPOPAdd,
       ConvertPOPAnd,
       ConvertPOPArrayCreate,

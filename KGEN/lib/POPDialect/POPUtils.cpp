@@ -385,6 +385,47 @@ OpFoldResult POP::foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
       [](bool lhs, bool rhs) { return lhs & rhs; });
 }
 
+OpFoldResult
+POP::foldIndexForTarget(Attribute operand, KGENDType dtype,
+                        TargetInfoAttr target,
+                        llvm::function_ref<std::optional<APSInt>(APSInt)> fn) {
+  // For index type get its size from the target.
+  if (target) {
+    ssize_t intWidth = target.resolveIndexBitWidth();
+    if (intWidth == 64)
+      return POP::Detail::foldSIMDOpIndex<POP::k64BitResult>(
+          operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
+            if (auto result = fn(operand); result) {
+              assert(result->isSigned() == dtype.isIndex());
+              return result->extOrTrunc(64);
+            }
+            return {};
+          });
+    if (intWidth == 32)
+      return POP::Detail::foldSIMDOpIndex<POP::k32BitResult>(
+          operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
+            // Have to extend it because index type is stored internally as
+            // 64-bit integer.
+            if (auto result = fn(operand); result) {
+              assert(result->isSigned() == dtype.isIndex());
+              return result->extend(64);
+            }
+            return {};
+          });
+  }
+
+  // If target is not specified, or the index bit width is not known, we only
+  // fold if the result is the same on 32 and 64 bit platforms.
+  return POP::Detail::foldSIMDOpIndex<POP::kIndexResult>(
+      operand, dtype, [&](APSInt operand) -> std::optional<APSInt> {
+        if (auto result = fn(operand)) {
+          assert(result->isSigned() == dtype.isIndex());
+          return result;
+        }
+        return {};
+      });
+}
+
 OpFoldResult POP::foldIndexForTarget(
     ArrayRef<Attribute> operands, KGENDType dtype, TargetInfoAttr target,
     llvm::function_ref<std::optional<APSInt>(APSInt, APSInt)> fn) {
@@ -472,6 +513,35 @@ OpFoldResult POP::foldSIMDShr(Attribute val, Attribute shft,
         return APSInt(lhs.isSigned() ? lhs.ashr(rhs) : lhs.lshr(rhs),
                       !lhs.isSigned());
       });
+}
+
+OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
+  auto operandSIMD = dyn_cast_if_present<SIMDAttr>(operand);
+  if (!operandSIMD)
+    return {};
+  std::optional<KGENDType> dtype = operandSIMD.getType().getResolvedDType();
+  if (!dtype || dtype->isInvalid())
+    return {};
+
+  // Bools or unsigned types are already abs'd.
+  if (dtype->isBool() || dtype->isUInt())
+    return operand;
+
+  auto integerAbs = [](APSInt operand) -> std::optional<APSInt> {
+    return APSInt(operand.abs(), /*isUnsigned=*/false);
+  };
+
+  if (dtype->isIndex())
+    return foldIndexForTarget(operand, *dtype, targetInfo, integerAbs);
+
+  return foldSIMDOp(
+      operand,
+      [](APFloat operand) -> APFloat {
+        operand.clearSign();
+        return operand;
+      },
+      integerAbs);
+  return {};
 }
 
 template <typename State>
