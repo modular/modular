@@ -162,6 +162,7 @@ def SIMDNegAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 def SIMDCeilAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 def SIMDFloorAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 def SIMDTruncAttr : DialectAttribute<(attr TypedAttr:$operand)>;
+def SIMDAbsAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 
 def SIMDReduceOrAttr : DialectAttribute<(attr
   TypedAttr:$vector, ConcreteType<"SIMDType">:$type
@@ -211,6 +212,7 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDCeilAttr,
     SIMDFloorAttr,
     SIMDTruncAttr,
+    SIMDAbsAttr,
 
     SIMDCmpAttr,
     SIMDReduceOrAttr,

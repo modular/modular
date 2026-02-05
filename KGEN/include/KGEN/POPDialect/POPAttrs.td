@@ -848,6 +848,34 @@ def POP_SIMDTruncAttr : POP_ExprAttr<"SIMDTrunc", "simd_trunc"> {
   }];
 }
 
+def POP_SIMDAbsAttr : POP_ExprAttr<"SIMDAbs", "simd_abs"> {
+  let summary = "SIMD abs.";
+  let description = [{
+    The `#pop.simd_abs` attribute takes a SIMD value and returns the
+    absolute value of it.
+  }];
+
+  let parameters = (ins "TypedAttr":$operand);
+
+  let assemblyFormat = " `<` $operand `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
+      return get(operand.getContext(), operand);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const;
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // SIMD Binary Operation Attributes
 //===----------------------------------------------------------------------===//
