@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,13 +19,13 @@ from max.driver import Device
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.tensor import Tensor
 
-from .flux1 import FluxTransformer2DModel
-from .model_config import FluxConfig
-from .weight_adapters import convert_safetensor_state_dict
+from .flux2 import Flux2Transformer2DModel
+from .model_config import Flux2Config
 
 
-class Flux1TransformerModel(ComponentModel):
+class Flux2TransformerModel(ComponentModel):
     def __init__(
         self,
         config: dict[str, Any],
@@ -39,7 +39,7 @@ class Flux1TransformerModel(ComponentModel):
             devices,
             weights,
         )
-        self.config = FluxConfig.generate(
+        self.config = Flux2Config.generate(
             config,
             encoding,
             devices,
@@ -48,12 +48,26 @@ class Flux1TransformerModel(ComponentModel):
 
     def load_model(self) -> Callable[..., Any]:
         state_dict = {key: value.data() for key, value in self.weights.items()}
-        state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():
-            flux = FluxTransformer2DModel(self.config)
+            flux = Flux2Transformer2DModel(self.config)
             flux.to(self.devices[0])
         self.model = flux.compile(*flux.input_types(), weights=state_dict)
         return self.model
 
-    def __call__(self, *args, **kwargs):
-        return self.model(*args, **kwargs)
+    def __call__(
+        self,
+        hidden_states: Tensor,
+        encoder_hidden_states: Tensor,
+        timestep: Tensor,
+        img_ids: Tensor,
+        txt_ids: Tensor,
+        guidance: Tensor,
+    ) -> Any:
+        return self.model(
+            hidden_states,
+            encoder_hidden_states,
+            timestep,
+            img_ids,
+            txt_ids,
+            guidance,
+        )
