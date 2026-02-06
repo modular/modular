@@ -976,3 +976,37 @@ fn fold_pop_simd_abs() -> POPF32x4T[POP_F32x4_Abs]:
         )
     ]()
     return a
+
+
+# ===----------------------------------------------------------------------===##
+# Fold pop.simd_round
+##===----------------------------------------------------------------------===##
+
+
+struct POPF32x8T[x: __mlir_type.`!pop.simd<8, f32>`](ImplicitlyCopyable):
+    fn __init__(out self):
+        pass
+
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+
+comptime POP_F32x8_Round = __mlir_attr.`#pop.simd<"1.0", "2.0", "2.0", "-1.0", "-2.0", "-2.0", "4.0", "-4.0"> : !pop.simd<8, f32>`
+
+
+@always_inline("builtin")
+fn pop_simd_round(
+    x: __mlir_type.`!pop.simd<8, f32>`,
+) -> __mlir_type.`!pop.simd<8, f32>`:
+    return __mlir_op.`pop.round`(x)
+
+
+# CHECK-LABEL: lit.fn @"fold_pop_simd_round
+fn fold_pop_simd_round() -> POPF32x8T[POP_F32x8_Round]:
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#POPF32x8T <:simd<8, f32> {{.*}} <"1", "2", "2", "-1", "-2", "-2", "4", "-4">)>>
+    var a = POPF32x8T[
+        pop_simd_round(
+            __mlir_attr.`#pop.simd<"1.1", "1.5", "1.7", "-1.1", "-1.5", "-1.7", "4.5", "-4.5"> : !pop.simd<8, f32>`,
+        )
+    ]()
+    return a
