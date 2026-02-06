@@ -217,8 +217,6 @@ fn causal_conv1d_varlen_fwd_cpu[
     Performs causal 1D convolution on variable length sequences that are
     concatenated together. Uses cumulative sequence lengths to identify
     sequence boundaries.
-
-    Uses LayoutTensor with MutAnyOrigin for proper memory mutability.
     """
     var width_minus_1 = width - 1
 
@@ -405,8 +403,6 @@ fn causal_conv1d_varlen_update_cpu[
 
     Updates the convolution state and computes output for decode steps.
     Supports circular buffer state management with cache_seqlens.
-
-    Uses LayoutTensor with MutAnyOrigin for proper memory mutability.
     """
     var width_minus_1 = width - 1
 
@@ -711,7 +707,6 @@ fn causal_conv1d_varlen_fwd_gpu[
     Block: (BLOCK_DIM, BLOCK_SEQ)
 
     Each block processes BLOCK_DIM channels for one sequence.
-    Uses LayoutTensor with MutAnyOrigin for proper GPU memory mutability.
 
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
@@ -882,8 +877,6 @@ fn causal_conv1d_varlen_update_gpu[
 
     Grid: (batch, ceildiv(dim, BLOCK_DIM))
     Block: (BLOCK_DIM,)
-
-    Uses LayoutTensor with MutAnyOrigin for proper GPU memory mutability.
 
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.

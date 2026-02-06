@@ -35,6 +35,7 @@ from utils.index import Index, IndexList
 
 fn run_varlen_selective_scan_fwd_gpu[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -42,13 +43,13 @@ fn run_varlen_selective_scan_fwd_gpu[
 ](
     batch: Int,
     dim: Int,
-    dstate: Int,
     ngroups: Int,
     seq_lengths: IndexList,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
     """Test varlen selective scan forward GPU kernel against CPU reference."""
+    comptime dstate = DSTATE
     if dstate > 256:
         return  # Skip if dstate exceeds kernel limit
 
@@ -241,6 +242,7 @@ fn run_varlen_selective_scan_fwd_gpu[
     # Run CPU kernel
     varlen_selective_scan_fwd_cpu[
         dtype,
+        DSTATE,
         u_cpu.layout,
         delta_cpu.layout,
         A_cpu.layout,
@@ -256,7 +258,6 @@ fn run_varlen_selective_scan_fwd_gpu[
         has_initial_state_cpu.layout,
     ](
         dim,
-        dstate,
         ngroups,
         batch,
         Int32(-1),  # pad_slot_id
@@ -379,6 +380,7 @@ fn run_varlen_selective_scan_fwd_gpu[
     var compiled_kernel = ctx.compile_function[
         varlen_selective_scan_fwd_gpu[
             dtype,
+            DSTATE,
             u_gpu_lt.layout,
             delta_gpu_lt.layout,
             A_gpu_lt.layout,
@@ -395,6 +397,7 @@ fn run_varlen_selective_scan_fwd_gpu[
         ],
         varlen_selective_scan_fwd_gpu[
             dtype,
+            DSTATE,
             u_gpu_lt.layout,
             delta_gpu_lt.layout,
             A_gpu_lt.layout,
@@ -414,7 +417,6 @@ fn run_varlen_selective_scan_fwd_gpu[
     ctx.enqueue_function(
         compiled_kernel,
         dim,
-        dstate,
         ngroups,
         batch,
         Int32(-1),  # pad_slot_id
@@ -486,16 +488,18 @@ def main():
         # Test varlen_selective_scan_fwd with equal-length sequences
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
+            4,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
         print("✓ Varlen selective scan fwd GPU (equal lengths) test passed")
 
         # Test with variable-length sequences
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
+            4,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
@@ -503,7 +507,6 @@ def main():
         ](
             batch=3,
             dim=4,
-            dstate=4,
             ngroups=1,
             seq_lengths=Index(10, 6, 1),
             ctx=ctx,
@@ -513,29 +516,32 @@ def main():
         # Test without D
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
+            4,
             has_D=False,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
         print("✓ Varlen selective scan fwd GPU without D test passed")
 
         # Test without z
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
+            4,
             has_D=True,
             has_z=False,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
         print("✓ Varlen selective scan fwd GPU without z test passed")
 
         # Test with delta_softplus
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
+            4,
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=True,
-        ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+        ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
         print("✓ Varlen selective scan fwd GPU with delta_softplus test passed")

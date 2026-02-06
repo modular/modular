@@ -11,20 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-# Variable-Length Selective Scan Kernels
-# ===----------------------------------------------------------------------=== #
-# This file contains GPU kernel implementations for variable-length selective
-# scan operations, compatible with vLLM's mamba_ssm interface.
-#
-# The kernels support:
-# - Variable-length sequences packed together (varlen)
-# - Multi-head SSM with grouped heads (nheads, ngroups)
-# - Cache management for autoregressive inference
-# - Initial state support
-#
-# Reference: vLLM v0.9.2 mamba_ssm.py
-# ===----------------------------------------------------------------------=== #
+"""Variable-length selective scan kernels for Mamba SSM architecture."""
 
 from gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
@@ -51,31 +38,9 @@ fn silu(val: Float32) -> Float32:
     return val * sigmoid(val)
 
 
-# ===----------------------------------------------------------------------=== #
-# Selective State Update Kernel (Single Step with Multi-Head Support)
-# ===----------------------------------------------------------------------=== #
-# This kernel matches vLLM's selective_state_update function.
-#
-# Supports:
-# - Multi-head SSM: state (batch, nheads, dim, dstate)
-# - Grouped heads: B, C are (batch, ngroups, dstate) with nheads_ngroups_ratio
-# - State batch indices for non-contiguous state access
-# - Padding slot handling
-#
-# Algorithm:
-#   dt = dt + dt_bias (if has_dt_bias)
-#   dt = softplus(dt) (if dt_softplus)
-#   dA = exp(A * dt)
-#   dB = B * dt
-#   state = state * dA + dB * x
-#   out = sum(state * C, axis=-1)
-#   out += x * D (if has_D)
-#   out *= z * sigmoid(z) (if has_z)
-# ===----------------------------------------------------------------------=== #
-
-
 fn varlen_selective_state_update_gpu[
     kernel_dtype: DType,
+    DSTATE: Int,
     state_layout: Layout,
     x_layout: Layout,
     dt_layout: Layout,
@@ -93,7 +58,6 @@ fn varlen_selective_state_update_gpu[
     batch: Int,
     nheads: Int,
     dim: Int,
-    dstate: Int,
     nheads_ngroups_ratio: Int,
     pad_slot_id: Int32,
     dt_softplus: Int8,
@@ -112,32 +76,18 @@ fn varlen_selective_state_update_gpu[
     state_batch_indices: LayoutTensor[
         DType.int32, state_batch_indices_layout, MutAnyOrigin
     ],
-    # Strides for state: (batch, nheads, dim, dstate)
-    state_strides: Strides4D,
-    # Strides for x: (batch, nheads, dim)
-    x_strides: Strides3D,
-    # Strides for dt: (batch, nheads, dim)
-    dt_strides: Strides3D,
-    # Strides for dt_bias: (nheads, dim)
-    dt_bias_strides: Strides2D,
-    # Strides for A: (nheads, dim, dstate)
-    A_strides: Strides3D,
-    # Strides for B: (batch, ngroups, dstate)
-    B_strides: Strides3D,
-    # Strides for C: (batch, ngroups, dstate)
-    C_strides: Strides3D,
-    # Strides for D: (nheads, dim)
-    D_strides: Strides2D,
-    # Strides for z: (batch, nheads, dim)
-    z_strides: Strides3D,
-    # Strides for out: (batch, nheads, dim)
-    out_strides: Strides3D,
+    state_strides: Strides4D,  # (batch, nheads, dim, dstate)
+    x_strides: Strides3D,  # (batch, nheads, dim)
+    dt_strides: Strides3D,  # (batch, nheads, dim)
+    dt_bias_strides: Strides2D,  # (nheads, dim)
+    A_strides: Strides3D,  # (nheads, dim, dstate)
+    B_strides: Strides3D,  # (batch, ngroups, dstate)
+    C_strides: Strides3D,  # (batch, ngroups, dstate)
+    D_strides: Strides2D,  # (nheads, dim)
+    z_strides: Strides3D,  # (batch, nheads, dim)
+    out_strides: Strides3D,  # (batch, nheads, dim)
 ):
-    """GPU kernel for selective state update with multi-head support.
-
-    Each thread block processes BLOCK_SIZE_M dim elements for a (batch, head) pair.
-    Matches vLLM's _selective_scan_update_kernel.
-    """
+    """GPU kernel for selective state update with multi-head support."""
     comptime BLOCK_SIZE_M = 4  # Process 4 dims per thread
 
     var pid_m = block_idx.x  # Dim block index
@@ -167,6 +117,7 @@ fn varlen_selective_state_update_gpu[
     var group_id = pid_h_int // nheads_ngroups_ratio
 
     # Process BLOCK_SIZE_M dims per thread
+    @parameter
     for local_m in range(BLOCK_SIZE_M):
         var m = pid_m_int * BLOCK_SIZE_M + local_m
         if m >= dim:
@@ -204,12 +155,11 @@ fn varlen_selective_state_update_gpu[
         if dt_softplus_bool:
             dt_val = softplus(dt_val)
 
-        # Check for TIE_HDIM mode (A has zero strides for dim and dstate)
-        # For simplicity, we'll implement the non-tied case
         var out_val = Float32(0.0)
 
         # Process each dstate element
-        for n in range(dstate):
+        @parameter
+        for n in range(DSTATE):
             # Load A value
             var A_offset = UInt32(
                 pid_h_int * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -297,31 +247,9 @@ fn varlen_selective_state_update_gpu[
         )
 
 
-# ===----------------------------------------------------------------------=== #
-# Variable-Length Selective Scan Forward Kernel
-# ===----------------------------------------------------------------------=== #
-# This kernel matches vLLM's selective_scan_fn with varlen support.
-#
-# Supports:
-# - Variable-length sequences via query_start_loc (cumulative lengths)
-# - Cache management via cache_indices
-# - Initial state via has_initial_state
-# - Padding handling via pad_slot_id
-#
-# Tensor layouts for varlen:
-#   u: (dim, total_length)
-#   delta: (dim, total_length)
-#   B: (ngroups, dstate, total_length)
-#   C: (ngroups, dstate, total_length)
-#   ssm_states: (batch, nheads, dim, dstate) or (batch, dim, dstate)
-#
-# query_start_loc: (batch + 1,) - cumulative sequence lengths
-#   Example: [0, 10, 16, 17] means 3 sequences of lengths 10, 6, 1
-# ===----------------------------------------------------------------------=== #
-
-
 fn varlen_selective_scan_fwd_gpu[
     kernel_dtype: DType,
+    DSTATE: Int,
     u_layout: Layout,
     delta_layout: Layout,
     A_layout: Layout,
@@ -336,9 +264,7 @@ fn varlen_selective_scan_fwd_gpu[
     cache_indices_layout: Layout,
     has_initial_state_layout: Layout,
 ](
-    # Grid dimensions - now using 2D grid (dim_blocks, batch)
     dim: Int,
-    dstate: Int,
     ngroups: Int,
     batch: Int,
     pad_slot_id: Int32,
@@ -371,37 +297,18 @@ fn varlen_selective_scan_fwd_gpu[
     has_initial_state: LayoutTensor[
         DType.bool, has_initial_state_layout, MutAnyOrigin
     ],  # (batch,)
-    # Strides for u: (dim, total_length)
-    u_strides: Strides2D,
-    # Strides for delta: (dim, total_length)
-    delta_strides: Strides2D,
-    # Strides for A: (dim, dstate)
-    A_strides: Strides2D,
-    # Strides for B: (ngroups, dstate, total_length)
-    B_strides: Strides3D,
-    # Strides for C: (ngroups, dstate, total_length)
-    C_strides: Strides3D,
-    # Strides for D: (dim,)
-    D_strides: Strides1D,
-    # Strides for z: (dim, total_length)
-    z_strides: Strides2D,
-    # Strides for delta_bias: (dim,)
-    delta_bias_strides: Strides1D,
-    # Strides for ssm_states: (batch, dim, dstate)
-    ssm_states_strides: Strides3D,
-    # Strides for out: (dim, total_length)
-    out_strides: Strides2D,
+    u_strides: Strides2D,  # (dim, total_length)
+    delta_strides: Strides2D,  # (dim, total_length)
+    A_strides: Strides2D,  # (dim, dstate)
+    B_strides: Strides3D,  # (ngroups, dstate, total_length)
+    C_strides: Strides3D,  # (ngroups, dstate, total_length)
+    D_strides: Strides1D,  # (dim,)
+    z_strides: Strides2D,  # (dim, total_length)
+    delta_bias_strides: Strides1D,  # (dim,)
+    ssm_states_strides: Strides3D,  # (batch, dim, dstate)
+    out_strides: Strides2D,  # (dim, total_length)
 ):
-    """GPU kernel for variable-length selective scan.
-
-    Uses 2D grid: (dim_blocks, batch) for parallel processing across sequences.
-    Each thread processes one (batch, dim) pair, iterating over the sequence.
-
-    For each sequence b with length = query_start_loc[b+1] - query_start_loc[b]:
-    - Uses cache_indices[b] to determine which SSM state slot to use
-    - Uses has_initial_state[b] to determine if initial state should be loaded
-    - Processes the sequence and updates the SSM state
-    """
+    """GPU kernel for variable-length selective scan."""
     # 2D grid: block_idx.x for dim, block_idx.y for batch
     var d = Int(block_dim.x * block_idx.x + thread_idx.x)
     var b = Int(block_idx.y)
@@ -446,7 +353,9 @@ fn varlen_selective_scan_fwd_gpu[
 
     # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-    for n in range(dstate):
+
+    @parameter
+    for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
@@ -466,7 +375,9 @@ fn varlen_selective_scan_fwd_gpu[
         use_initial_state = Bool(init_state_val)
 
     if use_initial_state:
-        for n in range(dstate):
+
+        @parameter
+        for n in range(DSTATE):
             var state_offset = UInt32(
                 cache_idx * ssm_states_strides[0]
                 + d * ssm_states_strides[1]
@@ -506,7 +417,8 @@ fn varlen_selective_scan_fwd_gpu[
         var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
         var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-        for n in range(dstate):
+        @parameter
+        for n in range(DSTATE):
             var B_offset = UInt32(
                 group_id * B_strides[0]
                 + n * B_strides[1]
@@ -559,7 +471,8 @@ fn varlen_selective_scan_fwd_gpu[
             )
 
     # Store final state to cache
-    for n in range(dstate):
+    @parameter
+    for n in range(DSTATE):
         var state_offset = UInt32(
             cache_idx * ssm_states_strides[0]
             + d * ssm_states_strides[1]
@@ -570,13 +483,9 @@ fn varlen_selective_scan_fwd_gpu[
         )
 
 
-# ===----------------------------------------------------------------------=== #
-# CPU Implementations (for testing and fallback)
-# ===----------------------------------------------------------------------=== #
-
-
 fn varlen_selective_state_update_cpu[
     kernel_dtype: DType,
+    DSTATE: Int,
     state_layout: Layout,
     x_layout: Layout,
     dt_layout: Layout,
@@ -592,7 +501,6 @@ fn varlen_selective_state_update_cpu[
     batch: Int,
     nheads: Int,
     dim: Int,
-    dstate: Int,
     nheads_ngroups_ratio: Int,
     pad_slot_id: Int32,
     dt_softplus: Int8,
@@ -677,7 +585,8 @@ fn varlen_selective_state_update_cpu[
         var out_val = Float32(0.0)
 
         # Process each dstate element
-        for n in range(dstate):
+        @parameter
+        for n in range(DSTATE):
             # Load A value
             var A_offset = UInt32(
                 h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
@@ -761,6 +670,7 @@ fn varlen_selective_state_update_cpu[
 
 fn varlen_selective_scan_fwd_cpu[
     kernel_dtype: DType,
+    DSTATE: Int,
     u_layout: Layout,
     delta_layout: Layout,
     A_layout: Layout,
@@ -776,7 +686,6 @@ fn varlen_selective_scan_fwd_cpu[
     has_initial_state_layout: Layout,
 ](
     dim: Int,
-    dstate: Int,
     ngroups: Int,
     batch: Int,
     pad_slot_id: Int32,
@@ -839,12 +748,15 @@ fn varlen_selective_scan_fwd_cpu[
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
         var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        for n in range(dstate):
+
+        @parameter
+        for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
                 * LOG2E
             )
+
         var group_id = d // group_size
 
         # Process each sequence
@@ -871,7 +783,9 @@ fn varlen_selective_scan_fwd_cpu[
                 use_initial_state = Bool(init_state_val)
 
             if use_initial_state:
-                for n in range(dstate):
+
+                @parameter
+                for n in range(DSTATE):
                     var state_offset = UInt32(
                         cache_idx * ssm_states_strides[0]
                         + d * ssm_states_strides[1]
@@ -913,7 +827,8 @@ fn varlen_selective_scan_fwd_cpu[
                 var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
                 var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-                for n in range(dstate):
+                @parameter
+                for n in range(DSTATE):
                     var B_offset = UInt32(
                         group_id * B_strides[0]
                         + n * B_strides[1]
@@ -960,7 +875,8 @@ fn varlen_selective_scan_fwd_cpu[
                     )
 
             # Store final state
-            for n in range(dstate):
+            @parameter
+            for n in range(DSTATE):
                 var state_offset = UInt32(
                     cache_idx * ssm_states_strides[0]
                     + d * ssm_states_strides[1]

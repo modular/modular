@@ -66,6 +66,7 @@ fn silu_ref(val: Float32) -> Float32:
 
 fn run_varlen_selective_scan_fwd[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -73,7 +74,6 @@ fn run_varlen_selective_scan_fwd[
 ](
     batch: Int,
     dim: Int,
-    dstate: Int,
     ngroups: Int,
     seq_lengths: IndexList,
     rtol: Float64 = 0.01,
@@ -83,11 +83,11 @@ fn run_varlen_selective_scan_fwd[
     Args:
         batch: Number of sequences.
         dim: Hidden dimension.
-        dstate: State dimension.
         ngroups: Number of groups.
         seq_lengths: List of sequence lengths for each batch item.
         rtol: Relative tolerance for numerical comparisons.
     """
+    comptime dstate = DSTATE
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit
 
@@ -256,6 +256,7 @@ fn run_varlen_selective_scan_fwd[
     # Call kernel
     varlen_selective_scan_fwd_cpu[
         dtype,
+        DSTATE,
         u_buf.layout,
         delta_buf.layout,
         A_buf.layout,
@@ -271,7 +272,6 @@ fn run_varlen_selective_scan_fwd[
         has_initial_state_buf.layout,
     ](
         dim,
-        dstate,
         ngroups,
         batch,
         Int32(-1),  # pad_slot_id
@@ -333,6 +333,7 @@ fn run_varlen_selective_scan_fwd[
 
 fn run_varlen_selective_state_update[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_dt_bias: Bool = True,
@@ -341,12 +342,12 @@ fn run_varlen_selective_state_update[
     batch: Int,
     nheads: Int,
     dim: Int,
-    dstate: Int,
     ngroups: Int,
     rtol: Float64 = 0.01,
 ) raises:
     """Test varlen selective state update kernel (single-step, multi-head SSM).
     """
+    comptime dstate = DSTATE
     if dstate > MAX_DSTATE:
         return  # Skip if dstate exceeds kernel limit
 
@@ -501,6 +502,7 @@ fn run_varlen_selective_state_update[
     # Call kernel
     varlen_selective_state_update_cpu[
         dtype,
+        DSTATE,
         state_buf.layout,
         x_buf.layout,
         dt_buf.layout,
@@ -516,7 +518,6 @@ fn run_varlen_selective_state_update[
         batch,
         nheads,
         dim,
-        dstate,
         nheads_ngroups_ratio,
         Int32(-1),  # pad_slot_id
         Int8(1) if dt_softplus else Int8(0),
@@ -574,89 +575,98 @@ def main():
     # Test varlen_selective_scan_fwd with equal-length sequences
     run_varlen_selective_scan_fwd[
         DType.float32,
+        4,
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8))
+    ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
     print("✓ Varlen selective scan fwd (equal lengths) test passed")
 
     # Test varlen_selective_scan_fwd with variable-length sequences
     run_varlen_selective_scan_fwd[
         DType.float32,
+        4,
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=3, dim=4, dstate=4, ngroups=1, seq_lengths=Index(10, 6, 1))
+    ](batch=3, dim=4, ngroups=1, seq_lengths=Index(10, 6, 1))
     print("✓ Varlen selective scan fwd (variable lengths) test passed")
 
     # Test without D
     run_varlen_selective_scan_fwd[
         DType.float32,
+        4,
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8))
+    ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
     print("✓ Varlen selective scan fwd without D test passed")
 
     # Test without z
     run_varlen_selective_scan_fwd[
         DType.float32,
+        4,
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8))
+    ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
     print("✓ Varlen selective scan fwd without z test passed")
 
     # Test with delta_softplus
     run_varlen_selective_scan_fwd[
         DType.float32,
+        4,
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=2, dim=4, dstate=4, ngroups=1, seq_lengths=Index(8, 8))
+    ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
     print("✓ Varlen selective scan fwd with delta_softplus test passed")
 
     # Test varlen_selective_state_update
     run_varlen_selective_state_update[
         DType.float32,
+        4,
         has_D=True,
         has_z=True,
         has_dt_bias=True,
         dt_softplus=False,
-    ](batch=2, nheads=2, dim=4, dstate=4, ngroups=1)
+    ](batch=2, nheads=2, dim=4, ngroups=1)
     print("✓ Varlen selective state update test passed")
 
     # Test state update without D
     run_varlen_selective_state_update[
         DType.float32,
+        4,
         has_D=False,
         has_z=True,
         has_dt_bias=True,
         dt_softplus=False,
-    ](batch=2, nheads=2, dim=4, dstate=4, ngroups=1)
+    ](batch=2, nheads=2, dim=4, ngroups=1)
     print("✓ Varlen selective state update without D test passed")
 
     # Test state update without z
     run_varlen_selective_state_update[
         DType.float32,
+        4,
         has_D=True,
         has_z=False,
         has_dt_bias=True,
         dt_softplus=False,
-    ](batch=2, nheads=2, dim=4, dstate=4, ngroups=1)
+    ](batch=2, nheads=2, dim=4, ngroups=1)
     print("✓ Varlen selective state update without z test passed")
 
     # Test state update with dt_softplus
     run_varlen_selective_state_update[
         DType.float32,
+        4,
         has_D=True,
         has_z=True,
         has_dt_bias=True,
         dt_softplus=True,
-    ](batch=2, nheads=2, dim=4, dstate=4, ngroups=1)
+    ](batch=2, nheads=2, dim=4, ngroups=1)
     print("✓ Varlen selective state update with dt_softplus test passed")
