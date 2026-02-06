@@ -976,7 +976,7 @@ def main():
         # M = 256, N = 256, K = 64*3*3 = 576
         # ============================================================
         print("--- Test 1: 3x3 conv with padding ---")
-        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16,](
+        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16](
             ctx,
             batch=1,
             in_h=16,
@@ -995,7 +995,7 @@ def main():
         # M = 1024, N = 256, K = 256
         # ============================================================
         print("--- Test 2: 1x1 pointwise conv ---")
-        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16,](
+        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16](
             ctx,
             batch=1,
             in_h=32,
