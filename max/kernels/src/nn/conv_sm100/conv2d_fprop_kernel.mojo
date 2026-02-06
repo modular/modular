@@ -99,7 +99,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_loader import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_scheduler import (
     TileScheduler,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_writer import (
+from linalg.matmul.gpu.sm100_structured.structured_kernels.epilogue_components import (
     EpilogueConfig,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (

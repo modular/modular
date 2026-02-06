@@ -22,9 +22,9 @@ Architecture:
 - Uses Self.InputTilePipeline (BlockScaledTilePipeline) for producer/consumer sync
 - Load warp: with input_pipeline.producer() as stage -> Self.load_input_tiles()
 - MMA warp: with input_pipeline.consumer() as stage -> Self.mma()
-- Epilogue warp: Uses structured building blocks from tile_writer.mojo
+- Epilogue warp: Uses structured building blocks from epilogue_components.mojo
 
-Epilogue Building Blocks (from tile_writer.mojo):
+Epilogue Building Blocks (from epilogue_components.mojo):
 - TmemArrayType / load_fragments() for TMEM load
 - AccumBarrier.arrive() for barrier signaling
 - TMEMToSMemWriter.write_fragments() for SMEM write

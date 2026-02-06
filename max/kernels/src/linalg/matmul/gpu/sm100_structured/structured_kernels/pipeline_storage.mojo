@@ -121,7 +121,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from linalg.structuring import SMemArray, SMemPtr
 
-# LayoutTensor-based SMemTileArray for C output tiles (used by tile_writer)
+# LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for input tiles (A, B, scales)
@@ -230,7 +230,7 @@ struct BlockScaledTileStorage[
     Single source of truth for block-scaled tile arrays and storage.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
@@ -362,7 +362,7 @@ struct BlockwiseFP8TileStorage[
     B-scales are read directly from global memory during epilogue.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
@@ -462,7 +462,7 @@ struct OutputTileStorage[
     Separate from input tiles since output has different stage count.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     Parameters:

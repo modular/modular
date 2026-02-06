@@ -20,7 +20,7 @@ This module contains the default SM100 matmul kernel implementation:
 
 Shared components (WarpRole, KernelContext) are in kernel_common.mojo.
 Output pipeline (TileWriter, copy_accum_to_gmem) is in output_writer.mojo.
-Low-level epilogue components (TMAStoreExecutor, etc.) are in tile_writer.mojo.
+Low-level epilogue components (TMAStoreExecutor, etc.) are in epilogue_components.mojo.
 
 The kernel implements a warp-specialized architecture:
 - Scheduler warp: CLC-based tile scheduling
@@ -111,7 +111,7 @@ from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
-from ..structured_kernels.tile_writer import EpilogueConfig
+from ..structured_kernels.epilogue_components import EpilogueConfig
 from linalg.structuring import (
     SMemPtr,
     SMemTile,
