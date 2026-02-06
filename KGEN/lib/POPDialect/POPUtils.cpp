@@ -564,6 +564,41 @@ OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
   return {};
 }
 
+OpFoldResult POP::foldSIMDFloorDiv(Attribute lhs, Attribute rhs,
+                                   TargetInfoAttr targetInfo) {
+  auto lhsSIMD = dyn_cast_if_present<SIMDAttr>(lhs);
+  if (!lhsSIMD || !isa_and_present<SIMDAttr>(rhs))
+    return {};
+  std::optional<KGENDType> dtype = lhsSIMD.getType().getResolvedDType();
+  if (!dtype || dtype->isBool() || dtype->isInvalid())
+    return {};
+
+  auto integerFloorDiv = [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+    // Integer division by zero is UB - don't fold.
+    if (rhs.isZero())
+      return std::nullopt;
+    auto div = lhs / rhs;
+    if (lhs.isUnsigned())
+      return div;
+    // int div = lhs / rhs;
+    // return div * rhs == lhs ? div : div - ((lhs < 0) ^ (rhs < 0));
+    auto xorOp = (lhs < 0) ^ (rhs < 0);
+    return APSInt(div * rhs == lhs ? div : div - xorOp, /*isUnsigned=*/false);
+  };
+
+  if (dtype->isIndex() || dtype->isUIndex())
+    return foldIndexForTarget({lhs, rhs}, *dtype, targetInfo, integerFloorDiv);
+
+  return foldSIMDOp(
+      {lhs, rhs},
+      [](APFloat lhs, APFloat rhs) -> APFloat {
+        auto div = lhs / rhs;
+        div.roundToIntegral(APFloat::rmTowardNegative);
+        return div;
+      },
+      integerFloorDiv);
+}
+
 template <typename State>
 static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                                           Attribute len, Location loc,

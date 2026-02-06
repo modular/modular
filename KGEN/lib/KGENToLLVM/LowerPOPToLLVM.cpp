@@ -166,6 +166,88 @@ struct ConvertPOPFloor : public ConvertPOPToLLVMPattern<FloorOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPFloorDiv
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPFloorDiv : public ConvertPOPToLLVMPattern<FloorDivOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(FloorDivOp op, FloorDivOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto loc = op.getLoc();
+    Type type = this->convertType(op.getType());
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (dtype.isFloat()) {
+      auto fdiv = LLVM::FDivOp::create(rewriter, loc, type, adaptor.getLhs(),
+                                       adaptor.getRhs());
+      rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+          op, type, rewriter.getStringAttr("llvm.floor"),
+          SmallVector<Value>{fdiv});
+      return success();
+    }
+
+    if (dtype.isUInt()) {
+      rewriter.replaceOpWithNewOp<LLVM::UDivOp>(
+          op, type, SmallVector<Value>{adaptor.getLhs(), adaptor.getRhs()});
+      return success();
+    }
+
+    // For signed integers, emit the LLVM IR corresponding to:
+    // int floordiv(int a, int b) {
+    //   int d = a / b;
+    //   return d * b == a ? d : d - ((a < 0) ^ (b < 0));
+    // }
+    // ... which, when turned into optimized LLVM IR, is:
+    //   %sdiv = sdiv i32 %a, %b
+    //   %mul = mul nsw i32 %sdiv, %b
+    //   %icmp = icmp eq i32 %mul, %a
+    //   %xorOp = xor i32 %b, %a
+    //   %ashr = ashr i32 %xorOp, 31
+    //   %sel = select i1 %icmp, i32 0, i32 %ashr
+    //   %ret = add i32 %sdiv, %sel
+    auto sdiv = LLVM::SDivOp::create(rewriter, loc, type, adaptor.getLhs(),
+                                     adaptor.getRhs());
+    auto mul = LLVM::MulOp::create(rewriter, loc, type, sdiv, adaptor.getRhs());
+    auto icmp = LLVM::ICmpOp::create(rewriter, loc, LLVM::ICmpPredicate::eq,
+                                     mul, adaptor.getLhs());
+    auto xorOp = LLVM::XOrOp::create(rewriter, loc, type, adaptor.getLhs(),
+                                     adaptor.getRhs());
+
+    Value signBitShift, zero;
+    if (auto vecType = dyn_cast<VectorType>(type)) {
+      uint64_t size = *op.getType().getResolvedSize();
+      Type eltTy = vecType.getElementType();
+      unsigned eltNumBits = eltTy.getIntOrFloatBitWidth();
+      SmallVector<APInt> zeroValues{size, APInt::getZero(eltNumBits)};
+      SmallVector<APInt> signBitShiftValues{size,
+                                            APInt(eltNumBits, eltNumBits - 1)};
+      auto zeroAttrs =
+          cast<TypedAttr>(IntArrayElementsAttr::get(vecType, zeroValues));
+      auto signBitShiftAttrs = cast<TypedAttr>(
+          IntArrayElementsAttr::get(vecType, signBitShiftValues));
+      zero = LLVM::ConstantOp::create(rewriter, loc, zeroAttrs);
+      signBitShift = LLVM::ConstantOp::create(rewriter, loc, signBitShiftAttrs);
+    } else {
+      assert(type.isIntOrFloat() && "Unexpected type in floordiv");
+      zero = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                      rewriter.getIntegerAttr(type, 0));
+      signBitShift = LLVM::ConstantOp::create(
+          rewriter, op.getLoc(),
+          rewriter.getIntegerAttr(type, type.getIntOrFloatBitWidth() - 1));
+    }
+
+    auto ashr = LLVM::AShrOp::create(rewriter, loc, type, xorOp, signBitShift);
+
+    auto sel = LLVM::SelectOp::create(rewriter, loc, type, icmp, zero, ashr);
+
+    rewriter.replaceOpWithNewOp<LLVM::AddOp>(op, type,
+                                             SmallVector<Value>{sdiv, sel});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPCeil
 //===----------------------------------------------------------------------===//
 
@@ -3175,6 +3257,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPCeil,
       ConvertPOPFence,
       ConvertPOPFloor,
+      ConvertPOPFloorDiv,
       ConvertPOPFMA,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
