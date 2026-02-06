@@ -2362,6 +2362,41 @@ SIMDRoundAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDFloorDivAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
+                                TypedAttr rhs) {
+  // Fold if possible. For integers, division by zero is undefined behavior,
+  // so we don't fold. For floats, IEEE 754 defines the result (inf or NaN).
+  if (auto fold = POP::foldSIMDFloorDiv(lhs, rhs,
+                                        /*targetInfo=*/{})) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return Base::get(ctx, lhs, rhs);
+}
+
+TypedAttr
+SIMDFloorDivAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                             MLIRContext *context, TypedAttr lhs,
+                             TypedAttr rhs) {
+  if (failed(verify(emitError, lhs, rhs)))
+    return {};
+  return SIMDFloorDivAttr::get(context, lhs, rhs);
+}
+
+bool SIMDFloorDivAttr::isConstant() const { return false; }
+
+Type SIMDFloorDivAttr::getType() const { return getLhs().getType(); }
+
+LogicalResult
+SIMDFloorDivAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         TypedAttr lhs, TypedAttr rhs) {
+  return verifySIMDBinaryOp(emitError, lhs, rhs);
+}
+
+//===----------------------------------------------------------------------===//
 // SIMDCmpAttr
 //===----------------------------------------------------------------------===//
 

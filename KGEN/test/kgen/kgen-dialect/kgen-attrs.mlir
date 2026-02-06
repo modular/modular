@@ -594,3 +594,20 @@ kgen.generator @simd_cmp_folding<dt: dtype>() {
   // CHECK: f = #pop<simd 9223372036854775807>
   f = #pop.simd_round< #pop.simd<9223372036854775807> : !pop.scalar<index> >
 } : () -> ()
+
+"some.op"() {
+  // CHECK: a = #pop.simd<2, -3, -1, 0>
+  a = #pop.simd_floordiv< #pop.simd<7, 7, -1, 0> : !pop.simd<4, si32>,
+                          #pop.simd<3, -3, 1024, -1> : !pop.simd<4, si32>> : !pop.simd<4, si32>,
+  // CHECK: b = #pop.simd<"2", "-3">
+  b = #pop.simd_floordiv< #pop.simd<"7", "7"> : !pop.simd<2, f32>,
+                          #pop.simd<"3", "-3"> : !pop.simd<2, f32>> : !pop.simd<2, f32>,
+  // CHECK: c = #pop.simd_floordiv<#kgen.unknown :
+  c = #pop.simd_floordiv< #kgen.unknown : !pop.scalar<si32>, #pop.simd<1> : !pop.scalar<si32>>,
+  // CHECK: d = #pop.simd_floordiv<#pop<simd 1> : !pop.scalar<si32>, #kgen.unknown
+  d = #pop.simd_floordiv<  #pop.simd<1> : !pop.scalar<si32>, #kgen.unknown : !pop.scalar<si32>>,
+  // CHECK: e = #pop<simd -3>
+  e = #pop.simd_floordiv<  #pop.simd<7> : !pop.scalar<index>, #pop.simd<-3> : !pop.scalar<index>>,
+  // CHECK: f = #pop.simd_floordiv<#pop<simd 9223372036854775807>
+  f = #pop.simd_floordiv<  #pop.simd<9223372036854775807> : !pop.scalar<index>, #pop.simd<-3> : !pop.scalar<index>>
+} : () -> ()
