@@ -61,9 +61,8 @@ struct _Accumulator[
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
-            and (Self.simd_width > 0),
-            "invalid dimensions",
-        )
+            and (Self.simd_width > 0)
+        ), "invalid dimensions"
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
         self._storage = NDBuffer[
             Self.dtype,
@@ -82,9 +81,8 @@ struct _Accumulator[
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
-            and (Self.simd_width > 0),
-            "invalid dimensions",
-        )
+            and (Self.simd_width > 0)
+        ), "invalid dimensions"
         self._storage = other_storage
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
@@ -93,9 +91,8 @@ struct _Accumulator[
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
-            and (Self.simd_width > 0),
-            "invalid dimensions",
-        )
+            and (Self.simd_width > 0)
+        ), "invalid dimensions"
         self._storage = other._storage
 
     @staticmethod
