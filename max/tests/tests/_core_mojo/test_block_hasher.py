@@ -24,7 +24,7 @@ def test_block_hasher() -> None:
     num_tokens = 3000
     tokens = np.arange(num_tokens, dtype=np.int32)
 
-    hashes = block_hasher(tokens, block_size, hash("None"))
+    hashes = block_hasher(tokens, block_size, 0)
 
     assert isinstance(hashes, list)
     assert isinstance(hashes[0], int)
@@ -43,7 +43,7 @@ def test_block_hasher() -> None:
 
 
 def mojo_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
-    return block_hasher(tokens, block_size, hash("None"))
+    return block_hasher(tokens, block_size, 0)
 
 
 def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
@@ -51,7 +51,7 @@ def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):
@@ -70,7 +70,7 @@ def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):
