@@ -40,8 +40,7 @@ from .parsing_integers import to_integer
 
 
 @fieldwise_init
-@register_passable
-struct UInt128Decomposed(ImplicitlyCopyable):
+struct UInt128Decomposed(ImplicitlyCopyable, RegisterType):
     var high: UInt64
     var low: UInt64
 

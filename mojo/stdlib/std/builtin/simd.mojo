@@ -269,8 +269,7 @@ fn _has_native_f8_support() -> Bool:
 
 
 @fieldwise_init
-@register_passable
-struct FastMathFlag(Equatable, ImplicitlyCopyable):
+struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterType):
     """Flags for controlling fast-math optimizations in floating-point operations.
 
     FastMathFlag provides compile-time controls for various floating-point math

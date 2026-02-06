@@ -750,7 +750,6 @@ struct VariadicListMem[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
@@ -758,7 +757,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-](Sized):
+](RegisterType, Sized):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each

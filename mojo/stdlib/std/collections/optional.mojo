@@ -47,9 +47,10 @@ struct _NoneType(ImplicitlyCopyable):
     pass
 
 
-@register_passable
 @fieldwise_init
-struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+struct EmptyOptionalError[T: AnyType](
+    ImplicitlyCopyable, RegisterType, Writable
+):
     """An error type for when an empty `Optional` is accessed.
 
     Parameters:

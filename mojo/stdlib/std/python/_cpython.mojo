@@ -228,8 +228,7 @@ struct PyObjectPtr(
 
 
 @fieldwise_init
-@register_passable
-struct PythonVersion(ImplicitlyCopyable):
+struct PythonVersion(ImplicitlyCopyable, RegisterType):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
