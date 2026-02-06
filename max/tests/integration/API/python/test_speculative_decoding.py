@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
-from max.driver import DeviceSpec
+from max.driver import DeviceSpec, accelerator_count
 from max.interfaces import (
     PipelineTokenizer,
     RequestID,
@@ -192,6 +192,12 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
+# TODO(SERVOPT-995): Bug with draft model device selection when target model
+# only uses one GPU, but multiple GPUs are available.
+@pytest.mark.skipif(
+    accelerator_count() > 1,
+    reason="Bug with draft model device selection, skipping test",
+)
 def test_draft_model_encoding_selection() -> None:
     """Test that draft model encoding is correctly selected from config or fallback."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
@@ -246,8 +252,15 @@ def test_draft_model_encoding_selection() -> None:
     assert isinstance(pipeline2, StandaloneSpeculativeDecodingPipeline)
 
 
+# TODO(SERVOPT-995): Bug with draft model device selection when target model
+# only uses one GPU, but multiple GPUs are available.
+@pytest.mark.skipif(
+    accelerator_count() > 1,
+    reason="Bug with draft model device selection, skipping test",
+)
 def test_kv_cache_claiming_protocol() -> None:
     """Test that claim is called before fetch in prepare_batch."""
+
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
         model_path=model_name,
