@@ -22,11 +22,11 @@
 // there's one argument in the __VA_ARGS__, it will end up taking the _1
 // argument in VA_ARGS_COUNT_N, and push back the numbers, meaning N will end up
 // being 1.
-#define VA_ARGS_COUNT_(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, N,   \
-                       ...)                                                    \
+#define VA_ARGS_COUNT_(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, \
+                       _14, _15, N, ...)                                       \
   N
 #define VA_ARGS_COUNT(...)                                                     \
-  VA_ARGS_COUNT_(__VA_ARGS__, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+  VA_ARGS_COUNT_(__VA_ARGS__, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
 // EXPAND_PARAMS will expand a list of types to a function signature,
 // automatically naming the arguments, for example:
@@ -48,6 +48,9 @@
 #define EXPAND_PARAMS_10(type, ...) type arg10, EXPAND_PARAMS_9(__VA_ARGS__)
 #define EXPAND_PARAMS_11(type, ...) type arg11, EXPAND_PARAMS_10(__VA_ARGS__)
 #define EXPAND_PARAMS_12(type, ...) type arg12, EXPAND_PARAMS_11(__VA_ARGS__)
+#define EXPAND_PARAMS_13(type, ...) type arg13, EXPAND_PARAMS_12(__VA_ARGS__)
+#define EXPAND_PARAMS_14(type, ...) type arg14, EXPAND_PARAMS_13(__VA_ARGS__)
+#define EXPAND_PARAMS_15(type, ...) type arg15, EXPAND_PARAMS_14(__VA_ARGS__)
 
 #define EXPAND_PARAMS(...)                                                     \
   CONCAT(EXPAND_PARAMS_, VA_ARGS_COUNT(__VA_ARGS__))(__VA_ARGS__)
@@ -72,6 +75,9 @@
 #define EXPAND_ARGS_10(type, ...) arg10, EXPAND_ARGS_9(__VA_ARGS__)
 #define EXPAND_ARGS_11(type, ...) arg11, EXPAND_ARGS_10(__VA_ARGS__)
 #define EXPAND_ARGS_12(type, ...) arg12, EXPAND_ARGS_11(__VA_ARGS__)
+#define EXPAND_ARGS_13(type, ...) arg13, EXPAND_ARGS_12(__VA_ARGS__)
+#define EXPAND_ARGS_14(type, ...) arg14, EXPAND_ARGS_13(__VA_ARGS__)
+#define EXPAND_ARGS_15(type, ...) arg15, EXPAND_ARGS_14(__VA_ARGS__)
 
 #define EXPAND_ARGS(...)                                                       \
   CONCAT(EXPAND_ARGS_, VA_ARGS_COUNT(__VA_ARGS__))(__VA_ARGS__)
