@@ -95,12 +95,10 @@ modular_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = [
-        "//max/python/max:interpreter",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
         requirement("torch"),
     ],
 )
