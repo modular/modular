@@ -247,7 +247,7 @@ Apple Silicon GPU:
   apple-m5    - Apple M5
 
 Other:
-  cuda        - Generic CUDA (uses runtime GPU detection)
+  cuda        - Generic CUDA
 #
 
 Alternative formats supported:
