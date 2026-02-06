@@ -3193,8 +3193,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
         print(stat)
 
 
-@register_passable
-struct CuDNNConvMeta(ImplicitlyCopyable):
+struct CuDNNConvMeta(ImplicitlyCopyable, RegisterType):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]

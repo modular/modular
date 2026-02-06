@@ -20,8 +20,7 @@ from layout._utils import ManagedLayoutTensor
 
 
 @fieldwise_init
-@register_passable
-struct Dim(ImplicitlyCopyable, Stringable):
+struct Dim(ImplicitlyCopyable, RegisterType, Stringable):
     var m: Int
     var n: Int
     var k: Int

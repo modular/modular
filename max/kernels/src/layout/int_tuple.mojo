@@ -122,8 +122,7 @@ fn _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         return _get_index_type(address_space)
 
 
-@register_passable
-struct IntArray(ImplicitlyCopyable):
+struct IntArray(ImplicitlyCopyable, RegisterType):
     """A memory-efficient, register-passable array of integers.
 
     `IntArray` provides a low-level implementation of a dynamically-sized integer array
