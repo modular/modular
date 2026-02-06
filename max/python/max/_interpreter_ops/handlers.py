@@ -842,3 +842,56 @@ def _handle_range(
     )
 
     return [output]
+
+
+# Random operations
+
+
+@register_op_handler(mo.RandomNormalOp)
+def _handle_random_normal(
+    op: mo.RandomNormalOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.random.normal by dispatching to Mojo random normal kernel.
+
+    Args:
+        op: The random normal operation.
+        inputs: Input buffers - shape, mean, variance (std), seed
+            (all scalar/1D tensors on CPU per MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the random normal tensor buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # shape
+    assert isinstance(inputs[1], Buffer)  # mean
+    assert isinstance(inputs[2], Buffer)  # variance (std)
+    assert isinstance(inputs[3], Buffer)  # seed
+
+    # Extract output shape from shape tensor (on CPU)
+    output_shape = tuple(inputs[0].to_numpy().tolist())
+
+    # Extract scalar params from CPU buffers
+    mean_val = float(inputs[1].to_numpy().item())
+    variance_val = float(inputs[2].to_numpy().item())
+    seed_val = int(inputs[3].to_numpy().item())
+
+    # Get dtype from MLIR type directly (safe with parametric shapes)
+    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
+    output_dtype = result_mlir_type.dtype
+
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=output_shape,
+        dtype=output_dtype,
+        device=target_device,
+    )
+
+    ops.mojo_ops.RandomNormal(
+        output,
+        mean_val,
+        variance_val,
+        seed_val,
+        target_device._device_context_ptr(),
+    )
+    return [output]

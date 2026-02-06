@@ -23,6 +23,8 @@ import pytest
 import torch
 from max import _realization_context as rc
 from max import functional as F
+from max import random as max_random
+from max._realization_context import set_seed
 from max.driver import Accelerator
 from max.dtype import DType
 from max.tensor import Tensor, realization_context
@@ -1211,3 +1213,79 @@ class TestUnaryMixedOpsGPU:
         result_torch = torch.from_dlpack(y)
         expected = x_torch.to(torch.int32)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestRandomNormalGPU:
+    """Tests for random normal op on GPU with interpreter."""
+
+    def test_random_normal_gpu_shape_and_device(self) -> None:
+        """Test random normal on GPU produces correct shape and device."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.gaussian(
+                (3, 4), dtype=DType.float32, device=Accelerator()
+            )
+
+        result_torch = torch.from_dlpack(result)
+        assert result_torch.shape == (3, 4)
+        assert result_torch.dtype == torch.float32
+        assert result_torch.is_cuda
+
+    def test_random_normal_gpu_statistics(self) -> None:
+        """Test random normal on GPU has approximately correct statistics."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.gaussian(
+                (1000, 1000),
+                mean=3.0,
+                std=1.5,
+                dtype=DType.float32,
+                device=Accelerator(),
+            )
+
+        result_torch = torch.from_dlpack(result).float()
+        torch.testing.assert_close(
+            result_torch.mean(),
+            torch.tensor(3.0, device="cuda"),
+            atol=0.1,
+            rtol=0.1,
+        )
+        torch.testing.assert_close(
+            result_torch.std(),
+            torch.tensor(1.5, device="cuda"),
+            atol=0.1,
+            rtol=0.1,
+        )
+
+    def test_random_normal_gpu_deterministic(self) -> None:
+        """Test that same seed produces identical results on GPU."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=Accelerator()
+            )
+
+        torch.testing.assert_close(
+            torch.from_dlpack(result1), torch.from_dlpack(result2)
+        )

@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 from max import _realization_context as rc
 from max import functional as F
+from max import random as max_random
+from max._realization_context import set_seed
 from max.driver import CPU
 from max.dtype import DType
 from max.tensor import Tensor, realization_context
@@ -1742,3 +1744,84 @@ class TestBroadcastBinaryOps:
 
         expected = np.add(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+
+class TestRandomNormalOp:
+    """Tests for random normal op via max.random.gaussian with interpreter."""
+
+    def test_random_normal_shape_and_dtype(self) -> None:
+        """Test that random normal produces correct shape and dtype."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.gaussian(
+                (3, 4), dtype=DType.float32, device=CPU()
+            )
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (3, 4)
+        assert result_np.dtype == np.float32
+
+    def test_random_normal_deterministic(self) -> None:
+        """Test that same seed produces identical results."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result1 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result2 = max_random.gaussian(
+                (5, 5), dtype=DType.float32, device=CPU()
+            )
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(result1), np.from_dlpack(result2)
+        )
+
+    def test_random_normal_statistics(self) -> None:
+        """Test that random normal has approximately correct mean and std."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(123)
+            result = max_random.gaussian(
+                (1000, 1000),
+                mean=5.0,
+                std=2.0,
+                dtype=DType.float32,
+                device=CPU(),
+            )
+
+        result_np = np.from_dlpack(result)
+        # With 1M samples, statistics should be quite close
+        np.testing.assert_allclose(result_np.mean(), 5.0, atol=0.1)
+        np.testing.assert_allclose(result_np.std(), 2.0, atol=0.1)
+
+    @pytest.mark.parametrize("dtype", [DType.float32, DType.float64])
+    def test_random_normal_dtypes(self, dtype: DType) -> None:
+        """Test random normal with different float dtypes."""
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            set_seed(42)
+            result = max_random.gaussian((10, 10), dtype=dtype, device=CPU())
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (10, 10)
+        assert result_np.dtype == dtype.to_numpy()

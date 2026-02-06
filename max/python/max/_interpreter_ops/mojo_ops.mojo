@@ -19,6 +19,7 @@ from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator, simd_width_of
 
 from math import iota
+from random import NormalRandom
 from algorithm.functional import elementwise, IndexList
 from algorithm import max as reduce_max
 from algorithm import min as reduce_min
@@ -322,6 +323,11 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Pow operation (custom dispatch - Pow doesn't conform to
         # ElementwiseBinaryOp)
         b.def_function[pow_dispatcher]("Pow", docstring="Elementwise Pow")
+
+        # Random normal operation
+        b.def_function[random_normal_dispatcher](
+            "RandomNormal", docstring="Random normal distribution"
+        )
 
         return b.finalize()
     except e:
@@ -1911,6 +1917,136 @@ fn range_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Random normal operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn random_normal_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+    mean: Float32,
+    variance: Float32,
+    seed_value: UInt64,
+    ctx: OpaquePointer[MutExternalOrigin],
+) raises:
+    """Random normal operation: fill output with normally distributed values.
+
+    Parameters:
+        dtype: The data type of the output array.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        size: Number of elements to produce.
+        mean: Mean of the normal distribution.
+        variance: Standard deviation of the normal distribution.
+        seed_value: Seed for the random number generator.
+        ctx: Device context pointer (null for CPU).
+    """
+    if variance <= 0:
+        raise Error("stddev must be positive")
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, mean, variance, seed_value)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        var generator = NormalRandom(seed=seed_value, offset=UInt64(i))
+        var values = generator.step_normal(mean=mean, stddev=variance)
+        out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
+
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[func, simd_width=8, use_blocking_impl=True](
+            IndexList[1](size)
+        )
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=8, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for random_normal"
+                    " with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+fn random_normal_dispatcher(
+    out_buffer: PythonObject,
+    mean_val: PythonObject,
+    variance_val: PythonObject,
+    seed_val: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Random normal dispatcher with dtype dispatch.
+
+    Args:
+        out_buffer: The output buffer object.
+        mean_val: Python float for the mean.
+        variance_val: Python float for the standard deviation.
+        seed_val: Python int for the seed.
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    var dtype = _get_dtype(out_buffer)
+    var size = _get_size(out_buffer)
+    var mean = Float32(py=mean_val)
+    var variance = Float32(py=variance_val)
+    var seed = UInt64(Int(py=seed_val))
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dtype == DType.float32:
+        random_normal_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float64:
+        random_normal_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.float16:
+        random_normal_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    elif dtype == DType.bfloat16:
+        random_normal_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            size,
+            mean,
+            variance,
+            seed,
+            ctx,
+        )
+    else:
+        raise Error("Unsupported dtype for random_normal: " + String(dtype))
 
 
 # ===----------------------------------------------------------------------=== #
