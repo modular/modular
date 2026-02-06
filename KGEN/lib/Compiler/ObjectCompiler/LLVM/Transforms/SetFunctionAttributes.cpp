@@ -4,7 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 #include "SetFunctionAttributes.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -50,16 +52,23 @@ void SetFunctionAttributes::runImpl(
     const llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options) {
   // Set function denormal-fp-math-f32 attributes based on cl option value.
   // Clang does similar thing for `-fdenormal-fp-math-f32`
-  // https://github.com/llvm/llvm-project/blob/cc271437553452ede002d871d32abc02084341a8/clang/lib/CodeGen/CGCall.cpp#L1940-L1948
+  // https://github.com/llvm/llvm-project/blob/main/clang/lib/CodeGen/CGCall.cpp#L1942-L1948
   std::optional<DenormalMode::DenormalModeKind> denormalKind =
       getDenormalKind(options);
 
   if (denormalKind.has_value()) {
+    DenormalMode f32Mode(*denormalKind, *denormalKind);
+
     for (Function &func : module) {
-      if (!func.hasFnAttribute("denormal-fp-math-f32")) {
-        func.addFnAttr("denormal-fp-math-f32",
-                       DenormalMode(*denormalKind, *denormalKind).str());
-      }
+      DenormalFPEnv existing = func.getDenormalFPEnv();
+      // Skip if the f32 mode already matches what we want to set.
+      if (existing.F32Mode == f32Mode)
+        continue;
+      // Override the f32 mode while preserving the existing default mode.
+      DenormalFPEnv fpEnv(existing.DefaultMode, f32Mode);
+      AttrBuilder attrs(func.getContext());
+      attrs.addDenormalFPEnvAttr(fpEnv);
+      func.addFnAttrs(attrs);
     }
   }
 }

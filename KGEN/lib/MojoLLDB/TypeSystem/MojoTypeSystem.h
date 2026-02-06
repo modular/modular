@@ -358,8 +358,7 @@ public:
     return false;
   }
 
-  bool IsFloatingPointType(lldb::opaque_compiler_type_t type,
-                           bool &isComplex) override;
+  bool IsFloatingPointType(lldb::opaque_compiler_type_t type) override;
 
   bool IsIntegerType(lldb::opaque_compiler_type_t type,
                      bool &isSigned) override;
