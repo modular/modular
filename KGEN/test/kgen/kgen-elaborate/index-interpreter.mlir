@@ -431,36 +431,19 @@ kgen.generator export @main() -> index {
 
 // -----
 
-// COM: pop.div with uindex on 64 bit
+// COM Testing interpreter on 32-bit targets
 
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
-kgen.generator @uindex_div_64(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
-  %0 = pop.div %arg0, %arg1 : !pop.scalar<uindex>
-  kgen.return %0 : !pop.scalar<uindex>
-}
-
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<uindex> {
-  kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_div_64, 18446744073709551615, 10)>
-  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <1844674407370955161>
-  %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
-  kgen.return %0 : !pop.scalar<uindex>
-}
-}
-
-// -----
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 
 // COM: pop.div with uindex on 32 bit
 
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 kgen.generator @uindex_div_32(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
   %0 = pop.div %arg0, %arg1 : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
 }
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<uindex> {
+// CHECK-LABEL: kgen.func export @testDiv
+kgen.generator export @testDiv() -> !pop.scalar<uindex> {
   kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_div_32, 18446744073709551615, 10)>
   // COM: should truncate 18446744073709551615 to 4294967295, then divide
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <429496729>
@@ -468,135 +451,56 @@ kgen.generator export @main() -> !pop.scalar<uindex> {
   // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
 }
-}
-
-// -----
-
-// COM: pop.rem with uindex on 64 bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
-kgen.generator @uindex_rem_64(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
-  %0 = pop.rem %arg0, %arg1 : !pop.scalar<uindex>
-  kgen.return %0 : !pop.scalar<uindex>
-}
-
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<uindex> {
-  kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_rem_64, 18446744073709551615, 10)>
-  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <5>
-  %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
-  kgen.return %0 : !pop.scalar<uindex>
-}
-}
-
-// -----
 
 // COM: pop.rem with uindex on 32 bit
 
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 kgen.generator @uindex_rem_32(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
   %0 = pop.rem %arg0, %arg1 : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
 }
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<uindex> {
+// CHECK-LABEL: kgen.func export @testRem
+kgen.generator export @testRem() -> !pop.scalar<uindex> {
   kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_rem_32, 18446744073709551615, 10)>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <5>
   %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
   // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
   kgen.return %0 : !pop.scalar<uindex>
 }
-}
-
-// -----
 
 // COM: pop.cmp with index on 32-bit
 
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 kgen.generator @pop_cmp_lt_32(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<bool> {
   %0 = pop.cmp lt(%arg0, %arg1) : !pop.scalar<index>
   kgen.return %0 : !pop.scalar<bool>
 }
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<bool> {
+// CHECK-LABEL: kgen.func export @testCmp
+kgen.generator export @testCmp() -> !pop.scalar<bool> {
   kgen.param.declare value : !pop.scalar<bool> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<bool> @pop_cmp_lt_32, 3000000000, 0)>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
   %0 = kgen.param.constant: !pop.scalar<bool> = <value>
   // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
   kgen.return %0 : !pop.scalar<bool>
 }
-}
-
-// -----
-
-// COM: pop.cmp with index on 64-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
-kgen.generator @pop_cmp_lt_64(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<bool> {
-  %0 = pop.cmp lt(%arg0, %arg1) : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<bool>
-}
-
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<bool> {
-  kgen.param.declare value : !pop.scalar<bool> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<bool> @pop_cmp_lt_64, 3000000000, 0)>
-  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
-  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
-  kgen.return %0 : !pop.scalar<bool>
-}
-}
-
-// -----
 
 // COM: llvm.ctlz with index on 32-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 
 kgen.generator @call_llvm_ctlz(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<bool>) -> !pop.scalar<index> {
   %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.ctlz", (%arg0, %arg1) : (!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index>
   kgen.return %0 : !pop.scalar<index>
 }
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<index> {
+// CHECK-LABEL: kgen.func export @testCTLZ
+kgen.generator export @testCTLZ() -> !pop.scalar<index> {
   kgen.param.declare value : !pop.scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index> @call_llvm_ctlz, 16, false)>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <27>
   %0 = kgen.param.constant: !pop.scalar<index> = <value>
   // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
   kgen.return %0 : !pop.scalar<index>
 }
-}
-
-// -----
-
-// COM: llvm.ctlz with index on 64-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
-
-kgen.generator @call_llvm_ctlz(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<bool>) -> !pop.scalar<index> {
-  %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.ctlz", (%arg0, %arg1) : (!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
-}
-
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index> @call_llvm_ctlz, 16, false)>
-  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <59>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
-}
-}
-
-// -----
 
 // COM: pop.abs with index on 32-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 
 kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
   %0 = pop.abs %arg0 : !pop.simd<4, index>
@@ -608,7 +512,8 @@ kgen.generator @abs_uindex(%arg0: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> 
   kgen.return %0 : !pop.simd<4, uindex>
 }
 
-kgen.generator @callAbs() -> !pop.simd<4, index> {
+// CHECK-LABEL: kgen.func export @testAbs
+kgen.generator export @testAbs() -> !pop.simd<4, index> {
   // COM: 9223372036854775807 truncates to int32 -1 -> 1
   // COM: -9223372036854775808 truncates to int32 0 -> 0
   // CHECK: <<7, 7, 1, 0>>
@@ -625,46 +530,7 @@ kgen.generator @callAbs() -> !pop.simd<4, index> {
   kgen.return %1 : !pop.simd<4, index>
 }
 
-}
-
-// -----
-
-// COM: pop.abs with index on 64-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
-
-kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
-  %0 = pop.abs %arg0 : !pop.simd<4, index>
-  kgen.return %0 : !pop.simd<4, index>
-}
-
-kgen.generator @abs_uindex(%arg0: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
-  %0 = pop.abs %arg0 : !pop.simd<4, uindex>
-  kgen.return %0 : !pop.simd<4, uindex>
-}
-
-kgen.generator @callAbs() -> !pop.simd<4, index> {
-  // COM: abs(INT64_MIN) returns INT64_MIN again
-  // CHECK: <<7, 7, 9223372036854775807, -9223372036854775808>>
-  kgen.param.declare S0: simd<4, index> = <<7, -7, 9223372036854775807, -9223372036854775808>>
-  kgen.param.declare S1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, S0)>
-  %1 = kgen.param.constant: !pop.simd<4, index> = <S1>
-
-  kgen.param.declare U0: simd<4, uindex> = <<7, 0, 18446744073709551615, 9223372036854775807>>
-  kgen.param.declare U1: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>) -> !pop.simd<4, uindex> @abs_uindex, U0)>
-  // CHECK: <<7, 0, 18446744073709551615, 9223372036854775807>>
-  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U1>
-
-  kgen.return %1 : !pop.simd<4, index>
-}
-
-}
-
-// -----
-
 // COM: pop.floordiv with index on 32-bit
-
-module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 
 kgen.generator @floordiv_index(%arg0: !pop.simd<4, index>, %arg1: !pop.simd<4, index>) -> !pop.simd<4, index> {
   %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, index>
@@ -676,7 +542,8 @@ kgen.generator @floordiv_uindex(%arg0: !pop.simd<4, uindex>, %arg1: !pop.simd<4,
   kgen.return %0 : !pop.simd<4, uindex>
 }
 
-kgen.generator @callFloordiv() -> !pop.simd<4, index> {
+// CHECK-LABEL: kgen.func export @testFloordiv
+kgen.generator export @testFloordiv() -> !pop.simd<4, index> {
   kgen.param.declare S0: simd<4, index> = <<7, 7, 9223372036854775807, 9223372036854775807>>
   kgen.param.declare S1: simd<4, index> = <<3, -3, 10, -10>>
   kgen.param.declare S2: simd<4, index> = <apply(:(!pop.simd<4, index>, !pop.simd<4, index>) -> !pop.simd<4, index> @floordiv_index, S0, S1)>
@@ -696,9 +563,104 @@ kgen.generator @callFloordiv() -> !pop.simd<4, index> {
 
 // -----
 
-// COM: pop.floordiv with index on 64-bit
+// COM Testing interpreter on 64-bit targets
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+
+// COM: pop.div with uindex on 64 bit
+
+kgen.generator @uindex_div_64(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
+  %0 = pop.div %arg0, %arg1 : !pop.scalar<uindex>
+  kgen.return %0 : !pop.scalar<uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testDiv
+kgen.generator export @testDiv() -> !pop.scalar<uindex> {
+  kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_div_64, 18446744073709551615, 10)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <1844674407370955161>
+  %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
+  kgen.return %0 : !pop.scalar<uindex>
+}
+
+// COM: pop.rem with uindex on 64 bit
+
+kgen.generator @uindex_rem_64(%arg0: !pop.scalar<uindex>, %arg1: !pop.scalar<uindex>) -> !pop.scalar<uindex> {
+  %0 = pop.rem %arg0, %arg1 : !pop.scalar<uindex>
+  kgen.return %0 : !pop.scalar<uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testRem
+kgen.generator export @testRem() -> !pop.scalar<uindex> {
+  kgen.param.declare value : !pop.scalar<uindex> = <apply(:(!pop.scalar<uindex>, !pop.scalar<uindex>) -> !pop.scalar<uindex> @uindex_rem_64, 18446744073709551615, 10)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<uindex> = <5>
+  %0 = kgen.param.constant: !pop.scalar<uindex> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<uindex>
+  kgen.return %0 : !pop.scalar<uindex>
+}
+
+
+// COM: pop.cmp with index on 64-bit
+
+kgen.generator @pop_cmp_lt_64(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<bool> {
+  %0 = pop.cmp lt(%arg0, %arg1) : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: kgen.func export @testCmp
+kgen.generator export @testCmp() -> !pop.scalar<bool> {
+  kgen.param.declare value : !pop.scalar<bool> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<bool> @pop_cmp_lt_64, 3000000000, 0)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// COM: llvm.ctlz with index on 64-bit
+
+kgen.generator @call_llvm_ctlz(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<bool>) -> !pop.scalar<index> {
+  %0 = pop.call_llvm_intrinsic side_effecting<0> "llvm.ctlz", (%arg0, %arg1) : (!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: kgen.func export @testCTLZ
+kgen.generator export @testCTLZ() -> !pop.scalar<index> {
+  kgen.param.declare value : !pop.scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<bool>) -> !pop.scalar<index> @call_llvm_ctlz, 16, false)>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <59>
+  %0 = kgen.param.constant: !pop.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// COM: pop.abs with index on 64-bit
+
+kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.abs %arg0 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @abs_uindex(%arg0: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
+  %0 = pop.abs %arg0 : !pop.simd<4, uindex>
+  kgen.return %0 : !pop.simd<4, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testAbs
+kgen.generator export @testAbs() -> !pop.simd<4, index> {
+  // COM: abs(INT64_MIN) returns INT64_MIN again
+  // CHECK: <<7, 7, 9223372036854775807, -9223372036854775808>>
+  kgen.param.declare S0: simd<4, index> = <<7, -7, 9223372036854775807, -9223372036854775808>>
+  kgen.param.declare S1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, S0)>
+  %1 = kgen.param.constant: !pop.simd<4, index> = <S1>
+
+  kgen.param.declare U0: simd<4, uindex> = <<7, 0, 18446744073709551615, 9223372036854775807>>
+  kgen.param.declare U1: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>) -> !pop.simd<4, uindex> @abs_uindex, U0)>
+  // CHECK: <<7, 0, 18446744073709551615, 9223372036854775807>>
+  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U1>
+
+  kgen.return %1 : !pop.simd<4, index>
+}
+
+// COM: pop.floordiv with index on 64-bit
 
 kgen.generator @floordiv_index(%arg0: !pop.simd<4, index>, %arg1: !pop.simd<4, index>) -> !pop.simd<4, index> {
   %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, index>
@@ -710,7 +672,8 @@ kgen.generator @floordiv_uindex(%arg0: !pop.simd<4, uindex>, %arg1: !pop.simd<4,
   kgen.return %0 : !pop.simd<4, uindex>
 }
 
-kgen.generator @callFloordiv() -> !pop.simd<4, index> {
+// CHECK-LABEL: kgen.func export @testFloordiv
+kgen.generator export @testFloordiv() -> !pop.simd<4, index> {
   kgen.param.declare S0: simd<4, index> = <<7, 7, 9223372036854775807, 9223372036854775807>>
   kgen.param.declare S1: simd<4, index> = <<3, -3, 10, -10>>
   kgen.param.declare S2: simd<4, index> = <apply(:(!pop.simd<4, index>, !pop.simd<4, index>) -> !pop.simd<4, index> @floordiv_index, S0, S1)>
