@@ -868,8 +868,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(declScope, EC_InvalidContext);
     PValue callee = getCallee(selectedMethod, newBindings, syntax);
-    PValue result = emitter.emitPValue({callee, getExpr()}, EC_InvalidContext,
-                                       functionType);
+    PValue result =
+        emitter.emitPValue({callee, getExpr()}, EC_Trait, functionType);
     return {result, selectedMethod};
   }
 
