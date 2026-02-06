@@ -31,7 +31,6 @@ from benchmark import (
 from bit import log2_floor
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from kernels.causal_conv1d import CausalConv1Dcpu, CausalConv1Dgpu
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
@@ -300,102 +299,6 @@ def tensor_core_mma():
     print(bench)
 
 
-def run_conv1d[impl: StaticString]():
-    comptime nBatches = 128
-    comptime nChannels = 8
-    comptime sequenceLength = 1024 * 128
-    comptime kWidth = 4
-    comptime kNThreads = 128
-    comptime kNElts = 4
-
-    comptime dtype = DType.bfloat16
-
-    comptime x_spec = StaticTensorSpec[dtype, 3](
-        DimList(nBatches, nChannels, sequenceLength)
-    )
-    comptime w_spec = StaticTensorSpec[dtype, 2](DimList(nChannels, kWidth))
-    comptime b_spec = StaticTensorSpec[dtype, 1](DimList(nChannels))
-    comptime xx2Dshape = StaticTensorSpec[dtype, 2](
-        DimList(nBatches * nChannels, sequenceLength)
-    )
-    runOnCPU = False
-
-    var bench = Bench(BenchConfig(max_iters=10))
-    var flops = ThroughputMeasure(
-        BenchMetric.flops,
-        nBatches * nChannels * sequenceLength * kNElts * kWidth * 2,
-    )
-    var elements = ThroughputMeasure(
-        BenchMetric.elements, nBatches * nChannels * sequenceLength
-    )
-    if runOnCPU:
-        var cpu_ctx = DeviceContext(api="cpu")
-
-        var x = Tensor[
-            Input,
-            StaticTensorSpec[dtype, 3](
-                DimList(nBatches, nChannels, sequenceLength)
-            ),
-        ](cpu_ctx).rand()
-        var w = Tensor[Input, w_spec](cpu_ctx).rand()
-        var b = Tensor[Input, b_spec](cpu_ctx).rand()
-        var o = Tensor[Output, x_spec](cpu_ctx).rand()
-        var xx2Do = Tensor[Output, xx2Dshape](cpu_ctx).rand()
-
-        @parameter
-        @always_inline
-        fn bench_cpu(mut bencher: Bencher) raises:
-            @parameter
-            @always_inline
-            fn run_bench() raises:
-                CausalConv1Dcpu.execute[
-                    kNThreads, kNElts, kWidth, target="cpu"
-                ](o.slice, xx2Do.slice, x.slice, w.slice, b.slice, cpu_ctx)
-
-            bencher.iter[run_bench]()
-
-        bench.bench_function[bench_cpu](
-            BenchId("cpu", "naive"), [flops, elements]
-        )
-
-    @parameter
-    if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-        var gpu_ctx = DeviceContext()
-        var x_dev = Tensor[Input, x_spec](gpu_ctx).rand()
-        var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
-        var w_dev = Tensor[Input, w_spec](gpu_ctx).rand()
-        var o_dev = Tensor[Output, x_spec](gpu_ctx).rand()
-        var xx2Do = Tensor[Output, xx2Dshape](gpu_ctx).rand()
-
-        @parameter
-        def bench_conv1d_kernel[impl: StaticString]():
-            @parameter
-            @always_inline
-            fn bench_gpu(mut bench: Bencher) raises:
-                @parameter
-                @always_inline
-                fn kernel_launch(gpu_ctx: DeviceContext) raises:
-                    CausalConv1Dgpu.execute[
-                        kNThreads, kNElts, kWidth, target="gpu"
-                    ](
-                        o_dev.slice,
-                        xx2Do.slice,
-                        x_dev.slice,
-                        w_dev.slice,
-                        b_dev.slice,
-                        gpu_ctx,
-                    )
-
-                bench.iter_custom[kernel_launch](gpu_ctx)
-
-            bench.bench_function[bench_gpu](
-                BenchId(impl, String(impl)), [flops, elements]
-            )
-
-        bench_conv1d_kernel[impl]()
-        print(bench)
-
-
 def main():
     var args = argv()
     if len(args) == 1:
@@ -403,8 +306,6 @@ def main():
         matmul()
     else:
         for arg in argv():
-            if arg == "--conv1d":
-                run_conv1d["conv1d"]()
             if arg == "--top-k":
                 top_k()
             if arg == "--matmul":
