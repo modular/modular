@@ -353,6 +353,18 @@ def whitespace(
             # Space after ref[origin] convention (e.g., ref[x] self)
             if prev.type == syms.convention:
                 return SPACE
+            if prev.type == token.NAME and t == token.NAME:
+                # Two consecutive NAME tokens without a comma or convention
+                # keyword in between (e.g., `fn foo(aaa self)`) — stripping
+                # the space would merge them into a single token.  Refuse to
+                # format rather than silently corrupting the code.
+                from mblack.parsing import InvalidInput
+
+                assert isinstance(prev, Leaf)
+                raise InvalidInput(
+                    f"Cannot format: unknown argument convention"
+                    f" '{prev.value}' before '{v}'"
+                )
             return NO
 
     elif p.type in TYPED_NAMES:
