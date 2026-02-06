@@ -165,6 +165,9 @@ public:
   void setDefaultCPU();
 };
 
+// Return true if target triple is `hexagon`
+bool isHexagonTriple(const llvm::Triple &triple);
+
 // Return true if target triple is `air64-`
 bool isMetalTriple(const llvm::Triple &triple);
 
