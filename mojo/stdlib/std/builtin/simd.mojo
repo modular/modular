@@ -1922,7 +1922,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         return Self(mlir_value=__mlir_op.`pop.abs`(self._mlir_value))
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     fn __round__(self) -> Self:
         """Performs elementwise rounding on the elements of a SIMD vector.
 
@@ -1931,14 +1931,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The elementwise rounded value of this SIMD vector.
         """
-
-        @parameter
-        if Self.dtype.is_integral() or Self.dtype == DType.bool:
-            return self
-
-        return llvm_intrinsic["llvm.roundeven", Self, has_side_effect=False](
-            self
-        )
+        return Self(mlir_value=__mlir_op.`pop.round`(self._mlir_value))
 
     @always_inline("nodebug")
     fn __round__(self, ndigits: Int) -> Self:
