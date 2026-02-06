@@ -44,15 +44,19 @@ from .pipeline import ProducerConsumerPipeline
 struct WarpRole(TrivialRegisterType):
     """Warp role identifiers for SM100 warp-specialized kernel.
 
-    Warp assignment (7 warps total = 224 threads):
+    Warp assignment (8 warps total = 256 threads):
     - Epilogue: warp IDs 0-3 (4 warps, 128 threads)
     - Scheduler: warp ID 4 (1 warp, 32 threads)
     - MainLoad: warp ID 5 (1 warp, 32 threads)
     - Mma: warp ID 6 (1 warp, 32 threads)
+    - EpilogueLoad: warp ID 7 (1 warp, 32 threads) - loads source C for residual
+
+    Note: When epilogue load is not needed (no residual), warp 7 exits early.
     """
 
     var _role: Int32
 
+    comptime EpilogueLoad = Self(7)
     comptime Mma = Self(6)
     comptime MainLoad = Self(5)
     comptime Scheduler = Self(4)
@@ -93,6 +97,12 @@ struct WarpRole(TrivialRegisterType):
     @always_inline
     fn is_scheduler() -> Bool:
         return Self.Scheduler == get_warp_id()
+
+    @staticmethod
+    @always_inline
+    fn is_epilogue_load() -> Bool:
+        """Check if current warp is the epilogue load warp (loads source C)."""
+        return Self.EpilogueLoad == get_warp_id()
 
 
 # =============================================================================

@@ -23,7 +23,7 @@ The kernel uses implicit GEMM to compute convolution:
 - K = in_channels * filter_h * filter_w (reduction)
 
 The implementation reuses matmul infrastructure:
-- 7-warp specialization (scheduler, load, MMA, epilogue)
+- 8-warp specialization (scheduler, load, MMA, epilogue load, epilogue)
 - TMA-based tile loading with im2col addressing
 - TMEM accumulators
 - Producer-consumer pipelining
@@ -39,24 +39,18 @@ from math import ceildiv
 
 from sys import align_of, size_of
 
-from gpu import WARP_SIZE, barrier, warp_id
+from gpu import WARP_SIZE, barrier
 from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
-    elect_one_sync_with_mask,
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.int_tuple import IntTuple
-from layout.swizzle import Swizzle
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -64,17 +58,10 @@ from layout.tma_async import (
 )
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.structuring import (
-    SMemPtr,
-    SMemTile,
-    SMemTileIter,
-    SMemTileArray,
-    SMemArray,
-)
+from linalg.structuring import SMemTileArray
 
 # Import shared components from matmul structured kernels
 from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
@@ -123,6 +110,7 @@ from linalg.utils import elementwise_compute_lambda_type
 from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv_smem import Conv2dSmem
 from .conv_tile_loader import TileLoaderTMAIm2col
+from .epilogue_load_pipeline import EpiLoadPipeline, LoadOrderBarrier
 
 
 # =============================================================================
@@ -151,6 +139,9 @@ struct Conv2dFpropKernel[
         elementwise_compute_lambda_type
     ] = None,
     register_based_epilogue: Bool = True,
+    # Source C layout for residual operations (defaults to same as output)
+    src_layout: Layout = out_layout,
+    src_desc_layout: Layout = out_desc_layout,
 ]:
     """SM100 Conv2D forward propagation kernel.
 
@@ -179,6 +170,8 @@ struct Conv2dFpropKernel[
         elementwise_compute_lambda_fn: Optional epilogue lambda for fusion
             (bias add, activation functions, residual connections).
         register_based_epilogue: Whether to apply the lambda in registers.
+        src_layout: Global memory layout for source C (residual input).
+        src_desc_layout: TMA descriptor layout for source C.
     """
 
     # ========== Derived Constants ==========
@@ -201,27 +194,30 @@ struct Conv2dFpropKernel[
     comptime CLUSTER_SIZE = Self.CLUSTER_M * Self.CLUSTER_N
 
     # ========== Thread/Warp Organization ==========
-    # Warp-specialized kernel structure (7 warps = 224 threads):
+    # Warp-specialized kernel structure (8 warps = 256 threads):
     # - Epilogue: 4 warps (warp IDs 0-3) - output writing
     # - Scheduler: 1 warp (warp ID 4) - work distribution
     # - MainLoad: 1 warp (warp ID 5) - TMA loads for activation/filter tiles
     # - MMA: 1 warp (warp ID 6) - tensor core operations
+    # - EpilogueLoad: 1 warp (warp ID 7) - TMA loads for source C (residual)
     #
-    # This matches matmul's warp layout for WarpRole compatibility.
-    # For conv2d with epilogue lambda (bias add), loads happen directly in
-    # the epilogue lambda via captured tensor pointers, not through TMA.
+    # This matches CUTLASS's warp layout. When residual is not enabled,
+    # the EpilogueLoad warp participates in barrier synchronization but
+    # performs no actual work.
     comptime num_output_warps = 4
     comptime SCHEDULER_THREADS = WARP_SIZE
     comptime TMA_LOAD_THREADS = WARP_SIZE
     comptime MMA_THREADS = WARP_SIZE
+    comptime EPILOGUE_LOAD_THREADS = WARP_SIZE
     comptime EPILOGUE_THREADS = Self.num_output_warps * WARP_SIZE
 
     comptime NUM_THREADS = (
         Self.SCHEDULER_THREADS
         + Self.TMA_LOAD_THREADS
         + Self.MMA_THREADS
+        + Self.EPILOGUE_LOAD_THREADS
         + Self.EPILOGUE_THREADS
-    )
+    )  # = 256 threads
 
     # ========== Pipeline Configuration ==========
     comptime num_pipeline_stages = Self.config.num_pipeline_stages
@@ -240,7 +236,10 @@ struct Conv2dFpropKernel[
     comptime clc_producer_arv_count = 1
     # All warps except scheduler participate in CLC pipeline as consumers
     comptime clc_consumer_arv_count = Self.SCHEDULER_THREADS + Self.CLUSTER_SIZE * (
-        Self.TMA_LOAD_THREADS + Self.MMA_THREADS + Self.EPILOGUE_THREADS
+        Self.TMA_LOAD_THREADS
+        + Self.MMA_THREADS
+        + Self.EPILOGUE_LOAD_THREADS
+        + Self.EPILOGUE_THREADS
     )
     comptime clc_throttle_producer_arv_count = Self.TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = Self.SCHEDULER_THREADS
@@ -302,6 +301,8 @@ struct Conv2dFpropKernel[
         cta_group = Self.cta_group
     ]
     comptime FilterTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    # Source C tile loader for residual (same structure as output)
+    comptime SrcTileLoaderType = TileLoaderTMA[cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[
@@ -313,6 +314,10 @@ struct Conv2dFpropKernel[
     comptime input_expected_bytes = Self.cta_group * (
         Self.act_expected_bytes + Self.filter_expected_bytes
     ) * Self.config.k_group_size
+    # Source C TMA expected bytes (one output tile)
+    comptime src_expected_bytes = Self.OutputM * Self.OutputN * size_of[
+        Self.out_type
+    ]()
 
     # TMA descriptor sizes
     comptime act_tma_load_size = Self.act_desc_layout.size()
@@ -333,6 +338,17 @@ struct Conv2dFpropKernel[
         Self.stage_stride_cols,
         Self.cta_group,
     ]
+
+    # ========== Epilogue Load Pipeline Type ==========
+    # For source C loading (residual add: D = Conv + beta*C)
+    comptime num_epi_load_stages = Self.SmemType.num_epi_load_stages
+    comptime EpiLoadPipelineType = EpiLoadPipeline[Self.num_epi_load_stages]
+
+    # Arrive counts for epilogue load pipeline
+    comptime epi_load_producer_arv_count: Int32 = 1  # TMA transaction
+    comptime epi_load_consumer_arv_count: Int32 = Int32(
+        Self.EPILOGUE_THREADS
+    )  # 128 epilogue threads
 
     # Warp synchronization
     comptime MmaEpilogueSync = WarpGroupBarrier[
@@ -374,6 +390,19 @@ struct Conv2dFpropKernel[
         # Epilogue lambda for fusion (bias, activation, residual add)
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
+    ]
+
+    # ========== Source C Tile Type (for write_with_residual) ==========
+    # Matches TileWriter.CTileArray but constructed directly to avoid
+    # accessing comptime members through unresolvable generic types.
+    comptime c_smem_layout = Layout.row_major(
+        Self.SmemType.OutputM, Self.SmemType.OutputN
+    )
+    comptime SrcCTileArray = SMemTileArray[
+        Self.out_type,
+        Self.c_smem_layout,
+        Self.SmemType.num_output_stages,
+        alignment=128,
     ]
 
     # ========== Kernel Context ==========
@@ -444,6 +473,8 @@ struct Conv2dFpropKernel[
         clc_full: Self.SmemType.ClcBarriers,
         clc_empty: Self.SmemType.ClcBarriers,
         tmem_dealloc: Self.SmemType.TmemDealloc,
+        epi_load_barriers: Self.SmemType.EpiLoadBarriers,
+        load_order_barrier: Self.SmemType.LoadOrderBarriers,
     ):
         """Initialize barriers and prefetch TMA descriptors."""
         if ctx.elect_one_warp and ctx.elect_one_thread:
@@ -483,6 +514,19 @@ struct Conv2dFpropKernel[
             for i in range(Self.config.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
+
+            # Initialize epilogue load pipeline barriers (for residual C loading)
+            var epi_load_pipeline = Self.EpiLoadPipelineType(
+                epi_load_barriers.ptr
+            )
+            epi_load_pipeline.init_barriers(
+                Self.epi_load_producer_arv_count,
+                Self.epi_load_consumer_arv_count,
+            )
+
+            # Initialize load order barrier (MainLoad → EpilogueLoad coordination)
+            var load_order = LoadOrderBarrier(load_order_barrier.ptr)
+            load_order.init(arrive_count=1)
 
         fence_mbarrier_init()
         cluster_sync()
@@ -599,15 +643,9 @@ struct Conv2dFpropKernel[
             Self.out_type, Self.out_layout, Self.out_desc_layout
         ],
         cluster_dim: StaticTuple[Int32, 3],
-        # GEMM dimensions: M = batch*H*W, N = out_channels, K = C*R*S
         mnk: StaticTuple[UInt32, 3],
     ):
-        """Main kernel entry point for Conv2D fprop with implicit im2col.
-
-        This variant uses TMATensorTileIm2col for activation, which performs
-        hardware im2col transformation during TMA loads. The TMA descriptor
-        encodes the convolution geometry (padding, stride, dilation) and
-        transforms GEMM coordinates to physical tensor addresses on-the-fly.
+        """Kernel entry point for Conv2D fprop (no residual).
 
         Args:
             act_tma_op: Im2col TMA descriptor for activation.
@@ -615,6 +653,116 @@ struct Conv2dFpropKernel[
             out_tma_op: TMA descriptor for output.
             cluster_dim: Cluster dimensions.
             mnk: GEMM dimensions (M, N, K).
+        """
+        Self._run_impl[
+            has_residual=False,
+            _src_layout = Self.out_layout,
+            _src_desc_layout = Self.out_desc_layout,
+        ](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            out_tma_op,  # Unused dummy for src_tma_op
+            cluster_dim,
+            mnk,
+            Float32(0.0),
+        )
+
+    @staticmethod
+    @always_inline
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
+    fn run_with_residual(
+        act_tma_op: TMATensorTileIm2col[
+            Self.act_type, Self.act_layout, Self.act_desc_layout
+        ],
+        filter_tma_op: TMATensorTile[
+            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
+        ],
+        out_tma_op: TMATensorTile[
+            Self.out_type, Self.out_layout, Self.out_desc_layout
+        ],
+        src_tma_op: TMATensorTile[
+            Self.out_type, Self.src_layout, Self.src_desc_layout
+        ],
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        beta: Float32,
+    ):
+        """Kernel entry point for Conv2D fprop with residual (D = Conv + beta*C).
+
+        Args:
+            act_tma_op: Im2col TMA descriptor for activation.
+            filter_tma_op: TMA descriptor for filter.
+            out_tma_op: TMA descriptor for output D.
+            src_tma_op: TMA descriptor for source C (residual input).
+            cluster_dim: Cluster dimensions.
+            mnk: GEMM dimensions (M, N, K).
+            beta: Residual scale factor.
+        """
+        Self._run_impl[
+            has_residual=True,
+            _src_layout = Self.src_layout,
+            _src_desc_layout = Self.src_desc_layout,
+        ](
+            act_tma_op,
+            filter_tma_op,
+            out_tma_op,
+            src_tma_op,
+            cluster_dim,
+            mnk,
+            beta,
+        )
+
+    # ========== Unified Kernel Implementation ==========
+
+    @staticmethod
+    @always_inline
+    fn _run_impl[
+        has_residual: Bool,
+        _src_layout: Layout = Self.src_layout,
+        _src_desc_layout: Layout = Self.src_desc_layout,
+    ](
+        act_tma_op: TMATensorTileIm2col[
+            Self.act_type, Self.act_layout, Self.act_desc_layout
+        ],
+        filter_tma_op: TMATensorTile[
+            Self.filter_type, Self.filter_layout, Self.filter_desc_layout
+        ],
+        out_tma_op: TMATensorTile[
+            Self.out_type, Self.out_layout, Self.out_desc_layout
+        ],
+        src_tma_op: TMATensorTile[Self.out_type, _src_layout, _src_desc_layout],
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        beta: Float32,
+    ):
+        """Unified Conv2D fprop implementation with optional residual.
+
+        When has_residual is False, the epilogue load warp is a no-op and
+        the epilogue uses standard write. When True, the epilogue load warp
+        pre-fetches source C via TMA and the epilogue applies D = Conv + beta*C
+        in registers.
+
+        Parameters:
+            has_residual: Whether to load source C and apply residual add.
+            _src_layout: Source C global memory layout (internal, set by
+                entry points).
+            _src_desc_layout: Source C TMA descriptor layout (internal, set
+                by entry points).
+
+        Args:
+            act_tma_op: Im2col TMA descriptor for activation.
+            filter_tma_op: TMA descriptor for filter.
+            out_tma_op: TMA descriptor for output.
+            src_tma_op: TMA descriptor for source C (only used when
+                has_residual is True).
+            cluster_dim: Cluster dimensions.
+            mnk: GEMM dimensions (M, N, K).
+            beta: Residual scale factor (only used when has_residual is True).
         """
         # Access shared memory
         ref smem = external_memory[
@@ -646,6 +794,16 @@ struct Conv2dFpropKernel[
             smem.clc_full(),
             smem.clc_empty(),
             smem.tmem_dealloc(),
+            smem.epi_load_barriers(),
+            smem.get_load_order_barrier(),
+        )
+
+        # Create epilogue load pipeline and load order barrier
+        var epi_load_pipeline = Self.EpiLoadPipelineType(
+            smem.epi_load_barriers().ptr
+        )
+        var load_order_barrier = LoadOrderBarrier(
+            smem.get_load_order_barrier().ptr
         )
 
         var mma_op = Self.MmaOp()
@@ -661,7 +819,7 @@ struct Conv2dFpropKernel[
 
         var work_iter = scheduler.work_iterator()
 
-        # Create tile loaders - use im2col loader for activation
+        # Create tile loaders
         var act_loader = Self.ActTileLoaderTypeIm2col(
             Pointer(to=act_tma_op), ctx.a_multicast_mask
         )
@@ -679,7 +837,38 @@ struct Conv2dFpropKernel[
                     with work_iter.next() as current:
                         work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                        for i in range(0, num_iters, Self.config.k_group_size):
+                        # Prologue/steady-state split for LoadOrderBarrier
+                        var num_prologue = min(
+                            UInt32(Self.num_pipeline_stages),
+                            num_iters,
+                        )
+
+                        # PROLOGUE: Fill pipeline stages
+                        for i in range(
+                            0, num_prologue, Self.config.k_group_size
+                        ):
+                            with producer.acquire() as tiles:
+                                Self.load_input_tiles(
+                                    act_loader,
+                                    filter_loader,
+                                    tiles,
+                                    UInt32(i),
+                                    UInt(current.m),
+                                    UInt(current.n),
+                                    ctx.peer_cta_coord,
+                                    ctx.elect_one_cta,
+                                )
+
+                        # Signal LoadOrderBarrier after prologue
+                        if elect_one_sync():
+                            load_order_barrier.arrive_and_step()
+
+                        # STEADY-STATE: Continue with remaining iterations
+                        for i in range(
+                            num_prologue,
+                            num_iters,
+                            Self.config.k_group_size,
+                        ):
                             with producer.acquire() as tiles:
                                 Self.load_input_tiles(
                                     act_loader,
@@ -709,6 +898,34 @@ struct Conv2dFpropKernel[
                     sched_iter.signal_and_advance()
 
             sched_iter.drain()
+
+        if WarpRole.is_epilogue_load():
+            # Epilogue load warp: participates in work loop for CLC barrier
+            # counts. When has_residual is True, pre-fetches source C via TMA.
+            while work_iter.has_work():
+                with work_iter.next() as current:
+                    load_order_barrier.wait_and_step()
+
+                    @parameter
+                    if has_residual:
+                        # Produce C tile into SMEM via epi_load_pipeline
+                        epi_load_pipeline.wait_consumer()
+                        if elect_one_sync():
+                            var mbar = epi_load_pipeline.producer_mbar()
+                            mbar[0].expect_bytes(Int32(Self.src_expected_bytes))
+                            src_tma_op.async_copy[1](
+                                smem.src_tiles()[
+                                    Int(
+                                        epi_load_pipeline.pipeline.producer_stage()
+                                    )
+                                ],
+                                mbar[0],
+                                (
+                                    Int(current.m) * Self.OutputM,
+                                    Int(current.n) * Self.OutputN,
+                                ),
+                            )
+                        epi_load_pipeline.producer_step()
 
         if WarpRole.is_mma():
             var tmem = Self.Tmem.allocate(smem.tmem_addr())
@@ -750,7 +967,9 @@ struct Conv2dFpropKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.accum_barriers(), tmem, UInt16(ctx.mma_complete_mask)
+                    smem.accum_barriers(),
+                    tmem,
+                    UInt16(ctx.mma_complete_mask),
                 ),
                 Self.TmemDealloc(smem.tmem_dealloc()),
             )
@@ -761,10 +980,42 @@ struct Conv2dFpropKernel[
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with epi_ctx.output_pipeline.consumer() as output_stage:
-                            tile_writer.write(
-                                smem.out_tiles(),
-                                output_stage,
-                                (current.m, current.n),
-                                (mnk[0], mnk[1]),
-                                ctx.elect_one_warp,
-                            )
+
+                            @parameter
+                            if has_residual:
+                                # Wait for epilogue load warp to fill C tile
+                                epi_load_pipeline.wait_producer()
+                                var src_stage_idx = (
+                                    epi_load_pipeline.consumer_stage()
+                                )
+
+                                # CTileArray view over source C SMEM tiles
+                                var src_tiles = Self.SrcCTileArray(
+                                    smem.src_tiles().ptr
+                                )
+
+                                # D = lambda(accum) + beta*C
+                                tile_writer.write_with_residual(
+                                    smem.out_tiles(),
+                                    output_stage,
+                                    src_tiles,
+                                    src_stage_idx,
+                                    Scalar[Self.out_type](beta),
+                                    (current.m, current.n),
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
+                                )
+
+                                # Signal C stage consumed
+                                _ = epi_load_pipeline.pipeline.consumer_mbar(
+                                    src_stage_idx
+                                )[0].arrive()
+                                epi_load_pipeline.consumer_step()
+                            else:
+                                tile_writer.write(
+                                    smem.out_tiles(),
+                                    output_stage,
+                                    (current.m, current.n),
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
+                                )

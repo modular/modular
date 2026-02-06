@@ -32,8 +32,6 @@ from gpu.memory import AddressSpace
 from layout import Layout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
-from linalg.structuring import SMemTileArray, SMemArray
-
 # Import pipeline storage from matmul structured kernels
 from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage import (
     InputPipelineStorage,
@@ -42,6 +40,9 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline_storage impo
     TmemDeallocStorage,
     StandardTileStorage,
     OutputTileStorage,
+    SourceTileStorage,
+    EpiLoadPipelineStorage,
+    LoadOrderBarrierStorage,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
     StandardTilePayload,
@@ -139,14 +140,26 @@ struct Conv2dSmem[
         Self.num_output_stages,
     ]
 
+    # Source tile storage for residual operations (D = Conv + beta*C)
+    # Double-buffered to overlap C loading with MMA computation
+    comptime num_epi_load_stages: Int = 2
+    comptime SourceTiles = SourceTileStorage[
+        Self.out_type,  # Source C has same type as output D
+        Self.OutputM,
+        Self.OutputN,
+        Self.num_epi_load_stages,
+    ]
+
     # Re-export tile array types
     comptime ActTileArray = Self.InputTiles.ATileArray
     comptime FilterTileArray = Self.InputTiles.BTileArray
     comptime OutTileArray = Self.OutputTiles.CTileArray
+    comptime SrcTileArray = Self.SourceTiles.SrcTileArrayLT  # Source C tiles
 
     # ========== Storage Fields ==========
     var input_tiles: Self.InputTiles
     var output_tiles: Self.OutputTiles
+    var source_tiles: Self.SourceTiles
 
     # ========== Tile Accessors ==========
     @always_inline
@@ -163,6 +176,11 @@ struct Conv2dSmem[
     fn out_tiles(ref[AddressSpace.SHARED] self) -> Self.OutTileArray:
         """Get output tiles."""
         return self.output_tiles.c_tiles_tt()
+
+    @always_inline
+    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
+        """Get source C tiles (for residual operations)."""
+        return self.source_tiles.src_tiles()
 
     # ========== Pipeline Storage ==========
     comptime InputPipeline = InputPipelineStorage[
@@ -183,10 +201,20 @@ struct Conv2dSmem[
     comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
     comptime TmemDeallocPipeline = TmemDeallocStorage
 
+    # Epilogue load pipeline (EpilogueLoad warp → Epilogue warps)
+    # Synchronizes source C loading with epilogue consumption
+    comptime EpiLoadPipeline = EpiLoadPipelineStorage[Self.num_epi_load_stages]
+
+    # Load order barrier (MainLoad warp → EpilogueLoad warp)
+    # Ensures epilogue loads don't start before mainloop prologue completes
+    comptime LoadOrderBarrier = LoadOrderBarrierStorage
+
     var input_pipeline: Self.InputPipeline
     var output_pipeline: Self.OutputPipeline
     var clc_pipeline: Self.ClcPipeline
     var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
+    var epi_load_pipeline: Self.EpiLoadPipeline
+    var load_order_barrier: Self.LoadOrderBarrier
 
     # ========== Barrier Type Aliases ==========
     comptime InputBarriers = Self.InputPipeline.BarrierArray
@@ -196,6 +224,9 @@ struct Conv2dSmem[
     comptime ClcResponse = Self.ClcPipeline.ResponseArray
     comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
     comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
+    # Epilogue load pipeline barriers
+    comptime EpiLoadBarriers = Self.EpiLoadPipeline.BarrierArray
+    comptime LoadOrderBarriers = Self.LoadOrderBarrier.BarrierArray
 
     # ========== Barrier Accessors ==========
     @always_inline
@@ -229,3 +260,24 @@ struct Conv2dSmem[
     @always_inline
     fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         return self.tmem_dealloc_pipeline.addr()
+
+    # ========== Epilogue Load Pipeline Accessors ==========
+    @always_inline
+    fn epi_load_barriers(ref[AddressSpace.SHARED] self) -> Self.EpiLoadBarriers:
+        """Get epilogue load pipeline barriers.
+
+        Used for synchronization between EpilogueLoad warp (producer)
+        and Epilogue warps (consumers) for source C tensor loading.
+        """
+        return self.epi_load_pipeline.barriers.barriers()
+
+    @always_inline
+    fn get_load_order_barrier(
+        ref[AddressSpace.SHARED] self,
+    ) -> Self.LoadOrderBarriers:
+        """Get load order barrier.
+
+        Used to coordinate MainLoad warp with EpilogueLoad warp, ensuring
+        epilogue loads don't start before mainloop prologue completes.
+        """
+        return self.load_order_barrier.barrier()

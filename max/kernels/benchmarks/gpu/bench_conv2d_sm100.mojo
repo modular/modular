@@ -35,7 +35,10 @@ from layout import Layout, LayoutTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from nn.conv_sm100.conv2d import conv2d_fprop
+from nn.conv_sm100.conv2d import (
+    conv2d_fprop,
+    conv2d_fprop_with_residual,
+)
 from nn.conv_sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
@@ -577,6 +580,192 @@ fn bench_all_configs[
     _ = output_cudnn_dev^
 
 
+fn bench_residual[
+    dtype: DType,
+    batch: Int,
+    in_height: Int,
+    in_width: Int,
+    in_channels: Int,
+    out_channels: Int,
+    filter_h: Int,
+    filter_w: Int,
+    pad_h: Int,
+    pad_w: Int,
+](ctx: DeviceContext, num_iters: Int = 100, warmup_iters: Int = 10) raises:
+    """Benchmark conv2d vs conv2d+residual (fused) to measure fusion overhead.
+    """
+
+    comptime out_height = in_height + 2 * pad_h - filter_h + 1
+    comptime out_width = in_width + 2 * pad_w - filter_w + 1
+    comptime input_size = batch * in_height * in_width * in_channels
+    comptime filter_size = out_channels * filter_h * filter_w * in_channels
+    comptime output_size = batch * out_height * out_width * out_channels
+
+    var flops = compute_conv_flops(
+        batch,
+        out_height,
+        out_width,
+        out_channels,
+        in_channels,
+        filter_h,
+        filter_w,
+    )
+
+    var problem = Conv2dProblemShape(
+        batch=batch,
+        in_height=in_height,
+        in_width=in_width,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        filter_h=filter_h,
+        filter_w=filter_w,
+        pad_h=pad_h,
+        pad_w=pad_w,
+    )
+
+    print(
+        "Conv2D+Residual: ",
+        in_height,
+        "x",
+        in_width,
+        "x",
+        in_channels,
+        " -> ",
+        out_channels,
+        "ch (",
+        filter_h,
+        "x",
+        filter_w,
+        " filter)  GFLOPS=",
+        Float64(flops) / 1e9,
+        sep="",
+    )
+
+    # Allocate
+    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var source_host_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    rand(input_host_ptr, input_size)
+    rand(filter_host_ptr, filter_size)
+    rand(source_host_ptr, output_size)
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_res_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var source_dev = ctx.enqueue_create_buffer[dtype](output_size)
+
+    ctx.enqueue_copy(input_dev, input_host_ptr)
+    ctx.enqueue_copy(filter_dev, filter_host_ptr)
+    ctx.enqueue_copy(source_dev, source_host_ptr)
+    ctx.synchronize()
+
+    var input_nd = NDBuffer[dtype, 4](
+        input_dev.unsafe_ptr(), DimList(batch, in_height, in_width, in_channels)
+    )
+    var filter_nd = NDBuffer[dtype, 4](
+        filter_dev.unsafe_ptr(),
+        DimList(out_channels, filter_h, filter_w, in_channels),
+    )
+    var output_nd = NDBuffer[dtype, 4](
+        output_dev.unsafe_ptr(),
+        DimList(batch, out_height, out_width, out_channels),
+    )
+    var output_res_nd = NDBuffer[dtype, 4](
+        output_res_dev.unsafe_ptr(),
+        DimList(batch, out_height, out_width, out_channels),
+    )
+    var source_nd = NDBuffer[dtype, 4](
+        source_dev.unsafe_ptr(),
+        DimList(batch, out_height, out_width, out_channels),
+    )
+
+    comptime config_1sm = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
+
+    # Warmup
+    for _ in range(warmup_iters):
+        conv2d_fprop[config=config_1sm](
+            output_nd, input_nd, filter_nd, problem, ctx
+        )
+        conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
+            output_res_nd,
+            input_nd,
+            filter_nd,
+            source_nd,
+            Float32(1.0),
+            problem,
+            ctx,
+        )
+    ctx.synchronize()
+
+    # Benchmark conv2d only
+    @parameter
+    @__copy_capture(input_nd, filter_nd, output_nd)
+    fn kernel_conv() raises:
+        conv2d_fprop[config=config_1sm](
+            output_nd, input_nd, filter_nd, problem, ctx
+        )
+
+    var time_conv_ns = ctx.execution_time[kernel_conv](num_iters)
+    var time_conv_ms = Float64(time_conv_ns) / 1e6 / num_iters
+    var tflops_conv = Float64(flops) / (time_conv_ms / 1000) / 1e12
+
+    # Benchmark conv2d + fused residual
+    @parameter
+    @__copy_capture(input_nd, filter_nd, output_res_nd, source_nd)
+    fn kernel_residual() raises:
+        conv2d_fprop_with_residual[config=config_1sm, has_residual=True](
+            output_res_nd,
+            input_nd,
+            filter_nd,
+            source_nd,
+            Float32(1.0),
+            problem,
+            ctx,
+        )
+
+    var time_res_ns = ctx.execution_time[kernel_residual](num_iters)
+    var time_res_ms = Float64(time_res_ns) / 1e6 / num_iters
+    var tflops_res = Float64(flops) / (time_res_ms / 1000) / 1e12
+
+    # Report
+    var overhead_pct = (time_res_ms - time_conv_ms) / time_conv_ms * 100
+    print(
+        "  Conv only:          ",
+        time_conv_ms,
+        " ms  (",
+        tflops_conv,
+        " TFLOPS)",
+        sep="",
+    )
+    print(
+        "  Conv+Residual fused:",
+        " ",
+        time_res_ms,
+        " ms  (",
+        tflops_res,
+        " TFLOPS)",
+        sep="",
+    )
+    print(
+        "  Fusion overhead:     ",
+        overhead_pct,
+        "%",
+        sep="",
+    )
+    print()
+
+    # Cleanup
+    input_host_ptr.free()
+    filter_host_ptr.free()
+    source_host_ptr.free()
+    _ = input_dev^
+    _ = filter_dev^
+    _ = output_dev^
+    _ = output_res_dev^
+    _ = source_dev^
+
+
 def main():
     print("=" * 70)
     print("SM100 CONV2D BENCHMARK: 1-SM vs 2-SM vs cuDNN")
@@ -638,6 +827,71 @@ def main():
         # L4: 128x128, 128→128
         print("--- L4: 128x128, 128→128 ch, 3x3 ---")
         bench_all_configs[
+            DType.bfloat16,
+            batch=1,
+            in_height=128,
+            in_width=128,
+            in_channels=128,
+            out_channels=128,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        ](ctx, num_iters=50)
+
+        print("=" * 70)
+        print("RESIDUAL FUSION BENCHMARK")
+        print("=" * 70)
+        print()
+        print("Comparing conv2d vs conv2d+residual (fused).")
+        print("Measures the overhead of the fused epilogue load warp.")
+        print()
+
+        # Residual benchmarks (1-SM config)
+        print("--- 16x16, 128→128 ch, 3x3 ---")
+        bench_residual[
+            DType.bfloat16,
+            batch=1,
+            in_height=16,
+            in_width=16,
+            in_channels=128,
+            out_channels=128,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        ](ctx, num_iters=100)
+
+        print("--- 32x32, 256→256 ch, 3x3 ---")
+        bench_residual[
+            DType.bfloat16,
+            batch=1,
+            in_height=32,
+            in_width=32,
+            in_channels=256,
+            out_channels=256,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        ](ctx, num_iters=100)
+
+        print("--- 64x64, 256→128 ch, 3x3 ---")
+        bench_residual[
+            DType.bfloat16,
+            batch=1,
+            in_height=64,
+            in_width=64,
+            in_channels=256,
+            out_channels=128,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        ](ctx, num_iters=100)
+
+        print("--- 128x128, 128→128 ch, 3x3 ---")
+        bench_residual[
             DType.bfloat16,
             batch=1,
             in_height=128,

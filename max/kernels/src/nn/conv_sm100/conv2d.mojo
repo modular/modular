@@ -334,6 +334,269 @@ fn conv2d_fprop[
 
 
 # =============================================================================
+# conv2d_fprop_with_residual - Conv2D with optional residual add
+# =============================================================================
+
+
+fn conv2d_fprop_with_residual[
+    act_type: DType,
+    filter_type: DType,
+    out_type: DType,
+    *,
+    config: Conv2dConfig[act_type, filter_type, out_type] = Conv2dConfig[
+        act_type, filter_type, out_type
+    ].default_bf16(),
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    register_based_epilogue: Bool = True,
+    has_residual: Bool = False,
+](
+    output: NDBuffer[out_type, 4],  # NHWC - D = Conv(A,B) + beta*C
+    activation: NDBuffer[act_type, 4],  # NHWC - A
+    filter: NDBuffer[filter_type, 4],  # KRSC - B
+    source: NDBuffer[out_type, 4],  # NHWC - C (residual input)
+    beta: Float32,  # Residual scale factor
+    problem: Conv2dProblemShape,
+    ctx: DeviceContext,
+) raises:
+    """Launch Conv2D fprop with residual add.
+
+    Computes D = Conv(A,B) + beta*C. This function extends conv2d_fprop with
+    residual add support. The epilogue load warp pre-fetches source tensor C
+    via TMA, overlapping with MMA computation for better performance.
+
+    The residual add is applied after the optional epilogue lambda:
+        D = lambda(Conv(A,B)) + beta * C
+
+    This supports common patterns like:
+    - Skip connections: D = Conv(A,B) + C (beta=1.0)
+    - Residual scaling: D = Conv(A,B) + 0.5*C (beta=0.5)
+    - Fused residual+activation: D = ReLU(Conv(A,B)) + C
+
+    Parameters:
+        act_type: Data type of the input activation tensor.
+        filter_type: Data type of the filter weights tensor.
+        out_type: Data type of the output tensor.
+        config: Kernel configuration (tile sizes, pipeline stages, etc.).
+        elementwise_compute_lambda_fn: Optional element-wise lambda function
+            for epilogue fusion (bias add, activation). Applied before residual.
+        register_based_epilogue: If True, apply lambda in registers (faster).
+        has_residual: If True, apply residual add. If False, source is ignored.
+
+    Args:
+        output: Output tensor [N, H_out, W_out, C_out] in NHWC layout (D).
+        activation: Input activation [N, H, W, C] in NHWC layout (A).
+        filter: Filter weights [K, R, S, C] in KRSC layout (B).
+        source: Source tensor [N, H_out, W_out, C_out] for residual (C).
+        beta: Residual scale factor. If 0.0, no residual is applied.
+        problem: Convolution problem shape specification.
+        ctx: Device context for kernel launch.
+
+    Raises:
+        Error if kernel launch fails, constraints are violated, or source
+        tensor shape doesn't match output shape.
+
+    Note:
+        The epilogue load warp (warp ID 7) handles C loading when residual is
+        enabled. When has_residual is False or beta is 0, this warp exits early
+        and the kernel behaves identically to conv2d_fprop.
+    """
+
+    # If no residual requested or beta is 0, fall back to standard conv2d
+    @parameter
+    if not has_residual:
+        conv2d_fprop[
+            config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+        ](output, activation, filter, problem, ctx)
+        return
+
+    if beta == 0.0:
+        conv2d_fprop[
+            config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            register_based_epilogue=register_based_epilogue,
+        ](output, activation, filter, problem, ctx)
+        return
+
+    # Validate source tensor shape matches output
+    if source.dim[0]() != output.dim[0]():
+        raise Error("Source batch size must match output batch size")
+    if source.dim[1]() != output.dim[1]():
+        raise Error("Source height must match output height")
+    if source.dim[2]() != output.dim[2]():
+        raise Error("Source width must match output width")
+    if source.dim[3]() != output.dim[3]():
+        raise Error("Source channels must match output channels")
+
+    # ========== Compute GEMM dimensions ==========
+    comptime BM = config.block_tile_shape[0]
+    comptime BN = config.block_tile_shape[1]
+    comptime BK = config.block_tile_shape[2]
+    comptime MMA_M = config.mma_shape[0]
+    comptime cluster_shape = config.cluster_shape
+
+    var M = problem.gemm_m()  # batch * H_out * W_out
+    var N = problem.gemm_n()  # out_channels
+    var K = problem.gemm_k()  # in_channels * filter_h * filter_w
+
+    # Im2col corner offsets (same as conv2d_fprop)
+    var lower_corner_h = -problem.pad_h
+    var lower_corner_w = -problem.pad_w
+    var upper_corner_h = problem.pad_h - (problem.filter_h - 1)
+    var upper_corner_w = problem.pad_w - (problem.filter_w - 1)
+
+    # ========== Create TMA descriptors ==========
+    # Activation TMA with im2col (4D NHWC)
+    comptime act_4d_layout = Layout.row_major(1, 1, 1, 1)
+    var act_tensor = LayoutTensor[act_type, act_4d_layout](
+        activation.data,
+        RuntimeLayout[act_4d_layout](
+            Index(
+                activation.dim[0](),
+                activation.dim[1](),
+                activation.dim[2](),
+                activation.dim[3](),
+            ),
+            Index(
+                activation.stride[0](),
+                activation.stride[1](),
+                activation.stride[2](),
+                activation.stride[3](),
+            ),
+        ),
+    )
+
+    act_tma_op = create_tensor_tile_im2col[
+        act_type,
+        Index(BM // cluster_shape[1], BK),
+        swizzle_mode = config.a_swizzle,
+    ](
+        ctx,
+        act_tensor,
+        lower_corner_h,
+        lower_corner_w,
+        upper_corner_h,
+        upper_corner_w,
+        problem.out_height(),
+        problem.out_width(),
+        problem.filter_h,
+        problem.filter_w,
+    )
+
+    # Filter TMA (2D K-major)
+    comptime filter_2d_layout = Layout.row_major(1, 1)
+    var filter_tensor = LayoutTensor[filter_type, filter_2d_layout](
+        filter.data,
+        RuntimeLayout[filter_2d_layout](
+            Index(N, K),
+            Index(K, 1),
+        ),
+    )
+    filter_tma_op = create_tensor_tile[
+        Index(BN // (cluster_shape[0] // config.cta_group), BK),
+        swizzle_mode = config.b_swizzle,
+    ](ctx, filter_tensor)
+
+    # Output TMA (D) - 2D row-major
+    comptime out_2d_layout = Layout.row_major(1, 1)
+    var out_tensor = LayoutTensor[out_type, out_2d_layout](
+        output.data,
+        RuntimeLayout[out_2d_layout](
+            Index(M, N),
+            Index(N, 1),
+        ),
+    )
+    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
+    comptime c_tma_tile_shape = config.output_tile_shape if (
+        MMA_M == 256 or config.cta_group == 1
+    ) else c_tma_tile_shape_mma128
+
+    out_tma_op = create_tensor_tile[
+        c_tma_tile_shape,
+        swizzle_mode = config.c_swizzle,
+    ](ctx, out_tensor)
+
+    # Source TMA (C) - same shape and layout as output
+    var src_tensor = LayoutTensor[out_type, out_2d_layout](
+        source.data,
+        RuntimeLayout[out_2d_layout](
+            Index(M, N),
+            Index(N, 1),
+        ),
+    )
+    src_tma_op = create_tensor_tile[
+        c_tma_tile_shape,
+        swizzle_mode = config.c_swizzle,
+    ](ctx, src_tensor)
+
+    # ========== Instantiate kernel ==========
+    comptime SmemType = Conv2dSmem[
+        act_type, filter_type, out_type, config=config
+    ]
+    comptime smem_size = size_of[SmemType]()
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+
+    comptime conv_kernel = Conv2dFpropKernel[
+        act_type,
+        filter_type,
+        out_type,
+        act_tma_op.layout,
+        filter_tma_op.layout,
+        out_tma_op.layout,
+        act_tma_op.desc_layout,
+        filter_tma_op.desc_layout,
+        out_tma_op.desc_layout,
+        config,
+        cluster_shape = StaticTuple[Int32, 3](
+            Int32(config.cluster_shape[0]),
+            Int32(config.cluster_shape[1]),
+            Int32(config.cluster_shape[2]),
+        ),
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        register_based_epilogue=register_based_epilogue,
+        src_layout = src_tma_op.layout,
+        src_desc_layout = src_tma_op.desc_layout,
+    ]
+
+    comptime kernel = conv_kernel.run_with_residual
+
+    # Grid dimensions
+    var grid_dim = (
+        align_up(ceildiv(M, BM), cluster_shape[0]),
+        align_up(ceildiv(N, MMA_M), cluster_shape[1]),
+        1,
+    )
+
+    var cluster_dim = StaticTuple[Int32, 3](
+        Int32(ceildiv(grid_dim[0], cluster_shape[0])),
+        Int32(ceildiv(grid_dim[1], cluster_shape[1])),
+        1,
+    )
+
+    var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
+
+    # Launch kernel with residual
+    ctx.enqueue_function[kernel, kernel](
+        act_tma_op,
+        filter_tma_op,
+        out_tma_op,
+        src_tma_op,
+        cluster_dim,
+        mnk,
+        beta,
+        grid_dim=grid_dim,
+        block_dim=(conv_kernel.NUM_THREADS),
+        shared_mem_bytes=smem_size,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(b200_smem)
+        ),
+    )
+
+
+# =============================================================================
 # Helper: explicit im2col transformation
 # =============================================================================
 

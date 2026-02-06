@@ -43,6 +43,7 @@ from random import rand
 from utils.index import IndexList
 from nn.conv_sm100.conv2d import (
     conv2d_fprop,
+    conv2d_fprop_with_residual,
     im2col,
 )
 from nn.conv_sm100.conv_config import (
@@ -282,6 +283,7 @@ fn test_conv2d_1sm[
     var K = problem.gemm_k()
 
     # Get 1-SM config (must be comptime for kernel parameters)
+    # The config uses the dtype template parameters, so it works for both BF16 and FP16
     comptime config = Conv2dConfig[
         act_type, filter_type, out_type
     ].default_bf16_1sm()
@@ -873,6 +875,242 @@ fn test_conv2d_bias_fusion[
     _ = im2col_dev^
 
 
+fn test_conv2d_residual_api[
+    dtype: DType,
+](
+    ctx: DeviceContext,
+    batch: Int,
+    in_h: Int,
+    in_w: Int,
+    in_c: Int,
+    out_c: Int,
+    filter_h: Int,
+    filter_w: Int,
+    pad_h: Int,
+    pad_w: Int,
+) raises:
+    """Test conv2d_fprop_with_residual API.
+
+    This tests the residual add: D = Conv(A,B) + beta*C
+
+    Tests:
+    1. has_residual=False should fall back to standard conv2d.
+    2. beta=0 should fall back to standard conv2d.
+    3. Full residual path: validates D = Conv(A,B) + beta*C against
+       cuBLAS GEMM reference with host-side residual add.
+    """
+    var problem = Conv2dProblemShape(
+        batch=batch,
+        in_height=in_h,
+        in_width=in_w,
+        in_channels=in_c,
+        out_channels=out_c,
+        filter_h=filter_h,
+        filter_w=filter_w,
+        pad_h=pad_h,
+        pad_w=pad_w,
+    )
+
+    var out_h = problem.out_height()
+    var out_w = problem.out_width()
+    var M = problem.gemm_m()
+    var N = problem.gemm_n()
+    var K = problem.gemm_k()
+
+    # Get 1-SM config
+    comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
+
+    print(
+        "[RESIDUAL API] batch=",
+        batch,
+        " in=(",
+        in_h,
+        "x",
+        in_w,
+        "x",
+        in_c,
+        ") filter=(",
+        filter_h,
+        "x",
+        filter_w,
+        ") out=(",
+        out_h,
+        "x",
+        out_w,
+        "x",
+        out_c,
+        ")",
+        sep="",
+    )
+
+    # Sizes
+    var act_size = batch * in_h * in_w * in_c
+    var filter_size = out_c * filter_h * filter_w * in_c
+    var out_size = batch * out_h * out_w * out_c
+
+    # Host allocations
+    var act_host_ptr = UnsafePointer[Scalar[dtype]].alloc(act_size)
+    var filter_host_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var out_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    var source_host_ptr = UnsafePointer[Scalar[dtype]].alloc(out_size)
+
+    # NDBuffers with dynamic dimensions
+    comptime static_act_shape = DimList(-1, -1, -1, -1)
+    comptime static_filter_shape = DimList(-1, -1, -1, -1)
+    comptime static_out_shape = DimList(-1, -1, -1, -1)
+    var dynamic_act_shape = DimList(batch, in_h, in_w, in_c)
+    var dynamic_filter_shape = DimList(out_c, filter_h, filter_w, in_c)
+    var dynamic_out_shape = DimList(batch, out_h, out_w, out_c)
+
+    var act_host = NDBuffer[dtype, 4, _, static_act_shape](
+        act_host_ptr, dynamic_act_shape
+    )
+
+    # Device allocations
+    var act_device = ctx.enqueue_create_buffer[dtype](act_size)
+    var act_device_nd = NDBuffer[dtype, 4, _, static_act_shape](
+        act_device.unsafe_ptr(), dynamic_act_shape
+    )
+    var filter_device = ctx.enqueue_create_buffer[dtype](filter_size)
+    var filter_device_nd = NDBuffer[dtype, 4, _, static_filter_shape](
+        filter_device.unsafe_ptr(), dynamic_filter_shape
+    )
+    var out_device = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+        out_device.unsafe_ptr(), dynamic_out_shape
+    )
+    var source_device = ctx.enqueue_create_buffer[dtype](out_size)
+    var source_device_nd = NDBuffer[dtype, 4, _, static_out_shape](
+        source_device.unsafe_ptr(), dynamic_out_shape
+    )
+
+    # Reference output device buffer
+    var out_device_ref = ctx.enqueue_create_buffer[dtype](out_size)
+
+    # Initialize with random data
+    rand(act_host.data, act_host.num_elements())
+    rand(filter_host_ptr, filter_size)
+    rand(source_host_ptr, out_size)
+
+    # Copy to device
+    ctx.enqueue_copy(act_device, act_host_ptr)
+    ctx.enqueue_copy(filter_device, filter_host_ptr)
+    ctx.enqueue_copy(source_device, source_host_ptr)
+
+    # Test 1: has_residual=False should fall back to standard conv2d
+    print("  Test 1: has_residual=False fallback...")
+    conv2d_fprop_with_residual[config=config, has_residual=False](
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,  # Ignored when has_residual=False
+        Float32(1.0),  # Beta (ignored)
+        problem,
+        ctx,
+    )
+
+    # Test 2: beta=0 should fall back to standard conv2d
+    print("  Test 2: beta=0 fallback...")
+    conv2d_fprop_with_residual[config=config, has_residual=True](
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,
+        Float32(0.0),  # Beta=0 means no residual
+        problem,
+        ctx,
+    )
+
+    # Test 3: source provided with beta!=0
+    # Full residual path: D = Conv(A,B) + beta*C
+    comptime test_beta = Float32(1.0)
+    print("  Test 3: source + beta (residual add)...")
+    conv2d_fprop_with_residual[config=config, has_residual=True](
+        out_device_nd,
+        act_device_nd,
+        filter_device_nd,
+        source_device_nd,
+        test_beta,  # Beta=1.0 for skip connection
+        problem,
+        ctx,
+    )
+
+    # Reference: compute Conv(A,B) via cuBLAS GEMM
+    var im2col_size = M * K
+    var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
+
+    var im2col_host_ptr = UnsafePointer[Scalar[dtype]].alloc(im2col_size)
+    var dynamic_im2col_shape = DimList(M, K)
+    var im2col_host = NDBuffer[dtype, 2](im2col_host_ptr, dynamic_im2col_shape)
+    im2col(im2col_host, act_host, problem)
+    ctx.enqueue_copy(im2col_device, im2col_host_ptr)
+
+    # Create 2D NDBuffers for cuBLAS reference
+    var dynamic_a_ref_shape = DimList(M, K)
+    var dynamic_b_ref_shape = DimList(N, K)
+    var dynamic_c_ref_shape = DimList(M, N)
+    var im2col_device_nd = NDBuffer[dtype, 2](
+        im2col_device.unsafe_ptr(), dynamic_a_ref_shape
+    )
+    var filter_2d_device_nd = NDBuffer[dtype, 2](
+        filter_device.unsafe_ptr(), dynamic_b_ref_shape
+    )
+    var out_2d_ref_nd = NDBuffer[dtype, 2](
+        out_device_ref.unsafe_ptr(), dynamic_c_ref_shape
+    )
+
+    # Reference: cuBLAS GEMM (conv2d only)
+    vendor_blas.matmul(
+        ctx,
+        out_2d_ref_nd,
+        im2col_device_nd,
+        filter_2d_device_nd,
+        c_row_major=True,
+        transpose_b=True,
+    )
+
+    ctx.synchronize()
+
+    # Copy results to host
+    ctx.enqueue_copy(out_host_ptr, out_device)
+    ctx.enqueue_copy(out_host_ref_ptr, out_device_ref)
+    ctx.synchronize()
+
+    # Add residual to reference on host: ref = Conv(A,B) + beta * C
+    for i in range(out_size):
+        out_host_ref_ptr[i] = (
+            out_host_ref_ptr[i].cast[DType.float32]()
+            + test_beta * source_host_ptr[i].cast[DType.float32]()
+        ).cast[dtype]()
+
+    # Validate: D = Conv(A,B) + beta*C
+    comptime rtol = 1e-2
+    assert_almost_equal(
+        out_host_ptr,
+        out_host_ref_ptr,
+        out_size,
+        atol=0.0001,
+        rtol=rtol,
+    )
+    print("  PASSED\n")
+
+    # Clean up
+    act_host_ptr.free()
+    filter_host_ptr.free()
+    out_host_ptr.free()
+    out_host_ref_ptr.free()
+    source_host_ptr.free()
+    im2col_host_ptr.free()
+
+    _ = act_device
+    _ = filter_device
+    _ = out_device
+    _ = out_device_ref
+    _ = source_device
+    _ = im2col_device
+
+
 fn test_conv2d_problem_shape():
     """Test Conv2dProblemShape computations."""
     print("Testing Conv2dProblemShape...")
@@ -976,7 +1214,11 @@ def main():
         # M = 256, N = 256, K = 64*3*3 = 576
         # ============================================================
         print("--- Test 1: 3x3 conv with padding ---")
-        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16](
+        test_conv2d_implicit_im2col[
+            dtype,
+            dtype,
+            DType.bfloat16,
+        ](
             ctx,
             batch=1,
             in_h=16,
@@ -995,7 +1237,11 @@ def main():
         # M = 1024, N = 256, K = 256
         # ============================================================
         print("--- Test 2: 1x1 pointwise conv ---")
-        test_conv2d_implicit_im2col[dtype, dtype, DType.bfloat16](
+        test_conv2d_implicit_im2col[
+            dtype,
+            dtype,
+            DType.bfloat16,
+        ](
             ctx,
             batch=1,
             in_h=32,
@@ -1079,6 +1325,29 @@ def main():
             pad_h=1,
             pad_w=1,
         )
+
+        # ============================================================
+        # Test 7: Conv2d with residual API
+        # Tests the conv2d_fprop_with_residual API
+        # ============================================================
+        print("--- Test 7: Conv2d with residual API ---")
+        test_conv2d_residual_api[dtype](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=128,  # Must be multiple of 128 for 1-SM
+            out_c=128,  # Must be multiple of 128 for 1-SM
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # NOTE: FP16 tests require additional stdlib changes beyond TMA:
+        # - std/gpu/compute/mma.mojo st_matrix() also only supports BF16/F32
+        # - Full FP16 support would require updates across multiple files
+        # For now, CUTLASS comparison requires modifying CUTLASS to use BF16
 
     print("=" * 60)
     print("ALL CONV2D TESTS PASSED!")

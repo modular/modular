@@ -707,6 +707,140 @@ struct TmemDeallocStorage:
 
 
 # =============================================================================
+# Source Tile Storage - For residual/skip connection input (tensor C)
+# =============================================================================
+
+
+struct SourceTileStorage[
+    src_type: DType,
+    src_dim0: Int,
+    src_dim1: Int,
+    num_epi_load_stages: Int,
+]:
+    """Storage for source tensor C tiles (residual/skip connection input).
+
+    Used by the epilogue load warp to pre-fetch source tensor C via TMA,
+    enabling overlap with MMA computation for residual operations like
+    D = Conv(A,B) + beta*C or D = MatMul(A,B) + beta*C.
+
+    Parameters:
+        src_type: Data type for source tiles (same as output type).
+        src_dim0: First dimension for source tiles (OutputM).
+        src_dim1: Second dimension for source tiles (OutputN).
+        num_epi_load_stages: Number of epilogue load pipeline stages.
+    """
+
+    # Source tile layout (row_major for TMA compatibility, matches output)
+    comptime src_tile_layout = Layout.row_major(Self.src_dim0, Self.src_dim1)
+
+    # TileTensor-based for source storage
+    comptime SrcTileArray = SMemTileArray2DRowMajor[
+        Self.src_type,
+        Self.src_dim0,
+        Self.src_dim1,
+        Self.num_epi_load_stages,
+        128,
+    ]
+    # LayoutTensor-based accessor (for compatibility with tile_writer)
+    comptime SrcTileArrayLT = LTSMemTileArray[
+        Self.src_type,
+        Self.src_tile_layout,
+        Self.num_epi_load_stages,
+        alignment=128,
+    ]
+
+    var src_tiles_storage: Self.SrcTileArray.Storage
+
+    @always_inline
+    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArrayLT:
+        """Get source tile array accessor (LayoutTensor-based).
+
+        Returns LayoutTensor view for compatibility with tile_writer.mojo.
+        """
+        return Self.SrcTileArrayLT(self.src_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn src_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
+        """Get source tile array accessor (TileTensor-based).
+
+        Returns native TileTensor for future TileTensor-native code paths.
+        """
+        return Self.SrcTileArray(self.src_tiles_storage.unsafe_ptr())
+
+
+# =============================================================================
+# Epilogue Load Pipeline Storage - For EpilogueLoad → Epilogue transfer
+# =============================================================================
+
+
+struct EpiLoadPipelineStorage[num_stages: Int]:
+    """Storage for epilogue load pipeline (source C loading).
+
+    For EpilogueLoad warp → Epilogue warps synchronization.
+    The epilogue load warp loads source tensor C into SMEM, and the
+    epilogue warps consume it for residual operations.
+
+    Producer: EpilogueLoad warp (1 warp, 32 threads)
+    Consumer: Epilogue warps (4 warps, 128 threads)
+
+    Parameters:
+        num_stages: Number of epilogue load pipeline stages (typically 2).
+    """
+
+    # Type alias for barrier array (exposed for type-level access)
+    comptime BarrierArray = SMemArray[SharedMemBarrier, Self.num_stages * 2]
+
+    var barriers: BarrierPair[Self.num_stages]
+
+    @always_inline
+    fn create_pipeline(
+        ref[AddressSpace.SHARED] self,
+    ) -> ProducerConsumerPipeline[Self.num_stages]:
+        """Create runtime pipeline from this storage."""
+        return self.barriers.create_pipeline()
+
+    @always_inline
+    fn barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Escape hatch: Get raw barrier pointer."""
+        return self.barriers.barriers().ptr
+
+
+# =============================================================================
+# Load Order Barrier Storage - For MainLoad → EpilogueLoad coordination
+# =============================================================================
+
+
+struct LoadOrderBarrierStorage:
+    """Storage for load order barrier (mainloop → epilogue load coordination).
+
+    This single barrier coordinates the mainloop load warp with the epilogue
+    load warp, ensuring the epilogue load doesn't start before the mainloop
+    has issued its prologue TMA operations.
+
+    Protocol:
+    1. Mainloop load warp issues prologue loads
+    2. Mainloop load warp calls arrive() on this barrier
+    3. Epilogue load warp waits on this barrier before starting
+
+    This prevents TMA resource contention between mainloop and epilogue loads.
+    """
+
+    comptime BarrierArray = SMemArray[SharedMemBarrier, 1]
+
+    var barrier_storage: Self.BarrierArray.Storage
+
+    @always_inline
+    fn barrier(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
+        """Get the load order barrier."""
+        return Self.BarrierArray(self.barrier_storage)
+
+    @always_inline
+    fn ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Get raw barrier pointer for initialization."""
+        return self.barrier().ptr
+
+
+# =============================================================================
 # Escape Hatch - Raw barrier storage for custom patterns
 # =============================================================================
 

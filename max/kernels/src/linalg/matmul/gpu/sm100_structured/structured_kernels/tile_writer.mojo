@@ -725,6 +725,131 @@ struct EpilogueApplier[
 
         return (upper_frag, lower_frag)
 
+    # =========================================================================
+    # Residual Add - Load C from SMEM and add beta*C to fragment registers
+    # =========================================================================
+
+    @always_inline
+    fn add_residual_to_fragment[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        c_type: DType,
+        c_smem_stride: Int,
+        swizzle: Swizzle,
+    ](
+        self,
+        mut frag: SIMD[epilogue_dtype, frag_size],
+        local_row: UInt32,
+        local_col: UInt32,
+        is_upper: Bool,
+        src_ptr: UnsafePointer[
+            Scalar[c_type], address_space = AddressSpace.SHARED
+        ],
+        beta: Scalar[epilogue_dtype],
+    ):
+        """Add beta * C to fragment elements by loading C from swizzled SMEM.
+
+        Uses the same per-lane coordinate mapping as apply_to_fragment, but
+        instead of applying a lambda, loads source C values from SMEM at the
+        matching swizzled addresses and adds beta * C to each element.
+
+        Args:
+            frag: Fragment register values to modify in-place.
+            local_row: Tile-local row offset (warp offset within tile).
+            local_col: Tile-local column offset (stage offset within tile).
+            is_upper: Whether this is the upper (rows 0-15) or lower (16-31)
+                fragment half.
+            src_ptr: Pointer to source C SMEM tile (same TMA swizzle as output).
+            beta: Residual scale factor.
+        """
+        from gpu.memory import AddressSpace
+
+        var top = self.coords.top_upper if is_upper else self.coords.top_lower
+        var bot = (
+            self.coords.bottom_upper if is_upper else self.coords.bottom_lower
+        )
+
+        @parameter
+        for rep in range(Self.repeats):
+            comptime inc = rep * 8
+            comptime offset = rep * 4
+
+            var top_row = local_row + top[0]
+            var top_col = local_col + top[1] + UInt32(inc)
+            var bot_row = local_row + bot[0]
+            var bot_col = local_col + bot[1] + UInt32(inc)
+
+            # Load C from swizzled SMEM at matching fragment coordinates
+            var c0 = src_ptr.load(
+                Int(swizzle(top_row * c_smem_stride + top_col))
+            ).cast[epilogue_dtype]()
+            var c1 = src_ptr.load(
+                Int(swizzle(top_row * c_smem_stride + top_col + 1))
+            ).cast[epilogue_dtype]()
+            var c2 = src_ptr.load(
+                Int(swizzle(bot_row * c_smem_stride + bot_col))
+            ).cast[epilogue_dtype]()
+            var c3 = src_ptr.load(
+                Int(swizzle(bot_row * c_smem_stride + bot_col + 1))
+            ).cast[epilogue_dtype]()
+
+            # FMA: frag += beta * C
+            frag[offset] += beta * c0
+            frag[offset + 1] += beta * c1
+            frag[offset + 2] += beta * c2
+            frag[offset + 3] += beta * c3
+
+    @always_inline
+    fn add_residual_to_both_fragments[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        is_lower_frag_required: Bool,
+        c_type: DType,
+        c_smem_stride: Int,
+        swizzle: Swizzle,
+    ](
+        self,
+        mut upper_frag: SIMD[epilogue_dtype, frag_size],
+        mut lower_frag: SIMD[epilogue_dtype, frag_size],
+        stage: UInt32,
+        src_ptr: UnsafePointer[
+            Scalar[c_type], address_space = AddressSpace.SHARED
+        ],
+        beta: Scalar[epilogue_dtype],
+    ) -> Tuple[
+        SIMD[epilogue_dtype, frag_size], SIMD[epilogue_dtype, frag_size]
+    ]:
+        """Add beta * C to both fragment halves from swizzled SMEM.
+
+        Computes tile-local coordinates from stage and warp ID, then loads
+        source C from SMEM and adds beta * C to each fragment element.
+
+        Args:
+            upper_frag: Upper fragment (rows 0-15 within warp tile).
+            lower_frag: Lower fragment (rows 16-31 within warp tile).
+            stage: Output stage index (for column offset computation).
+            src_ptr: Pointer to source C SMEM tile.
+            beta: Residual scale factor.
+
+        Returns:
+            Updated (upper_frag, lower_frag) tuple.
+        """
+        # Tile-local coords: pass (0, 0) as origin since we're indexing
+        # within the SMEM tile, not in global coordinates.
+        var local_row, local_col = self.compute_staged_coords(stage, 0, 0)
+
+        self.add_residual_to_fragment[
+            epilogue_dtype, frag_size, c_type, c_smem_stride, swizzle
+        ](upper_frag, local_row, local_col, True, src_ptr, beta)
+
+        @parameter
+        if is_lower_frag_required:
+            self.add_residual_to_fragment[
+                epilogue_dtype, frag_size, c_type, c_smem_stride, swizzle
+            ](lower_frag, local_row, local_col, False, src_ptr, beta)
+
+        return (upper_frag, lower_frag)
+
 
 # =============================================================================
 # TMEMToSMemWriter - Write TMEM accumulators to shared memory (SM100-specific)
