@@ -214,8 +214,7 @@ The following rules govern constraint satisfiability:
   register passability constraints from its members:
 
   ```mojo
-  @register_passable
-  trait T1: ...
+  trait T1(RegisterType): ...
 
   trait T2(TrivialRegisterType): ...
 

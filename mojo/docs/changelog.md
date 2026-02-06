@@ -25,6 +25,10 @@ what we publish.
    conform to `TrivialRegisterType` trait instead.
    The decorator will be removed after next release.
 
+- `@register_passable` is now deprecated,
+   conform to `RegisterType` trait instead.
+   The decorator will be removed after next release.
+
 - Mojo now supports more flexible default arguments and parameters, which can
   mismatch on declared type when their types are parametric.  This allows
   inferring parameters from these when they are used as a default value, for
