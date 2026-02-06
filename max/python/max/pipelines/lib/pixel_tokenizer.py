@@ -266,7 +266,7 @@ class PixelGenerationTokenizer(
         for the Max framework's condition-based approach.
 
         Args:
-            image: PIL Image to preprocess.
+            image: PIL Image or numpy array (uint8) to preprocess.
             target_height: Target height for the image. If None, uses image's height.
             target_width: Target width for the image. If None, uses image's width.
 
