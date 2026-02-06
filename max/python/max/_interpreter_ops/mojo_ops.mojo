@@ -1430,10 +1430,6 @@ fn reduce_max_dispatcher(
     var axis_val = Int(py=axis)
     var ctx = _get_ctx(device_context_ptr)
 
-    # CPU-only check
-    if ctx:
-        raise Error("GPU execution not supported for reduce_max in interpreter")
-
     # Extract input shape and compute normalized rank-3 shape:
     # dim0: product of dims before axis
     # dim1: the reduction axis dimension
@@ -1589,7 +1585,7 @@ fn reduce_max_op[
     # Define output function mapping rank-3 coords to flat index
     @always_inline
     @parameter
-    @__copy_capture(out_ptr, inStride1)
+    @__copy_capture(out_ptr, outStride0)
     fn output_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]):
@@ -1598,14 +1594,46 @@ fn reduce_max_op[
         out_ptr.store[width=width](flat_idx, val)
 
     # Always dispatch rank-3 reduction with axis=1
-    # TODO(MXF-108): Remove single_thread_blocking_override
-    reduce_max[
-        dtype,
-        input_fn,
-        output_fn,
-        target="cpu",
-        single_thread_blocking_override=True,
-    ](normalized_shape, 1, DeviceContextPtr(ctx))
+    if not ctx:
+        # TODO(MXF-108): Remove single_thread_blocking_override
+        reduce_max[
+            dtype,
+            input_fn,
+            output_fn,
+            target="cpu",
+            single_thread_blocking_override=True,
+        ](normalized_shape, 1, DeviceContextPtr(ctx))
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype in (
+                DType.float32,
+                DType.float16,
+                DType.bfloat16,
+                DType.int32,
+                DType.uint32,
+                DType.int64,
+                DType.uint64,
+            ):
+                var device_ctx = DeviceContextPtr(ctx)
+                reduce_max[
+                    dtype,
+                    input_fn,
+                    output_fn,
+                    target="gpu",
+                ](normalized_shape, 1, device_ctx)
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for reduce_max with dtype "
+                    + String(dtype)
+                )
+        else:
+            raise Error("No GPU accelerator available")
 
 
 # ===----------------------------------------------------------------------=== #

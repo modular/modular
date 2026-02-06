@@ -745,3 +745,102 @@ class TestRangeGPU:
         result_torch = torch.from_dlpack(t)
         expected = torch.arange(0, 10, 1, dtype=torch_dtype, device="cuda")
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestReduceMaxGPU:
+    """Tests for GPU reduce_max operations via Tensor.max with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_max_last_axis(self, dtype: DType) -> None:
+        """Test reduce_max on the last axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amax(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_max_first_axis(self, dtype: DType) -> None:
+        """Test reduce_max on the first axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=0)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amax(x_torch, dim=0, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_max_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_max on a middle axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amax(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_reduce_max_2d(self) -> None:
+        """Test reduce_max on a 2D tensor on GPU."""
+        shape = [4, 6]
+
+        x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.max(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amax(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
