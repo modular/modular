@@ -327,7 +327,7 @@ def main():
                             block_tile_shape,
                             umma_shape,
                             cluster_shape = StaticTuple[Int32, 3](
-                                cluster_m, cluster_n, 1
+                                Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,
                             test_lambda_fn=True,

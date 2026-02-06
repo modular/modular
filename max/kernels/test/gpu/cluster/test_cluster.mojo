@@ -54,7 +54,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
 
     bx = UInt32(block_idx.x)
     tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
-    if tidx < n:
+    if tidx < UInt32(n):
         data[tidx] = 1.0
 
     phase: UInt32 = 0
@@ -79,9 +79,9 @@ fn cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
                 clusterlaunchcontrol_try_cancel(result, mbar.bitcast[Int64]())
 
             # Matches `ptx::mbarrier_arrive_expect_tx`.
-            _ = mbar[0].expect_bytes_relaxed(2 * size_of[UInt64]())
+            _ = mbar[0].expect_bytes_relaxed(Int32(2 * size_of[UInt64]()))
 
-        if tidx < n:
+        if tidx < UInt32(n):
             data[tidx] *= Float32(alpha)
 
         # Cancellation request synchronization:
@@ -159,9 +159,11 @@ fn pipeline_test_kernel[
         if is_producer:
             var write_idx = pipeline_state_write.index()
             empty_mbar[write_idx].wait(pipeline_state_write.phase())
-            var pred: UInt32 = 1 if lane_id() < UInt(CLUSTER_SIZE) else 0
+            var pred: UInt32 = UInt32(
+                1 if lane_id() < UInt(CLUSTER_SIZE) else 0
+            )
             full_mbar[write_idx].arrive_and_expect_bytes(
-                2 * size_of[UInt64](), UInt32(lane_id()), pred
+                Int32(2 * size_of[UInt64]()), UInt32(lane_id()), pred
             )
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():

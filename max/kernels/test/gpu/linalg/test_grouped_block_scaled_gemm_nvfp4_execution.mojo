@@ -254,9 +254,11 @@ fn test_grouped_kernel_nvfp4_single_group[
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
-    problem_sizes_host[0] = m.value  # M
-    problem_sizes_host[1] = n.value  # N
-    problem_sizes_host[2] = k.value  # K (logical K, kernel handles packing)
+    problem_sizes_host[0] = Int32(m.value)  # M
+    problem_sizes_host[1] = Int32(n.value)  # N
+    problem_sizes_host[2] = Int32(
+        k.value
+    )  # K (logical K, kernel handles packing)
     problem_sizes_host[3] = 1  # L (batch=1)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -680,9 +682,9 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # Problem sizes: both groups have same size
     var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = m.value
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(m.value)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value)
+        problem_sizes_host[g * 4 + 2] = Int32(k.value)  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](

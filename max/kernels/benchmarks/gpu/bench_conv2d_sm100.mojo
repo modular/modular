@@ -248,7 +248,7 @@ fn bench_conv2d[
         conv2d_fprop(output_sm100_nd, input_nd, filter_nd, problem, ctx)
 
     var sm100_time_ns = ctx.execution_time[sm100_implicit_kernel](num_iters)
-    var sm100_time_ms = Float64(sm100_time_ns) / 1e6 / num_iters
+    var sm100_time_ms = Float64(sm100_time_ns) / 1e6 / Float64(num_iters)
     var sm100_tflops = Float64(flops) / (sm100_time_ms / 1000) / 1e12
 
     # ==================== Benchmark cuDNN ====================
@@ -269,7 +269,7 @@ fn bench_conv2d[
         )
 
     var cudnn_time_ns = ctx.execution_time[cudnn_kernel](num_iters)
-    var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / num_iters
+    var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / Float64(num_iters)
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
@@ -501,7 +501,7 @@ fn bench_all_configs[
         )
 
     var time_1sm_ns = ctx.execution_time[kernel_1sm](num_iters)
-    var time_1sm_ms = Float64(time_1sm_ns) / 1e6 / num_iters
+    var time_1sm_ms = Float64(time_1sm_ns) / 1e6 / Float64(num_iters)
     var tflops_1sm = Float64(flops) / (time_1sm_ms / 1000) / 1e12
 
     # Benchmark 2-SM
@@ -513,7 +513,7 @@ fn bench_all_configs[
         )
 
     var time_2sm_ns = ctx.execution_time[kernel_2sm](num_iters)
-    var time_2sm_ms = Float64(time_2sm_ns) / 1e6 / num_iters
+    var time_2sm_ms = Float64(time_2sm_ns) / 1e6 / Float64(num_iters)
     var tflops_2sm = Float64(flops) / (time_2sm_ms / 1000) / 1e12
 
     # Benchmark cuDNN
@@ -534,7 +534,7 @@ fn bench_all_configs[
         )
 
     var cudnn_time_ns = ctx.execution_time[cudnn_kernel](num_iters)
-    var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / num_iters
+    var cudnn_time_ms = Float64(cudnn_time_ns) / 1e6 / Float64(num_iters)
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Report
@@ -707,7 +707,7 @@ fn bench_residual[
         )
 
     var time_conv_ns = ctx.execution_time[kernel_conv](num_iters)
-    var time_conv_ms = Float64(time_conv_ns) / 1e6 / num_iters
+    var time_conv_ms = Float64(time_conv_ns) / 1e6 / Float64(num_iters)
     var tflops_conv = Float64(flops) / (time_conv_ms / 1000) / 1e12
 
     # Benchmark conv2d + fused residual
@@ -725,7 +725,7 @@ fn bench_residual[
         )
 
     var time_res_ns = ctx.execution_time[kernel_residual](num_iters)
-    var time_res_ms = Float64(time_res_ns) / 1e6 / num_iters
+    var time_res_ms = Float64(time_res_ns) / 1e6 / Float64(num_iters)
     var tflops_res = Float64(flops) / (time_res_ms / 1000) / 1e12
 
     # Report

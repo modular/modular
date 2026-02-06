@@ -116,7 +116,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     # Set up expert_ids
     for i in range(num_expert_ids):
-        expert_ids_host_ptr[i] = i % num_experts
+        expert_ids_host_ptr[i] = Int32(i % num_experts)
 
     # Create scale buffers
     comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())

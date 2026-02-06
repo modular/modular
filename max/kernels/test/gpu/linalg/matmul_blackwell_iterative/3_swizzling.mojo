@@ -242,7 +242,7 @@ fn kernel_3[
     ):  # K // BK, which is K // 64 or K // 128 depending on BK
         # so only one thread per CTA does the copy
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             @parameter
             for j in range(
@@ -291,7 +291,9 @@ fn kernel_3[
                 comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                 # use c_scale=0 for the first mma only on the first iteration to initialize
-                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
+                var c_scale_value: UInt32 = UInt32(
+                    0 if (i == 0 and j == 0) else 1
+                )
                 mma(
                     adesc + a_offset,
                     bdesc + b_offset,
@@ -428,7 +430,9 @@ fn blackwell_kernel_3[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -601,7 +605,7 @@ def test_blackwell_kernel_3[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")

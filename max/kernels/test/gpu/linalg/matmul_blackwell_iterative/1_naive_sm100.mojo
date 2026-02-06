@@ -140,7 +140,7 @@ def test_kernel_1[
             Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")
