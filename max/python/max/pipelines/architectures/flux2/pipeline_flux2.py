@@ -28,7 +28,7 @@ from max.tensor import Tensor
 from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLFlux2Model
-from ..mistral3 import Mistral3TextEncoderModel
+from ..mistral3.text_encoder import Mistral3TextEncoderModel
 from .model import Flux2TransformerModel
 
 
@@ -52,7 +52,7 @@ class Flux2ModelInputs(PixelModelInputs):
     guidance_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
-    input_image: Any | None = None
+    input_image: PIL.Image.Image | None = None
     """Optional input image for image-to-image generation (PIL.Image.Image).
     
     This field is used for Flux2 image-to-image generation where an input image
@@ -252,7 +252,10 @@ class Flux2Pipeline(DiffusionPipeline):
         layers = hidden_states_layers or [10, 20, 30]
         max_seq = int(tokens.array.shape[-1])
 
-        hs_all = self.text_encoder(tokens)
+        text_input_ids = Tensor.constant(
+            tokens.array, dtype=DType.int64, device=self.text_encoder.devices[0]
+        )
+        hs_all = self.text_encoder(text_input_ids)
 
         selected: list[Tensor] = []
         for i in layers:
@@ -560,13 +563,11 @@ class Flux2Pipeline(DiffusionPipeline):
             .to(self.transformer.devices[0])
             .cast(dtype)
         )
-
-        is_image_input = model_inputs.input_image is not None
         # 3) Denoising loop.
         for i in tqdm(range(num_timesteps), desc="Denoising"):
             timestep = timesteps_batched[i]
 
-            if is_image_input:
+            if image_latents is not None:
                 latents = F.concat([latents, image_latents], axis=1)
                 latent_image_ids = F.concat(
                     [latent_image_ids, image_latent_ids], axis=1

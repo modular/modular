@@ -32,6 +32,7 @@ import os
 from typing import cast
 
 import numpy as np
+from PIL import Image
 from max.driver import DeviceSpec
 from max.interfaces import (
     PipelineTask,
@@ -46,6 +47,7 @@ from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
+from max.examples.diffusion.profiler import profile_execute
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -104,7 +106,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=None,
         help="Random seed for reproducible generation.",
     )
     parser.add_argument(
@@ -124,6 +126,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Maximum length of secondary tokenizer",
+    )
+    parser.add_argument(
+        "--input-image",
+        type=str,
+        default=None,
+        help="Input image for image-to-image generation.",
+    )
+    parser.add_argument(
+        "--profile-timings",
+        action="store_true",
+        help="Profile timings of the pipeline.",
     )
 
     args = parser.parse_args(argv)
@@ -150,8 +163,6 @@ def save_image(pixel_data: np.ndarray, output_path: str) -> None:
         output_path: Path where the image should be saved
     """
     try:
-        from PIL import Image
-
         # Convert from float [0, 1] to uint8 [0, 255]
         pixel_data = (pixel_data * 255).clip(0, 255).astype(np.uint8)
 
@@ -163,6 +174,13 @@ def save_image(pixel_data: np.ndarray, output_path: str) -> None:
         print("WARNING: PIL not available, saving as numpy array instead")
         np.save(output_path.replace(".png", ".npy"), pixel_data)
         print(f"Pixel data saved to: {output_path.replace('.png', '.npy')}")
+
+
+def load_image(image_path: str | None) -> Image.Image | None:
+    """Load an image from a file."""
+    if image_path is None:
+        return None
+    return Image.open(image_path)
 
 
 async def generate_image(args: argparse.Namespace) -> None:
@@ -256,6 +274,7 @@ async def generate_image(args: argparse.Namespace) -> None:
         num_inference_steps=args.num_inference_steps,
         guidance_scale=args.guidance_scale,
         seed=args.seed,
+        input_image=load_image(args.input_image),
     )
 
     print(
@@ -279,7 +298,13 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
-    outputs = pipeline.execute(inputs)
+    if args.profile_timings:
+        with profile_execute(pipeline, patch_concat=True, patch_tensor_ops=True) as prof:
+            outputs = pipeline.execute(inputs)
+        print(f"Method timings:\n{prof.report(unit="ms")}")
+        print(f"Module timings:\n{prof.report_modules(unit='ms')}")
+    else:
+        outputs = pipeline.execute(inputs)
 
     # Step 8: Get the output for our request
     output = outputs[context.request_id]

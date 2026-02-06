@@ -24,6 +24,7 @@ from typing import Generic, Protocol, runtime_checkable
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from PIL import Image
 from max.interfaces.context import BaseContext
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import Request, RequestID
@@ -83,6 +84,10 @@ class PixelGenerationRequest(Request):
     seed: int | None = None
     """
     Optional random number generator seed for reproducible generation.
+    """
+    input_image: Image.Image | None = None
+    """
+    Optional input image for image-to-image generation (PIL.Image.Image).
     """
 
     def __post_init__(self) -> None:
