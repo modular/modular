@@ -467,12 +467,12 @@ struct Conv2dFpropKernel[
         out_tma_op: TMATensorTile[
             Self.out_type, Self.out_layout, Self.out_desc_layout
         ],
-        input_barriers: Self.SmemType.InputBarriers,
-        accum_barriers: Self.SmemType.AccumBarriers,
-        clc_throttle: Self.SmemType.ClcThrottleBarriers,
-        clc_full: Self.SmemType.ClcBarriers,
-        clc_empty: Self.SmemType.ClcBarriers,
-        tmem_dealloc: Self.SmemType.TmemDealloc,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
+        clc_full: Self.SmemType.Pipelines.ClcBarriers,
+        clc_empty: Self.SmemType.Pipelines.ClcBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
         epi_load_barriers: Self.SmemType.EpiLoadBarriers,
         load_order_barrier: Self.SmemType.LoadOrderBarriers,
     ):
@@ -776,11 +776,11 @@ struct Conv2dFpropKernel[
             smem.act_tiles(), smem.filter_tiles()
         )
         var input_pipeline = Self.InputTilePipelineType(
-            smem.input_barriers(), tile_payload
+            smem.pipelines.input_barriers(), tile_payload
         )
 
         # Create kernel context
-        var ctx = Self.Context(smem.tmem_addr())
+        var ctx = Self.Context(smem.pipelines.tmem_addr())
 
         # Initialize barriers
         Self.init_barriers(
@@ -788,12 +788,12 @@ struct Conv2dFpropKernel[
             act_tma_op,
             filter_tma_op,
             out_tma_op,
-            smem.input_barriers(),
-            smem.accum_barriers(),
-            smem.clc_throttle(),
-            smem.clc_full(),
-            smem.clc_empty(),
-            smem.tmem_dealloc(),
+            smem.pipelines.input_barriers(),
+            smem.pipelines.accum_barriers(),
+            smem.pipelines.clc_throttle(),
+            smem.pipelines.clc_full(),
+            smem.pipelines.clc_empty(),
+            smem.pipelines.tmem_dealloc(),
             smem.epi_load_barriers(),
             smem.get_load_order_barrier(),
         )
@@ -811,10 +811,10 @@ struct Conv2dFpropKernel[
         # Create scheduler
         var scheduler = Self.Scheduler(
             cluster_dim,
-            smem.clc_response(),
-            smem.clc_full(),
-            smem.clc_empty(),
-            smem.clc_throttle(),
+            smem.pipelines.clc_response(),
+            smem.pipelines.clc_full(),
+            smem.pipelines.clc_empty(),
+            smem.pipelines.clc_throttle(),
         )
 
         var work_iter = scheduler.work_iterator()
@@ -928,15 +928,15 @@ struct Conv2dFpropKernel[
                         epi_load_pipeline.producer_step()
 
         if WarpRole.is_mma():
-            var tmem = Self.Tmem.allocate(smem.tmem_addr())
+            var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.accum_barriers(),
+                    smem.pipelines.accum_barriers(),
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             with mma_ctx:
@@ -963,15 +963,15 @@ struct Conv2dFpropKernel[
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()
 
-            var tmem = Self.Tmem.from_shared(smem.tmem_addr())
+            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.accum_barriers(),
+                    smem.pipelines.accum_barriers(),
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
-                Self.TmemDealloc(smem.tmem_dealloc()),
+                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
             var tile_writer = Self.TileWriterType(Pointer(to=out_tma_op))
