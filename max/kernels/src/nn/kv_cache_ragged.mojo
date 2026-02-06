@@ -3289,7 +3289,7 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         buffer_length_int, latent_last_dim
     )
 
-    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout,](
+    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout](
         k_latent_buffer.ptr,
         RuntimeLayout[k_latent_layout].row_major(k_latent_dynamic_shape),
     )

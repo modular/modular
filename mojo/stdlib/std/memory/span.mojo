@@ -114,7 +114,12 @@ struct _SpanIter[
             return self.src[self.index]
 
 
-struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut=mut],](
+struct Span[
+    mut: Bool,
+    //,
+    T: Copyable,
+    origin: Origin[mut=mut],
+](
     Boolable,
     Defaultable,
     DevicePassable,

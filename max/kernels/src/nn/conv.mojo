@@ -3613,7 +3613,7 @@ fn conv_gpu[
                 var output_tmp = output
                 output_tmp.ptr = output_tmp_data.unsafe_ptr()
 
-                conv_cudnn[input_type, filter_type, output_type,](
+                conv_cudnn[input_type, filter_type, output_type](
                     LayoutTensor[
                         input_type, Layout.row_major[4](), MutAnyOrigin
                     ](
@@ -3664,7 +3664,7 @@ fn conv_gpu[
                 _ = output_tmp_data^
 
             else:
-                conv_cudnn[input_type, filter_type, output_type,](
+                conv_cudnn[input_type, filter_type, output_type](
                     LayoutTensor[
                         input_type, Layout.row_major[4](), MutAnyOrigin
                     ](

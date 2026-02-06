@@ -375,7 +375,7 @@ fn matmul[
     # Push the device context to ensure correct CUDA context is current for all
     # vendor BLAS calls.
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a.type](ctx),
             c_tensor,
@@ -424,7 +424,7 @@ fn matmul[
     batch_size: Int = 1,
 ) raises:
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32, scales_type=scales_type,](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,

@@ -61,7 +61,7 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[ElementType: Copyable, size: Int,](
+struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,

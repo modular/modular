@@ -1547,7 +1547,7 @@ fn conv_transposed_gpu[
 
         var output_tmp = TileTensor(output_tmp_data, output.layout)
 
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output_tmp,
@@ -1575,7 +1575,7 @@ fn conv_transposed_gpu[
         _ = output_tmp_data^
 
     else:
-        conv_transposed_cudnn[input_type, filter_type, output_type,](
+        conv_transposed_cudnn[input_type, filter_type, output_type](
             input,
             filter,
             output,

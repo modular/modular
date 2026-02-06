@@ -1420,7 +1420,7 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    matmul[target=target, transpose_b=True,](
+    matmul[target=target, transpose_b=True](
         kv.to_layout_tensor(),
         k_latent.to_layout_tensor(),
         kv_b_proj.to_layout_tensor(),

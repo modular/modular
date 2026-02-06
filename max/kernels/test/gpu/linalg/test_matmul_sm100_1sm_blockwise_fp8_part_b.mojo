@@ -240,7 +240,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         cta_group=cta_group,
     )
 
-    blockwise_fp8_matmul[transpose_b=transpose_b, config=matmul_config,](
+    blockwise_fp8_matmul[
+        transpose_b=transpose_b,
+        config=matmul_config,
+    ](
         c,
         a,
         b,
