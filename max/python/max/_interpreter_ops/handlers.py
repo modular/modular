@@ -731,3 +731,60 @@ def _handle_reduce_max(
     )
 
     return [output]
+
+
+# Range operations
+
+
+@register_op_handler(mo.RangeOp)
+def _handle_range(
+    op: mo.RangeOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.range by dispatching to Mojo range kernel.
+
+    Args:
+        op: The range operation.
+        inputs: Input buffers - start, limit, step (all scalar tensors on CPU).
+
+    Returns:
+        List containing the range tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+
+    start_buffer = inputs[0]
+    limit_buffer = inputs[1]
+    step_buffer = inputs[2]
+
+    # Compute output size from inputs: ceil((limit - start) / step)
+    shape = result_type.shape
+    if graph.Shape.is_static(shape):
+        output_shape = graph.Shape(shape).static_dims
+    else:
+        import math
+
+        start_val = start_buffer.to_numpy().item()
+        limit_val = limit_buffer.to_numpy().item()
+        step_val = step_buffer.to_numpy().item()
+        size = max(0, math.ceil((limit_val - start_val) / step_val))
+        output_shape = [size]
+
+    # Allocate output buffer
+    output = Buffer(
+        shape=tuple(output_shape),
+        dtype=result_type.dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.Range(
+        output, start_buffer, step_buffer, target_device._device_context_ptr()
+    )
+
+    return [output]

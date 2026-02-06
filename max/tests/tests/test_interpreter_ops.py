@@ -1408,6 +1408,86 @@ class TestMatmulOp:
         np.testing.assert_array_almost_equal(result.to_numpy(), expected)
 
 
+class TestRangeOp:
+    """Tests for range Mojo op via Tensor.arange with interpreter."""
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_range_basic(self, dtype: DType) -> None:
+        """Test basic range op matches numpy arange."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(10, dtype=dtype, device=CPU())
+
+        np_dtype = dtype.to_numpy()
+        expected = np.arange(0, 10, 1, dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_range_with_step(self, dtype: DType) -> None:
+        """Test range op with custom step size."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(0, 10, 2, dtype=dtype, device=CPU())
+
+        np_dtype = dtype.to_numpy()
+        expected = np.arange(0, 10, 2, dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_range_float_step(self, dtype: DType) -> None:
+        """Test range op with float step size."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(0.0, 1.0, 0.25, dtype=dtype, device=CPU())
+
+        np_dtype = dtype.to_numpy()
+        expected = np.arange(0.0, 1.0, 0.25, dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_range_negative_step(self, dtype: DType) -> None:
+        """Test range op with negative step."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(5, 0, -1, dtype=dtype, device=CPU())
+
+        np_dtype = dtype.to_numpy()
+        expected = np.arange(5, 0, -1, dtype=np_dtype)
+        np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+    @pytest.mark.parametrize("dtype", INT_DTYPES)
+    def test_range_int(self, dtype: DType) -> None:
+        """Test range op with integer dtypes."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(10, dtype=dtype, device=CPU())
+
+        np_dtype = dtype.to_numpy()
+        expected = np.arange(0, 10, 1, dtype=np_dtype)
+        np.testing.assert_array_equal(np.from_dlpack(t), expected)
+
+    def test_range_nonzero_start(self) -> None:
+        """Test range op with nonzero start value."""
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(5, 15, 2, dtype=DType.float32, device=CPU())
+
+        expected = np.arange(5, 15, 2, dtype=np.float32)
+        np.testing.assert_array_almost_equal(np.from_dlpack(t), expected)
+
+
 class TestReduceOps:
     """Tests for reduction Mojo ops."""
 

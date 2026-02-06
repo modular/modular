@@ -18,6 +18,7 @@ from python import PythonObject
 from python.bindings import PythonModuleBuilder
 from sys.info import has_accelerator, simd_width_of
 
+from math import iota
 from algorithm.functional import elementwise, IndexList
 from algorithm import max as reduce_max
 from memory import OpaquePointer
@@ -261,6 +262,9 @@ fn PyInit_mojo_ops() -> PythonObject:
         b.def_function[matmul_dispatcher](
             "Matmul", docstring="Matrix multiplication"
         )
+
+        # Range operation
+        b.def_function[range_dispatcher]("Range", docstring="Range operation")
 
         # Reduce max operation
         b.def_function[reduce_max_dispatcher](
@@ -1215,6 +1219,162 @@ fn matmul_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# ===----------------------------------------------------------------------=== #
+# Range operation
+# ===----------------------------------------------------------------------=== #
+
+
+fn range_dispatcher(
+    out_buffer: PythonObject,
+    start_buffer: PythonObject,
+    step_buffer: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Range dispatcher with dtype dispatch.
+
+    Fills output buffer with values: out[i] = start + i * step.
+
+    Args:
+        out_buffer: The output buffer object.
+        start_buffer: Scalar buffer containing the start value.
+        step_buffer: Scalar buffer containing the step value.
+        device_context_ptr: Device context pointer (must be null for CPU).
+    """
+    var dtype = _get_dtype(out_buffer)
+    var size = _get_size(out_buffer)
+    var ctx = _get_ctx(device_context_ptr)
+
+    # CPU-only check
+    if ctx:
+        raise Error("GPU execution not supported for range in interpreter")
+
+    # Float types
+    if dtype == DType.float16:
+        range_op[DType.float16](
+            _get_buffer_ptr[DType.float16](out_buffer),
+            _get_buffer_ptr[DType.float16](start_buffer),
+            _get_buffer_ptr[DType.float16](step_buffer),
+            size,
+        )
+    elif dtype == DType.float32:
+        range_op[DType.float32](
+            _get_buffer_ptr[DType.float32](out_buffer),
+            _get_buffer_ptr[DType.float32](start_buffer),
+            _get_buffer_ptr[DType.float32](step_buffer),
+            size,
+        )
+    elif dtype == DType.float64:
+        range_op[DType.float64](
+            _get_buffer_ptr[DType.float64](out_buffer),
+            _get_buffer_ptr[DType.float64](start_buffer),
+            _get_buffer_ptr[DType.float64](step_buffer),
+            size,
+        )
+    elif dtype == DType.bfloat16:
+        range_op[DType.bfloat16](
+            _get_buffer_ptr[DType.bfloat16](out_buffer),
+            _get_buffer_ptr[DType.bfloat16](start_buffer),
+            _get_buffer_ptr[DType.bfloat16](step_buffer),
+            size,
+        )
+    # Integer types
+    elif dtype == DType.int8:
+        range_op[DType.int8](
+            _get_buffer_ptr[DType.int8](out_buffer),
+            _get_buffer_ptr[DType.int8](start_buffer),
+            _get_buffer_ptr[DType.int8](step_buffer),
+            size,
+        )
+    elif dtype == DType.int16:
+        range_op[DType.int16](
+            _get_buffer_ptr[DType.int16](out_buffer),
+            _get_buffer_ptr[DType.int16](start_buffer),
+            _get_buffer_ptr[DType.int16](step_buffer),
+            size,
+        )
+    elif dtype == DType.int32:
+        range_op[DType.int32](
+            _get_buffer_ptr[DType.int32](out_buffer),
+            _get_buffer_ptr[DType.int32](start_buffer),
+            _get_buffer_ptr[DType.int32](step_buffer),
+            size,
+        )
+    elif dtype == DType.int64:
+        range_op[DType.int64](
+            _get_buffer_ptr[DType.int64](out_buffer),
+            _get_buffer_ptr[DType.int64](start_buffer),
+            _get_buffer_ptr[DType.int64](step_buffer),
+            size,
+        )
+    # Unsigned integer types
+    elif dtype == DType.uint8:
+        range_op[DType.uint8](
+            _get_buffer_ptr[DType.uint8](out_buffer),
+            _get_buffer_ptr[DType.uint8](start_buffer),
+            _get_buffer_ptr[DType.uint8](step_buffer),
+            size,
+        )
+    elif dtype == DType.uint16:
+        range_op[DType.uint16](
+            _get_buffer_ptr[DType.uint16](out_buffer),
+            _get_buffer_ptr[DType.uint16](start_buffer),
+            _get_buffer_ptr[DType.uint16](step_buffer),
+            size,
+        )
+    elif dtype == DType.uint32:
+        range_op[DType.uint32](
+            _get_buffer_ptr[DType.uint32](out_buffer),
+            _get_buffer_ptr[DType.uint32](start_buffer),
+            _get_buffer_ptr[DType.uint32](step_buffer),
+            size,
+        )
+    elif dtype == DType.uint64:
+        range_op[DType.uint64](
+            _get_buffer_ptr[DType.uint64](out_buffer),
+            _get_buffer_ptr[DType.uint64](start_buffer),
+            _get_buffer_ptr[DType.uint64](step_buffer),
+            size,
+        )
+    else:
+        raise Error("Unsupported dtype for range: " + String(dtype))
+
+
+fn range_op[
+    dtype: DType
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    size: Int,
+) raises:
+    """Range operation: out[i] = start + i * step.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        start_ptr: Pointer to the start scalar value.
+        step_ptr: Pointer to the step scalar value.
+        size: Number of elements to produce.
+    """
+    var start = start_ptr.load()
+    var step = step_ptr.load()
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, start, step)
+    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        var i = rebind[IndexList[1]](idx)[0]
+        var result = start + (iota[dtype, width](Scalar[dtype](i)) * step)
+        out_ptr.store[width=width](i, result)
+
+    # TODO(MXF-108): Remove use_blocking_impl=True
+    elementwise[
+        func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+    ](IndexList[1](size))
 
 
 # ===----------------------------------------------------------------------=== #
