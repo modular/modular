@@ -33,6 +33,7 @@ from utils.index import Index, IndexList
 
 fn run_ssd_combined_gpu[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -41,14 +42,13 @@ fn run_ssd_combined_gpu[
     batch: Int,
     dim: Int,
     seqlen: Int,
-    dstate: Int,
     n_groups: Int,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined GPU kernel against CPU reference."""
-    if dstate > 16:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
     var chunk_size = 2048
@@ -359,6 +359,7 @@ fn run_ssd_combined_gpu[
     # Run CPU kernel with host tensors
     ssd_combined_cpu[
         dtype,
+        DSTATE,
         output_cpu_lt.layout,
         x_cpu_lt.layout,
         out_z_cpu_lt.layout,
@@ -376,7 +377,6 @@ fn run_ssd_combined_gpu[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         output_cpu_lt,
@@ -441,6 +441,7 @@ fn run_ssd_combined_gpu[
     var compiled_kernel = ctx.compile_function[
         ssd_combined_gpu[
             dtype,
+            DSTATE,
             output_gpu_lt.layout,
             x_gpu_lt.layout,
             out_z_gpu_lt.layout,
@@ -457,6 +458,7 @@ fn run_ssd_combined_gpu[
         ],
         ssd_combined_gpu[
             dtype,
+            DSTATE,
             output_gpu_lt.layout,
             x_gpu_lt.layout,
             out_z_gpu_lt.layout,
@@ -479,7 +481,6 @@ fn run_ssd_combined_gpu[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         output_gpu_lt,
@@ -592,11 +593,12 @@ fn test_ssd_combined_gpu_basic() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
 fn test_ssd_combined_gpu_without_D() raises:
@@ -606,11 +608,12 @@ fn test_ssd_combined_gpu_without_D() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
 fn test_ssd_combined_gpu_without_z() raises:
@@ -620,11 +623,12 @@ fn test_ssd_combined_gpu_without_z() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
 fn test_ssd_combined_gpu_without_delta_bias() raises:
@@ -634,11 +638,12 @@ fn test_ssd_combined_gpu_without_delta_bias() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=False,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
 fn test_ssd_combined_gpu_with_delta_softplus() raises:
@@ -648,11 +653,12 @@ fn test_ssd_combined_gpu_with_delta_softplus() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
 fn test_ssd_combined_gpu_larger_shapes() raises:
@@ -662,11 +668,12 @@ fn test_ssd_combined_gpu_larger_shapes() raises:
         return
     run_ssd_combined_gpu[
         DType.float32,
+        8,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=4, dim=8, seqlen=16, dstate=8, n_groups=1, ctx=ctx)
+    ](batch=4, dim=8, seqlen=16, n_groups=1, ctx=ctx)
 
 
 def main():

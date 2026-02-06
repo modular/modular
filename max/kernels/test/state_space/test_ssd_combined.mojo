@@ -68,6 +68,7 @@ fn silu_ref(val: Float32) -> Float32:
 
 fn run_ssd_combined[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -76,13 +77,12 @@ fn run_ssd_combined[
     batch: Int,
     dim: Int,
     seqlen: Int,
-    dstate: Int,
     n_groups: Int,
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined kernel against reference implementation."""
-    if dstate > MAX_DSTATE:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
     var chunk_size = 2048
@@ -258,6 +258,7 @@ fn run_ssd_combined[
     # Call kernel
     ssd_combined_cpu[
         dtype,
+        DSTATE,
         output_h.layout,
         x_h.layout,
         out_z_h.layout,
@@ -275,7 +276,6 @@ fn run_ssd_combined[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         output_h,
@@ -365,66 +365,72 @@ fn test_ssd_combined_basic() raises:
     """Test basic ssd_combined."""
     run_ssd_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
 fn test_ssd_combined_without_D() raises:
     """Test ssd_combined without D."""
     run_ssd_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
 fn test_ssd_combined_without_z() raises:
     """Test ssd_combined without z."""
     run_ssd_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
 fn test_ssd_combined_without_delta_bias() raises:
     """Test ssd_combined without delta_bias."""
     run_ssd_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=False,
         delta_softplus=False,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
 fn test_ssd_combined_with_delta_softplus() raises:
     """Test ssd_combined with delta_softplus."""
     run_ssd_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=2, dim=4, seqlen=8, dstate=4, n_groups=1)
+    ](batch=2, dim=4, seqlen=8, n_groups=1)
 
 
 fn test_ssd_combined_larger_shapes() raises:
     """Test ssd_combined with larger shapes."""
     run_ssd_combined[
         DType.float32,
+        8,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=4, dim=8, seqlen=16, dstate=8, n_groups=1)
+    ](batch=4, dim=8, seqlen=16, n_groups=1)
 
 
 def main():

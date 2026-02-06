@@ -33,6 +33,7 @@ from utils.index import Index, IndexList
 
 fn run_mamba_split_conv1d_scan_combined_gpu[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool,
     has_rmsnorm: Bool,
     has_outproj: Bool,
@@ -44,13 +45,13 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     dim: Int,
     nheads: Int,
     headdim: Int,
-    dstate: Int,
     ngroups: Int,
     width: Int,
     chunk_size: Int,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
+    comptime dstate = DSTATE
     var group_size = dim // nheads
     var n_chunks = ceildiv(seqlen, chunk_size)
 
@@ -395,6 +396,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     # Run CPU kernel
     mamba_split_conv1d_scan_combined_cpu[
         dtype,
+        DSTATE,
         zxbcdt_cpu_lt.layout,
         conv_weight_cpu_lt.layout,
         conv_bias_cpu_lt.layout,
@@ -417,7 +419,6 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         dim,
         nheads,
         headdim,
-        dstate,
         ngroups,
         width,
         chunk_size,
@@ -490,6 +491,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
     var compiled_kernel = ctx.compile_function[
         mamba_split_conv1d_scan_combined_gpu[
             dtype,
+            DSTATE,
             zxbcdt_gpu_lt.layout,
             conv_weight_gpu_lt.layout,
             conv_bias_gpu_lt.layout,
@@ -509,6 +511,7 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         ],
         mamba_split_conv1d_scan_combined_gpu[
             dtype,
+            DSTATE,
             zxbcdt_gpu_lt.layout,
             conv_weight_gpu_lt.layout,
             conv_bias_gpu_lt.layout,
@@ -536,7 +539,6 @@ fn run_mamba_split_conv1d_scan_combined_gpu[
         dim,
         nheads,
         headdim,
-        dstate,
         ngroups,
         width,
         chunk_size,
@@ -663,6 +665,7 @@ fn test_mamba_combined_gpu_basic() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -674,7 +677,6 @@ fn test_mamba_combined_gpu_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -689,6 +691,7 @@ fn test_mamba_combined_gpu_without_D() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=False,
         has_rmsnorm=False,
         has_outproj=False,
@@ -700,7 +703,6 @@ fn test_mamba_combined_gpu_without_D() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -715,6 +717,7 @@ fn test_mamba_combined_gpu_with_rmsnorm() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=True,
         has_outproj=False,
@@ -726,7 +729,6 @@ fn test_mamba_combined_gpu_with_rmsnorm() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -741,6 +743,7 @@ fn test_mamba_combined_gpu_norm_after_gate() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -752,7 +755,6 @@ fn test_mamba_combined_gpu_norm_after_gate() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -767,6 +769,7 @@ fn test_mamba_combined_gpu_without_delta_softplus() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -778,7 +781,6 @@ fn test_mamba_combined_gpu_without_delta_softplus() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -793,6 +795,7 @@ fn test_mamba_combined_gpu_larger_shapes() raises:
         return
     run_mamba_split_conv1d_scan_combined_gpu[
         DType.float32,
+        8,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -804,7 +807,6 @@ fn test_mamba_combined_gpu_larger_shapes() raises:
         dim=16,
         nheads=4,
         headdim=4,
-        dstate=8,
         ngroups=2,
         width=4,
         chunk_size=8,

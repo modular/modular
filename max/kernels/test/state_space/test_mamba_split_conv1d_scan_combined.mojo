@@ -31,6 +31,7 @@ from utils.index import Index, IndexList
 
 fn run_mamba_split_conv1d_scan_combined[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool,
     has_rmsnorm: Bool,
     has_outproj: Bool,
@@ -42,11 +43,11 @@ fn run_mamba_split_conv1d_scan_combined[
     dim: Int,
     nheads: Int,
     headdim: Int,
-    dstate: Int,
     ngroups: Int,
     width: Int,
     chunk_size: Int,
 ) raises:
+    comptime dstate = DSTATE
     var group_size = dim // nheads
     var n_chunks = ceildiv(seqlen, chunk_size)
 
@@ -263,6 +264,7 @@ fn run_mamba_split_conv1d_scan_combined[
     # Call kernel
     mamba_split_conv1d_scan_combined_cpu[
         dtype,
+        DSTATE,
         zxbcdt_h.layout,
         conv_weight_h.layout,
         conv_bias_h.layout,
@@ -285,7 +287,6 @@ fn run_mamba_split_conv1d_scan_combined[
         dim,
         nheads,
         headdim,
-        dstate,
         ngroups,
         width,
         chunk_size,
@@ -388,6 +389,7 @@ fn test_mamba_combined_basic() raises:
     """Test basic mamba_split_conv1d_scan_combined."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -399,7 +401,6 @@ fn test_mamba_combined_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -410,6 +411,7 @@ fn test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=False,
         has_rmsnorm=False,
         has_outproj=False,
@@ -421,7 +423,6 @@ fn test_mamba_combined_without_D() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -432,6 +433,7 @@ fn test_mamba_combined_with_rmsnorm() raises:
     """Test mamba_split_conv1d_scan_combined with RMSNorm."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=True,
         has_outproj=False,
@@ -443,7 +445,6 @@ fn test_mamba_combined_with_rmsnorm() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -454,6 +455,7 @@ fn test_mamba_combined_norm_after_gate() raises:
     """Test mamba_split_conv1d_scan_combined with norm_after_gate."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -465,7 +467,6 @@ fn test_mamba_combined_norm_after_gate() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -476,6 +477,7 @@ fn test_mamba_combined_without_delta_softplus() raises:
     """Test mamba_split_conv1d_scan_combined without delta_softplus."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -487,7 +489,6 @@ fn test_mamba_combined_without_delta_softplus() raises:
         dim=4,
         nheads=2,
         headdim=2,
-        dstate=4,
         ngroups=1,
         width=4,
         chunk_size=4,
@@ -498,6 +499,7 @@ fn test_mamba_combined_larger_shapes() raises:
     """Test mamba_split_conv1d_scan_combined with larger shapes."""
     run_mamba_split_conv1d_scan_combined[
         DType.float32,
+        8,  # DSTATE
         has_D=True,
         has_rmsnorm=False,
         has_outproj=False,
@@ -509,7 +511,6 @@ fn test_mamba_combined_larger_shapes() raises:
         dim=16,
         nheads=4,
         headdim=4,
-        dstate=8,
         ngroups=2,
         width=4,
         chunk_size=8,
