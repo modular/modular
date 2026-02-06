@@ -28,7 +28,7 @@ from state_space.varlen_selective_scan import (
     varlen_selective_state_update_cpu,
     varlen_selective_state_update_gpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
@@ -481,11 +481,16 @@ fn run_varlen_selective_scan_fwd_gpu[
     has_initial_state_h.free()
 
 
-def main():
+# =============================================================================
+# Test functions for varlen selective scan forward on GPU
+# =============================================================================
+
+
+fn test_varlen_selective_scan_fwd_gpu_equal_lengths() raises:
+    """Test varlen selective scan forward GPU with equal-length sequences."""
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
             return
-        # Test varlen_selective_scan_fwd with equal-length sequences
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
             4,
@@ -494,9 +499,13 @@ def main():
             has_delta_bias=True,
             delta_softplus=False,
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
-        print("✓ Varlen selective scan fwd GPU (equal lengths) test passed")
 
-        # Test with variable-length sequences
+
+fn test_varlen_selective_scan_fwd_gpu_variable_lengths() raises:
+    """Test varlen selective scan forward GPU with variable-length sequences."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
             4,
@@ -511,9 +520,13 @@ def main():
             seq_lengths=Index(10, 6, 1),
             ctx=ctx,
         )
-        print("✓ Varlen selective scan fwd GPU (variable lengths) test passed")
 
-        # Test without D
+
+fn test_varlen_selective_scan_fwd_gpu_without_D() raises:
+    """Test varlen selective scan forward GPU without D tensor."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
             4,
@@ -522,9 +535,13 @@ def main():
             has_delta_bias=True,
             delta_softplus=False,
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
-        print("✓ Varlen selective scan fwd GPU without D test passed")
 
-        # Test without z
+
+fn test_varlen_selective_scan_fwd_gpu_without_z() raises:
+    """Test varlen selective scan forward GPU without z tensor."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
             4,
@@ -533,9 +550,13 @@ def main():
             has_delta_bias=True,
             delta_softplus=False,
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
-        print("✓ Varlen selective scan fwd GPU without z test passed")
 
-        # Test with delta_softplus
+
+fn test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
+    """Test varlen selective scan forward GPU with delta softplus activation."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
         run_varlen_selective_scan_fwd_gpu[
             DType.float32,
             4,
@@ -544,4 +565,7 @@ def main():
             has_delta_bias=True,
             delta_softplus=True,
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
-        print("✓ Varlen selective scan fwd GPU with delta_softplus test passed")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -32,7 +32,7 @@ from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_update_gpu,
     causal_conv1d_varlen_states_gpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
@@ -1193,62 +1193,101 @@ fn run_varlen_causal_conv1d_update_gpu[
     output_cpu_heap.free()
 
 
-def main():
+# =============================================================================
+# Test functions for varlen causal conv1d forward on GPU
+# =============================================================================
+
+
+fn test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
+    """Test varlen causal conv1d forward GPU with equal-length sequences."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
-        print("GPU not available, skipping GPU tests")
         return
-
-    # Test varlen_causal_conv1d_fwd with equal-length sequences
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d fwd (equal lengths) test passed")
 
-    # Test varlen_causal_conv1d_fwd with variable-length sequences
+
+fn test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
+    """Test varlen causal conv1d forward GPU with variable-length sequences."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d fwd (variable lengths) test passed")
 
-    # Test with SiLU activation
+
+fn test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
+    """Test varlen causal conv1d forward GPU with SiLU activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d fwd with SiLU test passed")
 
-    # Test various widths
+
+fn test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
+    """Test varlen causal conv1d forward GPU with various kernel widths."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2, ctx=ctx
     )
     run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d fwd various widths test passed")
 
-    # Test varlen_causal_conv1d_update
+
+# =============================================================================
+# Test functions for varlen causal conv1d update on GPU
+# =============================================================================
+
+
+fn test_varlen_causal_conv1d_update_gpu_basic() raises:
+    """Test basic varlen causal conv1d update on GPU."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d update test passed")
 
-    # Test update with SiLU
+
+fn test_varlen_causal_conv1d_update_gpu_with_silu() raises:
+    """Test varlen causal conv1d update GPU with SiLU activation."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_update_gpu[DType.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d update with SiLU test passed")
 
-    # Test update with seqlen > 1
+
+fn test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
+    """Test varlen causal conv1d update GPU with seqlen > 1."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d update with seqlen > 1 test passed")
 
-    # Test various widths for update
+
+fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
+    """Test varlen causal conv1d update GPU with various kernel widths."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=2, state_len=3, ctx=ctx
     )
     run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=4, state_len=5, ctx=ctx
     )
-    print("✓ GPU varlen causal conv1d update various widths test passed")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

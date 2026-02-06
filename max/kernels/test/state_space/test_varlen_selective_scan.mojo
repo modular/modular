@@ -26,7 +26,7 @@ from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
@@ -571,8 +571,13 @@ fn run_varlen_selective_state_update[
     state_batch_indices_heap.free()
 
 
-def main():
-    # Test varlen_selective_scan_fwd with equal-length sequences
+# =============================================================================
+# Test functions for varlen selective scan forward
+# =============================================================================
+
+
+fn test_varlen_selective_scan_fwd_equal_lengths() raises:
+    """Test varlen selective scan forward with equal-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
         4,
@@ -581,9 +586,10 @@ def main():
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
-    print("✓ Varlen selective scan fwd (equal lengths) test passed")
 
-    # Test varlen_selective_scan_fwd with variable-length sequences
+
+fn test_varlen_selective_scan_fwd_variable_lengths() raises:
+    """Test varlen selective scan forward with variable-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
         4,
@@ -592,9 +598,10 @@ def main():
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=3, dim=4, ngroups=1, seq_lengths=Index(10, 6, 1))
-    print("✓ Varlen selective scan fwd (variable lengths) test passed")
 
-    # Test without D
+
+fn test_varlen_selective_scan_fwd_without_D() raises:
+    """Test varlen selective scan forward without D tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
         4,
@@ -603,9 +610,10 @@ def main():
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
-    print("✓ Varlen selective scan fwd without D test passed")
 
-    # Test without z
+
+fn test_varlen_selective_scan_fwd_without_z() raises:
+    """Test varlen selective scan forward without z tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
         4,
@@ -614,9 +622,10 @@ def main():
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
-    print("✓ Varlen selective scan fwd without z test passed")
 
-    # Test with delta_softplus
+
+fn test_varlen_selective_scan_fwd_with_delta_softplus() raises:
+    """Test varlen selective scan forward with delta softplus activation."""
     run_varlen_selective_scan_fwd[
         DType.float32,
         4,
@@ -625,9 +634,15 @@ def main():
         has_delta_bias=True,
         delta_softplus=True,
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
-    print("✓ Varlen selective scan fwd with delta_softplus test passed")
 
-    # Test varlen_selective_state_update
+
+# =============================================================================
+# Test functions for varlen selective state update
+# =============================================================================
+
+
+fn test_varlen_selective_state_update_basic() raises:
+    """Test basic varlen selective state update."""
     run_varlen_selective_state_update[
         DType.float32,
         4,
@@ -636,9 +651,10 @@ def main():
         has_dt_bias=True,
         dt_softplus=False,
     ](batch=2, nheads=2, dim=4, ngroups=1)
-    print("✓ Varlen selective state update test passed")
 
-    # Test state update without D
+
+fn test_varlen_selective_state_update_without_D() raises:
+    """Test varlen selective state update without D tensor."""
     run_varlen_selective_state_update[
         DType.float32,
         4,
@@ -647,9 +663,10 @@ def main():
         has_dt_bias=True,
         dt_softplus=False,
     ](batch=2, nheads=2, dim=4, ngroups=1)
-    print("✓ Varlen selective state update without D test passed")
 
-    # Test state update without z
+
+fn test_varlen_selective_state_update_without_z() raises:
+    """Test varlen selective state update without z tensor."""
     run_varlen_selective_state_update[
         DType.float32,
         4,
@@ -658,9 +675,10 @@ def main():
         has_dt_bias=True,
         dt_softplus=False,
     ](batch=2, nheads=2, dim=4, ngroups=1)
-    print("✓ Varlen selective state update without z test passed")
 
-    # Test state update with dt_softplus
+
+fn test_varlen_selective_state_update_with_dt_softplus() raises:
+    """Test varlen selective state update with dt softplus activation."""
     run_varlen_selective_state_update[
         DType.float32,
         4,
@@ -669,4 +687,7 @@ def main():
         has_dt_bias=True,
         dt_softplus=True,
     ](batch=2, nheads=2, dim=4, ngroups=1)
-    print("✓ Varlen selective state update with dt_softplus test passed")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()

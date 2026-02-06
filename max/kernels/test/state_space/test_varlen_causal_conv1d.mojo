@@ -28,7 +28,7 @@ from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_states_cpu,
 )
-from testing import assert_almost_equal
+from testing import TestSuite, assert_almost_equal
 
 from utils.index import Index, IndexList
 
@@ -678,60 +678,86 @@ fn run_varlen_causal_conv1d_states[
     states_ref_heap.free()
 
 
-def main():
-    # Test varlen_causal_conv1d_fwd with equal-length sequences
+# =============================================================================
+# Test functions for varlen causal conv1d forward
+# =============================================================================
+
+
+fn test_varlen_causal_conv1d_fwd_equal_lengths() raises:
+    """Test varlen causal conv1d forward with equal-length sequences."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
-    print("✓ Varlen causal conv1d fwd (equal lengths) test passed")
 
-    # Test varlen_causal_conv1d_fwd with variable-length sequences
+
+fn test_varlen_causal_conv1d_fwd_variable_lengths() raises:
+    """Test varlen causal conv1d forward with variable-length sequences."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3
     )
-    print("✓ Varlen causal conv1d fwd (variable lengths) test passed")
 
-    # Test with SiLU activation
+
+fn test_varlen_causal_conv1d_fwd_with_silu() raises:
+    """Test varlen causal conv1d forward with SiLU activation."""
     run_varlen_causal_conv1d_fwd[DType.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3
     )
-    print("✓ Varlen causal conv1d fwd with SiLU test passed")
 
-    # Test various widths
+
+fn test_varlen_causal_conv1d_fwd_various_widths() raises:
+    """Test varlen causal conv1d forward with various kernel widths."""
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2
     )
     run_varlen_causal_conv1d_fwd[DType.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4
     )
-    print("✓ Varlen causal conv1d fwd various widths test passed")
 
-    # Test varlen_causal_conv1d_update
+
+# =============================================================================
+# Test functions for varlen causal conv1d update
+# =============================================================================
+
+
+fn test_varlen_causal_conv1d_update_basic() raises:
+    """Test basic varlen causal conv1d update."""
     run_varlen_causal_conv1d_update[DType.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
-    print("✓ Varlen causal conv1d update test passed")
 
-    # Test update with SiLU
+
+fn test_varlen_causal_conv1d_update_with_silu() raises:
+    """Test varlen causal conv1d update with SiLU activation."""
     run_varlen_causal_conv1d_update[DType.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4
     )
-    print("✓ Varlen causal conv1d update with SiLU test passed")
 
-    # Test update with seqlen > 1
+
+fn test_varlen_causal_conv1d_update_seqlen_gt_1() raises:
+    """Test varlen causal conv1d update with seqlen > 1."""
     run_varlen_causal_conv1d_update[DType.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4
     )
-    print("✓ Varlen causal conv1d update with seqlen > 1 test passed")
 
-    # Test varlen_causal_conv1d_states
+
+# =============================================================================
+# Test functions for varlen causal conv1d states
+# =============================================================================
+
+
+fn test_varlen_causal_conv1d_states_basic() raises:
+    """Test basic varlen causal conv1d states extraction."""
     run_varlen_causal_conv1d_states[DType.float32](
         batch=2, dim=4, seq_lengths=Index(8, 8), state_len=3
     )
-    print("✓ Varlen causal conv1d states test passed")
 
-    # Test states with variable-length sequences
+
+fn test_varlen_causal_conv1d_states_variable_lengths() raises:
+    """Test varlen causal conv1d states with variable-length sequences."""
     run_varlen_causal_conv1d_states[DType.float32](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), state_len=3
     )
-    print("✓ Varlen causal conv1d states (variable lengths) test passed")
+
+
+def main():
+    TestSuite.discover_tests[__functions_in_module()]().run()
