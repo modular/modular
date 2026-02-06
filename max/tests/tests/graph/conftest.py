@@ -28,6 +28,7 @@ import pytest
 from hypothesis import Phase, assume, settings
 from hypothesis import strategies as st
 from max import mlir
+from max._mlir_context import default_mlir_context
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -421,14 +422,15 @@ def modular_path() -> Path:
 @pytest.fixture(scope="module")
 def mlir_context() -> Generator[mlir.Context]:
     """Set up the MLIR context by registering and loading Modular dialects."""
-    with mlir.Context() as ctx, mlir.Location.unknown():
-        yield ctx  # type: ignore
+    ctx = default_mlir_context()
+    with mlir.Location.unknown():
+        yield ctx
 
 
 @pytest.fixture(scope="module")
 def kernel_library(mlir_context: mlir.Context) -> Generator[KernelLibrary]:
     """Set up the kernel library for the current system."""
-    yield KernelLibrary(mlir_context)
+    yield KernelLibrary()
 
 
 GraphBuilder = Callable[..., Graph]
@@ -437,13 +439,11 @@ GraphBuilder = Callable[..., Graph]
 @pytest.fixture(scope="module")
 def graph_builder(
     request: pytest.FixtureRequest,
-    mlir_context: mlir.Context,
     kernel_library: KernelLibrary,
 ) -> Generator[GraphBuilder]:
     yield lambda *args, **kwargs: Graph(
         request.node.name,
         *args,
-        context=mlir_context,
         kernel_library=kernel_library,
         **kwargs,
     )

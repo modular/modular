@@ -45,6 +45,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -83,6 +84,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -108,6 +110,7 @@ modular_multi_py_version_test(
     ],
     imports = ["."],
     deps = [
+        "//max/python/max:_mlir_context",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",

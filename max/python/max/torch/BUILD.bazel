@@ -11,10 +11,10 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/mlir",
     ],
 )

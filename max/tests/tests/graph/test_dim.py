@@ -93,37 +93,32 @@ class TestStaticDimAlgebraNoContext:
             Dim(10) // Dim(0)
 
 
-class TestSymbolicDimAlgebraNoContext:
-    """Tests for symbolic Dim algebra outside of a Graph context.
+class TestSymbolicDimAlgebraDefaultContext:
+    """Symbolic dim algebra works with the default context active."""
 
-    Symbolic dim arithmetic requires an MLIR context and should raise
-    a helpful error message when attempted outside a Graph context.
-    """
+    def test_symbolic_dim_add(self) -> None:
+        result = Dim("batch") + 1
+        assert isinstance(result, AlgebraicDim)
+        assert "batch" in str(result)
 
-    def test_symbolic_dim_add_raises_helpful_error(self) -> None:
-        """Symbolic dim addition raises TypeError with workaround hint."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("batch") + Dim(10)
+    def test_symbolic_dim_mul(self) -> None:
+        result = Dim("seq_len") * 2
+        assert isinstance(result, AlgebraicDim)
+        assert "seq_len" in str(result)
 
-    def test_symbolic_dim_add_raises_mentions_lazy(self) -> None:
-        """Error message mentions F.lazy() workaround."""
-        with pytest.raises(TypeError, match=r"F\.lazy"):
-            Dim("batch") + 1
+    def test_symbolic_dim_floordiv(self) -> None:
+        result = Dim("dim") // 4
+        assert isinstance(result, AlgebraicDim)
+        assert "dim" in str(result)
 
-    def test_symbolic_dim_add_raises_mentions_graph(self) -> None:
-        """Error message mentions Graph context workaround."""
-        with pytest.raises(TypeError, match="Graph"):
-            Dim("seq_len") * 2
+    def test_algebraic_dim_reused_between_graphs(self) -> None:
+        with Graph("test_reuse_1"):
+            dim = Dim("batch") + 1
 
-    def test_symbolic_dim_mul_raises(self) -> None:
-        """Symbolic dim multiplication raises outside Graph context."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("dim") * Dim(4)
-
-    def test_symbolic_dim_floordiv_raises(self) -> None:
-        """Symbolic dim floor division raises outside Graph context."""
-        with pytest.raises(TypeError, match="graph context"):
-            Dim("dim") // 4
+        with Graph("test_reuse_2"):
+            result = dim + 2
+            assert isinstance(result, AlgebraicDim)
+            assert "batch" in str(result)
 
 
 class TestDimAlgebraInsideGraphContext:

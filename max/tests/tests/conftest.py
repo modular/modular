@@ -17,10 +17,12 @@ from collections.abc import Generator
 
 import pytest
 from max import mlir
+from max._mlir_context import default_mlir_context
 
 
 @pytest.fixture(scope="function")
 def mlir_context() -> Generator[mlir.Context]:
     """Set up the MLIR context by registering and loading Modular dialects."""
-    with mlir.Context() as ctx, mlir.Location.unknown():
-        yield ctx  # type: ignore
+    ctx = default_mlir_context()
+    with mlir.Location.unknown():
+        yield ctx

@@ -51,7 +51,7 @@ from contextvars import ContextVar
 from types import TracebackType
 from typing import Any, TypeVar
 
-from max import _core, _passes, driver, engine, mlir
+from max import _core, _passes, driver, engine
 from max import functional as F
 from max._core.dialects import builtin, rmo
 from max._support import driver_tensor_type
@@ -69,7 +69,6 @@ Ex = TypeVar("Ex", bound=BaseException)
 
 _SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 _SEED: Tensor | None = None
-_MLIR_CONTEXT: mlir.Context | None = None
 
 # Environment variable to control interpreter usage
 _USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
@@ -121,21 +120,6 @@ def set_seed(value: int) -> None:
     seed().driver_tensor[0] = value
 
 
-def _mlir_context() -> mlir.Context:
-    """Gets or creates the global MLIR context for eager execution.
-
-    Returns the shared MLIR context used for graph construction in eager
-    execution mode. Creates the context on first access.
-
-    Returns:
-        mlir.Context: The global MLIR context.
-    """
-    global _MLIR_CONTEXT
-    if _MLIR_CONTEXT is None:
-        _MLIR_CONTEXT = mlir.Context()
-    return _MLIR_CONTEXT
-
-
 def _session() -> engine.api.InferenceSession:
     """A single global inference session for compiling and running kernels on tensors."""
     device_specs = driver.scan_available_devices()
@@ -172,7 +156,7 @@ class EagerRealizationContext(RealizationContext):
         self.source_values = {}
         self.unrealized = []
 
-        self.graph = Graph("main", input_types=[], context=_mlir_context())
+        self.graph = Graph("main", input_types=[])
 
         with realization_context(self), self.graph:
             ops.random.set_seed(seed())
