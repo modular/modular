@@ -736,171 +736,70 @@ def POP_SIMDSplatAttr : POP_ExprAttr<"SIMDSplat", "simd_splat"> {
 // SIMD Unary Operation Attributes
 //===----------------------------------------------------------------------===//
 
-def POP_SIMDNegAttr : POP_ExprAttr<"SIMDNeg", "simd_neg"> {
-  let summary = "SIMD neg.";
+class POP_SIMDUnaryAttr<string name>
+      : POP_ExprAttr<"SIMD" # name, "simd_" # !tolower(name)> {
+  let summary = !strconcat("SIMD ", name, ".");
+
+  let parameters = (ins "TypedAttr":$operand);
+
+  let assemblyFormat = " `<` $operand `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return the same attribute type due to folding on construction.
+    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
+      return get(operand.getContext(), operand);
+    }], "TypedAttr">
+  ];
+
+  let extraClassDeclaration = [{
+    Type getType() const { return getOperand().getType(); }
+  }];
+}
+
+def POP_SIMDNegAttr : POP_SIMDUnaryAttr<"Neg"> {
   let description = [{
     The `#pop.simd_neg` attribute takes a scalar value and returns the negation
     of it.
   }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
-def POP_SIMDFloorAttr : POP_ExprAttr<"SIMDFloor", "simd_floor"> {
-  let summary = "SIMD floor.";
+def POP_SIMDFloorAttr : POP_SIMDUnaryAttr<"Floor"> {
   let description = [{
     The `#pop.simd_floor` attribute takes a scalar value and returns the floor
     of it.
   }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
-def POP_SIMDCeilAttr : POP_ExprAttr<"SIMDCeil", "simd_ceil"> {
-  let summary = "SIMD ceil.";
+def POP_SIMDCeilAttr : POP_SIMDUnaryAttr<"Ceil"> {
   let description = [{
     The `#pop.simd_ceil` attribute takes a scalar value and returns the ceiling
     of it.
   }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
-def POP_SIMDTruncAttr : POP_ExprAttr<"SIMDTrunc", "simd_trunc"> {
-  let summary = "SIMD trunc.";
+def POP_SIMDTruncAttr : POP_SIMDUnaryAttr<"Trunc"> {
   let description = [{
     The `#pop.simd_trunc` attribute takes a scalar value and returns the
     truncation of it (rounding toward zero).
   }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
-def POP_SIMDAbsAttr : POP_ExprAttr<"SIMDAbs", "simd_abs"> {
-  let summary = "SIMD abs.";
+def POP_SIMDAbsAttr : POP_SIMDUnaryAttr<"Abs"> {
   let description = [{
     The `#pop.simd_abs` attribute takes a SIMD value and returns the
     absolute value of it.
   }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
-  }];
 }
 
-def POP_SIMDRoundAttr : POP_ExprAttr<"SIMDRound", "simd_round"> {
-  let summary = "SIMD round.";
+def POP_SIMDRoundAttr : POP_SIMDUnaryAttr<"Round"> {
   let description = [{
     The `#pop.simd_round` attribute takes a SIMD value and returns it rounded
     to the nearest integer, with ties rounding to the nearest even.
-  }];
-
-  let parameters = (ins "TypedAttr":$operand);
-
-  let assemblyFormat = " `<` $operand `>` ";
-
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return the same attribute type due to folding on construction.
-    AttrBuilder<(ins "TypedAttr":$operand), "", "TypedAttr">,
-
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$operand), [{
-      return get(operand.getContext(), operand);
-    }], "TypedAttr">
-  ];
-
-  let extraClassDeclaration = [{
-    Type getType() const;
   }];
 }
 

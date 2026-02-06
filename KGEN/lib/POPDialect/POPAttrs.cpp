@@ -1913,8 +1913,6 @@ TypedAttr SIMDNegAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 
 bool SIMDNegAttr::isConstant() const { return false; }
 
-Type SIMDNegAttr::getType() const { return getOperand().getType(); }
-
 LogicalResult SIMDNegAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr operand) {
   if (!isa<SIMDType>(operand.getType()))
@@ -1951,8 +1949,6 @@ SIMDFloorAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool SIMDFloorAttr::isConstant() const { return false; }
-
-Type SIMDFloorAttr::getType() const { return getOperand().getType(); }
 
 LogicalResult
 SIMDFloorAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -1991,8 +1987,6 @@ TypedAttr SIMDCeilAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 
 bool SIMDCeilAttr::isConstant() const { return false; }
 
-Type SIMDCeilAttr::getType() const { return getOperand().getType(); }
-
 LogicalResult SIMDCeilAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                    TypedAttr operand) {
   auto simdType = dyn_cast<SIMDType>(operand.getType());
@@ -2029,8 +2023,6 @@ SIMDTruncAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool SIMDTruncAttr::isConstant() const { return false; }
-
-Type SIMDTruncAttr::getType() const { return getOperand().getType(); }
 
 LogicalResult
 SIMDTruncAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -2316,8 +2308,6 @@ TypedAttr SIMDAbsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 
 bool SIMDAbsAttr::isConstant() const { return false; }
 
-Type SIMDAbsAttr::getType() const { return getOperand().getType(); }
-
 LogicalResult SIMDAbsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   TypedAttr operand) {
   auto simdType = dyn_cast<SIMDType>(operand.getType());
@@ -2349,8 +2339,6 @@ SIMDRoundAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 }
 
 bool SIMDRoundAttr::isConstant() const { return false; }
-
-Type SIMDRoundAttr::getType() const { return getOperand().getType(); }
 
 LogicalResult
 SIMDRoundAttr::verify(function_ref<InFlightDiagnostic()> emitError,
