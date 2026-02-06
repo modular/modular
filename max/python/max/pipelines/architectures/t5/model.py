@@ -26,8 +26,6 @@ from .weight_adapters import convert_safetensor_state_dict
 
 
 class T5Model(ComponentModel):
-    config_name = T5Config.config_name
-
     def __init__(
         self,
         config: dict[str, Any],

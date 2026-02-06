@@ -28,12 +28,12 @@ from max.nn.legacy.kv_cache import (
 )
 from max.tensor import Tensor
 
+from ...common_layers.rotary_embedding import YarnRotaryEmbedding
 from .functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from .rotary_embedding import YarnRotaryEmbedding
 
 
 class GptOssAttention(Module[..., Tensor]):

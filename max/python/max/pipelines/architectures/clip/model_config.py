@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar
+from typing import Any
 
 from max.driver import Device
 from max.dtype.dtype import DType
@@ -41,8 +41,6 @@ class ClipConfigBase(MAXModelConfigBase):
 
 
 class ClipConfig(ClipConfigBase):
-    config_name: ClassVar[str] = "config.json"
-
     @staticmethod
     def generate(
         config_dict: dict[str, Any],

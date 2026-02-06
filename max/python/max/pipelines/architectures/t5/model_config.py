@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, ClassVar
+from typing import Any
 
 from max.driver import Device
 from max.dtype import DType
@@ -47,8 +47,6 @@ class T5ConfigBase(MAXModelConfigBase):
 
 
 class T5Config(T5ConfigBase):
-    config_name: ClassVar[str] = "config.json"
-
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
