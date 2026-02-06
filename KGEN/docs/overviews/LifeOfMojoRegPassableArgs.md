@@ -1,7 +1,8 @@
 # Life of Mojo reg-passable arguments
 
 Mojo has the ability to represent something as `@register_passable` (shortened
-to “RP” in this doc). The former means that the value is **guaranteed** to be
+to “RP” in this doc, the decorator is now deprecated in favor of
+`RegisterType` trait). The former means that the value is **guaranteed** to be
 passed in an MLIR “SSA register” (and thus, typically but not always, a machine
 register) when passed to a function “read” or “owned”, or when **returned from
 a function** by value. In contrast, values that are not RP (and all `ref` and
@@ -117,8 +118,7 @@ our own here to be self contained. The Mojo lowering process doesn't look into
 functions, so we don't need implementations of any of the methods:
 
 ```mojo
-@register_passable
-struct MyRPType(Movable, Copyable):
+struct MyRPType(Movable, Copyable, RegisterType):
     fn __init__(out self): pass
 
     # Trivial types can't define a copyinit, but this is just RP.
