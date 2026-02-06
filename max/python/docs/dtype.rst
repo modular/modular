@@ -43,3 +43,8 @@ it easy to interoperate with the NumPy ecosystem.
    :imported-members:
    :members:
    :undoc-members:
+   :exclude-members: finfo, dtype_extension
+
+.. autoclass:: max.dtype.finfo
+   :members:
+   :undoc-members:
