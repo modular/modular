@@ -70,13 +70,13 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2],
+        conv_states: OutputTensor[dtype=dtype, rank=3],
         x: InputTensor[dtype=dtype, rank=2],
         weight: InputTensor[dtype=dtype, rank=2],
         bias: InputTensor[dtype=dtype, rank=1],
         query_start_loc: InputTensor[dtype = DType.int32, rank=1],
         cache_indices: InputTensor[dtype = DType.int32, rank=1],
         has_initial_state: InputTensor[dtype = DType.bool, rank=1],
-        conv_states: OutputTensor[dtype=dtype, rank=3],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = x.dim_size(0)
@@ -504,7 +504,6 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         query_start_loc: InputTensor[dtype = DType.int32, rank=1],
         cache_indices: InputTensor[dtype = DType.int32, rank=1],
         has_initial_state: InputTensor[dtype = DType.bool, rank=1],
-        conv_states: InputTensor[dtype=dtype, rank=3],
     ) -> IndexList[2]:
         return x.shape()
 
@@ -540,10 +539,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
+        conv_state: OutputTensor[dtype=dtype, rank=3],
         x: InputTensor[dtype=dtype, rank=3],
         weight: InputTensor[dtype=dtype, rank=2],
         bias: InputTensor[dtype=dtype, rank=1],
-        conv_state: OutputTensor[dtype=dtype, rank=3],
         cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
         conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
         ctx: DeviceContextPtr,
@@ -941,7 +940,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=3],
         weight: InputTensor[dtype=dtype, rank=2],
         bias: InputTensor[dtype=dtype, rank=1],
-        conv_state: InputTensor[dtype=dtype, rank=3],
         cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
         conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
     ) -> IndexList[3]:
@@ -1029,6 +1027,7 @@ struct CausalConv1DVarlenStates:
                     states_lt.dtype,
                     states_lt.layout,
                     BLOCK_DIM,
+                    BLOCK_DIM,
                 ],
                 causal_conv1d_varlen_states_gpu[
                     x_lt.dtype,
@@ -1037,6 +1036,7 @@ struct CausalConv1DVarlenStates:
                     cu_seqlens_lt.layout,
                     states_lt.dtype,
                     states_lt.layout,
+                    BLOCK_DIM,
                     BLOCK_DIM,
                 ],
             ]()
@@ -1066,8 +1066,9 @@ struct CausalConv1DVarlenStates:
     ](
         x: InputTensor[dtype=dtype, rank=2],
         cu_seqlens: InputTensor[dtype = DType.int32, rank=1],
-        state_len: Int,
     ) -> IndexList[3]:
         var batch = cu_seqlens.dim_size(0) - 1
         var dim = x.dim_size(1)
-        return IndexList[3](batch, dim, state_len)
+        # state_len is derived from the output tensor shape at runtime
+        # Return a placeholder shape; actual shape determined by output allocation
+        return IndexList[3](batch, dim, 0)

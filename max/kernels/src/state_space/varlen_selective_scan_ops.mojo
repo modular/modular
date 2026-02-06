@@ -79,13 +79,13 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         ssm_states: OutputTensor[dtype=dtype, rank=3],
+        z: OutputTensor[dtype=dtype, rank=2],
         u: InputTensor[dtype=dtype, rank=2],
         delta: InputTensor[dtype=dtype, rank=2],
         A: InputTensor[dtype=dtype, rank=2],
         B: InputTensor[dtype=dtype, rank=3],
         C: InputTensor[dtype=dtype, rank=3],
         D: InputTensor[dtype=dtype, rank=1],
-        z: OutputTensor[dtype=dtype, rank=2],
         delta_bias: InputTensor[dtype=dtype, rank=1],
         query_start_loc: InputTensor[dtype = DType.int32, rank=1],
         cache_indices: InputTensor[dtype = DType.int32, rank=1],
@@ -523,7 +523,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         B: InputTensor[dtype=dtype, rank=3],
         C: InputTensor[dtype=dtype, rank=3],
         D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=2],
         delta_bias: InputTensor[dtype=dtype, rank=1],
         query_start_loc: InputTensor[dtype = DType.int32, rank=1],
         cache_indices: InputTensor[dtype = DType.int32, rank=1],
@@ -1003,7 +1002,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        state: InputTensor[dtype=dtype, rank=4],
         x: InputTensor[dtype=dtype, rank=3],
         dt: InputTensor[dtype=dtype, rank=3],
         A: InputTensor[dtype=dtype, rank=3],
@@ -1014,4 +1012,8 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         dt_bias: InputTensor[dtype=dtype, rank=2],
         state_batch_indices: InputTensor[dtype = DType.int32, rank=1],
     ) -> Tuple[IndexList[4], IndexList[3]]:
-        return (state.shape(), x.shape())
+        var batch = x.dim_size(0)
+        var nheads = x.dim_size(1)
+        var dim = x.dim_size(2)
+        var dstate = A.dim_size(2)
+        return (IndexList[4](batch, nheads, dim, dstate), x.shape())
