@@ -23,7 +23,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.interfaces import PixelGenerationRequest, RequestID
+from max.interfaces import RequestID
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.config import PipelineConfig
 
@@ -153,15 +159,21 @@ class TestPixelGenerationTokenizer:
             max_length=77,
         )
 
-        request = PixelGenerationRequest(
-            request_id=RequestID("test-request-1"),
-            model_name="flux-dev",
-            prompt="A majestic mountain landscape",
-            height=1024,
-            width=1024,
-            num_inference_steps=50,
-            guidance_scale=3.5,
+        body = OpenResponsesRequestBody(
+            model="flux-dev",
+            input="A majestic mountain landscape",
             seed=42,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    height=1024,
+                    width=1024,
+                    steps=50,
+                    guidance_scale=3.5,
+                )
+            ),
+        )
+        request = OpenResponsesRequest(
+            request_id=RequestID("test-request-1"), body=body
         )
 
         context = await tokenizer.new_context(request)
@@ -192,15 +204,21 @@ class TestPixelGenerationTokenizer:
             max_length=77,
         )
 
-        request = PixelGenerationRequest(
-            request_id=RequestID("test-request-2"),
-            model_name="z-image-turbo",
-            prompt="A futuristic cityscape",
-            height=1024,
-            width=1024,
-            num_inference_steps=8,
-            guidance_scale=3.5,
+        body = OpenResponsesRequestBody(
+            model="z-image-turbo",
+            input="A futuristic cityscape",
             seed=123,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    height=1024,
+                    width=1024,
+                    steps=8,
+                    guidance_scale=3.5,
+                )
+            ),
+        )
+        request = OpenResponsesRequest(
+            request_id=RequestID("test-request-2"), body=body
         )
 
         context = await tokenizer.new_context(request)
@@ -225,12 +243,18 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        request = PixelGenerationRequest(
-            request_id=RequestID("test-request-4"),
-            model_name="flux-dev",
-            prompt="Test prompt",
-            # No height/width specified
-            num_inference_steps=10,
+        body = OpenResponsesRequestBody(
+            model="flux-dev",
+            input="Test prompt",
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    steps=10,
+                    # No height/width specified
+                )
+            ),
+        )
+        request = OpenResponsesRequest(
+            request_id=RequestID("test-request-4"), body=body
         )
 
         context = await tokenizer.new_context(request)
@@ -365,12 +389,18 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        request = PixelGenerationRequest(
-            request_id=RequestID("test-guid-1"),
-            model_name="test",
-            prompt="test prompt",
-            num_inference_steps=10,
-            guidance_scale=3.5,
+        body = OpenResponsesRequestBody(
+            model="test",
+            input="test prompt",
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    steps=10,
+                    guidance_scale=3.5,
+                )
+            ),
+        )
+        request = OpenResponsesRequest(
+            request_id=RequestID("test-guid-1"), body=body
         )
 
         context = await tokenizer.new_context(request)

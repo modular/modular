@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from max.interfaces.request import (
-    CreateResponseBody,
     OpenResponsesRequest,
+    OpenResponsesRequestBody,
     RequestID,
 )
 from pydantic import ValidationError
@@ -36,7 +36,7 @@ def mock_fastapi_request() -> Any:
 
 @pytest.fixture
 def minimal_request_body() -> str:
-    """Create a minimal CreateResponseBody JSON."""
+    """Create a minimal OpenResponsesRequestBody JSON."""
     return json.dumps(
         {
             "model": "test-model",
@@ -47,7 +47,7 @@ def minimal_request_body() -> str:
 
 @pytest.fixture
 def full_request_body() -> str:
-    """Create a full CreateResponseBody JSON with provider options."""
+    """Create a full OpenResponsesRequestBody JSON with provider options."""
     return json.dumps(
         {
             "model": "test-model",
@@ -177,7 +177,7 @@ async def test_from_fastapi_request_with_message_input(
 async def test_from_fastapi_request_preserves_all_fields(
     mock_fastapi_request: Any,
 ) -> None:
-    """Test that all CreateResponseBody fields are preserved."""
+    """Test that all OpenResponsesRequestBody fields are preserved."""
     complex_body = json.dumps(
         {
             "model": "test-model",
@@ -215,19 +215,21 @@ async def test_from_fastapi_request_preserves_all_fields(
 
 def test_openresponses_request_is_frozen() -> None:
     """Test that OpenResponsesRequest is immutable."""
-    body = CreateResponseBody(model="test", input="test")
+    body = OpenResponsesRequestBody(model="test", input="test")
     request = OpenResponsesRequest(request_id=RequestID(), body=body)
 
     # Frozen dataclass raises AttributeError or FrozenInstanceError on assignment
     with pytest.raises((AttributeError, Exception)):
-        request.body = CreateResponseBody(model="changed", input="changed")  # type: ignore[misc]
+        request.body = OpenResponsesRequestBody(  # type: ignore[misc]
+            model="changed", input="changed"
+        )
 
 
 def test_openresponses_request_inherits_from_request() -> None:
     """Test that OpenResponsesRequest properly inherits from Request."""
     from max.interfaces.request import Request
 
-    body = CreateResponseBody(model="test", input="test")
+    body = OpenResponsesRequestBody(model="test", input="test")
     request = OpenResponsesRequest(request_id=RequestID(), body=body)
 
     assert isinstance(request, Request)

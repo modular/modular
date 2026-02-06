@@ -14,7 +14,7 @@
 """Simple offline pixel generation example using diffusion models.
 
 This module demonstrates end-to-end pixel generation using:
-- PixelGenerationRequest: Create generation requests with prompts
+- OpenResponsesRequest: Create generation requests with prompts
 - PixelGenerationTokenizer: Tokenize prompts and prepare model context
 - PixelGenerationPipeline: Execute the diffusion model to generate pixels
 
@@ -34,9 +34,14 @@ import numpy as np
 from max.driver import DeviceSpec
 from max.interfaces import (
     PixelGenerationInputs,
-    PixelGenerationRequest,
     RequestID,
 )
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import OpenResponsesRequest
+from max.interfaces.request.open_responses import OpenResponsesRequestBody
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.flux1.pipeline_flux import (
     FluxPipeline,
@@ -188,18 +193,22 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     print(f"Generating image for prompt: '{args.prompt}'")
 
-    # Step 4: Create a PixelGenerationRequest
-    request = PixelGenerationRequest(
-        request_id=RequestID(),
-        model_name=args.model,
-        prompt=args.prompt,
-        negative_prompt=args.negative_prompt,
-        height=args.height,
-        width=args.width,
-        num_inference_steps=args.num_inference_steps,
-        guidance_scale=args.guidance_scale,
+    # Step 4: Create an OpenResponsesRequest
+    body = OpenResponsesRequestBody(
+        model=args.model,
+        input=args.prompt,
         seed=args.seed,
+        provider_options=ProviderOptions(
+            image=ImageProviderOptions(
+                negative_prompt=args.negative_prompt,
+                height=args.height,
+                width=args.width,
+                steps=args.num_inference_steps,
+                guidance_scale=args.guidance_scale,
+            )
+        ),
     )
+    request = OpenResponsesRequest(request_id=RequestID(), body=body)
 
     print(
         f"Parameters: steps={args.num_inference_steps}, guidance={args.guidance_scale}"

@@ -884,7 +884,7 @@ class ItemReferenceParam(BaseModel):
 # ============================================================================
 
 
-class CreateResponseBody(BaseModel):
+class OpenResponsesRequestBody(BaseModel):
     """Request body for creating a response."""
 
     model_config = ConfigDict(frozen=True)
@@ -1254,11 +1254,11 @@ class FastAPIRequestProtocol(Protocol):
 class OpenResponsesRequest(Request):
     """General request container for OpenResponses API requests.
 
-    This class wraps a CreateResponseBody and adheres to the Request schema.
+    This class wraps an OpenResponsesRequestBody and adheres to the Request schema.
     All request fields are accessed directly from the body.
     """
 
-    body: CreateResponseBody = field()
+    body: OpenResponsesRequestBody = field()
     """The complete OpenResponses request body."""
 
     @classmethod
@@ -1269,7 +1269,7 @@ class OpenResponsesRequest(Request):
         """Create an OpenResponsesRequest from a FastAPI/Starlette Request.
 
         Extracts the request_id from request.state.request_id and parses the
-        request body as a CreateResponseBody.
+        request body as an OpenResponsesRequestBody.
 
         Args:
             request: A request object with state.request_id and body() method.
@@ -1289,7 +1289,9 @@ class OpenResponsesRequest(Request):
             )
 
         request_id = RequestID(value=request.state.request_id)
-        body = CreateResponseBody.model_validate_json(await request.body())
+        body = OpenResponsesRequestBody.model_validate_json(
+            await request.body()
+        )
 
         return cls(
             request_id=request_id,

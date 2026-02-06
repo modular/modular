@@ -22,10 +22,10 @@ from max.interfaces.provider_options import (
 )
 from max.interfaces.request.open_responses import (
     AssistantMessage,
-    CreateResponseBody,
     FunctionCall,
     FunctionToolParam,
     InputTextContent,
+    OpenResponsesRequestBody,
     OutputTextContent,
     ResponseResource,
     SystemMessage,
@@ -43,8 +43,8 @@ def test_import_all_types() -> None:
 
 
 def test_create_response_body_minimal() -> None:
-    """Test creating a minimal CreateResponseBody with required fields only."""
-    request = CreateResponseBody(
+    """Test creating a minimal OpenResponsesRequestBody with required fields only."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello, world!",
     )
@@ -56,8 +56,8 @@ def test_create_response_body_minimal() -> None:
 
 
 def test_create_response_body_with_messages() -> None:
-    """Test CreateResponseBody with structured message input."""
-    request = CreateResponseBody(
+    """Test OpenResponsesRequestBody with structured message input."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input=[
             UserMessage(
@@ -77,8 +77,8 @@ def test_create_response_body_with_messages() -> None:
 
 
 def test_create_response_body_with_tools() -> None:
-    """Test CreateResponseBody with tool definitions."""
-    request = CreateResponseBody(
+    """Test OpenResponsesRequestBody with tool definitions."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="What's the weather?",
         tools=[
@@ -183,7 +183,7 @@ def test_response_resource_minimal() -> None:
 
 def test_models_are_frozen() -> None:
     """Test that all models are frozen (immutable)."""
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
     )
@@ -197,7 +197,7 @@ def test_models_are_frozen() -> None:
 def test_temperature_validation() -> None:
     """Test temperature field validation constraints."""
     # Valid temperature
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
         temperature=0.7,
@@ -206,7 +206,7 @@ def test_temperature_validation() -> None:
 
     # Temperature too high should fail
     with pytest.raises(ValidationError):
-        CreateResponseBody(
+        OpenResponsesRequestBody(
             model="gpt-4",
             input="Hello!",
             temperature=2.5,
@@ -214,7 +214,7 @@ def test_temperature_validation() -> None:
 
     # Temperature too low should fail
     with pytest.raises(ValidationError):
-        CreateResponseBody(
+        OpenResponsesRequestBody(
             model="gpt-4",
             input="Hello!",
             temperature=-0.5,
@@ -224,7 +224,7 @@ def test_temperature_validation() -> None:
 def test_top_p_validation() -> None:
     """Test top_p field validation constraints."""
     # Valid top_p
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
         top_p=0.9,
@@ -233,7 +233,7 @@ def test_top_p_validation() -> None:
 
     # top_p too high should fail
     with pytest.raises(ValidationError):
-        CreateResponseBody(
+        OpenResponsesRequestBody(
             model="gpt-4",
             input="Hello!",
             top_p=1.5,
@@ -242,7 +242,7 @@ def test_top_p_validation() -> None:
 
 def test_json_serialization() -> None:
     """Test that models can be serialized to JSON."""
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input=[
             UserMessage(
@@ -272,7 +272,7 @@ def test_json_deserialization() -> None:
         "max_output_tokens": 500,
     }
 
-    request = CreateResponseBody(**json_data)
+    request = OpenResponsesRequestBody(**json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"
@@ -294,8 +294,8 @@ def test_output_text_content_with_annotations() -> None:
 
 
 def test_create_response_body_with_provider_options() -> None:
-    """Test CreateResponseBody with provider options."""
-    request = CreateResponseBody(
+    """Test OpenResponsesRequestBody with provider options."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello, world!",
         provider_options=ProviderOptions(
@@ -312,8 +312,8 @@ def test_create_response_body_with_provider_options() -> None:
 
 
 def test_create_response_body_with_max_and_image_options() -> None:
-    """Test CreateResponseBody with both MAX and image modality options."""
-    request = CreateResponseBody(
+    """Test OpenResponsesRequestBody with both MAX and image modality options."""
+    request = OpenResponsesRequestBody(
         model="vision-model",
         input="Describe this image",
         provider_options=ProviderOptions(
@@ -331,8 +331,8 @@ def test_create_response_body_with_max_and_image_options() -> None:
 
 
 def test_create_response_body_provider_options_json_serialization() -> None:
-    """Test that CreateResponseBody with provider options serializes correctly."""
-    request = CreateResponseBody(
+    """Test that OpenResponsesRequestBody with provider options serializes correctly."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
         provider_options=ProviderOptions(
@@ -355,7 +355,7 @@ def test_create_response_body_provider_options_json_serialization() -> None:
 
 
 def test_create_response_body_provider_options_json_deserialization() -> None:
-    """Test that CreateResponseBody with provider options deserializes correctly."""
+    """Test that OpenResponsesRequestBody with provider options deserializes correctly."""
     json_data = {
         "model": "gpt-4",
         "input": "Hello!",
@@ -365,7 +365,7 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
         },
     }
 
-    request = CreateResponseBody(**json_data)
+    request = OpenResponsesRequestBody(**json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"
@@ -378,8 +378,8 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
 
 
 def test_create_response_body_without_provider_options() -> None:
-    """Test that CreateResponseBody works without provider options."""
-    request = CreateResponseBody(
+    """Test that OpenResponsesRequestBody works without provider options."""
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
     )
@@ -389,9 +389,9 @@ def test_create_response_body_without_provider_options() -> None:
 
 
 def test_create_response_body_with_partial_provider_options() -> None:
-    """Test CreateResponseBody with only some provider options fields."""
+    """Test OpenResponsesRequestBody with only some provider options fields."""
     # Only MAX options
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="gpt-4",
         input="Hello!",
         provider_options=ProviderOptions(
@@ -404,7 +404,7 @@ def test_create_response_body_with_partial_provider_options() -> None:
     assert request.provider_options.video is None
 
     # Only image options
-    request = CreateResponseBody(
+    request = OpenResponsesRequestBody(
         model="vision-model",
         input="Describe this",
         provider_options=ProviderOptions(
