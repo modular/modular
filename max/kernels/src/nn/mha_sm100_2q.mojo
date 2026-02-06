@@ -1399,7 +1399,7 @@ fn fma_ftz(
 
 @always_inline
 fn exp2_emulation[
-    use_exp2_emulation: Bool = False
+    use_exp2_emulation: Bool = True
 ](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
     @parameter
     if use_exp2_emulation:
