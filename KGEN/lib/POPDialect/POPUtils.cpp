@@ -541,7 +541,6 @@ OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
         return operand;
       },
       integerAbs);
-  return {};
 }
 
 OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
@@ -560,8 +559,6 @@ OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
     operand.roundToIntegral(APFloat::rmNearestTiesToEven);
     return operand;
   });
-
-  return {};
 }
 
 OpFoldResult POP::foldSIMDFloorDiv(Attribute lhs, Attribute rhs,
