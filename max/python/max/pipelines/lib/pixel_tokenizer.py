@@ -523,6 +523,7 @@ class PixelGenerationTokenizer(
         do_true_cfg = (
             request.true_cfg_scale > 1.0 and request.negative_prompt is not None
         )
+        import PIL.Image
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
