@@ -87,9 +87,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1],
         z: OutputTensor[dtype=dtype, rank=2],
         delta_bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1],
+        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
+        cache_indices: InputTensor[dtype = DType.int32, rank=1],
+        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = u.dim_size(0)
@@ -135,9 +135,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
             ssm_states.strides()[1],
             ssm_states.strides()[2],
         )
-        var out_strides = Strides2D(
-            output.strides()[0], output.strides()[1]
-        )
+        var out_strides = Strides2D(output.strides()[0], output.strides()[1])
 
         comptime PAD_SLOT_ID: Int32 = -1
         comptime delta_softplus_int8: Int8 = Int8(
@@ -527,9 +525,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1],
         z: InputTensor[dtype=dtype, rank=2],
         delta_bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1],
+        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
+        cache_indices: InputTensor[dtype = DType.int32, rank=1],
+        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
     ) -> IndexList[2]:
         return u.shape()
 
@@ -578,7 +576,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=2],
         z: InputTensor[dtype=dtype, rank=3],
         dt_bias: InputTensor[dtype=dtype, rank=2],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1],
+        state_batch_indices: InputTensor[dtype = DType.int32, rank=1],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -1014,6 +1012,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=2],
         z: InputTensor[dtype=dtype, rank=3],
         dt_bias: InputTensor[dtype=dtype, rank=2],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1],
+        state_batch_indices: InputTensor[dtype = DType.int32, rank=1],
     ) -> Tuple[IndexList[4], IndexList[3]]:
         return (state.shape(), x.shape())
