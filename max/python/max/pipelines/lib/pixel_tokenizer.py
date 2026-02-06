@@ -251,7 +251,7 @@ class PixelGenerationTokenizer(
 
     def _preprocess_input_image(
         self,
-        image: PIL.Image.Image,
+        image: PIL.Image.Image | npt.NDArray[np.uint8],
         target_height: int | None = None,
         target_width: int | None = None,
     ) -> PIL.Image.Image:
@@ -504,7 +504,6 @@ class PixelGenerationTokenizer(
     async def new_context(
         self,
         request: PixelGenerationRequest,
-        input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
         """Create a new PixelContext object, leveraging necessary information from PixelGenerationRequest."""
         if request.guidance_scale < 1.0 or request.true_cfg_scale < 1.0:
@@ -527,9 +526,16 @@ class PixelGenerationTokenizer(
 
         # 1. Tokenize prompts
         # Convert input_image to list format for _generate_tokens_ids
-        images_for_tokenization = None
-        if input_image is not None:
-            images_for_tokenization = [input_image]
+        images_for_tokenization: list[PIL.Image.Image] | None = None
+        if request.input_image is not None:
+            input_img: PIL.Image.Image
+            if isinstance(request.input_image, np.ndarray):
+                input_img = PIL.Image.fromarray(
+                    request.input_image.astype(np.uint8)
+                )
+            else:
+                input_img = request.input_image
+            images_for_tokenization = [input_img]
 
         (
             token_ids,
@@ -573,9 +579,9 @@ class PixelGenerationTokenizer(
 
         # 2. Preprocess input image if provided
         preprocessed_image = None
-        if input_image is not None:
+        if request.input_image is not None:
             preprocessed_image = self._preprocess_input_image(
-                input_image, height, width
+                request.input_image, height, width
             )
             height = preprocessed_image.height
             width = preprocessed_image.width

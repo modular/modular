@@ -13,7 +13,7 @@
 
 from typing import Any
 
-import PIL.Image
+from PIL import Image
 
 # docstyle-ignore
 """
@@ -53,7 +53,7 @@ Output only the final instruction in plain text and nothing else."""
 def format_input(
     prompts: list[str],
     system_message: str = SYSTEM_MESSAGE,
-    images: list[PIL.Image.Image] | list[list[PIL.Image.Image]] | None = None,
+    images: list[Image.Image] | list[list[Image.Image]] | None = None,
 ) -> list[list[dict[str, Any]]]:
     """Format a batch of text prompts into the conversation format expected by apply_chat_template.
 

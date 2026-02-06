@@ -32,8 +32,9 @@ import os
 from typing import cast
 
 import numpy as np
-from PIL import Image
+import numpy.typing as npt
 from max.driver import DeviceSpec
+from max.examples.diffusion.profiler import profile_execute
 from max.interfaces import (
     PipelineTask,
     PixelGenerationInputs,
@@ -47,7 +48,7 @@ from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
-from max.examples.diffusion.profiler import profile_execute
+from PIL import Image
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -176,11 +177,11 @@ def save_image(pixel_data: np.ndarray, output_path: str) -> None:
         print(f"Pixel data saved to: {output_path.replace('.png', '.npy')}")
 
 
-def load_image(image_path: str | None) -> Image.Image | None:
+def load_image(image_path: str | None) -> npt.NDArray[np.uint8] | None:
     """Load an image from a file."""
     if image_path is None:
         return None
-    return Image.open(image_path)
+    return np.array(Image.open(image_path), dtype=np.uint8)
 
 
 async def generate_image(args: argparse.Namespace) -> None:
@@ -299,9 +300,11 @@ async def generate_image(args: argparse.Namespace) -> None:
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
     if args.profile_timings:
-        with profile_execute(pipeline, patch_concat=True, patch_tensor_ops=True) as prof:
+        with profile_execute(
+            pipeline, patch_concat=True, patch_tensor_ops=True
+        ) as prof:
             outputs = pipeline.execute(inputs)
-        print(f"Method timings:\n{prof.report(unit="ms")}")
+        print(f"Method timings:\n{prof.report(unit='ms')}")
         print(f"Module timings:\n{prof.report_modules(unit='ms')}")
     else:
         outputs = pipeline.execute(inputs)
