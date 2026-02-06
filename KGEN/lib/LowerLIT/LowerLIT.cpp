@@ -759,12 +759,13 @@ LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
 template <typename GenKind>
-static GenKind removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                                     GenKind signature) {
+static std::conditional_t<std::is_base_of_v<Type, GenKind>, Type, Attribute>
+removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
+                      GenKind generator) {
   SmallVector<TypedAttr> paramsToBind;
   bool hasRemovals = false;
 
-  for (Type paramType : signature.getInputParamTypes()) {
+  for (Type paramType : generator.getInputParamTypes()) {
     if (singletonTypeHelper.isSingletonType(paramType)) {
       // Bind singleton parameters to their canonical value.
       paramsToBind.push_back(singletonTypeHelper.getSingletonValue(paramType));
@@ -775,16 +776,29 @@ static GenKind removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
     }
   }
 
-  // Update the signature type if we dropped anything.
+  // Update the generator if we dropped anything.
   if (hasRemovals) {
-    signature = getSpecializedWithConcreteBindings(signature, paramsToBind);
-    assert(signature && "didn't replace singletons correctly");
+    generator = getSpecializedWithConcreteBindings(generator, paramsToBind);
+    assert(generator && "didn't replace singletons correctly");
+    if (generator.isFullyBound()) {
+      // By back-compat, we never eliminate the empty generator type wrapper on
+      // func types. This should eventually be made consistent with other types.
+      // This follows the same pattern as BindParamsAttr.
+      if constexpr (std::is_base_of_v<Type, GenKind>) {
+        if (!isa<FuncType>(generator.getBody()))
+          return generator.getBody();
+      } else {
+        if (!isa<FuncType>(generator.getBody().getType()))
+          return generator.getBody();
+      }
+    }
   }
-  return signature;
+  return generator;
 }
 
 template <typename GenKind>
-std::pair<GenKind, WalkResult>
+std::pair<std::conditional_t<std::is_base_of_v<Type, GenKind>, Type, Attribute>,
+          WalkResult>
 replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
                          mlir::AttrTypeReplacer &replacer, GenKind gen) {
   // Remove uses of any singleton attributes.
@@ -795,8 +809,8 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   // Remove metadata & remove singleton input param decls.
   auto newBody = cast<decltype(gen.getBody())>(replacer.replace(gen.getBody()));
   gen = GenKind::get(paramTypes, newBody);
-  gen = removeSingletonParams(singletonTypeHelper, gen);
-  return std::make_pair(gen, WalkResult::skip());
+  auto result = removeSingletonParams(singletonTypeHelper, gen);
+  return std::make_pair(result, WalkResult::skip());
 }
 
 static void lowerAttributesAndTypes(
@@ -833,8 +847,8 @@ static void lowerAttributesAndTypes(
 
     // Remove metadata & remove singleton input param decls.
     gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
-    gen = removeSingletonParams(singletonTypeHelper, gen);
-    return std::make_pair(gen, WalkResult::skip());
+    auto result = removeSingletonParams(singletonTypeHelper, gen);
+    return std::make_pair(result, WalkResult::skip());
   });
 
   replacer.addReplacement([&](GeneratorAttr gen) {
