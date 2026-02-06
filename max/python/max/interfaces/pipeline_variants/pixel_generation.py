@@ -84,6 +84,10 @@ class PixelGenerationRequest(Request):
     """
     Optional random number generator seed for reproducible generation.
     """
+    input_image: npt.NDArray[np.uint8] | None = None
+    """
+    Optional input image for image-to-image generation (numpy array).
+    """
 
     def __post_init__(self) -> None:
         if self.prompt == "":

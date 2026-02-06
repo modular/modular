@@ -114,9 +114,21 @@ class PixelGenerationPipeline(
             )
             raise
 
-        image_list = model_outputs.images
+        images = model_outputs.images
         num_images_per_prompt = model_inputs.num_images_per_prompt
         expected_images = len(flat_batch) * num_images_per_prompt
+
+        # Handle both numpy array (NHWC) and list of images
+        if isinstance(images, np.ndarray):
+            # images shape: (batch_size, H, W, C) or (batch_size, C, H, W)
+            # Convert NCHW to NHWC if needed
+            if images.ndim == 4 and images.shape[1] in (1, 3, 4):
+                # Likely NCHW format, convert to NHWC
+                images = np.transpose(images, (0, 2, 3, 1))
+            image_list = [images[i] for i in range(images.shape[0])]
+        else:
+            image_list = list(images)
+
         if len(image_list) != expected_images:
             raise ValueError(
                 "Unexpected number of images returned from pipeline: "
