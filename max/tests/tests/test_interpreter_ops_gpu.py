@@ -705,6 +705,95 @@ class TestReduceMaxGPU:
         torch.testing.assert_close(result_torch, expected)
 
 
+class TestBroadcastBinaryOpsGPU:
+    """Tests for implicit broadcasting in binary ops on GPU.
+
+    These tests exercise the ShapeOfOp -> BroadcastShapeOp -> BroadcastToOp
+    chain that gets generated when binary elementwise ops have operands with
+    different shapes.
+    """
+
+    def test_add_broadcast_1d_2d(self) -> None:
+        """Test add with broadcasting: [3] + [2,3] -> [2,3] on GPU."""
+        a_torch = torch.tensor(
+            [1.0, 2.0, 3.0], dtype=torch.float32, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = a_torch + b_torch
+        torch.testing.assert_close(torch.from_dlpack(c), expected)
+
+    def test_mul_broadcast_scalar_like(self) -> None:
+        """Test mul with broadcasting: [1] * [3,4] -> [3,4] on GPU."""
+        a_torch = torch.tensor([2.0], dtype=torch.float32, device="cuda")
+        b_torch = torch.randn(3, 4, dtype=torch.float32, device="cuda")
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a * b
+
+        expected = a_torch * b_torch
+        torch.testing.assert_close(torch.from_dlpack(c), expected)
+
+    def test_sub_broadcast_different_ranks(self) -> None:
+        """Test sub with broadcasting: [4] - [2,3,4] -> [2,3,4] on GPU."""
+        a_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        b_torch = torch.randn(2, 3, 4, dtype=torch.float32, device="cuda")
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a - b
+
+        expected = a_torch - b_torch
+        torch.testing.assert_close(
+            torch.from_dlpack(c), expected, rtol=1e-3, atol=1e-3
+        )
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_add_broadcast_size1_dim(self, dtype: DType) -> None:
+        """Test add with broadcasting: [1,4] + [3,4] -> [3,4] on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        a_torch = torch.randn(1, 4, dtype=torch_dtype, device="cuda")
+        b_torch = torch.randn(3, 4, dtype=torch_dtype, device="cuda")
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = a_torch + b_torch
+        torch.testing.assert_close(
+            torch.from_dlpack(c), expected, rtol=1e-2, atol=1e-2
+        )
+
+
 class TestReduceMinGPU:
     """Tests for GPU reduce_min operations via Tensor.min with interpreter."""
 

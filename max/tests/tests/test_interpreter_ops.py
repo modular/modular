@@ -1445,3 +1445,80 @@ class TestReduceOps:
 
         expected = np.mean(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+
+class TestBroadcastBinaryOps:
+    """Tests for implicit broadcasting in binary ops on CPU.
+
+    These tests exercise the ShapeOfOp -> BroadcastShapeOp -> BroadcastToOp
+    chain that gets generated when binary elementwise ops have operands with
+    different shapes.
+    """
+
+    def test_add_broadcast_1d_2d(self) -> None:
+        """Test add with broadcasting: [3] + [2,3] -> [2,3]."""
+        a_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        b_np = np.array(
+            [[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]], dtype=np.float32
+        )
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = np.add(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    def test_mul_broadcast_scalar_like(self) -> None:
+        """Test mul with broadcasting: [1] * [3,4] -> [3,4]."""
+        a_np = np.array([2.0], dtype=np.float32)
+        b_np = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a * b
+
+        expected = np.multiply(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    def test_sub_broadcast_different_ranks(self) -> None:
+        """Test sub with broadcasting: [4] - [2,3,4] -> [2,3,4]."""
+        a_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        b_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a - b
+
+        expected = np.subtract(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_add_broadcast_size1_dim(self, dtype: DType) -> None:
+        """Test add with broadcasting: [1,4] + [3,4] -> [3,4]."""
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(4, dtype=np_dtype).reshape(1, 4)
+        b_np = np.arange(12, dtype=np_dtype).reshape(3, 4)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a + b
+
+        expected = np.add(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)

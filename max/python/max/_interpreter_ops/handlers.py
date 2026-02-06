@@ -118,6 +118,22 @@ def _check_cpu_only(op: _core.Operation, target_device: Device) -> None:
         )
 
 
+def _get_target_device(op: _core.Operation) -> Device:
+    """Get the target device from an op's first result type.
+
+    Accesses the device_ref directly from the MLIR type to avoid
+    Shape.from_mlir() crashes on parametric shapes (ParamDeclRefAttr).
+
+    Args:
+        op: The operation whose result device to extract.
+
+    Returns:
+        The target device for the operation's result.
+    """
+    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
+    return graph.DeviceRef.from_mlir(result_mlir_type.device_ref).to_device()
+
+
 # Constant operations
 
 
@@ -263,7 +279,9 @@ def _handle_static_broadcast_to(
 def _handle_broadcast_to(
     op: mo.BroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.broadcast_to by broadcasting to the target shape.
+    """Handle mo.broadcast_to using Mojo kernel.
+
+    Supports both CPU and GPU tensors via the StaticBroadcastTo kernel.
 
     Args:
         op: The broadcast operation.
@@ -273,33 +291,43 @@ def _handle_broadcast_to(
     Returns:
         List containing the broadcast tensor buffer.
     """
-    # Get target device from result type and check CPU-only
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
-    _check_buffers_on_device(inputs, target_device)
+    target_device = _get_target_device(op)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
 
-    shape = result_type.shape
-    if graph.Shape.is_static(shape):
-        target_shape = graph.Shape(shape).static_dims
-    elif len(inputs) > 1:
-        # For dynamic shapes, get from the new_shape operand
+    # Try to get static shape from result type, fall through to dynamic
+    # shape from the second input if the shape is parametric.
+    target_shape = None
+    result_mlir_type: mo.TensorType = list(op.results)[0].type  # type: ignore[assignment]
+    shape_attr = result_mlir_type.shape_attr
+    if isinstance(shape_attr, mosh.ShapeAttr):
+        shape = graph.Shape.from_mlir(shape_attr)
+        if graph.Shape.is_static(shape):
+            target_shape = graph.Shape(shape).static_dims
+
+    if target_shape is None and len(inputs) > 1:
+        # For dynamic/parametric shapes, get from the shape operand
         assert isinstance(inputs[1], Buffer)
         target_shape = inputs[1].to_numpy().tolist()
-    else:
+
+    if target_shape is None:
         raise NotImplementedError(
             f"Cannot determine broadcast target shape for {op}"
         )
 
-    # Perform broadcast using numpy
-    broadcast_np = np.broadcast_to(input_np, target_shape)
-    # broadcast_to returns a view, make a copy
-    output_np = broadcast_np.copy()
-    return [Buffer.from_numpy(output_np)]
+    # Allocate output buffer on target device
+    output = Buffer(
+        shape=target_shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel (supports both CPU and GPU)
+    ops.mojo_ops.StaticBroadcastTo(
+        output, inputs[0], target_shape, target_device._device_context_ptr()
+    )
+
+    return [output]
 
 
 # Helper for device validation
@@ -338,9 +366,7 @@ def binary_elementwise_handler(op_type: type) -> OpHandler:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
 
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
+        target_device = _get_target_device(op)
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -372,9 +398,7 @@ def binary_comparison_handler(op_type: type) -> OpHandler:
         assert isinstance(inputs[0], Buffer)
         assert isinstance(inputs[1], Buffer)
 
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
+        target_device = _get_target_device(op)
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -408,9 +432,7 @@ def unary_elementwise_handler(op_type: type) -> OpHandler:
     ) -> Sequence[Buffer]:
         assert isinstance(inputs[0], Buffer)
 
-        result_type = graph.Type.from_mlir(list(op.results)[0].type)
-        assert isinstance(result_type, graph.TensorType)
-        target_device = result_type.device.to_device()
+        target_device = _get_target_device(op)
         _check_buffers_on_device(inputs, target_device)
 
         output = Buffer(
@@ -570,12 +592,12 @@ def _handle_slice(
 def _handle_shape_of(
     op: mo.ShapeOfOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.shape_of - returns the shape of a tensor as a 1D si64 tensor."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
+    """Handle mo.shape_of - returns the shape of a tensor as a 1D si64 tensor.
 
+    This is a CPU-side metadata operation. The result is always a CPU buffer
+    regardless of the input tensor's device, since shape metadata is always
+    host-accessible.
+    """
     assert isinstance(inputs[0], Buffer)
     shape = inputs[0].shape
     result_np = np.array(shape, dtype=np.int64)
@@ -587,12 +609,11 @@ def _handle_broadcast_shape(
     op: mo.BroadcastShapeOp,
     inputs: Sequence[Buffer | None],
 ) -> Sequence[Buffer]:
-    """Handle mo.broadcast_shape - compute broadcast shape of two shapes."""
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
+    """Handle mo.broadcast_shape - compute broadcast shape of two shapes.
 
+    This is a CPU-side metadata operation. The result is always a CPU buffer
+    since it computes shape information from small integer tensors.
+    """
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     shape_x = tuple(inputs[0].to_numpy().tolist())
