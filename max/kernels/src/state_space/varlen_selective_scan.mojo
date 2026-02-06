@@ -20,7 +20,8 @@ from memory import UnsafePointer
 from algorithm import sync_parallelize
 import math
 from math import ceildiv, exp2
-from state_space.selective_scan import softplus, sigmoid
+from state_space.causal_conv1d import silu
+from state_space.selective_scan import softplus
 
 # LOG2E constant for converting exp to exp2 (faster on GPU)
 comptime LOG2E = 1.4426950408889634
@@ -31,11 +32,6 @@ comptime Strides1D = IndexList[1]
 comptime Strides2D = IndexList[2]
 comptime Strides3D = IndexList[3]
 comptime Strides4D = IndexList[4]
-
-
-# Optimized SiLU (Swish): x * sigmoid(x)
-fn silu(val: Float32) -> Float32:
-    return val * sigmoid(val)
 
 
 fn varlen_selective_state_update_gpu[
