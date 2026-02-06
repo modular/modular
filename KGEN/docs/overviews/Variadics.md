@@ -174,13 +174,12 @@ Looking at VariadicPack’s definition:
 ```python
 alias _AnyTypeMetaType = type_of(AnyType)
 
-@register_passable
 struct VariadicPack[
     elt_is_mutable: Bool, //,
     origin: Origin[elt_is_mutable],
     element_trait: _AnyTypeMetaType,
     *element_types: element_trait,
-]: ...
+](RegisterType): ...
 ```
 
 that `_AnyTypeMetaType = type_of(AnyType)` means that `element_trait` can be

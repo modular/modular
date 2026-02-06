@@ -325,8 +325,9 @@ destination is an l-value.
 `LValue` and `CValue` aren't the only kinds of values we have.
 
 `SRValue` only holds register-passable types: primitives like `int64`,
-`float32`, and any struct marked `@register_passable` or
-`@register_passable("trivial")` (deprecated, use TrivialRegisterType
+`float32`, and any struct marked `@register_passable`
+ (deprecated, use `RegisterType` trait instead) or
+`@register_passable("trivial")` (deprecated, use `TrivialRegisterType`
  trait instead) (see
 [Life of Mojo reg-passable arguments](../overviews/LifeOfMojoRegPassableArgs.md))
 
