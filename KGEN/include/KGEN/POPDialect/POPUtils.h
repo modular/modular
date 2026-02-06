@@ -59,6 +59,9 @@ OpFoldResult foldSIMDShr(Attribute val, Attribute shft,
 /// Fold a SIMD abs operation.
 OpFoldResult foldSIMDAbs(Attribute val, TargetInfoAttr targetInfo);
 
+/// Fold a SIMD round operation.
+OpFoldResult foldSIMDRound(Attribute val, TargetInfoAttr targetInfo);
+
 //===----------------------------------------------------------------------===//
 // SIMD Folder Helpers
 //===----------------------------------------------------------------------===//

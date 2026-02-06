@@ -146,6 +146,35 @@ def POP_TruncOp : POPOp<"trunc", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RoundOp
+//===----------------------------------------------------------------------===//
+
+def POP_RoundOp : POPOp<"round", [Pure, SameOperandsAndResultType, NoMemoryEffect,
+                  DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "round";
+  let description = [{
+    The `pop.round` operation takes a `!pop.simd` value and returns the element
+    wise rounding of its values to the nearest integer, with ties rounding
+    toward the nearest even. The operand and result types are the same and must
+    be index-like, arithmetic, or boolean dtypes. Integer, index, and boolean
+    values are returned unchanged.
+
+    Example:
+
+    ```mlir
+    %b = pop.round %a : !pop.simd<size, f32>
+    ```
+  }];
+
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // AbsOp
 //===----------------------------------------------------------------------===//
 
