@@ -43,7 +43,8 @@ from utils.numerics import get_accum_type
 from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
 
 
-# rms_norm_fused_residual: Single RMSNorm with fused residual connection
+# ===----------------------------------------------------------------------=== #
+# CPU Implementations
 # ===----------------------------------------------------------------------=== #
 
 
@@ -275,6 +276,11 @@ fn rms_norm_fused_residual_cpu[
         dropout_p=dropout_p,
         seed=seed,
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# GPU Implementations
+# ===----------------------------------------------------------------------=== #
 
 
 fn rms_norm_fused_residual_gpu_block[
@@ -610,6 +616,11 @@ fn _rms_norm_fused_residual_impl[
             dropout_p,
             seed,
         )
+
+
+# ===----------------------------------------------------------------------=== #
+# Public API
+# ===----------------------------------------------------------------------=== #
 
 
 @register_internal("rms_norm_fused_residual")
