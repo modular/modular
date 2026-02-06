@@ -27,8 +27,7 @@ struct TalkativeMem(Stringable, Writable):
 
 
 # This isn't copyable or movable, but it is talkative!
-@register_passable
-struct TalkativeReg(Stringable, Writable):
+struct TalkativeReg(RegisterType, Stringable, Writable):
     var state: Int
 
     @implicit
@@ -47,8 +46,9 @@ struct TalkativeReg(Stringable, Writable):
 
 
 # This is copyable, movable, and talkative!  It doesn't print on move.
-@register_passable
-struct TalkativeCopableReg(ImplicitlyCopyable, Stringable, Writable):
+struct TalkativeCopableReg(
+    ImplicitlyCopyable, RegisterType, Stringable, Writable
+):
     var state: Int
 
     @implicit

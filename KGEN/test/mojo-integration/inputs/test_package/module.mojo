@@ -38,8 +38,7 @@ struct UseTrait(UsedInPackageTrait):
         pass
 
 
-@register_passable
-struct UseTraitReg(UsedInPackageTrait):
+struct UseTraitReg(RegisterType, UsedInPackageTrait):
     fn method(self):
         pass
 

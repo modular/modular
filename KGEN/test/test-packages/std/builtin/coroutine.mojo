@@ -8,8 +8,9 @@ comptime AnyCoroutine = __mlir_type.`!co.routine`
 
 
 @explicit_destroy
-@register_passable
-struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
+struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`](
+    RegisterType
+):
     var value: __mlir_type.`!co.routine`
 
     @implicit
@@ -22,8 +23,9 @@ struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
 
 
 @explicit_destroy
-@register_passable
-struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
+struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`](
+    RegisterType
+):
     var value: __mlir_type.`!co.routine`
 
     @implicit
