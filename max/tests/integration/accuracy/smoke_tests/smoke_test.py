@@ -339,11 +339,8 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
         logger.info(f"{status} {extracted}")
 
 
-def start_server(
-    cmd: list[str], extra_env: dict[str, str], timeout: int
-) -> tuple[Popen[bytes], float]:
+def start_server(cmd: list[str], timeout: int) -> tuple[Popen[bytes], float]:
     env = os.environ.copy()
-    env.update(extra_env)
 
     if not _inside_bazel():
         # SGLang depends on ninja which is in the serve environment
@@ -481,8 +478,8 @@ def smoke_test(
             "vision",
         )
     )
-    # 1b is non-vision, tbmod is temporary to test legacy impl
-    if "gemma-3-1b" in model or model == "tbmod/gemma-3-4b-it":
+    # 1b is non-vision
+    if "gemma-3-1b" in model:
         is_vision_model = False
 
     tasks = [TEXT_TASK]
@@ -492,14 +489,11 @@ def smoke_test(
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
-    extra_env = {}
     timeout = 900
-    if model == "tbmod/gemma-3-4b-it":
-        extra_env = {"MODULAR_MAX_DISABLE_GEMMA3_VISION": "1"}
-    elif is_deepseek(model):
+    if is_deepseek(model):
         timeout = 1800
 
-    server_process, startup_time = start_server(cmd, extra_env, timeout)
+    server_process, startup_time = start_server(cmd, timeout)
     try:
         logger.info(f"Server started in {startup_time:.2f} seconds")
         write_github_output("startup_time", f"{startup_time:.2f}")

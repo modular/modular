@@ -152,10 +152,6 @@ MODELS = {
         "max-ci@2xH100",
     ],
     "redhatai/gemma-3-27b-it-fp8-dynamic": ["8xB200", "8xMI355"],
-    "tbmod/gemma-3-4b-it": [
-        "multi",
-        "H100",
-    ],  # B200 only, copy of gemma-3-4b
     "unsloth/gpt-oss-20b-bf16": [
         "max-ci@H100",
         "max@H100",
