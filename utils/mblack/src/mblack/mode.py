@@ -230,6 +230,16 @@ class Mode:
         """
         if feature is Preview.string_processing:
             return self.preview or self.experimental_string_processing
+        # In Mojo mode, always respect trailing commas in the head component
+        # of bracket splits. Without this, trailing commas in struct
+        # parameters like `struct S[A,](T):` are ignored when conformances
+        # cause the first split to put parameters in the head.
+        if feature is Preview.handle_trailing_commas_in_head:
+            return (
+                self.preview
+                or self.is_mojo
+                or TargetVersion.MOJO in self.target_versions
+            )
         return self.preview
 
     def get_cache_key(self) -> str:
