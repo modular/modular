@@ -54,7 +54,6 @@ enum ExprContext {
   EC_TypePattern,          // (x) : Type
   EC_FieldInitValue,       // SomeType{value: x}
   EC_DefaultArgument,      // def f(arg = x):
-  EC_OwnedRegArgShadow,    // def f(x: Int):    -> var shadow slot.
   EC_VarArgArgument,       // fn f(x: *Int):    -> creation of VariadicList.
   EC_PackArgument,         // fn f[..](*x: *Ts) -> creation of VariadicPack
   EC_KWArgsArgument,       // fn f(x: **Int):   -> creation of KWArgs dict

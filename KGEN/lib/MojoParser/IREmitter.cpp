@@ -76,8 +76,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in field initializer";
   case EC_DefaultArgument:
     return " in default argument";
-  case EC_OwnedRegArgShadow:
-    return " in owned argument shadow";
   case EC_VarArgArgument:
     return " in vararg argument compiler implementation internals";
   case EC_PackArgument:
