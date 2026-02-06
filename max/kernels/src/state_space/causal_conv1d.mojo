@@ -90,6 +90,8 @@ fn silu[
     Constraints:
         The dtype must be a floating-point type.
     """
+    if x < -20.0:
+        return 0.0
     return x / (1 + exp(-x))
 
 
