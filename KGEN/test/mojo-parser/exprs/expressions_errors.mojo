@@ -795,6 +795,9 @@ fn unbound_function_type():
   # expected-error @below {{function type missing required origin set parameter}}
   var f: fn() [_] -> None
 
+  # expected-error @below {{cannot use parametric function type at runtime 'fn[?, .p`: Int](HasIntParam[p]) -> None'}}
+  var g: fn(HasIntParam) -> None
+
 
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modular/mojo/issues/1921

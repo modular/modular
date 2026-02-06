@@ -1689,6 +1689,14 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
           << value.expr->getRange();
       return {};
     }
+
+    // Parametric function types can only be used at comptime.
+    if (!sig.isFullyBound()) {
+      emitError(value.expr->getLoc(),
+                "cannot use parametric function type at runtime ")
+          << sig << value.expr->getRange();
+      return {};
+    }
   }
 
   // Verify that all of the parameters for this type are bound.  We allow
