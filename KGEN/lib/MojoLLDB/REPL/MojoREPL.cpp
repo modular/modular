@@ -147,10 +147,8 @@ MojoREPL::MojoREPL(Target &target)
   });
 
   // Here we set the default expr eval options for all REPL expressions.
-  EvaluateExpressionOptions opts;
-  opts.SetTimeout(Timeout<std::micro>(std::nullopt));
-  opts.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
-  SetEvaluateOptions(opts);
+  m_expr_options.SetTimeout(Timeout<std::micro>(std::nullopt));
+  m_expr_options.SetOneThreadTimeout(Timeout<std::micro>(std::nullopt));
 }
 
 MojoREPL::~MojoREPL() {

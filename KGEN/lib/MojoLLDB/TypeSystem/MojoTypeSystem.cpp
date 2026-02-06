@@ -582,9 +582,7 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
 // IsType Queries
 //===----------------------------------------------------------------------===//
 
-bool MojoTypeSystem::IsFloatingPointType(lldb::opaque_compiler_type_t type,
-                                         bool &isComplex) {
-  isComplex = false;
+bool MojoTypeSystem::IsFloatingPointType(lldb::opaque_compiler_type_t type) {
   if (GetTypeInfo(type) & lldb::eTypeIsFloat) {
     return true;
   }
