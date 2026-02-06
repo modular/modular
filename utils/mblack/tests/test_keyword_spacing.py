@@ -4,7 +4,34 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
+
+import mblack
+from mblack.parsing import InvalidInput
 from tests.util import assert_mojo_format
+
+
+def test_unknown_convention_raises_error():
+    source = "fn foo(aaa self): pass"
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    with pytest.raises(InvalidInput, match="unknown argument convention"):
+        mblack.format_str(source, mode=mode)
+
+
+def test_inout_raises_error():
+    """inout has been removed from Mojo; the formatter should reject it."""
+    source = "fn method(inout self): pass"
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    with pytest.raises(InvalidInput, match="unknown argument convention"):
+        mblack.format_str(source, mode=mode)
+
+
+def test_borrowed_raises_error():
+    """borrowed has been removed from Mojo; the formatter should reject it."""
+    source = "fn method(borrowed self): pass"
+    mode = mblack.Mode(target_versions={mblack.TargetVersion.MOJO})
+    with pytest.raises(InvalidInput, match="unknown argument convention"):
+        mblack.format_str(source, mode=mode)
 
 
 def test_var_keyword_spacing_simple():
