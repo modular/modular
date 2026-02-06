@@ -21,6 +21,9 @@ from sys.info import has_accelerator, simd_width_of
 from math import iota
 from algorithm.functional import elementwise, IndexList
 from algorithm import max as reduce_max
+from algorithm import min as reduce_min
+from algorithm import sum as reduce_sum
+from algorithm import mean as reduce_mean
 from memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
@@ -266,10 +269,17 @@ fn PyInit_mojo_ops() -> PythonObject:
         # Range operation
         b.def_function[range_dispatcher]("Range", docstring="Range operation")
 
-        # Reduce max operation
+        # Reduce operations
         b.def_function[reduce_max_dispatcher](
             "ReduceMax", docstring="Reduce max along axis"
         )
+        b.def_function[reduce_min_dispatcher](
+            "ReduceMin", docstring="Reduce min along axis"
+        )
+        b.def_function[reduce_sum_dispatcher](
+            "ReduceAdd", docstring="Reduce add along axis"
+        )
+        b.def_function[mean_dispatcher]("Mean", docstring="Mean along axis")
 
         # Static broadcast to operation
         b.def_function[static_broadcast_to_dispatcher](
@@ -1408,17 +1418,153 @@ fn range_op[
 
 
 # ===----------------------------------------------------------------------=== #
-# ReduceMax operation
+# Reduce operations (max, min, sum, mean)
 # ===----------------------------------------------------------------------=== #
 
+# Function type shared by reduce_max, reduce_min, reduce_sum, and
+# _reduce_mean. Each takes (input_shape, reduce_dim, context) with
+# compile-time dtype, input/output lambdas, and target parameters.
+comptime ReduceFn = fn[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) capturing raises -> None
 
-fn reduce_max_dispatcher(
+
+fn _reduce_max[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.max for use with ReduceFn."""
+    reduce_max[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_min[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.min for use with ReduceFn."""
+    reduce_min[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_sum[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Non-overloaded wrapper around algorithm.sum for use with ReduceFn."""
+    reduce_sum[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, context)
+
+
+fn _reduce_mean[
+    dtype: DType,
+    input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: fn[width: Int, rank: Int](
+        IndexList[rank], SIMD[dtype, width]
+    ) capturing[_] -> None,
+    /,
+    single_thread_blocking_override: Bool = False,
+    target: StaticString = "cpu",
+](
+    input_shape: IndexList[_, element_type = DType.int64],
+    reduce_dim: Int,
+    context: DeviceContextPtr,
+) raises:
+    """Wrapper around algorithm.mean matching the reduce_max/min/sum signature.
+
+    Computes output_shape (reduction axis set to 1) and forwards to
+    reduce_mean which requires it as an extra argument.
+    """
+    var output_shape = input_shape
+    output_shape[reduce_dim] = 1
+    reduce_mean[
+        dtype,
+        input_fn,
+        output_fn,
+        single_thread_blocking_override=single_thread_blocking_override,
+        target=target,
+    ](input_shape, reduce_dim, output_shape, context)
+
+
+fn reduce_dispatcher[
+    reduce_fn: ReduceFn
+](
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     axis: PythonObject,
     device_context_ptr: PythonObject,
 ) raises:
-    """ReduceMax dispatcher with dtype dispatch.
+    """Reduce dispatcher with dtype dispatch.
+
+    Parameters:
+        reduce_fn: The reduction algorithm function (e.g. reduce_max,
+            reduce_min, reduce_sum, _reduce_mean).
 
     Args:
         out_buffer: The output buffer object (reduced shape).
@@ -1452,28 +1598,28 @@ fn reduce_max_dispatcher(
 
     # Float types
     if dtype == DType.float16:
-        reduce_max_op[DType.float16](
+        reduce_op[DType.float16, reduce_fn](
             _get_buffer_ptr[DType.float16](out_buffer),
             _get_buffer_ptr[DType.float16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.float32:
-        reduce_max_op[DType.float32](
+        reduce_op[DType.float32, reduce_fn](
             _get_buffer_ptr[DType.float32](out_buffer),
             _get_buffer_ptr[DType.float32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.float64:
-        reduce_max_op[DType.float64](
+        reduce_op[DType.float64, reduce_fn](
             _get_buffer_ptr[DType.float64](out_buffer),
             _get_buffer_ptr[DType.float64](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.bfloat16:
-        reduce_max_op[DType.bfloat16](
+        reduce_op[DType.bfloat16, reduce_fn](
             _get_buffer_ptr[DType.bfloat16](out_buffer),
             _get_buffer_ptr[DType.bfloat16](in_buffer),
             normalized_shape,
@@ -1481,28 +1627,28 @@ fn reduce_max_dispatcher(
         )
     # Integer types
     elif dtype == DType.int8:
-        reduce_max_op[DType.int8](
+        reduce_op[DType.int8, reduce_fn](
             _get_buffer_ptr[DType.int8](out_buffer),
             _get_buffer_ptr[DType.int8](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int16:
-        reduce_max_op[DType.int16](
+        reduce_op[DType.int16, reduce_fn](
             _get_buffer_ptr[DType.int16](out_buffer),
             _get_buffer_ptr[DType.int16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int32:
-        reduce_max_op[DType.int32](
+        reduce_op[DType.int32, reduce_fn](
             _get_buffer_ptr[DType.int32](out_buffer),
             _get_buffer_ptr[DType.int32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.int64:
-        reduce_max_op[DType.int64](
+        reduce_op[DType.int64, reduce_fn](
             _get_buffer_ptr[DType.int64](out_buffer),
             _get_buffer_ptr[DType.int64](in_buffer),
             normalized_shape,
@@ -1510,49 +1656,51 @@ fn reduce_max_dispatcher(
         )
     # Unsigned integer types
     elif dtype == DType.uint8:
-        reduce_max_op[DType.uint8](
+        reduce_op[DType.uint8, reduce_fn](
             _get_buffer_ptr[DType.uint8](out_buffer),
             _get_buffer_ptr[DType.uint8](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint16:
-        reduce_max_op[DType.uint16](
+        reduce_op[DType.uint16, reduce_fn](
             _get_buffer_ptr[DType.uint16](out_buffer),
             _get_buffer_ptr[DType.uint16](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint32:
-        reduce_max_op[DType.uint32](
+        reduce_op[DType.uint32, reduce_fn](
             _get_buffer_ptr[DType.uint32](out_buffer),
             _get_buffer_ptr[DType.uint32](in_buffer),
             normalized_shape,
             ctx,
         )
     elif dtype == DType.uint64:
-        reduce_max_op[DType.uint64](
+        reduce_op[DType.uint64, reduce_fn](
             _get_buffer_ptr[DType.uint64](out_buffer),
             _get_buffer_ptr[DType.uint64](in_buffer),
             normalized_shape,
             ctx,
         )
     else:
-        raise Error("Unsupported dtype for reduce_max: " + String(dtype))
+        raise Error("Unsupported dtype for reduce: " + String(dtype))
 
 
-fn reduce_max_op[
-    dtype: DType
+fn reduce_op[
+    dtype: DType,
+    reduce_fn: ReduceFn,
 ](
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     normalized_shape: IndexList[3],
     ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
-    """ReduceMax operation on a rank-3 normalized tensor.
+    """Reduce operation on a rank-3 normalized tensor.
 
     Parameters:
         dtype: The data type of the arrays.
+        reduce_fn: The reduction algorithm function.
 
     Args:
         out_ptr: Pointer to the output buffer.
@@ -1596,12 +1744,12 @@ fn reduce_max_op[
     # Always dispatch rank-3 reduction with axis=1
     if not ctx:
         # TODO(MXF-108): Remove single_thread_blocking_override
-        reduce_max[
+        reduce_fn[
             dtype,
             input_fn,
             output_fn,
-            target="cpu",
             single_thread_blocking_override=True,
+            target="cpu",
         ](normalized_shape, 1, DeviceContextPtr(ctx))
     else:
 
@@ -1619,7 +1767,7 @@ fn reduce_max_op[
                 DType.uint64,
             ):
                 var device_ctx = DeviceContextPtr(ctx)
-                reduce_max[
+                reduce_fn[
                     dtype,
                     input_fn,
                     output_fn,
@@ -1629,11 +1777,60 @@ fn reduce_max_op[
                 device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
-                    "GPU execution not supported for reduce_max with dtype "
+                    "GPU execution not supported for reduce with dtype "
                     + String(dtype)
                 )
         else:
             raise Error("No GPU accelerator available")
+
+
+# Concrete dispatcher functions for def_function registration.
+# def_function requires fully concrete function types, so we can't pass
+# reduce_dispatcher[_reduce_max] directly (parametric fn type can't be inferred).
+
+
+fn reduce_max_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_max](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_min_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_min](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn reduce_sum_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_sum](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
+
+
+fn mean_dispatcher(
+    out_buffer: PythonObject,
+    in_buffer: PythonObject,
+    axis: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    reduce_dispatcher[_reduce_mean](
+        out_buffer, in_buffer, axis, device_context_ptr
+    )
 
 
 # ===----------------------------------------------------------------------=== #

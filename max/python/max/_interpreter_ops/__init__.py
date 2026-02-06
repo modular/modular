@@ -80,6 +80,16 @@ UNARY_ELEMENTWISE: dict[
     mo.NotOp: mojo_ops.Not,
 }
 
+# Reduce ops: reduce along an axis, output shape has reduced dim = 1
+REDUCE: dict[
+    type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
+] = {
+    mo.ReduceMaxOp: mojo_ops.ReduceMax,
+    mo.ReduceMinOp: mojo_ops.ReduceMin,
+    mo.ReduceAddOp: mojo_ops.ReduceAdd,
+    mo.MeanOp: mojo_ops.Mean,
+}
+
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
@@ -87,6 +97,7 @@ from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 __all__ = [
     "BINARY_ELEMENTWISE",
     "BINARY_ELEMENTWISE_COMPARISON",
+    "REDUCE",
     "UNARY_ELEMENTWISE",
     "_MO_OP_HANDLERS",
     "lookup_handler",

@@ -686,51 +686,48 @@ def _handle_param_to_value(
 # Reduce operations
 
 
-@register_op_handler(mo.ReduceMaxOp)
-def _handle_reduce_max(
-    op: mo.ReduceMaxOp, inputs: Sequence[Buffer | None]
-) -> Sequence[Buffer]:
-    """Handle mo.reduce.max by dispatching to Mojo reduce_max kernel.
+def reduce_handler(op_type: type) -> OpHandler:
+    op_binding = ops.REDUCE[op_type]
 
-    Args:
-        op: The reduce max operation.
-        inputs: Input buffers - first is the tensor to reduce,
-            second is the axis tensor (scalar si64).
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
 
-    Returns:
-        List containing the reduced tensor buffer.
-    """
-    result_type = graph.Type.from_mlir(list(op.results)[0].type)
-    assert isinstance(result_type, graph.TensorType)
-    target_device = result_type.device.to_device()
+        assert isinstance(inputs[0], Buffer)
+        assert isinstance(inputs[1], Buffer)
 
-    assert isinstance(inputs[0], Buffer)
-    assert isinstance(inputs[1], Buffer)
+        input_buffer = inputs[0]
+        axis_buffer = inputs[1]
 
-    input_buffer = inputs[0]
-    axis_buffer = inputs[1]
+        # Extract axis value from the axis tensor (scalar si64)
+        axis_np = axis_buffer.to_numpy()
+        axis = int(axis_np.item())
 
-    # Extract axis value from the axis tensor (scalar si64)
-    axis_np = axis_buffer.to_numpy()
-    axis = int(axis_np.item())
+        # Calculate output shape (same as input with reduced axis dim = 1)
+        output_shape = list(input_buffer.shape)
+        output_shape[axis] = 1
 
-    # Calculate output shape (same as input with reduced axis dim = 1)
-    output_shape = list(input_buffer.shape)
-    output_shape[axis] = 1
+        output = Buffer(
+            shape=output_shape,
+            dtype=input_buffer.dtype,
+            device=target_device,
+        )
 
-    # Allocate output buffer
-    output = Buffer(
-        shape=tuple(output_shape),
-        dtype=input_buffer.dtype,
-        device=target_device,
-    )
+        op_binding(
+            output, input_buffer, axis, target_device._device_context_ptr()
+        )
 
-    # Call Mojo kernel
-    ops.mojo_ops.ReduceMax(
-        output, input_buffer, axis, target_device._device_context_ptr()
-    )
+        return [output]
 
-    return [output]
+    return handler
+
+
+for op_type in ops.REDUCE:
+    register_op_handler(op_type)(reduce_handler(op_type))
 
 
 # Range operations

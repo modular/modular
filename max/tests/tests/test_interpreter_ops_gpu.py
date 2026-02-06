@@ -655,3 +655,300 @@ class TestReduceMaxGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch.amax(x_torch, dim=-1, keepdim=True)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestReduceMinGPU:
+    """Tests for GPU reduce_min operations via Tensor.min with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_min_last_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the last axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amin(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_min_first_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the first axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=0)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amin(x_torch, dim=0, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_min_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_min on a middle axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amin(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_reduce_min_2d(self) -> None:
+        """Test reduce_min on a 2D tensor on GPU."""
+        shape = [4, 6]
+
+        x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.amin(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected)
+
+
+class TestReduceSumGPU:
+    """Tests for GPU reduce_sum operations via Tensor.sum with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_sum_last_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the last axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.sum(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_sum_first_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the first axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=0)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.sum(x_torch, dim=0, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_reduce_sum_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on a middle axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.sum(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_reduce_sum_2d(self) -> None:
+        """Test reduce_sum on a 2D tensor on GPU."""
+        shape = [4, 6]
+
+        x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.sum(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+
+class TestMeanGPU:
+    """Tests for GPU mean operations via Tensor.mean with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_mean_last_axis(self, dtype: DType) -> None:
+        """Test mean on the last axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.mean(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_mean_first_axis(self, dtype: DType) -> None:
+        """Test mean on the first axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=0)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.mean(x_torch, dim=0, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_mean_middle_axis(self, dtype: DType) -> None:
+        """Test mean on a middle axis on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        shape = [3, 4, 5]
+
+        x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.mean(x_torch, dim=1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+    def test_mean_2d(self) -> None:
+        """Test mean on a 2D tensor on GPU."""
+        shape = [4, 6]
+
+        x_torch = torch.randn(shape, dtype=torch.float32, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.mean(x_torch, dim=-1, keepdim=True)
+        torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)

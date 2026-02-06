@@ -1212,3 +1212,216 @@ class TestReduceOps:
 
         expected = np.max(x_np, axis=-1, keepdims=True)
         np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- ReduceMin tests ---
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+    def test_reduce_min_last_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_first_axis(self, dtype: DType) -> None:
+        """Test reduce_min on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=0)
+
+        expected = np.min(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_min on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=1)
+
+        expected = np.min(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_min_2d(self, dtype: DType) -> None:
+        """Test reduce_min on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.min(axis=-1)
+
+        expected = np.min(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- ReduceAdd (sum) tests ---
+
+    @pytest.mark.parametrize(
+        "dtype",
+        FLOAT_DTYPES + [DType.int32, DType.int64],
+    )
+    def test_reduce_sum_last_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        expected = np.sum(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_first_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=0)
+
+        expected = np.sum(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_middle_axis(self, dtype: DType) -> None:
+        """Test reduce_sum on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=1)
+
+        expected = np.sum(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_reduce_sum_2d(self, dtype: DType) -> None:
+        """Test reduce_sum on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.sum(axis=-1)
+
+        expected = np.sum(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    # --- Mean tests ---
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_last_axis(self, dtype: DType) -> None:
+        """Test mean on the last axis matches numpy."""
+        shape = [3, 4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(60, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        expected = np.mean(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_first_axis(self, dtype: DType) -> None:
+        """Test mean on the first axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((3, 4, 5)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=0)
+
+        expected = np.mean(x_np, axis=0, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_middle_axis(self, dtype: DType) -> None:
+        """Test mean on a middle axis."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((2, 3, 4)).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=1)
+
+        expected = np.mean(x_np, axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_mean_2d(self, dtype: DType) -> None:
+        """Test mean on 2D tensor."""
+        shape = [4, 5]
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(20, dtype=np_dtype).reshape(shape)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.mean(axis=-1)
+
+        expected = np.mean(x_np, axis=-1, keepdims=True)
+        np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
