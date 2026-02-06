@@ -26,7 +26,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.kv_cache import infer_optimal_batch_size
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -346,53 +345,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         raise NotImplementedError(
             "PipelineModel must implement calculate_max_seq_len"
         )
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        pipeline_config: PipelineConfig,
-        available_cache_memory: int,
-        huggingface_config: AutoConfig,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> int:
-        """Returns the estimated optimal batch size to run the model
-        given current memory constraints."""
-        if not issubclass(cls, KVCacheMixin):
-            # we rely on the KVCache setup to know optimal batch size.
-            # If we don't have that, default to BS=1.
-            return 1
-        elif len(devices) == 1 and devices[0].is_host:
-            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
-            return 1
-
-        # TODO we should map HF configs to a unified MAX Config object
-        # this would help avoid these excessive calls to class methods.
-        kv_params = cls.get_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in devices],
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
-        n_layers = kv_params.num_layers
-        inferred_batch_size = infer_optimal_batch_size(
-            params=kv_params,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
-            num_layers=n_layers,
-            available_cache_memory=available_cache_memory,
-            devices=devices,
-        )
-
-        # clamp the floor of the inferred batch size to 1 and the ceiling to 4096
-        inferred_batch_size = max(
-            cls._MIN_DEFAULT_BATCH_SIZE,
-            min(inferred_batch_size, cls._MAX_DEFAULT_BATCH_SIZE),
-        )
-        return inferred_batch_size
 
     @classmethod
     def estimate_weights_size(cls, pipeline_config: PipelineConfig) -> int:

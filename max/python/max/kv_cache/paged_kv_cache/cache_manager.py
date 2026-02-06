@@ -21,6 +21,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
@@ -216,9 +217,8 @@ class PagedKVCacheManager:
     @classmethod
     def infer_optimal_batch_size(
         cls,
-        params: KVCacheParams,
+        params: KVCacheParamInterface,
         max_seq_len: int,
-        num_layers: int,
         available_cache_memory: int,
         devices: Sequence[Device],
         **kwargs: Any,

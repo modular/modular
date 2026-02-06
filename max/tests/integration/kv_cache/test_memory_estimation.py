@@ -14,7 +14,12 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    compute_num_device_blocks,
+    estimated_memory_size,
+)
 
 INF = 999999999
 GIB = 1024 * 1024 * 1024
@@ -42,7 +47,8 @@ def create_params(
 def test_basic() -> None:
     params = create_params()
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -50,7 +56,8 @@ def test_basic() -> None:
         == 1024
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -62,7 +69,8 @@ def test_basic() -> None:
 def test_unaligned() -> None:
     params = create_params()
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB + 7,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -70,7 +78,8 @@ def test_unaligned() -> None:
         == 1024
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=GIB + 7,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -82,7 +91,8 @@ def test_unaligned() -> None:
 def test_big_mem() -> None:
     params = create_params()
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=17 * GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -90,7 +100,8 @@ def test_big_mem() -> None:
         == 17 * 1024
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=17 * GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -102,7 +113,8 @@ def test_big_mem() -> None:
 def test_small_batch_and_seq_len() -> None:
     params = create_params()
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=4,
             max_seq_len=1000,
@@ -114,7 +126,8 @@ def test_small_batch_and_seq_len() -> None:
 def test_tp2() -> None:
     params = create_params(tp=2)
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -122,7 +135,8 @@ def test_tp2() -> None:
         == 1024
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -137,7 +151,8 @@ def test_limited_mem() -> None:
         RuntimeError,
         match="Insufficient cache memory to allocate even a single page",
     ):
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=1,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -147,7 +162,8 @@ def test_limited_mem() -> None:
 def test_dp2() -> None:
     params = create_params(dp=2)
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -155,7 +171,8 @@ def test_dp2() -> None:
         == 512
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -167,7 +184,8 @@ def test_dp2() -> None:
 def test_weird_page_size() -> None:
     params = create_params(page_size=777)
     assert (
-        params.compute_num_device_blocks(
+        compute_num_device_blocks(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -175,7 +193,8 @@ def test_weird_page_size() -> None:
         == 168
     )
     assert (
-        params.estimated_memory_size(
+        estimated_memory_size(
+            params=params,
             available_cache_memory=GIB,
             max_batch_size=INF,
             max_seq_len=INF,
@@ -210,12 +229,14 @@ def test_quantized_kv_cache() -> None:
     fp8_params = create_params(dp=2, dtype=DType.float8_e4m3fn)
     fp32_params = create_params(dp=2, dtype=DType.float32)
 
-    fp8_estimated_memory = fp8_params.estimated_memory_size(
+    fp8_estimated_memory = estimated_memory_size(
+        params=fp8_params,
         available_cache_memory=GIB,
         max_batch_size=INF,
         max_seq_len=INF,
     )
-    fp32_estimated_memory = fp32_params.estimated_memory_size(
+    fp32_estimated_memory = estimated_memory_size(
+        params=fp32_params,
         available_cache_memory=GIB,
         max_batch_size=INF,
         max_seq_len=INF,
@@ -227,12 +248,14 @@ def test_quantized_kv_cache() -> None:
     # The number of bytes / block should be ~4x smaller for FP8 KVCache (compared to FP32).
     assert fp8_params.bytes_per_block < fp32_params.bytes_per_block
 
-    fp8_num_device_blocks = fp8_params.compute_num_device_blocks(
+    fp8_num_device_blocks = compute_num_device_blocks(
+        params=fp8_params,
         available_cache_memory=GIB,
         max_batch_size=INF,
         max_seq_len=INF,
     )
-    fp32_num_device_blocks = fp32_params.compute_num_device_blocks(
+    fp32_num_device_blocks = compute_num_device_blocks(
+        params=fp32_params,
         available_cache_memory=GIB,
         max_batch_size=INF,
         max_seq_len=INF,

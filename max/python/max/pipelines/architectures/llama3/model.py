@@ -173,7 +173,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         ] = {}
 
     # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
-    # called from PipelineModel's infer_optimal_batch_size method.
+    # called from PipelineModel's __init__ method.
     @classmethod
     def get_kv_params(
         cls,

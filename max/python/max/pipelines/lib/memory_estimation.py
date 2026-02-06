@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, is_virtual_device_mode, load_devices
 from max.kv_cache import estimate_kv_cache_size, infer_optimal_batch_size
+from max.nn.legacy.kv_cache import compute_max_seq_len_fitting_in_cache
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
@@ -131,8 +132,9 @@ class MemoryEstimator:
         kvcache_mem = cls.available_kv_cache_memory(
             model_weights_size, activation_memory_size, model_config, devices
         )
-        return params.compute_max_seq_len_fitting_in_cache(
-            available_cache_memory=kvcache_mem
+        return compute_max_seq_len_fitting_in_cache(
+            params=params,
+            available_cache_memory=kvcache_mem,
         )
 
     @classmethod
@@ -718,7 +720,6 @@ class MemoryEstimator:
 
         kv_params = arch_config.get_kv_params()
         max_seq_len = arch_config.get_max_seq_len()
-        n_layers = kv_params.num_layers
 
         device_objs = (
             devices
@@ -729,7 +730,6 @@ class MemoryEstimator:
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=max_seq_len,
-            num_layers=n_layers,
             available_cache_memory=available_kv_cache_memory,
             devices=device_objs,
         )
