@@ -380,7 +380,7 @@ def get_leaves_inside_matching_brackets(leaves: Sequence[Leaf]) -> set[LeafID]:
             i for i, l in enumerate(leaves) if l.type in OPENING_BRACKETS
         )
         end_index = next(
-            len(leaves) - i
+            len(leaves) - 1 - i
             for i, l in enumerate(reversed(leaves))
             if l.type in CLOSING_BRACKETS
         )
