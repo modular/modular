@@ -78,8 +78,12 @@ from linalg.utils import partition_work
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
+from sys import has_nvidia_gpu_accelerator
+from sys.info import _accelerator_arch
+from gpu.host.info import B200
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
+
 
 from .conv_utils import (
     ConvInfoStatic,
@@ -3599,7 +3603,49 @@ fn conv_gpu[
 
     @parameter
     if input.rank == 4:
+        # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
+        comptime _is_sm100 = ctx.default_device_info == B200
+        comptime _is_supported_dtype = input_type == DType.bfloat16
 
+        @parameter
+        if _is_sm100 and _is_supported_dtype and not maybe_epilogue_func:
+            from nn.conv_sm100.dispatch import (
+                dispatch_sm100_conv2d,
+            )
+
+            # SM100 dispatch: stride=1, dilation=1, groups=1,
+            # and channels aligned to 64 (TMA tile K alignment)
+            var s = rebind[IndexList[2]](stride)
+            var d = rebind[IndexList[2]](dilation)
+            var in_c = input.dim[input.rank - 1]()
+            var out_c = output.dim[output.rank - 1]()
+            if (
+                s[0] == 1
+                and s[1] == 1
+                and d[0] == 1
+                and d[1] == 1
+                and num_groups == 1
+                and in_c % 64 == 0
+                and out_c % 128 == 0
+            ):
+                dispatch_sm100_conv2d[
+                    input_layout,
+                    filter_layout,
+                    output_layout,
+                    input_type,
+                    filter_type,
+                    output_type,
+                    filter_is_fcrs,
+                ](
+                    input,
+                    filter,
+                    output,
+                    rebind[IndexList[2]](symmetric_padding),
+                    ctx,
+                )
+                return
+
+        # Fallback paths for non-SM100, unsupported dtypes, or constraints
         @parameter
         if filter_is_fcrs:
 
