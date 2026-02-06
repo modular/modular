@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call
+from ffi import external_call
 
 from builtin.simd import _simd_apply
 from testing import assert_equal, assert_true
@@ -87,7 +87,7 @@ fn libm_call[
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp64, Scalar[result_type]](arg)
 
-    __comptime_assert dtype in [
+    comptime assert dtype in [
         DType.float32,
         DType.float64,
     ], "input dtype must be float32 or float64"

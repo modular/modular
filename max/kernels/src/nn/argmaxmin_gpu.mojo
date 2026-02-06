@@ -13,7 +13,7 @@
 
 
 from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 from nn.topk import topk_gpu
@@ -39,13 +39,13 @@ fn argmaxmin_gpu[
         input: TileTensor[dtype] - The input tensor allocated on the device.
         output: TileTensor[dtype] - The output tensor allocated on the device.
     """
-    __comptime_assert input.rank > 0, "Input rank must be positive"
-    __comptime_assert (
+    comptime assert input.rank > 0, "Input rank must be positive"
+    comptime assert (
         input.rank == output.rank
     ), "Input and output rank must be the same"
     comptime K = 1
 
-    var out_vals_shape = coord_to_index_list(input.layout.shape)
+    var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
     out_vals_shape[input.rank - 1] = K
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
@@ -55,13 +55,7 @@ fn argmaxmin_gpu[
         row_major(Coord(out_vals_shape)),
     )
 
-    topk_gpu[sampling=False, largest=largest](
-        ctx,
-        K,
-        input.to_layout_tensor(),
-        out_vals.to_layout_tensor(),
-        output.to_layout_tensor(),
-    )
+    topk_gpu[sampling=False, largest=largest](ctx, K, input, out_vals, output)
 
     _ = out_vals_buf^
 

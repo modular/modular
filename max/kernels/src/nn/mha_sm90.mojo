@@ -141,7 +141,7 @@ fn mha_sm90_dispatch[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
 ) raises:
-    __comptime_assert (
+    comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
@@ -156,17 +156,17 @@ fn mha_sm90_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    __comptime_assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
+    comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
     )
-    __comptime_assert (
+    comptime assert (
         BK % 64 == 0
     ), "H100 requires BK%64==0 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
     comptime num_threads = new_config.num_threads[True]()
-    __comptime_assert num_threads % 128 == 0
+    comptime assert num_threads % 128 == 0
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,
@@ -176,7 +176,7 @@ fn mha_sm90_dispatch[
     comptime persistent = 0 if PartitionType.do_partition else env_get_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
-    __comptime_assert new_config.algorithm == FlashAttentionAlgorithm(3)
+    comptime assert new_config.algorithm == FlashAttentionAlgorithm(3)
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
@@ -1001,7 +1001,7 @@ fn _mha_sm90[
     max_seq_len = pack.max_seq_len
     partition = pack.partition
 
-    __comptime_assert num_warps_m == (
+    comptime assert num_warps_m == (
         num_consumer_threads // UInt(WARP_SIZE)
     ), "Number of warps doesn't match warp tile sizes."
 
@@ -1062,14 +1062,14 @@ fn _mha_sm90[
     comptime MMA_K = 16
     comptime WM = config.WM
     comptime num_m_mmas = WM // MMA_M
-    __comptime_assert num_m_mmas == 1, "FIXME: life this constraint"
+    comptime assert num_m_mmas == 1, "FIXME: life this constraint"
     # alias WN = config.WN
     # alias num_n_mmas = WN // MMA_N
     comptime num_n_mmas = 1
     # alias num_k_mmas = BK // MMA_K
 
     comptime accum_type = get_accum_type[kv_type]()
-    __comptime_assert (
+    comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
     comptime p_frag_size = MMA_M * Int(MMA_N0) // WARP_SIZE

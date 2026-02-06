@@ -6,13 +6,13 @@ description: An explanation of when and how Mojo destroys values.
 
 As soon as a value/object is no longer used, Mojo destroys it. Mojo does *not*
 wait until the end of a code block—or even until the end of an expression—to
-destroy an unused value. It destroys values using an “as soon as possible”
+destroy an unused value. It destroys values using an "as soon as possible"
 (ASAP) destruction policy that runs after every sub-expression. Even within an
 expression like `a+b+c+d`, Mojo destroys the intermediate values as soon as
 they're no longer needed.
 
 Mojo uses static analysis at compile-time to determine the last use of a value. At
-that point, it immediately ends the value’s lifetime and calls the _implicit_
+that point, it immediately ends the value's lifetime and calls the _implicit_
 `__del__()` destructor. You can override `__del__()` in your structs to perform any
 required cleanup.
 
@@ -256,7 +256,7 @@ This ability to "control the future" is a powerful tool for developers.
 It allows teardown requirements to be added directly into the type
 system. It guides users toward valid cleanup paths, making programs that
 skip those paths impossible to compile and elevating safe destruction
-to a first-class part of a value’s lifecycle.
+to a first-class part of a value's lifecycle.
 
 With _implicit destruction_, the compiler manages cleanup. It automatically
 calls `__del__()` when a value has no further uses, based on lifetime analysis. You
@@ -271,7 +271,7 @@ results in a compiler error.
 
 ### Using `@explicit_destroy`
 
-Most types use implicit destruction. When a value’s lifetime ends, Mojo
+Most types use implicit destruction. When a value's lifetime ends, Mojo
 automatically calls `__del__()` to clean up. This works for most cases: memory
 is freed and simple resources are released automatically.
 
@@ -521,7 +521,7 @@ it's likewise impossible to destroy an object by destroying only its fields.
 Both the consuming move constructor and the destructor take their operand with
 the `deinit` argument convention. This grants exclusive ownership of the value
 and marks it as destroyed at the end of the function. Within the function body,
-Mojo’s ASAP policy still applies to fields: each field is destroyed immediately
+Mojo's ASAP policy still applies to fields: each field is destroyed immediately
 after its last use.
 
 Just to recap, the move constructor and destructor method signatures
@@ -574,7 +574,7 @@ def main():
 
 ## Explicit lifetime extension
 
-Most of the time, Mojo’s ASAP destruction “just works.” Very rarely, you may
+Most of the time, Mojo's ASAP destruction "just works." Very rarely, you may
 need to explicitly mark the last use of a value to control when its destructor
 runs. Think of this as an explicit last-use marker for the lifetime checker, not
 a general-purpose pattern.
@@ -585,7 +585,7 @@ You might do this:
   warnings or dead-code elimination).
 
 - When writing unsafe/advanced code (for example, code that manipulates a
-  value’s [origin](/mojo/manual/values/lifetimes)).
+  value's [origin](/mojo/manual/values/lifetimes)).
 
 - When you need deterministic destructor timing relative to specific side
   effects (such as logging or profiling).

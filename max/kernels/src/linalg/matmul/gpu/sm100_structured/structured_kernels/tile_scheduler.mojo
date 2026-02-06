@@ -519,14 +519,14 @@ struct TileScheduler[
     ) -> WorkInfo:
         comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        var normalized_m = FastUInt(Int(work_info.m)) / Self.log_cluster_m
-        var normalized_n = FastUInt(Int(work_info.n)) / Self.log_cluster_n
+        var normalized_m = FastUInt(work_info.m) / Self.log_cluster_m
+        var normalized_n = FastUInt(work_info.n) / Self.log_cluster_n
         comptime log_block_swizzle_size = FastDiv[DType.uint32](
             Self.block_swizzle_size
         )
 
         var linear_cluster_id = (
-            normalized_m * FastUInt(Int(cluster_dim[1])) + normalized_n
+            normalized_m * FastUInt(cluster_dim[1]) + normalized_n
         )
 
         # CLC rasterize along M by default.
@@ -541,10 +541,10 @@ struct TileScheduler[
         @parameter
         if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
-                FastUInt(Int(cluster_dim[0])) / log_block_swizzle_size
+                FastUInt(cluster_dim[0]) / log_block_swizzle_size
             )
             var swizzle_n_size = (
-                FastUInt(Int(cluster_dim[1])) / log_block_swizzle_size
+                FastUInt(cluster_dim[1]) / log_block_swizzle_size
             )
 
             var m_local = (new_normalized_m / log_block_swizzle_size) + (

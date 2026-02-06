@@ -16,8 +16,8 @@ import json
 
 import pytest
 from max.interfaces.provider_options import (
+    ImageProviderOptions,
     MaxProviderOptions,
-    PixelModalityOptions,
     ProviderOptions,
 )
 from max.interfaces.request.open_responses import (
@@ -307,25 +307,27 @@ def test_create_response_body_with_provider_options() -> None:
     assert request.provider_options is not None
     assert request.provider_options.max is not None
     assert request.provider_options.max.target_endpoint == "instance-123"
-    assert request.provider_options.pixel is None
+    assert request.provider_options.image is None
+    assert request.provider_options.video is None
 
 
-def test_create_response_body_with_max_and_pixel_options() -> None:
-    """Test CreateResponseBody with both MAX and pixel modality options."""
+def test_create_response_body_with_max_and_image_options() -> None:
+    """Test CreateResponseBody with both MAX and image modality options."""
     request = CreateResponseBody(
         model="vision-model",
         input="Describe this image",
         provider_options=ProviderOptions(
             max=MaxProviderOptions(target_endpoint="instance-456"),
-            pixel=PixelModalityOptions(dummy_param="test"),
+            image=ImageProviderOptions(width=512, height=512),
         ),
     )
 
     assert request.provider_options is not None
     assert request.provider_options.max is not None
     assert request.provider_options.max.target_endpoint == "instance-456"
-    assert request.provider_options.pixel is not None
-    assert request.provider_options.pixel.dummy_param == "test"
+    assert request.provider_options.image is not None
+    assert request.provider_options.image.width == 512
+    assert request.provider_options.image.height == 512
 
 
 def test_create_response_body_provider_options_json_serialization() -> None:
@@ -335,7 +337,7 @@ def test_create_response_body_provider_options_json_serialization() -> None:
         input="Hello!",
         provider_options=ProviderOptions(
             max=MaxProviderOptions(target_endpoint="instance-123"),
-            pixel=PixelModalityOptions(dummy_param="test"),
+            image=ImageProviderOptions(width=1024, height=768),
         ),
     )
 
@@ -348,7 +350,8 @@ def test_create_response_body_provider_options_json_serialization() -> None:
         json_data["provider_options"]["max"]["target_endpoint"]
         == "instance-123"
     )
-    assert json_data["provider_options"]["pixel"]["dummy_param"] == "test"
+    assert json_data["provider_options"]["image"]["width"] == 1024
+    assert json_data["provider_options"]["image"]["height"] == 768
 
 
 def test_create_response_body_provider_options_json_deserialization() -> None:
@@ -358,7 +361,7 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
         "input": "Hello!",
         "provider_options": {
             "max": {"target_endpoint": "instance-123"},
-            "pixel": {"dummy_param": "test"},
+            "image": {"width": 512, "height": 512},
         },
     }
 
@@ -369,8 +372,9 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
     assert request.provider_options is not None
     assert request.provider_options.max is not None
     assert request.provider_options.max.target_endpoint == "instance-123"
-    assert request.provider_options.pixel is not None
-    assert request.provider_options.pixel.dummy_param == "test"
+    assert request.provider_options.image is not None
+    assert request.provider_options.image.width == 512
+    assert request.provider_options.image.height == 512
 
 
 def test_create_response_body_without_provider_options() -> None:
@@ -396,16 +400,19 @@ def test_create_response_body_with_partial_provider_options() -> None:
     )
     assert request.provider_options is not None
     assert request.provider_options.max is not None
-    assert request.provider_options.pixel is None
+    assert request.provider_options.image is None
+    assert request.provider_options.video is None
 
-    # Only pixel options
+    # Only image options
     request = CreateResponseBody(
         model="vision-model",
         input="Describe this",
         provider_options=ProviderOptions(
-            pixel=PixelModalityOptions(dummy_param="test")
+            image=ImageProviderOptions(width=512, height=512)
         ),
     )
     assert request.provider_options is not None
     assert request.provider_options.max is None
-    assert request.provider_options.pixel is not None
+    assert request.provider_options.image is not None
+    assert request.provider_options.image.width == 512
+    assert request.provider_options.image.height == 512

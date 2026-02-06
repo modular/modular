@@ -65,7 +65,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
-        __comptime_assert (
+        comptime assert (
             not Self.dim.is_dynamic()
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
@@ -126,7 +126,7 @@ fn bench_compile_time[
     func: func_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
-    __comptime_assert emission_kind in ("asm", "llvm", "ptx")
+    comptime assert emission_kind in ("asm", "llvm", "ptx")
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
@@ -187,7 +187,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     @parameter
     for i in range(len(name)):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
+        comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
         @parameter
         if name_unsafe_ptr[i] == x_ptr:

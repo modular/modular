@@ -47,8 +47,8 @@ comptime K_BATCH_SIZE = 512
 def matmul_qint4_pack_b[
     group_size: Int
 ](b: LayoutTensor[DType.uint8, ...], b_rot: LayoutTensor[DType.uint8, ...]):
-    __comptime_assert b.rank == 2
-    __comptime_assert b_rot.rank == 2
+    comptime assert b.rank == 2
+    comptime assert b_rot.rank == 2
     comptime n_tiles = 2
     comptime n_groups = n_tiles * simd_width_of[DType.float32]()
     comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)
@@ -106,7 +106,9 @@ fn _quantize_a_block[
     var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[
         DType.int8
     ]()
-    var quant_data = quant_data_s8.cast[aq_type]() + a_zero_point
+    var quant_data = quant_data_s8.cast[aq_type]() + Scalar[aq_type](
+        a_zero_point
+    )
 
     return (quant_data, scale)
 
@@ -126,12 +128,12 @@ fn _quantize_a_buffer[
     representation. The data is in a packed layout that can be efficiently
     indexed by the matrix multiply kernels.
     """
-    __comptime_assert (
+    comptime assert (
         group_size % aq_interleave
     ) == 0, "interleave must be a factor of group size"
-    __comptime_assert a.rank == 2
-    __comptime_assert a_quant.rank == 2
-    __comptime_assert a_scale.rank == 2
+    comptime assert a.rank == 2
+    comptime assert a_quant.rank == 2
+    comptime assert a_scale.rank == 2
 
     var M = a.dim[0]()
     var K = a.dim[1]()
@@ -459,9 +461,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         a_quant: LayoutTensor[aq_type, ...],
         a_scale: LayoutTensor[DType.float32, ...],
     ):
-        __comptime_assert a.rank == 2
-        __comptime_assert a_quant.rank == 2
-        __comptime_assert a_scale.rank == 2
+        comptime assert a.rank == 2
+        comptime assert a_quant.rank == 2
+        comptime assert a_scale.rank == 2
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -606,9 +608,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         a_quant: LayoutTensor[aq_type, ...],
         a_scale: LayoutTensor[DType.float32, ...],
     ):
-        __comptime_assert a.rank == 2
-        __comptime_assert a_quant.rank == 2
-        __comptime_assert a_scale.rank == 2
+        comptime assert a.rank == 2
+        comptime assert a_quant.rank == 2
+        comptime assert a_scale.rank == 2
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -778,9 +780,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         a_quant: LayoutTensor[aq_type, ...],
         a_scale: LayoutTensor[DType.float32, ...],
     ):
-        __comptime_assert a.rank == 2
-        __comptime_assert a_quant.rank == 2
-        __comptime_assert a_scale.rank == 2
+        comptime assert a.rank == 2
+        comptime assert a_quant.rank == 2
+        comptime assert a_scale.rank == 2
         return _quantize_a_buffer[group_size](a, a_quant, a_scale)
 
     @staticmethod
@@ -899,9 +901,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         a_quant: LayoutTensor[aq_type, ...],
         a_scale: LayoutTensor[DType.float32, ...],
     ):
-        __comptime_assert a.rank == 2
-        __comptime_assert a_quant.rank == 2
-        __comptime_assert a_scale.rank == 2
+        comptime assert a.rank == 2
+        comptime assert a_quant.rank == 2
+        comptime assert a_scale.rank == 2
 
         # Interleave the quantized data to produce the block format required
         # for the NEON `smmla` instruction.
@@ -1020,10 +1022,10 @@ fn _matmul_qint4_m_1[
     ],
     c: LayoutTensor[DType.float32, address_space = AddressSpace.GENERIC, ...],
 ):
-    __comptime_assert a_quant.rank == 2
-    __comptime_assert a_scale.rank == 2
-    __comptime_assert b.rank == 2
-    __comptime_assert c.rank == 2
+    comptime assert a_quant.rank == 2
+    comptime assert a_scale.rank == 2
+    comptime assert b.rank == 2
+    comptime assert c.rank == 2
 
     comptime simd_width = simd_width_of[DType.float32]()
     comptime bytes_per_group_int4 = size_of[DType.float16]() + (group_size // 2)

@@ -17,9 +17,7 @@ from .param_env import env_get_string, is_defined
 
 @always_inline("nodebug")
 fn _build_type() -> StaticString:
-    __comptime_assert is_defined[
-        "BUILD_TYPE"
-    ](), "the build type must be defined"
+    comptime assert is_defined["BUILD_TYPE"](), "the build type must be defined"
     return env_get_string["BUILD_TYPE"]()
 
 

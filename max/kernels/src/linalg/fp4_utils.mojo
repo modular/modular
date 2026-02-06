@@ -62,7 +62,7 @@ fn cast_uint_to_fp4e2m1[
     out_dtype: DType,
     out_width: Int,
 ](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
-    __comptime_assert in_dtype in (
+    comptime assert in_dtype in (
         DType.uint32,
         DType.uint16,
         DType.uint8,
@@ -72,7 +72,7 @@ fn cast_uint_to_fp4e2m1[
     comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
     comptime num_fp4_values = bit_width_of[in_dtype]() // FP4_E2M1_WIDTH
 
-    __comptime_assert in_width * num_fp4_values == out_width, (
+    comptime assert in_width * num_fp4_values == out_width, (
         "size mismatch: input_width * num_fp4_values must be equal to"
         " output_width"
     )
@@ -99,7 +99,7 @@ fn cast_fp_to_fp4e2m1[
     width: Int,
     //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    __comptime_assert dtype in (
+    comptime assert dtype in (
         DType.float32,
         DType.bfloat16,
         DType.float16,
@@ -143,10 +143,10 @@ fn cast_fp32_to_fp4e2m1[
     width: Int,
     //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
-    __comptime_assert width == 8, "width must be 8"
+    comptime assert width == 8, "width must be 8"
 
     comptime asm_code = """{
 .reg .b8 byte0;
@@ -166,7 +166,7 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
 
 
 fn cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
 
@@ -200,7 +200,7 @@ fn set_scale_factor[
         scales_tensor.rank == 5,
         "scales_tensor must be 5D for non-batched scales tensor",
     ]()
-    __comptime_assert (
+    comptime assert (
         width <= SF_ATOM_K
     ), "width must be less than or equal to SF_ATOM_K"
 
@@ -319,16 +319,16 @@ fn convert_ref_scales_to_mxfp8_format[
     a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
     b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
 ):
-    __comptime_assert (
+    comptime assert (
         ref_scales_type == DType.float32
     ), "Only support float32 reference scales"
-    __comptime_assert (
+    comptime assert (
         scales_type == DType.float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
-    __comptime_assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
-    __comptime_assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
-    __comptime_assert a_scales_layout.rank() == 5, "a_scales must be 5D"
-    __comptime_assert b_scales_layout.rank() == 5, "b_scales must be 5D"
+    comptime assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
+    comptime assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
+    comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
+    comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
     var M = m.value
     var N = n.value

@@ -20,8 +20,8 @@ from math import clamp, floor
 
 from gpu.host.info import is_gpu
 from gpu import block_dim, block_idx, thread_idx
-from layout._coord import Coord, CoordLike, Idx, coord, coord_to_index_list
-from layout._layout import row_major
+from layout._coord import Coord, Idx, coord, coord_to_index_list
+from layout._layout import TensorLayout, row_major
 from layout._tile_tensor import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 from utils import Index
@@ -116,14 +116,14 @@ fn cpu_bicubic_kernel(
         output_host: Output tensor with desired dimensions.
         input_host: Input tensor of shape [B, C, H, W].
     """
-    __comptime_assert (
+    comptime assert (
         output_host.rank == 4 and input_host.rank == 4
     ), "bicubic resize only supports rank 4 tensors"
-    __comptime_assert output_host.dtype == input_host.dtype
+    comptime assert output_host.dtype == input_host.dtype
 
     # get dimensions
-    var input_shape = coord_to_index_list(input_host.layout.shape)
-    var output_shape = coord_to_index_list(output_host.layout.shape)
+    var input_shape = coord_to_index_list(input_host.layout.shape_coord())
+    var output_shape = coord_to_index_list(output_host.layout.shape_coord())
     var batch_size = input_shape[0]
     var channels = input_shape[1]
     var in_height = input_shape[2]
@@ -187,24 +187,12 @@ fn cpu_bicubic_kernel(
 fn gpu_bicubic_kernel[
     dtype: DType,
     output_origin: MutOrigin,
-    output_shape_types: Variadic.TypesOfTrait[CoordLike],
-    output_stride_types: Variadic.TypesOfTrait[CoordLike],
+    OutputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
-    input_shape_types: Variadic.TypesOfTrait[CoordLike],
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
+    InputLayoutType: TensorLayout,
 ](
-    output: TileTensor[
-        shape_types=output_shape_types,
-        stride_types=output_stride_types,
-        dtype,
-        output_origin,
-    ],
-    input: TileTensor[
-        shape_types=input_shape_types,
-        stride_types=input_stride_types,
-        dtype,
-        input_origin,
-    ],
+    output: TileTensor[dtype, output_origin, OutputLayoutType],
+    input: TileTensor[dtype, input_origin, InputLayoutType],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -213,15 +201,15 @@ fn gpu_bicubic_kernel[
         input: Input tensor of shape [B, C, H, W] on the device.
     """
 
-    __comptime_assert input.rank == 4
-    __comptime_assert output.rank == 4
+    comptime assert input.rank == 4
+    comptime assert output.rank == 4
 
     var b = block_idx.x
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var input_shape = coord_to_index_list(input.layout.shape)
-    var output_shape = coord_to_index_list(output.layout.shape)
+    var input_shape = coord_to_index_list(input.layout.shape_coord())
+    var output_shape = coord_to_index_list(output.layout.shape_coord())
     var in_height = input_shape[2]
     var in_width = input_shape[3]
     var out_height = output_shape[2]
@@ -298,13 +286,13 @@ fn resize_bicubic[
         input: Input tensor of shape [B, C, H, W] on host or device.
         ctx: Device context to enqueue GPU kernels on.
     """
-    __comptime_assert (
+    comptime assert (
         output.rank == 4 and input.rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
     @parameter
     if is_gpu[target]():
-        var input_shape = coord_to_index_list(input.layout.shape)
+        var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]
 
@@ -313,11 +301,9 @@ fn resize_bicubic[
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,
             output_origin = output.origin,
-            output_shape_types = output.shape_types,
-            output_stride_types = output.stride_types,
+            OutputLayoutType = output.LayoutType,
             input_origin = ImmutOrigin(input.origin),
-            input_shape_types = input.shape_types,
-            input_stride_types = input.stride_types,
+            InputLayoutType = input.LayoutType,
         ]
         ctx.get_device_context().enqueue_function_experimental[kernel](
             output,

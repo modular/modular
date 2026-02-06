@@ -349,7 +349,10 @@ fn _allreduce_2stage_kernel[
     use_multimem: Bool = False,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_ptrs: InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
+    ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
@@ -372,7 +375,7 @@ fn _allreduce_2stage_kernel[
 
     Args:
         result: Output buffer for reduced values.
-        src_ptr: Input buffer for this GPU.
+        src_ptrs: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: the Signal pointers have trailing buffers for
             communication, which must be at least `ngpus * size_of(payload)`.
@@ -416,42 +419,24 @@ fn _allreduce_2stage_kernel[
     # Current rank's output buffer.
     var tmp_out = tmps[0]
 
-    # Store input buffer address for peers to read
-    my_sig[].pointer_exchange[0] = src_ptr.bitcast[NoneType]().unsafe_mut_cast[
-        True
-    ]()
-
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     comptime num_buffers = 1 if use_multimem else ngpus
-    var peer_input_addrs = InlineArray[
+    var ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
+
+    @parameter
+    for i in range(num_buffers):
+        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        ptrs[i] = src_ptrs[target]
 
     # --- Stage 1: Reduce-Scatter Phase ---
     # Uses two-phase synchronization protocol with release-acquire semantics:
     # 1. Initial barrier establishes happens-before relationship.
     # 2. Memory fence ensures visibility of partial reductions.
-    # Use is_start=False to get threadblock barrier &
-    # use need_fence=True to ensure pointer visibility to peer GPUs.
-    _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
-        rank_sigs, my_sig, my_rank
-    )
+    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    @parameter
-    if use_multimem:
-        peer_input_addrs[0] = src_ptr
-    else:
-
-        @parameter
-        for i in range(num_buffers):
-            var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
-            peer_input_addrs[i] = (
-                rank_sigs[target][]
-                .pointer_exchange[0]
-                .bitcast[Scalar[dtype]]()
-                .mut_cast[False]()
-            )
-
+    # TODO(KERN-2273): Remove this once temporary buffers removed
     # Output lambda for reduce-scatter: write to scratch buffer
     var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
         tmp_out,
@@ -473,10 +458,8 @@ fn _allreduce_2stage_kernel[
         ](coords[0], val.cast[dtype]())
 
     _reduce_scatter_impl[
-        ngpus,
-        output_lambda=rs_output_lambda,
-        use_multimem=use_multimem,
-    ](peer_input_addrs, tmp_buff, my_rank, rs_config)
+        ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
+    ](ptrs, tmp_buff, my_rank, rs_config)
 
     # Second barrier with memory ordering guarantees.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -499,12 +482,12 @@ fn _allreduce_2stage_kernel[
 
         @parameter
         for gpu_idx in range(ngpus):
-            var peer_rank = (my_rank + gpu_idx) % ngpus
+            var gather_from_rank = (my_rank + gpu_idx) % ngpus
 
             # Handle edge cases for non-uniform partitions, where
             # the final rank may have larger partition size.
-            if (peer_rank == (ngpus - 1)) or idx < rs_config.part:
-                var dst_idx = (peer_rank * rs_config.part) + idx
+            if (gather_from_rank == (ngpus - 1)) or idx < rs_config.part:
+                var dst_idx = (gather_from_rank * rs_config.part) + idx
                 output_lambda[width=simd_width, alignment=alignment](
                     result.get_nd_index(dst_idx),
                     tmps[gpu_idx]
@@ -526,7 +509,10 @@ fn _allreduce_1stage_kernel[
     use_multimem: Bool = False,
 ](
     result: NDBuffer[dtype, rank, MutAnyOrigin],
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_ptrs: InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        1 if use_multimem else ngpus,
+    ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
@@ -544,7 +530,7 @@ fn _allreduce_1stage_kernel[
 
     Args:
         result: Output buffer for reduced values
-        src_ptr: Input buffer for this GPU
+        src_ptrs: Input buffers from all GPUs
         rank_sigs: Signal pointers for synchronization
         num_elements: Number of elements to reduce
         my_rank: Current GPU rank
@@ -561,38 +547,19 @@ fn _allreduce_1stage_kernel[
     var my_sig = rank_sigs[my_rank]
     var num_simd_vectors = num_elements // simd_width
 
-    # Offset after Signal in which to store input buffer address for peer GPUs.
-    my_input_addr_storage = (
-        my_sig.address_space_cast[AddressSpace.GENERIC]() + 1
-    ).bitcast[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]]()
-
-    # Store the address
-    my_input_addr_storage[] = src_ptr
-
-    # Use is_start=False to get threadblock barrier &
-    # use need_fence=True to ensure pointer visibility to peer GPUs.
-    _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
-        rank_sigs, my_sig, my_rank
-    )
-
     # Route input pointers according to round-robin pattern.
     # For 8 GPUs: Rank 0 accesses 0→1→2→...→7, Rank 1 accesses 1→2→...→7→0, etc.
     comptime num_buffers = 1 if use_multimem else ngpus
-    var peer_input_addrs = InlineArray[
+    var ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
     @parameter
-    if use_multimem:
-        peer_input_addrs[0] = src_ptr
-    else:
+    for i in range(num_buffers):
+        var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
+        ptrs[i] = src_ptrs[target]
 
-        @parameter
-        for i in range(num_buffers):
-            var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
-            peer_input_addrs[i] = (
-                rank_sigs[target].address_space_cast[AddressSpace.GENERIC]() + 1
-            ).bitcast[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]]()[]
+    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
@@ -604,7 +571,7 @@ fn _allreduce_1stage_kernel[
             alignment=alignment,
             accum_type=accum_type,
             use_multimem=use_multimem,
-        ](elem_idx, peer_input_addrs)
+        ](elem_idx, ptrs)
 
         output_lambda[width=simd_width, alignment=alignment](
             result.get_nd_index(elem_idx), reduced_result
@@ -623,7 +590,9 @@ fn _allreduce_p2p[
     use_quickreduce: Bool = False,
     use_multimem: Bool = False,
 ](
-    in_buf: NDBuffer[dtype, rank, MutAnyOrigin],
+    list_of_in_bufs: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
@@ -643,20 +612,20 @@ fn _allreduce_p2p[
         use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
-        in_buf: Input buffer for this GPU (peer addresses obtained via signals).
-        out_buf: Output buffer for this GPU.
-        rank_sigs: Signal pointers for synchronization. Each GPU stores its input
-            buffer address in its signal payload for peers to read.
+        list_of_in_bufs: Input buffers from ALL GPUs (peer access required)
+        out_buf: Output buffer for THIS GPU
+        rank_sigs: Signal pointers for synchronization
         max_num_blocks: Maximum number of thread blocks to launch.
-        ctx: Device context for this GPU.
+        ctx: Device context for THIS GPU
         iteration: Monotonic per-call counter used to color quickreduce flags.
             The caller is responsible for incrementing this value between launches.
             The default value of 0 is only suitable for single-use scenarios.
 
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
+    comptime num_buffers = 1 if use_multimem else ngpus
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    var num_elements = in_buf.num_elements()
+    var num_elements = list_of_in_bufs[0].num_elements()
 
     # Do nothing if there are no elements to reduce.
     if num_elements == 0:
@@ -668,12 +637,20 @@ fn _allreduce_p2p[
             " allreduce"
         )
 
-    var in_ptr = in_buf.data
+    # Pass a stack-allocated array of pointers to the device kernel, which
+    # doesn't need dynamic tensor spec info from NDBuffer.
+    var list_of_in_ptrs = InlineArray[
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
+    ](uninitialized=True)
+
+    @parameter
+    for i in range(num_buffers):
+        list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
     comptime BLOCK_SIZE = 256
     comptime rank_4_byte_threshold = 512 * 1024
     comptime rank_8_byte_threshold = 256 * 1024
-    var payload_bytecount = in_buf.bytecount()
+    var payload_bytecount = list_of_in_bufs[0].bytecount()
 
     if (rank <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
         rank <= 8 and (payload_bytecount < rank_8_byte_threshold)
@@ -695,7 +672,7 @@ fn _allreduce_p2p[
         ]
         ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
             out_buf,
-            in_ptr,
+            list_of_in_ptrs,
             rank_sigs,
             num_elements,
             Int(ctx.id()),
@@ -726,7 +703,9 @@ fn _allreduce_p2p[
 
             ctx.enqueue_function[kernel, kernel](
                 out_buf,
-                DeviceBuffer[dtype](ctx, in_ptr, num_elements, owning=False),
+                DeviceBuffer[dtype](
+                    ctx, list_of_in_ptrs[ctx.id()], num_elements, owning=False
+                ),
                 rank_sigs,
                 num_elements,
                 Int(ctx.id()),
@@ -755,7 +734,7 @@ fn _allreduce_p2p[
             ]
             ctx.enqueue_function[kernel, kernel](
                 out_buf,
-                in_ptr,
+                list_of_in_ptrs,
                 rank_sigs,
                 num_elements,
                 Int(ctx.id()),
@@ -776,7 +755,9 @@ fn allreduce[
     use_multimem: Bool = False,
     use_quickreduce: Bool = False,
 ](
-    input_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    input_buffers: InlineArray[
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+    ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
@@ -787,8 +768,7 @@ fn allreduce[
 
     High-level model
     - Each GPU runs one instance of this function in parallel with the others.
-    - Every instance reads from all peer inputs (via signal-shared addresses)
-      but writes only to its own output buffer.
+    - Every instance reads all inputs but writes only its own output buffer.
     - A Python-level fence is inserted across the outputs to prevent reordering.
 
     Two execution paths
@@ -820,13 +800,11 @@ fn allreduce[
         use_quickreduce: If True, prefer the quickreduce 2-stage path when eligible.
 
     Args:
-        input_buffer: Input buffer for this GPU. Peer input addresses are
-            obtained via signal buffer payloads (P2P access required).
-        output_buffer: Output buffer for this GPU.
-        rank_sigs: Per-GPU Signal; header plus payload. Each GPU stores its
-            input buffer address in its signal payload for peers to read.
-            Payload is also used as scratch for the P2P 2-stage path.
-        ctx: Device context for this GPU (device id → rank).
+        input_buffers: Inputs from ALL GPUs (for P2P, these must be peer accessible).
+        output_buffer: Output for THIS GPU.
+        rank_sigs: Per-GPU Signal; header plus payload. Payload is used as scratch
+            for the P2P 2-stage path.
+        ctx: Device context for THIS GPU (device id → rank).
         _max_num_blocks: Optional grid limit (dispatch selects a default otherwise).
         iteration: Monotonic per-call counter used to color quickreduce flags.
             Increment each launch; ensures barrier flags are unique across
@@ -845,7 +823,7 @@ fn allreduce[
         "Quickreduce is incompatible with multimem.",
     ]()
     # Return early, if the input buffer is empty
-    var num_elements = input_buffer.num_elements()
+    var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
         return
 
@@ -868,7 +846,9 @@ fn allreduce[
     # TODO: check all devices have the same GPU sm_version
     comptime sm_version = get_sm_version()
     var max_num_blocks = _max_num_blocks.or_else(
-        _dispatch_max_num_blocks[ngpus, sm_version](input_buffer.bytecount())
+        _dispatch_max_num_blocks[ngpus, sm_version](
+            input_buffers[0].bytecount()
+        )
     )
     if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
@@ -880,36 +860,32 @@ fn allreduce[
 
     # Check P2P availability.
     if not can_enable_p2p():
-        # TODO(jtodd): Re-enable naive path after investigating single input buffer approach.
-        raise Error(
-            "Allreduce naive path temporarily disabled while investigating"
-            " single input buffer approach."
+
+        @parameter
+        if use_multimem:
+            raise Error(
+                "Allreduce with multimem requires P2P access between GPUs"
+            )
+        return _allreduce_naive_single[
+            ngpus=ngpus,
+            output_lambda=actual_output_lambda,
+            num_buffers=ngpus,
+        ](
+            rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
+                input_buffers
+            ),
+            output_buffer,
+            max_num_blocks,
+            ctx,
         )
-        # @parameter
-        # if use_multimem:
-        #     raise Error(
-        #         "Allreduce with multimem requires P2P access between GPUs"
-        #     )
-        # return _allreduce_naive_single[
-        #     ngpus=ngpus,
-        #     output_lambda=actual_output_lambda,
-        #     num_buffers=ngpus,
-        # ](
-        #     rebind[InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus]](
-        #         input_buffers
-        #     ),
-        #     output_buffer,
-        #     max_num_blocks,
-        #     ctx,
-        # )
-        #
+
     return _allreduce_p2p[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
         use_quickreduce=use_quickreduce,
         use_multimem=use_multimem,
-    ](input_buffer, output_buffer, rank_sigs, max_num_blocks, ctx, iteration)
+    ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx, iteration)
 
 
 fn allreduce_2stage_quickreduce_tile[

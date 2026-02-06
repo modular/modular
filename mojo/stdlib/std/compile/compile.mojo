@@ -187,7 +187,7 @@ comptime _EMISSION_KIND_LLVM_OPT_BITCODE = 5
 
 
 fn _get_emission_kind_id[emission_kind: StaticString]() -> Int:
-    __comptime_assert emission_kind in [
+    comptime assert emission_kind in [
         "asm",
         "llvm",
         "llvm-bitcode",

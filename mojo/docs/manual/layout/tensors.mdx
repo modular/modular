@@ -378,7 +378,7 @@ comptime tiler_layout = Layout.row_major(rows, columns)
 comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
 var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
 for i in range(comptime (tiled_layout.size())):
-    storage[i] = i
+    storage[i] = Float32(i)
 var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
 var tile = tensor.tile[tile_size, tile_size](0, 1)
 ```
@@ -445,7 +445,7 @@ tiles.
 comptime buf_size = 128
 var storage = InlineArray[Int16, buf_size](uninitialized=True)
 for i in range(buf_size):
-    storage[i] = i
+    storage[i] = Int16(i)
 comptime tile_layout = Layout.row_major(4, 4)
 var iter = LayoutTensorIter[
     DType.int16,

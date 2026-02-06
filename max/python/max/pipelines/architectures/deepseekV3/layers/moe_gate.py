@@ -15,11 +15,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorValue, Weight, ops
 from max.nn.legacy.kernels import moe_router_group_limited
+from max.nn.legacy.linear import Linear
 from max.nn.legacy.moe import MoEGate
 from max.nn.legacy.moe.moe import ShardingStrategy
 
@@ -51,6 +52,7 @@ class DeepseekV3TopKRouter(MoEGate):
         correction_bias_dtype: DType | None,
         devices: list[DeviceRef],
         use_fused_kernel: bool = True,
+        linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
         """
         Args:
@@ -74,11 +76,14 @@ class DeepseekV3TopKRouter(MoEGate):
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
             dtype=gate_dtype,
+            linear_cls=linear_cls,
         )
 
         if topk_method not in ["noaux_tc"]:
             raise ValueError(f"Invalid topk_method: {topk_method}")
         assert correction_bias_dtype
+
+        assert scoring_func == "sigmoid"
 
         # This value is renamed to top_k in the original implementation, keep it
         # here for consistency.
@@ -122,12 +127,7 @@ class DeepseekV3TopKRouter(MoEGate):
         # compute gate score
         logits = self.gate_score(hidden_states)
 
-        if self.scoring_func == "sigmoid":
-            scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
-        else:
-            raise NotImplementedError(
-                f"insupportable scoring function for MoE gating: {self.scoring_func}"
-            )
+        scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
 
         topk_idx, topk_weight = moe_router_group_limited(
             scores,

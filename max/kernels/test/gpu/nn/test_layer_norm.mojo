@@ -99,8 +99,7 @@ fn run_layer_norm_block[
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
             origin = beta.origin,
-            shape_types = beta.shape_types,
-            stride_types = beta.stride_types,
+            LayoutType = beta.LayoutType,
             UInt(simd_width),
             input_fn,
             gamma_fn,
@@ -315,8 +314,7 @@ fn run_layer_norm_warp_tiling[
     fn run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
             origin = beta.origin,
-            shape_types = beta.shape_types,
-            stride_types = beta.stride_types,
+            LayoutType = beta.LayoutType,
             UInt(simd_width),
             input_fn,
             gamma_fn,

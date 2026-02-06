@@ -73,11 +73,11 @@ fn index_tensor_shape[
 
     @parameter
     for i in range(batch_dims):
-        indices_shape[i] = input_buf.layout.shape[i].value()
+        indices_shape[i] = input_buf.layout.shape[i]().value()
 
     @parameter
     for i in range(indices_buf.rank):
-        indices_shape[batch_dims + i] = indices_buf.layout.shape[i].value()
+        indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
 
     var index_size = indices_shape[combined_indices_rank - 1]
     # TODO: Revisit when we generalize (see above TODO).
@@ -96,7 +96,7 @@ fn index_tensor_shape[
     var output_shape = IndexList[output_rank]()
     var next_out_dim = 0
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape)
+    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
 
     @parameter
     for i in range(batch_dims):
@@ -209,7 +209,7 @@ fn _index_tensor_1d[
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ):
-    __comptime_assert (
+    comptime assert (
         data.rank >= 2 and indices.rank == 2
     ), "Constraint: data_rank >= 2 and indices_rank == 2"
 
@@ -220,7 +220,7 @@ fn _index_tensor_1d[
         "kernel doesn't support slicing after specified dims",
     )
 
-    var data_shape = coord_to_index_list(data.layout.shape)
+    var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
 
     @parameter
@@ -291,7 +291,7 @@ fn _index_tensor_impl[
     output: TileTensor[mut=True, dtype, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    __comptime_assert (
+    comptime assert (
         data.rank >= 2 and indices.rank >= 2
     ), "Constraint: data_rank >= 2 and indices_rank >= 2"
 
@@ -320,7 +320,7 @@ fn _index_tensor_impl[
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var coord = Coord(indices_idx)
-            __comptime_assert coord.rank == indices.rank
+            comptime assert coord.rank == indices.rank
             data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
 
         # fill in the last slices in the input
@@ -331,9 +331,9 @@ fn _index_tensor_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         var data_coord = Coord(data_idx)
-        __comptime_assert data_coord.rank == data.rank
+        comptime assert data_coord.rank == data.rank
         var out_coord = Coord(output_idx)
-        __comptime_assert out_coord.rank == output.rank
+        comptime assert out_coord.rank == output.rank
         output.store[width=simd_width](
             out_coord, data.load[width=simd_width](data_coord)
         )
@@ -350,7 +350,7 @@ fn _index_tensor_impl[
     var slice_rank = data.rank - batch_dims - indices.dim[indices.rank - 1]()
     var slice_last_dim = output.dim[output.rank - 1]() if slice_rank > 0 else 1
 
-    __comptime_assert data.rank > 0
+    comptime assert data.rank > 0
     var use_simd = (
         data.static_stride[data.rank - 1] == 1
         and (slice_last_dim % target_simd_width) == 0
@@ -364,14 +364,14 @@ fn _index_tensor_impl[
                 target_simd_width,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape))
+            ](coord_to_index_list(output.layout.shape_coord()))
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape))
+            ](coord_to_index_list(output.layout.shape_coord()))
     else:
         debug_assert(
             Bool(ctx), "Must provide DeviceContext if executing on GPU."
@@ -383,14 +383,14 @@ fn _index_tensor_impl[
                 target_simd_width,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape), cuda_ctx)
+            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
-            ](coord_to_index_list(output.layout.shape), cuda_ctx)
+            ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -503,8 +503,8 @@ fn advanced_indexing_getitem[
     TODO(GEX-1953): Support fusion (especially view-fusion)
     """
     # Do not support boolean masks at this time.
-    __comptime_assert index_type != DType.bool
-    __comptime_assert (
+    comptime assert index_type != DType.bool
+    comptime assert (
         out_tensor.rank == input_rank + index_rank - num_index_tensors
     )
 
@@ -542,7 +542,7 @@ fn advanced_indexing_getitem[
                 )
 
         var out_coord = Coord(output_index)
-        __comptime_assert out_coord.rank == out_tensor.rank
+        comptime assert out_coord.rank == out_tensor.rank
         out_tensor.store[width=width](
             out_coord,
             input_tensor_fn[width=width](input_index),
@@ -558,7 +558,7 @@ fn advanced_indexing_getitem[
         start_axis, num_index_tensors, input_rank
     ](
         read_strides=in_tensor_strides,
-        write_strides=coord_to_index_list(out_tensor.layout.stride),
+        write_strides=coord_to_index_list(out_tensor.layout.stride_coord()),
     )
     if use_simd:
         elementwise[
@@ -567,7 +567,7 @@ fn advanced_indexing_getitem[
             use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape), ctx)
+        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
@@ -575,7 +575,7 @@ fn advanced_indexing_getitem[
             use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
-        ](coord_to_index_list(out_tensor.layout.shape), ctx)
+        ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
 
 
 @always_inline
@@ -720,7 +720,7 @@ fn advanced_indexing_setitem_inplace[
 
     # First calculate
     comptime iteration_rank = input_tensor.rank + index_rank - num_index_tensors
-    __comptime_assert iteration_rank == updates_rank
+    comptime assert iteration_rank == updates_rank
     var iteration_shape = IndexList[iteration_rank]()
 
     # Find the common iteration space
@@ -729,11 +729,11 @@ fn advanced_indexing_setitem_inplace[
 
         @parameter
         if i < start_axis:
-            iteration_shape[i] = input_tensor.layout.shape[i].value()
+            iteration_shape[i] = input_tensor.layout.shape[i]().value()
         elif i >= start_axis + index_rank:
             iteration_shape[i] = input_tensor.layout.shape[
                 i - index_rank + num_index_tensors
-            ].value()
+            ]().value()
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 
@@ -769,7 +769,7 @@ fn advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        __comptime_assert input_tensor_coord.rank == input_tensor.rank
+        comptime assert input_tensor_coord.rank == input_tensor.rank
         input_tensor.store[width=width](
             input_tensor_coord,
             updates_tensor_fn[width=width](
@@ -790,7 +790,7 @@ fn advanced_indexing_setitem_inplace[
         start_axis, num_index_tensors, input_tensor.rank
     ](
         read_strides=updates_tensor_strides,
-        write_strides=coord_to_index_list(input_tensor.layout.stride),
+        write_strides=coord_to_index_list(input_tensor.layout.stride_coord()),
     )
     if use_simd:
         elementwise[
