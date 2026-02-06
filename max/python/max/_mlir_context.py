@@ -14,19 +14,23 @@
 from __future__ import annotations
 
 import atexit
-import contextlib
-from collections.abc import Generator
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import ParamSpec, TypeVar
 
 from max import mlir
 
 _DEFAULT_MLIR_CONTEXT = mlir.Context()
 # MLIR Context.current is thread-local.
 # - Keep the global context entered for the main thread.
-# - Use active_mlir_context() in worker threads so MLIR APIs run with a
-#   scoped context (avoids nanobind GIL/TLS teardown crashes).
+# - Run worker tasks via helpers/executors in this module so MLIR APIs run
+#   with a scoped context (avoids nanobind GIL/TLS teardown crashes).
 # - atexit handler ensures the context is exited on shutdown.
 _DEFAULT_MLIR_CONTEXT.__enter__()
 atexit.register(_DEFAULT_MLIR_CONTEXT.__exit__, None, None, None)
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def default_mlir_context() -> mlir.Context:
@@ -34,11 +38,24 @@ def default_mlir_context() -> mlir.Context:
     return _DEFAULT_MLIR_CONTEXT
 
 
-@contextlib.contextmanager
-def active_mlir_context() -> Generator[mlir.Context]:
+def call_with_default_mlir_context(
+    fn: Callable[P, R], /, *args: P.args, **kwargs: P.kwargs
+) -> R:
     context = mlir.Context.current
     if context is None:
         with _DEFAULT_MLIR_CONTEXT:
-            yield _DEFAULT_MLIR_CONTEXT
-    else:
-        yield context
+            return fn(*args, **kwargs)
+    return fn(*args, **kwargs)
+
+
+class MLIRThreadPoolExecutor(ThreadPoolExecutor):
+    def submit(
+        self,
+        fn: Callable[P, R],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> Future[R]:
+        return super().submit(
+            call_with_default_mlir_context, fn, *args, **kwargs
+        )

@@ -33,12 +33,12 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypeAlias, TypeVar, overload
 
 from max import _realization_context as rc
 from max import driver, tensor
+from max._mlir_context import MLIRThreadPoolExecutor
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -98,7 +98,7 @@ def _run(coro: Coroutine[Any, Any, Result]) -> Result:
 
     # Run self.realize in another thread
     loop = asyncio.new_event_loop()
-    with ThreadPoolExecutor() as pool:
+    with MLIRThreadPoolExecutor() as pool:
         fut = pool.submit(loop.run_until_complete, coro)
     return fut.result()
 

@@ -520,8 +520,8 @@ class Graph:
         """Creates and adds a subgraph to the current graph.
 
         Creates a new :obj:`Graph` instance configured as a subgraph of the current
-        graph. The subgraph inherits the parent graph's MLIR context, module, and
-        symbolic parameters. A chain type is automatically appended to the input
+        graph. The subgraph inherits the parent graph's module and symbolic
+        parameters. A chain type is automatically appended to the input
         types to enable proper operation sequencing within the subgraph.
 
         The created subgraph is marked with special MLIR attributes to identify it

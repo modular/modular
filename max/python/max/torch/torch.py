@@ -24,7 +24,10 @@ from typing import Any, overload
 
 from max._core import Attribute, Operation
 from max._core.dialects import builtin
-from max._mlir_context import active_mlir_context
+from max._mlir_context import (
+    MLIRThreadPoolExecutor,
+    call_with_default_mlir_context,
+)
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
@@ -399,7 +402,7 @@ class MaxOp:
         # is invoked for the first time.
         model_cache: dict[str, futures.Future[Model]] = {}
         model_cache_lock = threading.Lock()
-        executor = futures.ThreadPoolExecutor()
+        executor = MLIRThreadPoolExecutor()
 
         signature: inspect.Signature = self.torch_signature
         mutated_args = list(signature.parameters.keys())[: self.num_outputs]
@@ -418,24 +421,19 @@ class MaxOp:
             # Only one thread can schedule model compilation for a given key
             with model_cache_lock:
                 if not (model_future := model_cache.get(key)):
-                    with active_mlir_context():
-                        arg_types = tuple(max_tensor_type(arg) for arg in args)
-                        # args are destination-passing-style
-                        output_types = (
-                            self.output_types or arg_types[: self.num_outputs]
-                        )
-                        input_types = (
-                            self.input_types or arg_types[self.num_outputs :]
-                        )
+                    arg_types = tuple(max_tensor_type(arg) for arg in args)
+                    # args are destination-passing-style
+                    output_types = (
+                        self.output_types or arg_types[: self.num_outputs]
+                    )
+                    input_types = (
+                        self.input_types or arg_types[self.num_outputs :]
+                    )
 
-                        graph = self.graph(input_types, output_types)
-
-                    def load_with_context(graph: Graph) -> Model:
-                        with active_mlir_context():
-                            return self.library._session.load(graph)
+                    graph = self.graph(input_types, output_types)
 
                     model_cache[key] = model_future = executor.submit(
-                        load_with_context, graph
+                        self.library._session.load, graph
                     )
             return model_future.result()
 
@@ -465,10 +463,12 @@ class MaxOp:
             # In eager mode, the fake_tensor function will not be called,
             # so we call it here.
             # registered_fake with real inputs will create buffers for the outputs
-            with active_mlir_context():
+            def execute() -> None:
                 model = compiled_model(args)
                 converted = [fast_from_dlpack(arg) for arg in args]
                 model.execute(*converted)
+
+            call_with_default_mlir_context(execute)
 
         name = f"max::torch.{self.name}"
         callable.__signature__ = signature  # type: ignore
