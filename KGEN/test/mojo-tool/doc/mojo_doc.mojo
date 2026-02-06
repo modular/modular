@@ -896,8 +896,7 @@ struct InMemoryStruct(ImplicitlyCopyable, Sized):
 # CHECK:  "summary": "This is a class summary."
 
 
-@register_passable
-struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
+struct ParameterClass[_type: __mlir_type.`!kgen.dtype`](RegisterType):
     """This is a class summary.
 
     The is some kind of description.

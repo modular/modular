@@ -975,7 +975,6 @@ struct VariadicListMem[
         return type_of(result)(0, Pointer(to=self))
 
 
-@register_passable
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
@@ -983,7 +982,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-]:
+](RegisterType):
     comptime _mlir_pack_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
         Self.element_trait,
@@ -1008,10 +1007,9 @@ struct VariadicPack[
             pass
 
 
-@register_passable
 struct __ParameterClosureCaptureList[
     fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable):
+](ImplicitlyCopyable, RegisterType):
     comptime type = __mlir_type.`!kgen.pointer<none>`
     var value: Self.type
 
