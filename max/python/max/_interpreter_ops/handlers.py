@@ -451,6 +451,43 @@ def unary_elementwise_handler(op_type: type) -> OpHandler:
 for op_type in ops.UNARY_ELEMENTWISE:
     register_op_handler(op_type)(unary_elementwise_handler(op_type))
 
+
+# Unary mixed-dtype operations (cast, is_nan, is_inf)
+
+
+def unary_mixed_handler(op_type: type) -> OpHandler:
+    op_binding = ops.UNARY_MIXED[op_type]
+
+    def handler(
+        op: _core.Operation,
+        inputs: Sequence[Buffer | None],
+    ) -> Sequence[Buffer]:
+        assert isinstance(inputs[0], Buffer)
+
+        result_type = graph.Type.from_mlir(list(op.results)[0].type)
+        assert isinstance(result_type, graph.TensorType)
+        target_device = result_type.device.to_device()
+        _check_buffers_on_device(inputs, target_device)
+
+        # Output dtype comes from the MLIR result type (not the input dtype).
+        # For IsNan/IsInf: result_type.dtype is DType.bool
+        # For Cast: result_type.dtype is the target cast dtype
+        output = Buffer(
+            shape=inputs[0].shape,
+            dtype=result_type.dtype,
+            device=target_device,
+        )
+
+        op_binding(output, inputs[0], target_device._device_context_ptr())
+
+        return [output]
+
+    return handler
+
+
+for op_type in ops.UNARY_MIXED:
+    register_op_handler(op_type)(unary_mixed_handler(op_type))
+
 # Matrix operations
 
 

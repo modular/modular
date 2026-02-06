@@ -461,6 +461,226 @@ class TestUnaryElementwiseOps:
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
 
+class TestUnaryMixedOps:
+    """Tests for unary mixed-dtype Mojo ops (cast, is_nan, is_inf)."""
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            (DType.float32, DType.int32),
+            (DType.float64, DType.float32),
+            (DType.int32, DType.float64),
+            (DType.int32, DType.float32),
+            (DType.float32, DType.float64),
+            (DType.int8, DType.int32),
+            (DType.uint8, DType.float32),
+            (DType.float32, DType.int64),
+            (DType.int64, DType.float32),
+        ],
+    )
+    def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
+        """Test cast op converts dtype correctly."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        x_np = np.arange(12, dtype=in_np_dtype).reshape(3, 4)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_is_nan(self, dtype: DType) -> None:
+        """Test is_nan op detects NaN values."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array([1.0, np.nan, 3.0, np.nan, np.inf, 0.0], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_nan(x)
+
+        result_np = np.from_dlpack(y)
+        expected = np.isnan(x_np)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.bool_
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_is_inf(self, dtype: DType) -> None:
+        """Test is_inf op detects Inf values."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.array(
+            [1.0, np.inf, -np.inf, np.nan, 0.0, 42.0], dtype=np_dtype
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_inf(x)
+
+        result_np = np.from_dlpack(y)
+        expected = np.isinf(x_np)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.bool_
+
+    def test_cast_identity(self) -> None:
+        """Test cast to same dtype is identity."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.float32)
+
+        np.testing.assert_array_equal(np.from_dlpack(y), x_np)
+
+    def test_cast_float_to_int_truncation(self) -> None:
+        """Test cast from float to int truncates toward zero."""
+        x_np = np.array([1.7, -2.3, 3.9, -4.1], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.int32)
+
+        expected = x_np.astype(np.int32)
+        np.testing.assert_array_equal(np.from_dlpack(y), expected)
+
+    def test_is_nan_all_normal(self) -> None:
+        """Test is_nan returns all False for normal values."""
+        x_np = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_nan(x)
+
+        np.testing.assert_array_equal(
+            np.from_dlpack(y), np.array([False, False, False, False])
+        )
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            # Signed integer narrowing: values exceed target range
+            (DType.int32, DType.int8),
+            (DType.int64, DType.int16),
+            (DType.int32, DType.int16),
+            (DType.int64, DType.int8),
+        ],
+    )
+    def test_cast_signed_integer_overflow(
+        self, in_dtype: DType, out_dtype: DType
+    ) -> None:
+        """Test cast with signed integer values that overflow the target type."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        # Values that exceed target range (e.g., 200 overflows int8 [-128,127])
+        x_np = np.array(
+            [200, -200, 1000, -1000, 0, 127, 128], dtype=in_np_dtype
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            (DType.uint32, DType.int8),
+            (DType.uint16, DType.int8),
+            (DType.uint32, DType.uint8),
+        ],
+    )
+    def test_cast_unsigned_integer_overflow(
+        self, in_dtype: DType, out_dtype: DType
+    ) -> None:
+        """Test cast with unsigned integer values that overflow the target."""
+        in_np_dtype = in_dtype.to_numpy()
+        out_np_dtype = out_dtype.to_numpy()
+        # Positive values that exceed target range
+        x_np = np.array(
+            [200, 300, 1000, 65535, 0, 127, 128, 255, 256],
+            dtype=in_np_dtype,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(out_np_dtype)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == out_np_dtype
+
+    def test_cast_float64_to_float32_precision_loss(self) -> None:
+        """Test cast from float64 to float32 loses precision."""
+        # Use values that have more precision than float32 can represent
+        x_np = np.array(
+            [1.0000000000000002, 1.23456789012345678, 1e-40, 1e38],
+            dtype=np.float64,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.float32)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(np.float32)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.float32
+
+    def test_cast_float_to_int_narrowing(self) -> None:
+        """Test cast from float to narrow int with truncation and wrapping."""
+        # Use float32→int32 with fractional values to test truncation
+        x_np = np.array(
+            [1e9, -1e9, 1.5e9, -1.5e9, 0.0, 1.0, -1.0], dtype=np.float32
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.int32)
+
+        result_np = np.from_dlpack(y)
+        expected = x_np.astype(np.int32)
+        np.testing.assert_array_equal(result_np, expected)
+        assert result_np.dtype == np.int32
+
+
 class TestBooleanLogicOps:
     """Tests for boolean logic Mojo ops."""
 

@@ -624,7 +624,6 @@ class TestReduceMaxGPU:
 
         x_torch = torch.randn(shape, dtype=torch_dtype, device="cuda")
         x = Tensor.from_dlpack(x_torch)
-
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
@@ -1089,3 +1088,126 @@ class TestMeanGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch.mean(x_torch, dim=-1, keepdim=True)
         torch.testing.assert_close(result_torch, expected, rtol=1e-2, atol=1e-2)
+
+
+class TestUnaryMixedOpsGPU:
+    """Tests for GPU unary mixed-dtype ops (cast, is_nan, is_inf)."""
+
+    @pytest.mark.parametrize(
+        "in_dtype,out_dtype",
+        [
+            (DType.float32, DType.int32),
+            (DType.float32, DType.float16),
+            (DType.float16, DType.float32),
+            (DType.float32, DType.bfloat16),
+            (DType.bfloat16, DType.float32),
+            (DType.int32, DType.float32),
+            (DType.int64, DType.float32),
+            (DType.float32, DType.int64),
+        ],
+    )
+    def test_cast(self, in_dtype: DType, out_dtype: DType) -> None:
+        """Test cast op on GPU converts dtype correctly."""
+        in_torch_dtype = DTYPE_TO_TORCH[in_dtype]
+        out_torch_dtype = DTYPE_TO_TORCH[out_dtype]
+
+        if in_dtype in (DType.int32, DType.int64):
+            x_torch = torch.arange(12, dtype=in_torch_dtype, device="cuda")
+        else:
+            x_torch = torch.tensor(
+                [0.0, 1.0, 2.5, -1.5, 3.0, -3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+                dtype=in_torch_dtype,
+                device="cuda",
+            )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(out_dtype)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.to(out_torch_dtype)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16],
+    )
+    def test_is_nan(self, dtype: DType) -> None:
+        """Test is_nan op on GPU detects NaN values."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.tensor(
+            [1.0, float("nan"), 3.0, float("nan"), float("inf"), 0.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_nan(x)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.isnan(x_torch)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.float16, DType.bfloat16],
+    )
+    def test_is_inf(self, dtype: DType) -> None:
+        """Test is_inf op on GPU detects Inf values."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        x_torch = torch.tensor(
+            [1.0, float("inf"), float("-inf"), float("nan"), 0.0, 42.0],
+            dtype=torch_dtype,
+            device="cuda",
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.is_inf(x)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.isinf(x_torch)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_cast_identity(self) -> None:
+        """Test cast to same dtype on GPU is identity."""
+        x_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.float32)
+
+        result_torch = torch.from_dlpack(y)
+        torch.testing.assert_close(result_torch, x_torch)
+
+    def test_cast_float_to_int_truncation(self) -> None:
+        """Test cast from float to int on GPU truncates toward zero."""
+        x_torch = torch.tensor(
+            [1.7, -2.3, 3.9, -4.1], dtype=torch.float32, device="cuda"
+        )
+
+        x = Tensor.from_dlpack(x_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.cast(DType.int32)
+
+        result_torch = torch.from_dlpack(y)
+        expected = x_torch.to(torch.int32)
+        torch.testing.assert_close(result_torch, expected)

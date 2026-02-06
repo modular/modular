@@ -91,6 +91,17 @@ REDUCE: dict[
     mo.MeanOp: mojo_ops.Mean,
 }
 
+# Unary mixed-dtype ops: output dtype differs from input dtype
+# IsNan, IsInf: float input -> bool output
+# Cast: any dtype input -> any dtype output
+UNARY_MIXED: dict[
+    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
+] = {
+    mo.CastOp: mojo_ops.Cast,
+    mo.IsNanOp: mojo_ops.IsNan,
+    mo.IsInfOp: mojo_ops.IsInf,
+}
+
 # Import handlers after defining kernels to avoid circular import issues.
 # handlers.py uses the kernel dictionaries defined above.
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
@@ -100,6 +111,7 @@ __all__ = [
     "BINARY_ELEMENTWISE_COMPARISON",
     "REDUCE",
     "UNARY_ELEMENTWISE",
+    "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "lookup_handler",
     "register_op_handler",
