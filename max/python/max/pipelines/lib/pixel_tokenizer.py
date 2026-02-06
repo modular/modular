@@ -411,18 +411,12 @@ class PixelGenerationTokenizer(
 
         # Check if this is Flux2 pipeline (uses Mistral3Tokenizer with chat_template)
         # Flux2 requires apply_chat_template for proper tokenization
-        is_flux2 = (
-            self._pipeline_class_name == "Flux2Pipeline"
-            or "flux2" in self._pipeline_class_name.lower()
-            if self._pipeline_class_name
-            else False
-        )
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
 
             # For Flux2, use apply_chat_template with format_input
-            if is_flux2 and not use_secondary:
+            if self._pipeline_class_name == PipelineClassName.FLUX2:
                 from max.pipelines.architectures.flux2.system_messages import (
                     SYSTEM_MESSAGE,
                     format_input,
@@ -467,7 +461,7 @@ class PixelGenerationTokenizer(
                 attention_mask = [1] * len(input_ids)
 
             # Extract real tokens only (using attention mask) for Flux2
-            if is_flux2 and not use_secondary:
+            if self._pipeline_class_name == PipelineClassName.FLUX2:
                 # Filter to keep only real tokens (where mask == 1)
                 real_token_ids = [
                     token_id
