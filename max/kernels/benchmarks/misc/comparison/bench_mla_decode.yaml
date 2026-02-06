@@ -25,9 +25,17 @@ deepseek-v2-commons: &deepseek-v2-commons
 
 params:
 - <<: *deepseek-v2-commons
-  $batch_size: 128
-  $cache_len: 1024
+  $batch_size: 1
+  $cache_len: 32768
 
 - <<: *deepseek-v2-commons
-  $batch_size: 512
-  $cache_len: 2048
+  $batch_size: 1
+  $cache_len: 65536
+
+- <<: *deepseek-v2-commons
+  $batch_size: 2
+  $cache_len: 32768
+
+- <<: *deepseek-v2-commons
+  $batch_size: 2
+  $cache_len: 65536

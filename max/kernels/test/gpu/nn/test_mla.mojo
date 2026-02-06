@@ -823,10 +823,9 @@ fn test_decoding[
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     @parameter
     if ctx.default_device_info == B200:
-        for seq_len in range(1, 9):
-            # BF16 token gen
+        if batch_size <= 2:
             test[
-                4,
+                3,
                 qkv_type,
                 DType.float32,
                 576,
@@ -837,11 +836,68 @@ fn test_decoding[
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
                 use_causal_mask=use_causal_mask,
-            ](seq_len, 50, ctx, use_index_input=use_index_input)
-
-            # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
+            ](1, 32768, ctx, use_index_input=use_index_input)
             test[
-                4,
+                3,
+                qkv_type,
+                DType.float32,
+                576,
+                128,
+                group=128,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](1, 32768 * 2, ctx, use_index_input=use_index_input)
+        else:
+            for seq_len in range(1, 9):
+                # BF16 token gen
+                test[
+                    4,
+                    qkv_type,
+                    DType.float32,
+                    576,
+                    128,
+                    group=128,
+                    against_gpu_naive=True,
+                    batch_size=batch_size,
+                    num_partitions=num_partitions,
+                    decoding_warp_split_k=split_k,
+                    use_causal_mask=use_causal_mask,
+                ](seq_len, 50, ctx, use_index_input=use_index_input)
+
+                # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
+                test[
+                    4,
+                    qkv_type,
+                    DType.float32,
+                    576,
+                    16,
+                    group=16,
+                    against_gpu_naive=True,
+                    batch_size=batch_size,
+                    num_partitions=num_partitions,
+                    decoding_warp_split_k=split_k,
+                    use_causal_mask=use_causal_mask,
+                ](seq_len, 50, ctx, use_index_input=use_index_input)
+
+            test[
+                3,
+                qkv_type,
+                DType.float32,
+                576,
+                128,
+                group=128,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](1, 4096, ctx, use_index_input=use_index_input)
+
+            test[
+                3,
                 qkv_type,
                 DType.float32,
                 576,
@@ -852,63 +908,35 @@ fn test_decoding[
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
                 use_causal_mask=use_causal_mask,
-            ](seq_len, 50, ctx, use_index_input=use_index_input)
+            ](2, 4096, ctx, use_index_input=use_index_input)
 
-        test[
-            3,
-            qkv_type,
-            DType.float32,
-            576,
-            128,
-            group=128,
-            against_gpu_naive=True,
-            batch_size=batch_size,
-            num_partitions=num_partitions,
-            decoding_warp_split_k=split_k,
-            use_causal_mask=use_causal_mask,
-        ](1, 4096, ctx, use_index_input=use_index_input)
+            test[
+                3,
+                qkv_type,
+                DType.float32,
+                576,
+                128,
+                group=128,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](3, 1024, ctx, use_index_input=use_index_input)
 
-        test[
-            3,
-            qkv_type,
-            DType.float32,
-            576,
-            16,
-            group=16,
-            against_gpu_naive=True,
-            batch_size=batch_size,
-            num_partitions=num_partitions,
-            decoding_warp_split_k=split_k,
-            use_causal_mask=use_causal_mask,
-        ](2, 4096, ctx, use_index_input=use_index_input)
-
-        test[
-            3,
-            qkv_type,
-            DType.float32,
-            576,
-            128,
-            group=128,
-            against_gpu_naive=True,
-            batch_size=batch_size,
-            num_partitions=num_partitions,
-            decoding_warp_split_k=split_k,
-            use_causal_mask=use_causal_mask,
-        ](3, 1024, ctx, use_index_input=use_index_input)
-
-        test[
-            3,
-            qkv_type,
-            DType.float32,
-            576,
-            16,
-            group=16,
-            against_gpu_naive=True,
-            batch_size=batch_size,
-            num_partitions=num_partitions,
-            decoding_warp_split_k=split_k,
-            use_causal_mask=use_causal_mask,
-        ](4, 1024, ctx, use_index_input=use_index_input)
+            test[
+                3,
+                qkv_type,
+                DType.float32,
+                576,
+                16,
+                group=16,
+                against_gpu_naive=True,
+                batch_size=batch_size,
+                num_partitions=num_partitions,
+                decoding_warp_split_k=split_k,
+                use_causal_mask=use_causal_mask,
+            ](4, 1024, ctx, use_index_input=use_index_input)
 
     else:  # H100 AND AMD
         # BF16 token gen
@@ -981,6 +1009,20 @@ fn test_decoding[
             decoding_warp_split_k=split_k,
             use_causal_mask=use_causal_mask,
         ](1, 1024, ctx, use_index_input=use_index_input)
+
+        test[
+            3,
+            qkv_type,
+            DType.float32,
+            576,
+            128,
+            group=128,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            use_causal_mask=use_causal_mask,
+        ](1, 2048, ctx, use_index_input=use_index_input)
 
 
 fn test_mla_prefill[
@@ -1059,6 +1101,7 @@ def main():
             # tests with mask tensor
             test_decoding[27, 1, False, False](ctx, False)
             test_decoding[128, 1, False, False](ctx, False)
+            test_decoding[1, 1, False, True](ctx, False)
             test_decoding[0, 1, False, False](ctx, False)
 
         # tests with causal mask
