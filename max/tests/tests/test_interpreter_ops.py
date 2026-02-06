@@ -114,6 +114,26 @@ class TestBinaryElementwiseOps:
         expected = np.divide(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_pow(self, dtype: DType) -> None:
+        """Test pow op matches numpy."""
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        # Use positive base values to avoid NaN from fractional exponents
+        a_np = np.arange(1, 13, dtype=np_dtype).reshape(shape)
+        b_np = np.full(shape, 2.0, dtype=np_dtype)
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a**b
+
+        expected = np.power(a_np, b_np)
+        np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
+
     @pytest.mark.parametrize("dtype", ELEMENTWISE_DTYPES)
     def test_max(self, dtype: DType) -> None:
         """Test elementwise max op matches numpy."""

@@ -102,6 +102,54 @@ class TestBasicGPUExecution:
         torch.testing.assert_close(torch.from_dlpack(c), expected)
 
 
+class TestPowGPU:
+    """Tests for GPU pow operation."""
+
+    def test_pow_on_gpu(self) -> None:
+        """Test that pow works on GPU tensors."""
+        a_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch.float32, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [2.0, 3.0, 2.0, 0.5], dtype=torch.float32, device="cuda"
+        )
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a**b
+
+        expected = torch.pow(a_torch, b_torch)
+        torch.testing.assert_close(torch.from_dlpack(c), expected)
+
+    @pytest.mark.parametrize(
+        "dtype", [DType.float32, DType.float16, DType.bfloat16]
+    )
+    def test_pow_on_gpu_dtypes(self, dtype: DType) -> None:
+        """Test GPU pow with various float dtypes."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        a_torch = torch.tensor(
+            [1.0, 2.0, 3.0, 4.0], dtype=torch_dtype, device="cuda"
+        )
+        b_torch = torch.tensor(
+            [2.0, 2.0, 2.0, 2.0], dtype=torch_dtype, device="cuda"
+        )
+
+        a = Tensor.from_dlpack(a_torch)
+        b = Tensor.from_dlpack(b_torch)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            c = a**b
+
+        expected = torch.pow(a_torch, b_torch)
+        torch.testing.assert_close(torch.from_dlpack(c), expected)
+
+
 class TestBinaryComparisonOpsGPU:
     """Tests for GPU binary comparison operations."""
 

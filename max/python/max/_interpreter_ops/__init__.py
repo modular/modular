@@ -44,6 +44,7 @@ BINARY_ELEMENTWISE: dict[
     mo.AndOp: mojo_ops.And,
     mo.OrOp: mojo_ops.Or,
     mo.XorOp: mojo_ops.Xor,
+    mo.PowOp: mojo_ops.Pow,
 }
 
 # Comparison binary ops: output dtype is always bool

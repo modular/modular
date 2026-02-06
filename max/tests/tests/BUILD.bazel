@@ -70,6 +70,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_interpreter_ops",
+    timeout = "long",
     srcs = ["test_interpreter_ops.py"],
     ignore_extra_deps = [
         "//max/python/max:interpreter",
@@ -85,6 +86,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_interpreter_ops_gpu",
+    timeout = "long",
     srcs = ["test_interpreter_ops_gpu.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
