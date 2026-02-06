@@ -1147,14 +1147,6 @@ class PipelineConfig(ConfigFileModel):
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(self)
         pipeline_class = get_pipeline_for_task(task, self)
 
-        # Only show weights_repo_id when it differs from model_path.
-        weight_repo_id = self.model.huggingface_weight_repo_id
-        weights_repo_str = (
-            f"\n            weights_repo_id        : {weight_repo_id}"
-            if weight_repo_id != self.model.model_path
-            else ""
-        )
-
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.model.device_specs
         )
@@ -1163,95 +1155,65 @@ class PipelineConfig(ConfigFileModel):
         if self.model._applied_dtype_cast_from:
             quantization_encoding_str = f"{quantization_encoding_str} (cast from {self.model._applied_dtype_cast_from})"
 
-        # Helper function to log kvcache config details
-        def _log_kvcache_details(
-            config: KVCacheConfig, indent: str = "    "
-        ) -> None:
-            logger.info(
-                f"{indent}cache_strategy         : {config.cache_strategy}"
-            )
-            logger.info(
-                f"{indent}page_size              : {config.kv_cache_page_size} tokens"
-            )
-            logger.info(
-                f"{indent}prefix_caching         : {config.enable_prefix_caching}"
-            )
-            logger.info(
-                f"{indent}host_swapping          : {config.enable_kvcache_swapping_to_host}"
-            )
-            if config.enable_kvcache_swapping_to_host:
-                logger.info(
-                    f"{indent}host_swap_space        : {config.host_kvcache_swap_space_gb} GB"
-                )
-            logger.info(
-                f"{indent}memory_utilization     : {config.device_memory_utilization:.1%}"
-            )
+        # Build model information entries.
+        model_entries: list[tuple[str, Any]] = [
+            ("architecture", arch.name),
+            ("pipeline_class", pipeline_class.__name__),
+            ("pipeline_model", arch.pipeline_model.__name__),
+            ("tokenizer", arch.tokenizer_cls.__name__),
+            ("devices", devices_str),
+            ("model_path", self.model.model_path),
+        ]
 
-            if config._available_cache_memory is None:
-                raise ValueError(
-                    "KVCache config is not available after config resolution."
-                )
-            logger.info(
-                f"{indent}available_cache_memory : {to_human_readable_bytes(config._available_cache_memory)}"
+        # Only show weights_repo_id when it differs from model_path.
+        weight_repo_id = self.model.huggingface_weight_repo_id
+        if weight_repo_id != self.model.model_path:
+            model_entries.append(("weights_repo_id", weight_repo_id))
+
+        model_entries.extend(
+            [
+                ("huggingface_revision", self.model.huggingface_model_revision),
+                ("quantization_encoding", quantization_encoding_str),
+            ]
+        )
+
+        # Format weight_path depending on the number of paths.
+        weight_paths = self.model.weight_path
+        if len(weight_paths) == 1:
+            model_entries.append(("weight_path", weight_paths[0]))
+        else:
+            display_paths = (
+                weight_paths[:3] + ["..."] + [weight_paths[-1]]
+                if len(weight_paths) > 5
+                else list(weight_paths)
             )
+            formatted = (
+                "[\n"
+                + "\n".join(f"        {p}" for p in display_paths)
+                + "\n    ]"
+            )
+            model_entries.append(("weight_path", formatted))
 
         # Log Pipeline and Model Information
         logger.info("")
         logger.info("Model Information")
         logger.info("=" * 60)
-        logger.info(f"    architecture           : {arch.name}")
-        logger.info(f"    pipeline_class         : {pipeline_class.__name__}")
-        logger.info(
-            f"    pipeline_model         : {arch.pipeline_model.__name__}"
-        )
-        logger.info(
-            f"    tokenizer              : {arch.tokenizer_cls.__name__}"
-        )
-        logger.info(f"    devices                : {devices_str}")
-        logger.info(
-            f"    model_path             : {self.model.model_path}{weights_repo_str}"
-        )
-        logger.info(
-            f"    huggingface_revision   : {self.model.huggingface_model_revision}"
-        )
-        logger.info(f"    quantization_encoding  : {quantization_encoding_str}")
+        for line in _format_config_entries(model_entries):
+            logger.info(line)
 
-        if len(self.model.weight_path) == 1:
-            # Single weight path - format inline
-            logger.info(
-                f"    weight_path            : {self.model.weight_path[0]}"
-            )
-        elif len(self.model.weight_path) > 5:
-            # Many weight paths - replace middle with "..."
-            logger.info("    weight_path            : [")
-            for path in (
-                self.model.weight_path[:3]
-                + ["..."]
-                + [self.model.weight_path[-1]]
-            ):
-                logger.info(f"                              {path}")
-            logger.info("                            ]")
-        else:
-            # Few weight paths - print all of them
-            logger.info("    weight_path            : [")
-            for path in self.model.weight_path:
-                logger.info(f"                              {path}")
-            logger.info("                            ]")
+        pipeline_entries: list[tuple[str, Any]] = [
+            ("max_seq_len", self.max_length),
+            ("max_batch_size", self.max_batch_size),
+            ("chunked_prefill", self.enable_chunked_prefill),
+            ("max_batch_input_tokens", self.max_batch_input_tokens),
+            ("in_flight_batching", self.enable_in_flight_batching),
+        ]
 
         logger.info("")
         logger.info("Pipeline Config")
         logger.info("=" * 60)
-        logger.info(f"    max_seq_len            : {self.max_length}")
-        logger.info(f"    max_batch_size         : {self.max_batch_size}")
-        logger.info(
-            f"    chunked_prefill        : {self.enable_chunked_prefill}"
-        )
-        logger.info(
-            f"    max_batch_input_tokens : {self.max_batch_input_tokens}"
-        )
-        logger.info(
-            f"    in_flight_batching     : {self.enable_in_flight_batching}"
-        )
+        for line in _format_config_entries(pipeline_entries):
+            logger.info(line)
         logger.info("")
 
         # KVCache Configuration Summary
@@ -1260,7 +1222,7 @@ class PipelineConfig(ConfigFileModel):
 
         # Primary model kvcache config
         kv_config = self.model.kv_cache
-        _log_kvcache_details(kv_config)
+        _log_kvcache_entries(kv_config)
 
         # Draft model kvcache config (if using speculative decoding)
         if self.draft_model is not None:
@@ -1269,7 +1231,7 @@ class PipelineConfig(ConfigFileModel):
             logger.info("-" * 40)
             assert self.draft_model is not None
             draft_kv_config = self.draft_model.kv_cache
-            _log_kvcache_details(draft_kv_config)
+            _log_kvcache_entries(draft_kv_config)
 
         logger.info("")
 
@@ -1318,21 +1280,79 @@ class PipelineConfig(ConfigFileModel):
         )
 
         # Log basic configuration
+        config_entries: list[tuple[str, Any]] = [
+            ("model", self.model.model_path),
+            ("architecture", arch.name),
+            ("pipeline", pipeline_class.__name__),
+            ("devices", devices_str),
+            ("max_batch_size", self.max_batch_size),
+            ("max_seq_len", self.max_length),
+            ("cache_memory", memory_str),
+            ("device_graph_capture", self.device_graph_capture),
+        ]
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(
             "Pipeline Configuration (use --pretty-print-config to print full config)"
         )
         logger.info("=" * 60)
-        logger.info(f"    model              : {self.model.model_path}")
-        logger.info(f"    architecture       : {arch.name}")
-        logger.info(f"    pipeline           : {pipeline_class.__name__}")
-        logger.info(f"    devices            : {devices_str}")
-        logger.info(f"    max_batch_size     : {self.max_batch_size}")
-        logger.info(f"    max_seq_len        : {self.max_length}")
-        logger.info(f"    cache_memory       : {memory_str}")
-        logger.info(f"    device_graph_capture : {self.device_graph_capture}")
+        for line in _format_config_entries(config_entries):
+            logger.info(line)
         logger.info("")
+
+
+def _format_config_entries(
+    entries: list[tuple[str, Any]], indent: str = "    "
+) -> list[str]:
+    """Format key-value config entries with aligned colons.
+
+    Args:
+        entries: List of (key, value) tuples to format.
+        indent: Prefix string for each line.
+
+    Returns:
+        A list of formatted strings with keys left-aligned and colons
+        vertically aligned based on the longest key.
+    """
+    max_key_len = max(len(key) for key, _ in entries)
+    return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
+
+
+def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
+    """Log KV cache configuration details using aligned formatting.
+
+    Args:
+        config: The KVCacheConfig to log.
+        indent: Prefix string for each line.
+    """
+    entries: list[tuple[str, Any]] = [
+        ("cache_strategy", config.cache_strategy),
+        ("page_size", f"{config.kv_cache_page_size} tokens"),
+        ("prefix_caching", config.enable_prefix_caching),
+        ("host_swapping", config.enable_kvcache_swapping_to_host),
+    ]
+    if config.enable_kvcache_swapping_to_host:
+        entries.append(
+            ("host_swap_space", f"{config.host_kvcache_swap_space_gb} GB")
+        )
+    entries.append(
+        ("memory_utilization", f"{config.device_memory_utilization:.1%}")
+    )
+
+    if config._available_cache_memory is None:
+        raise ValueError(
+            "KVCache config is not available after config resolution."
+        )
+    entries.append(
+        (
+            "available_cache_memory",
+            to_human_readable_bytes(config._available_cache_memory),
+        )
+    )
+
+    for line in _format_config_entries(entries, indent=indent):
+        logger.info(line)
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

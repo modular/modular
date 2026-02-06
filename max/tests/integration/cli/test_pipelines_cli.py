@@ -150,7 +150,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory       : 8.00 KiB" in captured.err
+    assert "cache_memory" in captured.err and ": 8.00 KiB" in captured.err
 
     # Expect 2x the cache memory needed for Bfloat16 dtype.
     with pytest.raises(SystemExit):
@@ -172,4 +172,4 @@ def test_pipelines_cli__set_kv_cache_dtype(
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory       : 16.00 KiB" in captured.err
+    assert "cache_memory" in captured.err and ": 16.00 KiB" in captured.err
