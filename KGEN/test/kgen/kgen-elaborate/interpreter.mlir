@@ -1137,3 +1137,42 @@ kgen.generator @callRound() -> !pop.simd<8, f32> {
 
   kgen.return %0 : !pop.simd<8, f32>
 }
+
+// COM: Check floordiv
+
+kgen.generator @floordiv_f32(%arg0: !pop.simd<2, f32>, %arg1: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, f32>
+  kgen.return %0 : !pop.simd<2, f32>
+}
+
+kgen.generator @floordiv_si32(%arg0: !pop.simd<2, si32>, %arg1: !pop.simd<2, si32>) -> !pop.simd<2, si32> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, si32>
+  kgen.return %0 : !pop.simd<2, si32>
+}
+
+kgen.generator @floordiv_ui32(%arg0: !pop.simd<2, ui32>, %arg1: !pop.simd<2, ui32>) -> !pop.simd<2, ui32> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, ui32>
+  kgen.return %0 : !pop.simd<2, ui32>
+}
+
+kgen.generator @callFloordiv() -> !pop.simd<2, f32> {
+  kgen.param.declare F0: simd<2, f32> = <<"7.0", "7.0">>
+  kgen.param.declare F1: simd<2, f32> = <<"3.0", "-3.0">>
+  kgen.param.declare F2: simd<2, f32> = <apply(:(!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32> @floordiv_f32, F0, F1)>
+  // CHECK: <<"2", "-3">>
+  %0 = kgen.param.constant: !pop.simd<2, f32> = <F2>
+
+  kgen.param.declare S0: simd<2, si32> = <<7, 7>>
+  kgen.param.declare S1: simd<2, si32> = <<3, -3>>
+  kgen.param.declare S2: simd<2, si32> = <apply(:(!pop.simd<2, si32>, !pop.simd<2, si32>) -> !pop.simd<2, si32> @floordiv_si32, S0, S1)>
+  // CHECK: <<2, -3>>
+  %1 = kgen.param.constant: !pop.simd<2, si32> = <S2>
+
+  kgen.param.declare U0: simd<2, ui32> = <<7, 7>>
+  kgen.param.declare U1: simd<2, ui32> = <<3, 7>>
+  kgen.param.declare U2: simd<2, ui32> = <apply(:(!pop.simd<2, ui32>, !pop.simd<2, ui32>) -> !pop.simd<2, ui32> @floordiv_ui32, U0, U1)>
+  // CHECK: <<2, 1>>
+  %2 = kgen.param.constant: !pop.simd<2, ui32> = <U2>
+
+  kgen.return %0 : !pop.simd<2, f32>
+}

@@ -346,6 +346,31 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// FloorDivOp
+//===----------------------------------------------------------------------===//
+
+def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
+                     DeclareOpInterfaceMethods<InterpreterOpInterface>,
+                     DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
+  let summary = "floor divide";
+  let description = [{
+    The `pop.floordiv` operation takes two `!pop.simd` values and divides them,
+    rounding towards negative infinity. The operand and result types must be
+    the same. This operation is only valid on integer, index, and floating
+    point dtypes. The signedness of integer division is determined by the
+    dtype. Index is always treated as signed. Integer division by zero is
+    undefined behaviour.
+
+    Example:
+
+    ```mlir
+    %c = pop.floordiv %a, %b : !pop.scalar<type>
+    %c = pop.floordiv %a, %b : !pop.simd<size, type>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MaxOp
 //===----------------------------------------------------------------------===//
 

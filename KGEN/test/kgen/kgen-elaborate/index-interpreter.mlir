@@ -659,3 +659,71 @@ kgen.generator @callAbs() -> !pop.simd<4, index> {
 }
 
 }
+
+// -----
+
+// COM: pop.floordiv with index on 32-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @floordiv_index(%arg0: !pop.simd<4, index>, %arg1: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @floordiv_uindex(%arg0: !pop.simd<4, uindex>, %arg1: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, uindex>
+  kgen.return %0 : !pop.simd<4, uindex>
+}
+
+kgen.generator @callFloordiv() -> !pop.simd<4, index> {
+  kgen.param.declare S0: simd<4, index> = <<7, 7, 9223372036854775807, 9223372036854775807>>
+  kgen.param.declare S1: simd<4, index> = <<3, -3, 10, -10>>
+  kgen.param.declare S2: simd<4, index> = <apply(:(!pop.simd<4, index>, !pop.simd<4, index>) -> !pop.simd<4, index> @floordiv_index, S0, S1)>
+  // CHECK: <<2, -3, -1, 0>>
+  %1 = kgen.param.constant: !pop.simd<4, index> = <S2>
+
+  kgen.param.declare U0: simd<4, uindex> = <<7, 7, 18446744073709551615, 18446744073709551615>>
+  kgen.param.declare U1: simd<4, uindex> = <<3, 7, 10, 18446744073709551615>>
+  kgen.param.declare U2: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>, !pop.simd<4, uindex>) -> !pop.simd<4, uindex> @floordiv_uindex, U0, U1)>
+  // CHECK: <<2, 1, 429496729, 1>>
+  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U2>
+
+  kgen.return %1 : !pop.simd<4, index>
+}
+
+}
+
+// -----
+
+// COM: pop.floordiv with index on 64-bit
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+
+kgen.generator @floordiv_index(%arg0: !pop.simd<4, index>, %arg1: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @floordiv_uindex(%arg0: !pop.simd<4, uindex>, %arg1: !pop.simd<4, uindex>) -> !pop.simd<4, uindex> {
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, uindex>
+  kgen.return %0 : !pop.simd<4, uindex>
+}
+
+kgen.generator @callFloordiv() -> !pop.simd<4, index> {
+  kgen.param.declare S0: simd<4, index> = <<7, 7, 9223372036854775807, 9223372036854775807>>
+  kgen.param.declare S1: simd<4, index> = <<3, -3, 10, -10>>
+  kgen.param.declare S2: simd<4, index> = <apply(:(!pop.simd<4, index>, !pop.simd<4, index>) -> !pop.simd<4, index> @floordiv_index, S0, S1)>
+  // CHECK: <<2, -3, 922337203685477580, -922337203685477581>>
+  %1 = kgen.param.constant: !pop.simd<4, index> = <S2>
+
+  kgen.param.declare U0: simd<4, uindex> = <<7, 7, 18446744073709551615, 18446744073709551615>>
+  kgen.param.declare U1: simd<4, uindex> = <<3, 7, 10, 18446744073709551615>>
+  kgen.param.declare U2: simd<4, uindex> = <apply(:(!pop.simd<4, uindex>, !pop.simd<4, uindex>) -> !pop.simd<4, uindex> @floordiv_uindex, U0, U1)>
+  // CHECK: <<2, 1, 1844674407370955161, 1>>
+  %2 = kgen.param.constant: !pop.simd<4, uindex> = <U2>
+
+  kgen.return %1 : !pop.simd<4, index>
+}
+
+}

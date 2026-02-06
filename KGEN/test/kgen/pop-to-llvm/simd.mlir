@@ -474,4 +474,40 @@ kgen.func @round_simd(
   kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
 }
 
+// CHECK-LABEL: @floordiv_simd
+kgen.func @floordiv_simd(
+  %arg0: !pop.simd<4, f32>, %arg1 : !pop.simd<4, f32>,
+  %arg2 : !pop.scalar<uindex>, %arg3 : !pop.scalar<uindex>,
+  %arg4 : !pop.simd<2, index>, %arg5 : !pop.simd<2, index>
+) -> (
+  !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.simd<2, index>
+) {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: [[ARG2:%.*]] = builtin.unrealized_conversion_cast %arg2
+  // CHECK-DAG: [[ARG3:%.*]] = builtin.unrealized_conversion_cast %arg3
+  // CHECK-DAG: [[ARG4:%.*]] = builtin.unrealized_conversion_cast %arg4
+  // CHECK-DAG: [[ARG5:%.*]] = builtin.unrealized_conversion_cast %arg5
+
+  // CHECK: [[FDIV:%.*]] = llvm.fdiv [[ARG0]], [[ARG1]] : vector<4xf32>
+  // CHECK: llvm.call_intrinsic "llvm.floor"([[FDIV]])
+  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<4, f32>
+
+  // CHECK: llvm.udiv [[ARG2]], [[ARG3]] : i64
+  %1 = pop.floordiv %arg2, %arg3 : !pop.scalar<uindex>
+
+  // CHECK:      [[SDIV:%.*]] = llvm.sdiv [[ARG4]], [[ARG5]]
+  // CHECK-NEXT: [[MUL:%.*]] = llvm.mul [[SDIV]], [[ARG5]] : vector<2xi64>
+  // CHECK-NEXT: [[CMP:%.*]] = llvm.icmp "eq" [[MUL]], [[ARG4]] : vector<2xi64>
+  // CHECK-NEXT: [[XOR:%.*]] = llvm.xor [[ARG4]], [[ARG5]] : vector<2xi64>
+  // CHECK-NEXT: [[ZERO:%.*]] = llvm.mlir.constant(#M.dense_array<0, 0> : vector<2xi64>) : vector<2xi64>
+  // CHECK-NEXT: [[BSHIFT:%.*]] = llvm.mlir.constant(#M.dense_array<63, 63> : vector<2xi64>) : vector<2xi64>
+  // CHECK-NEXT: [[ASHR:%.*]] = llvm.ashr [[XOR]], [[BSHIFT]] : vector<2xi64>
+  // CHECK-NEXT: [[SEL:%.*]] = llvm.select [[CMP]], [[ZERO]], [[ASHR]] : vector<2xi1>, vector<2xi64>
+  // CHECK-NEXT: llvm.add [[SDIV]], [[SEL]] : vector<2xi64>
+  %2 = pop.floordiv %arg4, %arg5 : !pop.simd<2, index>
+
+  kgen.return %0, %1, %2 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.simd<2, index>
+}
+
 }

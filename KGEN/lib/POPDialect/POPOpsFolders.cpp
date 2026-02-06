@@ -457,6 +457,40 @@ RemOp::parametric_interpret(ArrayRef<Attribute> operands,
   return ErrorTree(getLoc(), "failed to interpret POP::RemOp");
 }
 
+OpFoldResult FloorDivOp::fold(FoldAdaptor adaptor) {
+  if (auto fold = foldSIMDFloorDiv(adaptor.getLhs(), adaptor.getRhs(),
+                                   lookupTargetInfo(*this))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return {};
+}
+
+ErrorTreeOrSuccess FloorDivOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  if (auto fold =
+          foldSIMDFloorDiv(operands[0], operands[1], state.getTarget())) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
+      state.mapResults(ret);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::FloorDivOp");
+}
+
+ErrorTreeOrSuccess
+FloorDivOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                 ParametricInterpreterState &state) {
+  if (auto fold =
+          foldSIMDFloorDiv(operands[0], operands[1], state.getTarget())) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
+      state.mapResults(ret);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::FloorDivOp");
+}
+
 template <typename OpT>
 static bool hasEqualOperands(OpT op) {
   return op->getLhs() == op->getRhs();
