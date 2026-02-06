@@ -574,26 +574,6 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         vocab_size = tokenizer.vocab_size
         max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
-        sys_prompt_len = min(
-            max_context_length,
-            np.floor(input_len * sys_prompt_ratio).astype(int),
-        )
-        sys_prompts: list[list[int]] = []
-        if use_synthetic_tokens:
-            # First max_num_unique_sys_prompt ShareGPT prompts are used as system prompts.
-            for i in range(max_num_unique_sys_prompt):
-                sys_prompt_ids = self._sample_sharegpt_tokens(
-                    sharegpt_prompt_subset, sys_prompt_len, i
-                )
-                sys_prompts.append(sys_prompt_ids)
-        else:
-            # Generate random token IDs for system prompts.
-            for i in range(max_num_unique_sys_prompt):  # noqa: B007
-                sys_prompt = np.random.randint(
-                    0, vocab_size, size=sys_prompt_len
-                )
-                sys_prompts.append(sys_prompt.tolist())
-
         input_requests = []
         for i in range(num_requests):
             input_len_cur = input_lens[i]
@@ -608,26 +588,42 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 )
                 input_len_cur = max_context_length - output_len_cur
 
-            sys_prompt_id = np.random.randint(0, max_num_unique_sys_prompt)
-            user_prompt_len = input_len_cur - sys_prompt_len
+            # Calculate per-request system prompt length based on this request's
+            # input length multiplied by sys_prompt_ratio.
+            sys_prompt_len_i = min(
+                max_context_length,
+                int(np.floor(input_lens[i] * sys_prompt_ratio)),
+            )
+            user_prompt_len = input_len_cur - sys_prompt_len_i
 
+            # Generate system prompt tokens for this request.
+            # Use sys_prompt_idx to select which ShareGPT prompt (for synthetic)
+            # or as a seed variation (for random tokens).
+            sys_prompt_idx = np.random.randint(0, max_num_unique_sys_prompt)
             if use_synthetic_tokens:
-                # Sample tokens from ShareGPT and repeat/truncate to target length.
-                # Start from max_num_unique_sys_prompt to avoid overlap with system prompts.
+                # Sample system prompt from ShareGPT, indexed by sys_prompt_idx.
+                sys_prompt_ids = self._sample_sharegpt_tokens(
+                    sharegpt_prompt_subset, sys_prompt_len_i, sys_prompt_idx
+                )
+                # Sample user prompt from ShareGPT, offset to avoid system prompt overlap.
                 user_prompt_ids = self._sample_sharegpt_tokens(
                     sharegpt_prompt_subset,
                     user_prompt_len,
                     max_num_unique_sys_prompt + i,
                 )
             else:
-                # Generate random token IDs.
+                # Generate random token IDs for system prompt.
+                sys_prompt_ids = np.random.randint(
+                    0, vocab_size, size=sys_prompt_len_i
+                ).tolist()
+                # Generate random token IDs for user prompt.
                 user_prompt_offset = np.random.randint(0, vocab_size)
                 user_prompt_ids = [
                     (user_prompt_offset + i + j) % vocab_size
                     for j in range(user_prompt_len)
                 ]
 
-            prompt_ids = sys_prompts[sys_prompt_id] + user_prompt_ids
+            prompt_ids = sys_prompt_ids + user_prompt_ids
 
             # Remove special tokens from the prompt.
             special_ids = set(tokenizer.all_special_ids)
