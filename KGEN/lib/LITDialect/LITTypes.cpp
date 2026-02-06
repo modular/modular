@@ -82,7 +82,7 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           "parameter types";
   }
 
-  return verifyDefaultTypes(emitError, paramListAttrs, paramTypes, "parameter");
+  return success();
 }
 
 TypeSignatureType TypeSignatureType::remapToSignature(

@@ -295,14 +295,6 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
-/// Verify the types of parameter or argument defaults, taking into account
-/// their input conventions if applicable. This assumes that the passing kinds
-/// and the number of defaults are valid.
-LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
-                                 PogListAttr pogListAttr, ArrayRef<Type> types,
-                                 StringRef argOrParam,
-                                 ArrayRef<ArgConvention> convs = {});
-
 /// Verify the the order of passing kinds, and that the number of defaults
 /// doesn't exceed the number of corresponding passing kinds.
 LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,

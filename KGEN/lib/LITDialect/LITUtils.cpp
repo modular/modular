@@ -1076,35 +1076,6 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
-                        PogListAttr pogListAttr, ArrayRef<Type> types,
-                        StringRef argOrParam, ArrayRef<ArgConvention> convs) {
-  return success();
-
-  for (size_t idx = 0; idx < pogListAttr.size(); ++idx) {
-    TypedAttr defaultOr = pogListAttr.getDefault(idx);
-    if (!defaultOr || pogListAttr.isAnyVarArg(idx))
-      continue;
-
-    Type expectedType = types[idx];
-    Type defaultType = defaultOr.getType();
-
-    // Memory-only arguments store their default values as pure values.
-    if (!convs.empty())
-      expectedType = RefType::stripRefConvention(expectedType, convs[idx]);
-
-    if (defaultType != expectedType &&
-        !::isa<TypeCheckErrorType>(expectedType)) {
-      return emitError() << argOrParam << " #" << idx << " has type "
-                         << expectedType << " but the default " << argOrParam
-                         << " value has type " << defaultType;
-    }
-  }
-
-  return success();
-}
-
-LogicalResult
 LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                         ArrayRef<PogMetadataAttr> pogs, StringRef argOrParam) {
   // First, verify the order of passing kinds.

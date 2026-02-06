@@ -228,8 +228,6 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
            << "number of pog names doesn't match number of pog types";
   }
 
-  if (failed(verifyDefaultTypes(emitError, *this, inputParamTypes, "pog")))
-    return failure();
   return success();
 }
 
@@ -441,10 +439,6 @@ LogicalResult FnMetadataAttr::verifyFuncType(
     }
   }
 
-  if (failed(verifyDefaultTypes(emitError, getArgListAttrs(),
-                                values.getInputs(), "argument",
-                                argConventions)))
-    return failure();
   return success();
 }
 
