@@ -216,7 +216,7 @@ def generate_llm_logits(
     """Output logits to a file for a model based on a fixed set of prompts.
 
     The resulting logit golden files for two different frameworks can be used
-    with //max/tests/integration/pipelines/python/llama3/verify to check their
+    with //max/tests/integration/architectures/llama3/verify to check their
     similarity.
 
     """

@@ -1,0 +1,118 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_pipelines_cli",
+    size = "enormous",
+    srcs = ["test_pipelines_cli.py"],
+    data = [
+        "//max/tests/integration/test_common:pipeline_model_dummy",
+        "//max/tests/integration/test_common/test_llama",
+    ],
+    env = {
+        "PIPELINES_CUSTOM_ARCHITECTURE": "max/tests/integration/test_common:pipeline_model_dummy",
+        "TEST_LLAMA_REPO": (
+            "max/tests/integration/test_common/test_llama"
+        ),
+    },
+    tags = [
+        "no-sandbox",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_gpu",
+    size = "enormous",
+    srcs = ["test_pipelines_cli_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "21.25",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:lora_utils",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_help",
+    srcs = ["test_pipelines_cli_help.py"],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_lightweight",
+    srcs = ["test_pipelines_cli_lightweight.py"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli_json_lightweight",
+    srcs = ["test_pipelines_cli_json_lightweight.py"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_multi_gpu_smoke",
+    size = "enormous",
+    srcs = ["test_pipelines_multi_gpu_smoke.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = [
+        # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
+        # should still run under a new generic pipeline that isn't presubmit
+        # due to compilation times.
+        "run-in-hf-workflow",
+        "no-pydeps",  # TODO: Fix and re-enable
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common",
+        requirement("transformers"),
+        requirement("gguf"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)

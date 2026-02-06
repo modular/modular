@@ -1,0 +1,43 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "ep_tests",
+    size = "enormous",
+    srcs = glob(
+        ["test_*.py"],
+    ) + ["conftest.py"],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.2",  # reserve memory for NVSHMEM
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+        "//:nvidia_gpu",
+    ],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

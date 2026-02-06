@@ -1,0 +1,251 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_debug_utils",
+    size = "small",
+    srcs = ["test_debug_utils.py"],
+    tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/tests/integration/tools:debugging_utils",
+        requirement("torch"),
+        requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_compare_tensors",
+    size = "large",
+    srcs = [
+        "test_compare_tensors.py",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/tools:compare_tensors",
+        requirement("click"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_model",
+    size = "small",
+    srcs = ["test_debug_model.py"],
+    tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/tools:debugging_utils",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify",
+    testonly = True,
+    srcs = ["verify.py"],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/architectures/llama3/testdata"
+        ),
+    },
+    imports = ["."],
+    deps = [
+        "//max/tests/integration/test_common:distance_metrics",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:verify_utils",
+        requirement("click"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify_pipelines",
+    testonly = True,
+    srcs = ["verify_pipelines.py"],
+    data = [
+        "//max/tests/integration/architectures/llama3/testdata",
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/architectures/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    deps = [
+        ":verify",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/tools:generate_llm_logits",
+        requirement("click"),
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:process_isolation",
+        "//max/tests/integration/test_common:storage",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_binary(
+    name = "check_logit_flakes",
+    testonly = True,
+    srcs = ["check_logit_flakes.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_check_logit_flakes",
+    size = "small",
+    srcs = ["test_check_logit_flakes.py"],
+    deps = [
+        ":check_logit_flakes",
+    ],
+)
+
+modular_py_test(
+    name = "test_generate_llm_logits_gpu",
+    size = "medium",
+    srcs = ["test_generate_llm_logits_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",  # TODO(AITLIB-293)
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        "//max/tests/integration/tools:generate_llm_logits",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "lm-eval",
+    testonly = True,
+    srcs = ["run_lm_eval.py"],
+    main = "run_lm_eval.py",
+    deps = [
+        requirement("lm-eval"),
+        requirement("aiohttp"),
+    ],
+)
+
+modular_py_binary(
+    name = "mistral-eval",
+    srcs = ["run_mistral_eval.py"],
+    main = "run_mistral_eval.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        "@mistral-evals//:evaluate",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "longbench-v2-eval",
+    testonly = True,
+    srcs = ["run_longbench_v2.py"],
+    main = "run_longbench_v2.py",
+    deps = [
+        requirement("click"),
+        requirement("datasets"),
+        requirement("openai"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines-lm-eval",
+    testonly = True,
+    srcs = ["pipelines_lm_eval.py"],
+    data = [
+        "run_lm_eval.py",
+        "//max/tests/integration/accuracy/eval_tasks",
+    ],
+    env = {
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "pipelines_lm_eval.py",
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":lm-eval",
+        ":longbench-v2-eval",
+        ":mistral-eval",
+        "//max/python/max/entrypoints:pipelines",  # The transitive mojo deps from this target must be available
+        "//max/tests/integration/accuracy/eval_tasks/human_eval",
+        "@mistral-evals//:evaluate",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+        requirement("requests"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_lm_eval",
+    size = "medium",
+    srcs = ["test_pipelines_lm_eval.py"],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":pipelines-lm-eval",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines_mteb",
+    testonly = True,
+    srcs = ["pipelines_mteb.py"],
+    data = ["//max/python/max/entrypoints:pipelines"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/dataprocessing",
+        requirement("click"),
+        requirement("mteb"),
+    ],
+)

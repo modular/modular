@@ -104,7 +104,7 @@ convention = "google"
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Disable lints which complain about weird unicode characters in files that include
 # a large number of LLM test prompts.
-"max/tests/integration/pipelines/python/test_common/test_data.py" = ["RUF001", "RUF003"]
+"max/tests/integration/test_common/test_data.py" = ["RUF001", "RUF003"]
 
 [tool.mypy]
 color_output = true

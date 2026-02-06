@@ -1,0 +1,201 @@
+# Qwen3VL integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "moe",
+    size = "enormous",
+    srcs = [
+        "tests/test_moe.py",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "decoder",
+    size = "enormous",
+    srcs = [
+        "tests/test_decoder_rotary_embedding.py",
+        "tests/test_text_attention.py",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "visual",
+    size = "enormous",
+    srcs = [
+        "tests/test_bilinear_interpolation_position_embedding.py",
+        "tests/test_vision_patch_merger.py",
+    ],
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        ":utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_functions",
+    srcs = ["test_vision_functions.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        ":utils",
+        "//max/python/max/pipelines/architectures",
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "utils",
+    testonly = True,
+    srcs = glob(["utils/*.py"]),
+    data = [
+        "configs/qwen3-VL-30B-A3B-Instruct.json",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_image_processor",
+    srcs = ["test_image_processor.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "generate_utils",
+    testonly = True,
+    srcs = ["generate_utils.py"],
+    imports = [".."],
+    deps = [
+        "//max/tests/integration/test_common:storage",
+        "//max/tests/integration/test_common:test_data",
+        "//max/tests/integration/test_common:torch_utils",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
