@@ -68,7 +68,13 @@ from .pipeline_variants import (
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
-from .request import DUMMY_REQUEST_ID, Request, RequestID, RequestType
+from .request import (
+    DUMMY_REQUEST_ID,
+    OpenResponsesRequest,
+    Request,
+    RequestID,
+    RequestType,
+)
 from .scheduler import Scheduler, SchedulerError, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
@@ -125,6 +131,7 @@ __all__ = [
     "LogitsProcessor",
     "MAXPullQueue",
     "MAXPushQueue",
+    "OpenResponsesRequest",
     "Pipeline",
     "PipelineInputs",
     "PipelineInputsType",

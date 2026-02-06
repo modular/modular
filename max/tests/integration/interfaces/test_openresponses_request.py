@@ -126,7 +126,9 @@ async def test_from_fastapi_request_missing_request_id(
     mock_request.state = MagicMock(spec=[])  # state exists but no request_id
     mock_request.body = AsyncMock(return_value=minimal_request_body.encode())
 
-    with pytest.raises(ValueError, match=r"request.state.request_id not found"):
+    with pytest.raises(
+        ValueError, match=r"request\.state\.request_id not found"
+    ):
         await OpenResponsesRequest.from_fastapi_request(mock_request)
 
 

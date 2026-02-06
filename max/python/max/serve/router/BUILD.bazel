@@ -11,6 +11,7 @@ modular_py_library(
         "//max/python/max/pipelines/lib",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
+        "//max/python/max/serve/dependencies",
         "//max/python/max/serve/parser",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",

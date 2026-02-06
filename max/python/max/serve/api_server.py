@@ -43,7 +43,12 @@ from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
-from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
+from max.serve.router import (
+    kserve_routes,
+    openai_routes,
+    openresponses_routes,
+    sagemaker_routes,
+)
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -54,6 +59,7 @@ ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
     APIType.SAGEMAKER: sagemaker_routes,
+    APIType.OPENRESPONSES: openresponses_routes,
 }
 
 logger = logging.getLogger("max.serve")
