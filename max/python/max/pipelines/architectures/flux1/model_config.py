@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from max.driver import Device, load_devices
 from max.dtype import DType
@@ -41,8 +41,6 @@ class FluxConfigBase(MAXModelConfigBase):
 
 
 class FluxConfig(FluxConfigBase):
-    config_name: ClassVar[str] = "config.json"
-
     @classmethod
     def initialize(cls, pipeline_config: "PipelineConfig") -> Self:
         """Initialize FluxConfig from a PipelineConfig.
