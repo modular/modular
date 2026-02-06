@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
     BatchLogitsProcessor,
@@ -118,6 +119,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "GenerationOutput",
     "GenerationStatus",
     "ImageContentPart",
     "ImageMetadata",

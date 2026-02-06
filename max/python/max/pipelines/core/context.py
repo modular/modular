@@ -30,7 +30,6 @@ from max.interfaces import (
     ImageMetadata,
     LogProbabilities,
     PixelGenerationContext,
-    PixelGenerationOutput,
     RequestID,
     SamplingParams,
     TextGenerationContext,
@@ -38,6 +37,8 @@ from max.interfaces import (
     TokenBuffer,
     VLMTextGenerationContext,
 )
+from max.interfaces.generation import GenerationOutput
+from max.interfaces.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
@@ -728,12 +729,12 @@ class PixelContext:
         """Update the context with newly generated latents/image data."""
         self.latents = latents
 
-    def to_generation_output(self) -> PixelGenerationOutput:
-        """Convert this context to a PixelGenerationOutput object."""
-        return PixelGenerationOutput(
+    def to_generation_output(self) -> GenerationOutput:
+        """Convert this context to a GenerationOutput object."""
+        return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            pixel_data=self.latents,
+            output=[OutputImageContent.from_numpy(self.latents, format="png")],
         )
 
 

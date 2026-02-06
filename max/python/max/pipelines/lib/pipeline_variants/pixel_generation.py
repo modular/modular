@@ -26,9 +26,10 @@ from max.interfaces import (
     PipelineOutputsDict,
     PixelGenerationContextType,
     PixelGenerationInputs,
-    PixelGenerationOutput,
     RequestID,
 )
+from max.interfaces.generation import GenerationOutput
+from max.interfaces.request.open_responses import OutputImageContent
 
 from ..interfaces.diffusion_pipeline import (
     DiffusionPipeline,
@@ -44,7 +45,7 @@ logger = logging.getLogger("max.pipelines")
 
 class PixelGenerationPipeline(
     Pipeline[
-        PixelGenerationInputs[PixelGenerationContextType], PixelGenerationOutput
+        PixelGenerationInputs[PixelGenerationContextType], GenerationOutput
     ],
     Generic[PixelGenerationContextType],
 ):
@@ -91,7 +92,7 @@ class PixelGenerationPipeline(
     def execute(
         self,
         inputs: PixelGenerationInputs[PixelGenerationContextType],
-    ) -> PipelineOutputsDict[PixelGenerationOutput]:
+    ) -> PipelineOutputsDict[GenerationOutput]:
         model_inputs, flat_batch = self.prepare_batch(inputs.batch)
         if not flat_batch or model_inputs is None:
             return {}
@@ -116,6 +117,16 @@ class PixelGenerationPipeline(
 
         image_list = model_outputs.images
         num_images_per_prompt = model_inputs.num_images_per_prompt
+
+        # Post-process images from NCHW to NHWC format
+        # The VAE decoder returns images in (batch, channels, height, width) format
+        # but OutputImageContent.from_numpy expects (height, width, channels) format
+        if isinstance(image_list, np.ndarray):
+            # Denormalize from [-1, 1] to [0, 1] range
+            image_list = (image_list * 0.5 + 0.5).clip(min=0.0, max=1.0)
+            # Transpose from NCHW to NHWC
+            image_list = image_list.transpose(0, 2, 3, 1)
+
         expected_images = len(flat_batch) * num_images_per_prompt
         if len(image_list) != expected_images:
             raise ValueError(
@@ -123,18 +134,20 @@ class PixelGenerationPipeline(
                 f"expected {expected_images}, got {len(image_list)}."
             )
 
-        responses: dict[RequestID, PixelGenerationOutput] = {}
+        responses: dict[RequestID, GenerationOutput] = {}
         for index, (request_id, _context) in enumerate(flat_batch):
             offset = index * num_images_per_prompt
-            pixel_data = np.stack(
-                image_list[offset : offset + num_images_per_prompt],
-                axis=0,
-            )
+            # Select images for this request (already in NHWC format)
+            pixel_data = image_list[offset : offset + num_images_per_prompt]
             pixel_data = pixel_data.astype(np.float32, copy=False)
-            responses[request_id] = PixelGenerationOutput(
+
+            responses[request_id] = GenerationOutput(
                 request_id=request_id,
                 final_status=GenerationStatus.END_OF_SEQUENCE,
-                pixel_data=pixel_data,
+                output=[
+                    OutputImageContent.from_numpy(img, format="png")
+                    for img in pixel_data
+                ],
             )
 
         return responses
