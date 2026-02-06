@@ -273,9 +273,16 @@ class DummyTextTokenizer(TextTokenizer):
             prompt = request.prompt
         token_ids = await self.encode(prompt)
 
+        max_length = self.max_length
+        if request.sampling_params.max_new_tokens is not None:
+            max_length = min(
+                self.max_length,
+                token_ids.shape[0] + request.sampling_params.max_new_tokens,
+            )
+
         return TextContext(
             request_id=request.request_id,
-            max_length=self.max_length,
+            max_length=max_length,
             tokens=TokenBuffer(token_ids.astype(np.int64, copy=False)),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,

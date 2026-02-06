@@ -14,11 +14,12 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from max.driver import load_devices
+from max.driver import CPU, load_devices
 from max.pipelines.lib import MemoryEstimator
+from max.pipelines.lib.interfaces import ArchConfigWithKVCache
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
@@ -68,6 +69,16 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
                     mock_config, mock_config.model.huggingface_config
                 ),
             )
+
+
+def test_memory_estimation__infer_optimal_batch_size() -> None:
+    # Max batch size on CPU is always 1.
+    inferred_batch_size = MemoryEstimator._infer_optimal_batch_size(
+        arch_config=MagicMock(spec=ArchConfigWithKVCache),
+        available_kv_cache_memory=1000000000,
+        devices=[CPU()],
+    )
+    assert inferred_batch_size == 1
 
 
 @pytest.mark.skip("TODO: AITLIB-238")

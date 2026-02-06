@@ -61,7 +61,7 @@ def test_pipelines_cli__smollm_float32(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=100",
+                "--max-length=256",
             ]
         )
     captured = capsys.readouterr()
@@ -90,7 +90,7 @@ def test_pipelines_cli__invalid_quantization_encoding(
                 "--quantization-encoding=q4_k",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=100",
+                "--max-length=256",
             ]
         )
 
@@ -119,7 +119,7 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=100",
+                "--max-length=256",
             ]
         )
 
@@ -144,13 +144,13 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "Why is the sky blue?",
                 "--quantization-encoding=float32",
                 "--top-k=1",
-                "--max-new-tokens=10",
-                "--max-length=100",
+                "--max-new-tokens=1",
+                "--max-length=256",
                 "--kv-cache-format=float8_e4m3fn",
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory       : 2.00 MiB" in captured.err
+    assert "cache_memory       : 8.00 KiB" in captured.err
 
     # Expect 2x the cache memory needed for Bfloat16 dtype.
     with pytest.raises(SystemExit):
@@ -166,10 +166,10 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "Why is the sky blue?",
                 "--quantization-encoding=float32",
                 "--top-k=1",
-                "--max-new-tokens=10",
-                "--max-length=100",
+                "--max-new-tokens=1",
+                "--max-length=256",
                 "--kv-cache-format=bfloat16",
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory       : 4.00 MiB" in captured.err
+    assert "cache_memory       : 16.00 KiB" in captured.err
