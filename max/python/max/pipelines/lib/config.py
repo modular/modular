@@ -563,6 +563,10 @@ class PipelineConfig(ConfigFileModel):
             return handler(data)
 
         kwargs = data.copy()
+        # Merge config file values before separating pydantic vs unmatched
+        # kwargs, so sub-config fields (e.g. model_path) from the YAML are
+        # visible to _postprocess_configs.
+        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
         unmatched_kwargs: dict[str, Any] = {}
         # Use getattr to safely access model_fields in case it's not yet available
         # during class construction.
