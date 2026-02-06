@@ -28,8 +28,8 @@ def test_fast_div():
 
     for i in range(1000):
         assert_equal(
-            i / fast_div,
-            i // divisor,
+            Scalar[fast_div.uint_type](i) / fast_div,
+            Scalar[fast_div.uint_type](i // divisor),
             msg=String("mismatch for ", i, "/", divisor),
         )
 
@@ -77,8 +77,12 @@ def run_elementwise[type: DType](ctx: DeviceContext):
         comptime fast_div = FastDiv[DType.uint32](4)
         var idx = idx0[0]
 
-        out_divisors_buffer[idx] = (idx / fast_div).cast[type]()
-        out_remainders_buffer[idx] = (idx % fast_div).cast[type]()
+        out_divisors_buffer[idx] = (
+            Scalar[fast_div.uint_type](idx) / fast_div
+        ).cast[type]()
+        out_remainders_buffer[idx] = (
+            Scalar[fast_div.uint_type](idx) % fast_div
+        ).cast[type]()
 
     elementwise[func, simd_width=1, target="gpu"](Index(length), ctx)
 
@@ -89,8 +93,14 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
     for i in range(length):
         print(divisors[i], remainders[i])
-        assert_equal(divisors[i], i // 4, msg="the divisor is not correct")
-        assert_equal(remainders[i], i % 4, msg="the remainder is not correct")
+        assert_equal(
+            divisors[i], Scalar[type](i // 4), msg="the divisor is not correct"
+        )
+        assert_equal(
+            remainders[i],
+            Scalar[type](i % 4),
+            msg="the remainder is not correct",
+        )
 
     _ = out_divisors
     _ = out_remainders

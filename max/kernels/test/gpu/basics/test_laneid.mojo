@@ -54,7 +54,9 @@ fn test_grid_dim(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     for i in range(buffer_size):
-        assert_equal(output_host[i] % WARP_SIZE, i % WARP_SIZE)
+        assert_equal(
+            output_host[i] % Float32(WARP_SIZE), Float32(i % WARP_SIZE)
+        )
 
     output_host.free()
 

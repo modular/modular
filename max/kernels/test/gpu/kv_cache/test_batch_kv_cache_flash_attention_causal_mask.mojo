@@ -256,8 +256,8 @@ def execute_flash_attention[
         ),
         cache_lengths_device,
         lookup_table_tensor,
-        max_prompt_len,
-        max_context_len,
+        UInt32(max_prompt_len),
+        UInt32(max_context_len),
     )
 
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)

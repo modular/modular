@@ -68,7 +68,9 @@ fn convert_kernel[
 ](dst_ptr: UnsafePointer[Scalar[dst_type]]):
     @parameter
     for i in range(0, size, 2):
-        var src_vec = SIMD[src_type, 2](i, i + 1)
+        var src_vec = SIMD[src_type, 2](
+            Scalar[src_type](i), Scalar[src_type](i + 1)
+        )
         var dst_vec = src_vec.cast[dst_type]()
         dst_ptr.store(i, dst_vec)
 
@@ -90,7 +92,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     )
     with device_buf.map_to_host() as host_buf:
         for i in range(size):
-            assert_equal(host_buf[i], i)
+            assert_equal(host_buf[i], Scalar[dst_type](i))
 
 
 def main():

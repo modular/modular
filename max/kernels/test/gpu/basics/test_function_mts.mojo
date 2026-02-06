@@ -88,9 +88,9 @@ def test_color_to_grayscale():
             # Fill the image with initial colors.
             for row in range(HEIGHT):
                 for col in range(WIDTH):
-                    rgb_tensor[row, col, 0] = row + col
-                    rgb_tensor[row, col, 1] = row + col + 20
-                    rgb_tensor[row, col, 2] = row + col + 40
+                    rgb_tensor[row, col, 0] = UInt8(row + col)
+                    rgb_tensor[row, col, 1] = UInt8(row + col + 20)
+                    rgb_tensor[row, col, 2] = UInt8(row + col + 40)
 
         var gray_tensor = OutputTensor[static_spec=gray_spec](
             gray_buffer.unsafe_ptr(), IndexList[2](HEIGHT, WIDTH)

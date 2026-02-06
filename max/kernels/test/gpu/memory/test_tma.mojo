@@ -78,7 +78,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
     print("== test_tma_tile_copy")
     var gmem_host = alloc[Float32](8 * 8)
     for i in range(64):
-        gmem_host[i] = i
+        gmem_host[i] = Float32(i)
 
     var gmem_dev = ctx.enqueue_create_buffer[DType.float32](8 * 8)
 

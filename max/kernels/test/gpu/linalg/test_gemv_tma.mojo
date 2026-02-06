@@ -201,8 +201,12 @@ fn gemv_tma_kernel[
         tma_mbar[stage].wait(phase)
 
         # Process current buffer.
-        var current_a_tile = a_smem.next_unsafe(Int(stage))[]
-        var current_b_tile = b_smem.next_unsafe(Int(stage))[]
+        var current_a_tile = a_smem.next_unsafe(
+            a_smem.linear_uint_type(Int(stage))
+        )[]
+        var current_b_tile = b_smem.next_unsafe(
+            b_smem.linear_uint_type(Int(stage))
+        )[]
 
         for k_idx in range(0, current_block_size, WARP_SIZE):
             var col_idx = k_idx + Int(lane_id())
@@ -309,7 +313,9 @@ def gemv_tma[
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
@@ -424,7 +430,7 @@ def test_gemv_tma[
             num_runs
         )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         # Round TFLOPS to two decimal places for cleaner output.
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 3)

@@ -149,7 +149,7 @@ def shared_memory_alloc_example():
         ctx.enqueue_copy(host_buf, dev_buf)
         ctx.synchronize()
         for i in range(in_size * in_size):
-            if host_buf[i] != i:
+            if host_buf[i] != Float32(i):
                 raise Error(
                     String("Error at position {} expected {} got {}").format(
                         i, i, host_buf[i]
@@ -177,7 +177,7 @@ def layout_tensor_vectorized_example():
     comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Scalar[dtype], rows * columns](uninitialized=True)
     for i in range(rows * columns):
-        storage[i] = i
+        storage[i] = Int32(i)
     var tensor = LayoutTensor[dtype, layout](storage)
     # start-vectorize-tensor-example
     var vectorized_tensor = tensor.vectorize[1, vector_width]()
@@ -209,7 +209,7 @@ fn layout_tensor_distribute_example():
             rows * columns
         )
         for i in range(rows * columns):
-            host_buf[i] = i
+            host_buf[i] = Int32(i)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ctx.enqueue_copy(dev_buf, host_buf)
         ctx.enqueue_function[kernel, kernel](
@@ -268,7 +268,7 @@ fn simple_copy_example():
         var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
         var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
         for i in range(rows * cols):
-            host_buf[i] = i
+            host_buf[i] = Float32(i)
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
@@ -280,7 +280,7 @@ fn simple_copy_example():
         ctx.enqueue_copy(host_buf, dev_buf)
         ctx.synchronize()
         for i in range(rows * cols):
-            if host_buf[i] != i * 2:
+            if host_buf[i] != Float32(i * 2):
                 raise Error(
                     String("Unexpected value ", host_buf[i], " at position ", i)
                 )
@@ -346,7 +346,7 @@ fn copy_from_async_example():
             var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
             var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
             for i in range(rows * cols):
-                host_buf[i] = i
+                host_buf[i] = Float32(i)
             var tensor = LayoutTensor[dtype, input_layout](dev_buf)
             ctx.enqueue_copy(dev_buf, host_buf)
             ctx.enqueue_function[kernel, kernel](
@@ -357,7 +357,7 @@ fn copy_from_async_example():
             ctx.enqueue_copy(host_buf, dev_buf)
             ctx.synchronize()
             for i in range(rows * cols):
-                if host_buf[i] != i + 1:
+                if host_buf[i] != Float32(i + 1):
                     raise Error(
                         String(
                             "Unexpected value ", host_buf[i], " at position ", i

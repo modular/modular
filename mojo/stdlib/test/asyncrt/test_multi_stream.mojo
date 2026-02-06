@@ -47,9 +47,9 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     with in0_dev1.map_to_host() as in_host1, in0_dev2.map_to_host() as in_host2, in0_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
-            in_host1[i] = index
-            in_host2[i] = 2 * index
-            in_host3[i] = 3 * index
+            in_host1[i] = Float32(index)
+            in_host2[i] = Float32(2 * index)
+            in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
     in1_dev1 = ctx1.enqueue_create_buffer[T](length)
@@ -133,7 +133,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             print("at index", i, "the value is", out_host3[i])
         assert_equal(
             out_host1[i],
-            Float32(index + 1.0),
+            Float32(Float64(index) + 1.0),
             String(
                 "out_host1[",
                 i,
@@ -143,7 +143,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
         assert_equal(
             out_host2[i],
-            Float32(2.0 * index + 2.0),
+            Float32(2.0 * Float64(index) + 2.0),
             String(
                 "out_host2[",
                 i,
@@ -153,7 +153,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
         assert_equal(
             out_host3[i],
-            Float32(3.0 * index + 3.0),
+            Float32(3.0 * Float64(index) + 3.0),
             String(
                 "out_host3[",
                 i,
@@ -180,9 +180,9 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     with in_dev1.map_to_host() as in_host1, in_dev2.map_to_host() as in_host2, in_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
-            in_host1[i] = index
-            in_host2[i] = 2 * index
-            in_host3[i] = 3 * index
+            in_host1[i] = Float32(index)
+            in_host2[i] = Float32(2 * index)
+            in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
     var in_dev4 = ctx1.enqueue_create_buffer[T](length)

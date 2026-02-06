@@ -97,8 +97,8 @@ struct CacheLengthsTable(Copyable):
         for batch, (prompt_len, cache_len) in enumerate(
             zip(prompt_lens, cache_lens)
         ):
-            cache_lengths_ptr[batch] = cache_len
-            input_row_offsets_ptr[batch] = total_length
+            cache_lengths_ptr[batch] = UInt32(cache_len)
+            input_row_offsets_ptr[batch] = UInt32(total_length)
 
             max_full_context_length = max(
                 max_full_context_length, cache_len + prompt_len
@@ -106,7 +106,7 @@ struct CacheLengthsTable(Copyable):
             max_seq_length_batch = max(max_seq_length_batch, prompt_len)
             total_length += prompt_len
 
-        input_row_offsets_ptr[self.batch_size] = total_length
+        input_row_offsets_ptr[self.batch_size] = UInt32(total_length)
 
         self.max_full_context_length = max_full_context_length
         self.max_seq_length_batch = max_seq_length_batch
@@ -157,12 +157,12 @@ struct PagedLookupTable[page_size: Int](Copyable):
             var seq_len = prompt_lens[batch] + cache_lens[batch]
 
             for block_idx in range(0, ceildiv(seq_len, Self.page_size)):
-                var randval = Int(random_ui64(0, num_paged_blocks - 1))
+                var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
                 while randval in used_set:
-                    randval = Int(random_ui64(0, num_paged_blocks - 1))
+                    randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
 
                 used_set.add(randval)
-                host_tensor[batch, block_idx] = randval
+                host_tensor[batch, block_idx] = UInt32(randval)
 
         if ctx:
             self.paged_lut.copy_to_device(ctx.value())

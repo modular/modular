@@ -200,8 +200,8 @@ fn test_grouped_tensormap_update_kernel[
 
         # ===== Step 4: Load tiles using block's (now updated) GMEM tensormaps =====
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
-            mbar[1].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
+            mbar[1].expect_bytes(Int32(expected_bytes))
 
             # Load A tile using block's GMEM tensormap
             device_tma_a[Int(block_idx.x)][].async_copy(tile_a, mbar[0], (0, 0))

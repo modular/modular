@@ -113,18 +113,18 @@ def execute_ragged_flash_attention[
     var input_row_offsets_host_ptr = UnsafePointer[UInt32].alloc(batch_size + 1)
     var running_total = 0
     for i in range(batch_size):
-        input_row_offsets_host_ptr[i] = running_total
+        input_row_offsets_host_ptr[i] = UInt32(running_total)
         running_total += valid_lengths[i]
-    input_row_offsets_host_ptr[batch_size] = running_total
+    input_row_offsets_host_ptr[batch_size] = UInt32(running_total)
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
 
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         for i in range(batch_size):
-            cache_lengths_host[i] = cache_lengths[i]
+            cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     with valid_lengths_device.map_to_host() as valid_lengths_host:
         for i in range(batch_size):
-            valid_lengths_host[i] = valid_lengths[i]
+            valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     # Create q tensors
     var q_ragged_shape = IndexList[3](
@@ -300,8 +300,8 @@ def execute_ragged_flash_attention[
         ),
         cache_lengths_tensor,
         lookup_table_tensor,
-        max_prompt_length,
-        max_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_context_length),
     )
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
@@ -313,7 +313,7 @@ def execute_ragged_flash_attention[
     # Initialize sink weights with varying negative values
     with sink_weights_device.map_to_host() as sink_weights_host:
         for h in range(num_q_heads):
-            sink_weights_host[h] = Scalar[dtype](-2.0 - 0.5 * h)
+            sink_weights_host[h] = Scalar[dtype](-2.0 - 0.5 * Float64(h))
 
     var sink_weights_device_tensor: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]

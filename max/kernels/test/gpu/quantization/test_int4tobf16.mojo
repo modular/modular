@@ -85,8 +85,8 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
 
     ctx.enqueue_copy(out_host.data, out_device)
     for i in range(4):
-        assert_equal(out_host[2 * i + 0], i + 0)
-        assert_equal(out_host[2 * i + 1], i + 4)
+        assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
+        assert_equal(out_host[2 * i + 1], BFloat16(i + 4))
 
 
 def main():

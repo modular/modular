@@ -74,7 +74,7 @@ fn tma_ragged_store_kernel[
 
     if thread_idx.x == 0:
         for i in range(sequence_length * shared_n):
-            smem_tensor.ptr[i] = i
+            smem_tensor.ptr[i] = Scalar[dtype](i)
 
     var smem_iterator = smem_tensor.tiled_iterator[
         sequence_store_length, shared_n, axis=0
@@ -135,7 +135,7 @@ fn test_tma_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy(
             tile,
             mbar[0],
@@ -189,7 +189,7 @@ fn test_tma_multiple_loads_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             tma_tile.async_copy(
                 tile,
                 mbar[0],
@@ -648,7 +648,10 @@ def test_tma_async_reduce[
     for m in range(dst_M):
         for n in range(dst_N):
             assert_equal(
-                src_host[m, n].cast[DType.float32]() + 3546 + m * dst_N + n,
+                src_host[m, n].cast[DType.float32]()
+                + 3546
+                + Float32(m * dst_N)
+                + Float32(n),
                 dst_host[m, n].cast[DType.float32](),
             )
 
@@ -711,7 +714,7 @@ fn test_tma_loads_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_tile.async_copy(
                 a_tile,
                 mbar[0],
@@ -870,7 +873,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes * 2)
+            mbar[0].expect_bytes(Int32(expected_bytes * 2))
             a_tma_src_tile.async_copy(
                 a_tile,
                 mbar[0],

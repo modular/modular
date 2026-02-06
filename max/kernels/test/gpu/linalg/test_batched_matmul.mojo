@@ -137,11 +137,15 @@ fn run_bmm_and_check_result[
         )
     else:
         for i in range(a_host.dim(0)):
-            var c_ptr = (
-                c_device_ref.ptr + i * c_device_ref.layout.stride[0]().value()
+            var c_ptr = c_device_ref.ptr + i * Scalar[a_host.linear_idx_type](
+                c_device_ref.layout.stride[0]().value()
             )
-            var a_ptr = a_device.ptr + i * a_device.layout.stride[0]().value()
-            var b_ptr = b_device.ptr + i * b_device.layout.stride[0]().value()
+            var a_ptr = a_device.ptr + i * Scalar[a_host.linear_idx_type](
+                a_device.layout.stride[0]().value()
+            )
+            var b_ptr = b_device.ptr + i * Scalar[a_host.linear_idx_type](
+                b_device.layout.stride[0]().value()
+            )
 
             var b_shape = IndexList[2](n, k) if transpose_b else IndexList[2](
                 k, n

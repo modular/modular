@@ -29,7 +29,7 @@ fn vec_func(
     var tid = global_idx.x
     if tid >= UInt(len):
         return
-    output[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
 fn test(ctx: DeviceContext) raises:
@@ -40,7 +40,7 @@ fn test(ctx: DeviceContext) raises:
     var out_host = UnsafePointer[Float32].alloc(length)
 
     for i in range(length):
-        in_host[i] = i
+        in_host[i] = Float32(i)
         in_host[i + length] = 2
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](2 * length)

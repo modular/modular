@@ -126,10 +126,10 @@ fn test_vendor[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     # Initialize matmul inputs
     random(a_host)
@@ -330,10 +330,10 @@ fn test_negative_lora_id_vendor[
     # Setup offsets and expert ids
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
-        a_offsets_host_ptr[i + 1] = (
-            a_offsets_host_ptr[i] + num_tokens_by_expert[i]
+        a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(
+            num_tokens_by_expert[i]
         )
-        expert_ids_host_ptr[i] = expert_ids[i]
+        expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     # Initialize matmul inputs with non-zero values
     random(a_host)

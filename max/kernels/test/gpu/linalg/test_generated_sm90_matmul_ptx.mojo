@@ -111,9 +111,9 @@ fn compile_sm90_matmul_ptx[
     )
 
     comptime cluster_shape = StaticTuple[Int32, 3](
-        config.cluster_shape[0],
-        config.cluster_shape[1],
-        config.cluster_shape[2],
+        Int32(config.cluster_shape[0]),
+        Int32(config.cluster_shape[1]),
+        Int32(config.cluster_shape[2]),
     )
 
     comptime CLUSTER_N = UInt(cluster_shape[0])
@@ -136,7 +136,7 @@ fn compile_sm90_matmul_ptx[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        min(log2_floor(c_smem_tile[1] // 8), 3)
+        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     comptime a_layout = Layout.row_major(M, K)

@@ -89,20 +89,22 @@ fn tma_swizzle_multicast_load_kernel[
     fence_mbarrier_init()
 
     if thread_idx.x == 0:
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         var slice_cord_y = cluster_idx.y * UInt(cluster_tileM) + UInt(
             rank_m * subcluster_tileM
         )
         var slice_cord_x = cluster_idx.x * UInt(cluster_tileN) + UInt(
             rank_n * subcluster_tileN
         )
-        var copy_offset = subcluster_tileM * subcluster_tileN * block_rank
+        var copy_offset = (
+            UInt32(subcluster_tileM * subcluster_tileN) * block_rank
+        )
 
         tma_tile.async_multicast_load(
             type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
             (UInt(slice_cord_x), UInt(slice_cord_y)),
-            tma_multicast_mask,
+            UInt16(tma_multicast_mask),
         )
 
     barrier()

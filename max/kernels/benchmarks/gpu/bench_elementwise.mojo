@@ -148,7 +148,7 @@ fn run_elementwise[
     var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
 
     for i in range(N_cache):
-        in_host_ptr[i] = i
+        in_host_ptr[i] = Scalar[dtype](i)
 
     var in_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
     var out_buffer = ctx.enqueue_create_buffer[dtype](N_cache)

@@ -258,7 +258,7 @@ fn bench_broadcast[
     b.dump_report()
 
     var max_time = b.info_vec[0].result.mean(unit="ms")
-    var gbps = num_bytes / (max_time * 1000 * 1000)
+    var gbps = Float64(num_bytes) / (max_time * 1000 * 1000)
     # For broadcast, busbw = algbw (factor of 1).
     # All data must leave the root, which is the bottleneck.
     # See: https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md

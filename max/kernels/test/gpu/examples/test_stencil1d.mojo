@@ -37,7 +37,11 @@ fn stencil1d(
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
     if 0 < tid < arr_size - 1:
-        b[tid] = coeff0 * a[tid - 1] + coeff1 * a[tid] + coeff2 * a[tid + 1]
+        b[tid] = (
+            Float32(coeff0) * a[tid - 1]
+            + Float32(coeff1) * a[tid]
+            + Float32(coeff2) * a[tid + 1]
+        )
 
 
 fn stencil1d_smem(
@@ -69,9 +73,9 @@ fn stencil1d_smem(
 
     if 0 < tid < arr_size - 1:
         b[tid] = (
-            coeff0 * a_shared[lindex - 1]
-            + coeff1 * a_shared[lindex]
-            + coeff2 * a_shared[lindex + 1]
+            Float32(coeff0) * a_shared[lindex - 1]
+            + Float32(coeff1) * a_shared[lindex]
+            + Float32(coeff2) * a_shared[lindex + 1]
         )
 
 
@@ -89,7 +93,7 @@ fn run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     var b_host = alloc[Float32](m)
 
     for i in range(m):
-        a_host[i] = i
+        a_host[i] = Float32(i)
         b_host[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](m)

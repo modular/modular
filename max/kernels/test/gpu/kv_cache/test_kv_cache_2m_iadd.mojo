@@ -71,8 +71,8 @@ fn _create_kv_collection_from_host[
                 paged_lut_host.dynamic_stride.canonicalize(),
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
 
@@ -163,7 +163,7 @@ fn _verify_kv_cache[
                     var k_val = k_cache_host.load[width=1](i, h, actual_len, d)
                     var k_idx = k_row_base + h * head_dim + d
                     var expected_k_val = 1 + k_idx
-                    if k_val != expected_k_val:
+                    if k_val != Scalar[dtype](expected_k_val):
                         raise Error(
                             "Mismatch in output for k, expected "
                             + String(expected_k_val)
@@ -182,7 +182,7 @@ fn _verify_kv_cache[
                     var v_val = v_cache_host.load[width=1](i, h, actual_len, d)
                     var v_idx = v_row_base + h * head_dim + d
                     var expected_v_val = 1 + v_idx
-                    if v_val != expected_v_val:
+                    if v_val != Scalar[dtype](expected_v_val):
                         raise Error(
                             "Mismatch in output for v, expected "
                             + String(expected_v_val)
@@ -235,21 +235,21 @@ fn test_kv_cache_2m_iadd_gpu[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host[i] = total_length
-        cache_lengths_host[i] = cache_lens[i]
+        input_row_offsets_host[i] = UInt32(total_length)
+        cache_lengths_host[i] = UInt32(cache_lens[i])
         max_full_context_length = max(
             max_full_context_length, cache_lens[i] + prompt_lens[i]
         )
         max_prompt_length = max(max_prompt_length, prompt_lens[i])
 
         if i < num_active_loras:
-            input_row_offsets_slice_host[i] = total_length
+            input_row_offsets_slice_host[i] = UInt32(total_length)
             total_slice_length += prompt_lens[i]
 
         total_length += prompt_lens[i]
 
-    input_row_offsets_host[batch_size] = total_length
-    input_row_offsets_slice_host[num_active_loras] = total_slice_length
+    input_row_offsets_host[batch_size] = UInt32(total_length)
+    input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
     num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
@@ -309,12 +309,12 @@ fn test_kv_cache_2m_iadd_gpu[
         seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
 
             paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
+            paged_lut_host[bs, block_idx] = UInt32(randval)
 
     var kv_block_paged_device = ctx.enqueue_create_buffer[dtype](
         kv_block_paged_size
@@ -366,8 +366,8 @@ fn test_kv_cache_2m_iadd_gpu[
                 paged_lut_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     var a_shape = IndexList[2](2 * total_slice_length, num_heads * head_dim)
@@ -377,7 +377,7 @@ fn test_kv_cache_2m_iadd_gpu[
         a_host_ptr, a_shape
     )
     for i in range(a_host.num_elements()):
-        a_host.data[i] = i
+        a_host.data[i] = Scalar[dtype](i)
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     ctx.enqueue_copy(a_device, a_host_ptr)
     var a_device_nd = NDBuffer[
@@ -421,7 +421,7 @@ fn test_kv_cache_2m_iadd_gpu[
                 batch_seq_len_host.dynamic_stride.canonicalize(),
             ),
         ),
-        layer_idx,
+        UInt32(layer_idx),
         Optional(ctx),
     )
     ctx.synchronize()
@@ -497,21 +497,21 @@ fn test_kv_cache_2m_iadd_cpu[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host[i] = total_length
-        cache_lengths_host[i] = cache_lens[i]
+        input_row_offsets_host[i] = UInt32(total_length)
+        cache_lengths_host[i] = UInt32(cache_lens[i])
         max_full_context_length = max(
             max_full_context_length, cache_lens[i] + prompt_lens[i]
         )
         max_prompt_length = max(max_prompt_length, prompt_lens[i])
 
         if i < num_active_loras:
-            input_row_offsets_slice_host[i] = total_length
+            input_row_offsets_slice_host[i] = UInt32(total_length)
             total_slice_length += prompt_lens[i]
 
         total_length += prompt_lens[i]
 
-    input_row_offsets_host[batch_size] = total_length
-    input_row_offsets_slice_host[num_active_loras] = total_slice_length
+    input_row_offsets_host[batch_size] = UInt32(total_length)
+    input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
     num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
@@ -560,12 +560,12 @@ fn test_kv_cache_2m_iadd_cpu[
         seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
 
             paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
+            paged_lut_host[bs, block_idx] = UInt32(randval)
 
     var kv_collection_host = _create_kv_collection_from_host[
         dtype, num_heads, head_dim, page_size
@@ -584,7 +584,7 @@ fn test_kv_cache_2m_iadd_cpu[
         a_host_ptr, a_shape
     )
     for i in range(a_host.num_elements()):
-        a_host.data[i] = i
+        a_host.data[i] = Scalar[dtype](i)
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="cpu"](
@@ -623,7 +623,7 @@ fn test_kv_cache_2m_iadd_cpu[
                 batch_seq_len_host.dynamic_stride.canonicalize(),
             ),
         ),
-        layer_idx,
+        UInt32(layer_idx),
         Optional[DeviceContext](),
     )
 

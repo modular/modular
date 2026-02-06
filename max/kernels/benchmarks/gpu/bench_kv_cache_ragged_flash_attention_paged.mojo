@@ -39,7 +39,11 @@ def flops(
     batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
 ) -> Int:
     var avg_seqlen = Float64(max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
-    return Int(batch * nheads * 2 * seqlen_q * avg_seqlen * (headdim + headdim))
+    return Int(
+        Float64(batch * nheads * 2 * seqlen_q)
+        * avg_seqlen
+        * Float64((headdim + headdim))
+    )
 
 
 fn _get_run_name[
@@ -131,16 +135,20 @@ def execute_kv_cache_ragged_flash_attention[
     for i in range(batch_size):
         var curr_seq_length: UInt32
         if use_random_seq_lengths:
-            curr_seq_length = random_ui64(1, seq_len).cast[DType.uint32]()
+            curr_seq_length = random_ui64(1, UInt64(seq_len)).cast[
+                DType.uint32
+            ]()
         else:
-            curr_seq_length = seq_len
+            curr_seq_length = UInt32(seq_len)
         valid_lengths.append(Int(curr_seq_length))
 
         var curr_cache_length: UInt32
         if use_random_cache_lengths:
-            curr_cache_length = random_ui64(0, cache_len).cast[DType.uint32]()
+            curr_cache_length = random_ui64(0, UInt64(cache_len)).cast[
+                DType.uint32
+            ]()
         else:
-            curr_cache_length = cache_len
+            curr_cache_length = UInt32(cache_len)
 
         curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
 
@@ -231,12 +239,12 @@ def execute_kv_cache_ragged_flash_attention[
     for bs in range(batch_size):
         curr_seq_len = Int(cache_lengths_host_ptr[bs]) + valid_lengths[bs]
         for block_idx in range(0, ceildiv(curr_seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_pages - 1))
+            var randval = Int(random_ui64(0, UInt64(num_pages - 1)))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_pages - 1))
+                randval = Int(random_ui64(0, UInt64(num_pages - 1)))
 
             paged_lut_set.add(randval)
-            paged_lut_host[bs, block_idx] = randval
+            paged_lut_host[bs, block_idx] = UInt32(randval)
 
     var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         paged_lut_size
@@ -327,7 +335,7 @@ def execute_kv_cache_ragged_flash_attention[
         cache_lengths_layout_tensor,
         paged_lut_layout_tensor,
         max_seq_length,
-        max_context_length,
+        UInt32(max_context_length),
     )
 
     k_cache_device = kv_collection_device.get_key_cache(layer_idx)

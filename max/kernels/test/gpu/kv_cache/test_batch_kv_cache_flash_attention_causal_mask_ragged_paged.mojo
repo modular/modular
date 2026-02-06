@@ -141,8 +141,8 @@ def execute_ragged_flash_attention[
     with cache_lengths_device.map_to_host() as cache_lengths_host_ptr:
         for i in range(batch_size):
             input_row_offsets_host_ptr[i] = running_offset
-            cache_lengths_host_ptr[i] = cache_lengths[i]
-            running_offset += valid_lengths[i]
+            cache_lengths_host_ptr[i] = UInt32(cache_lengths[i])
+            running_offset += UInt32(valid_lengths[i])
         input_row_offsets_host_ptr[batch_size] = running_offset
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
 
@@ -222,7 +222,7 @@ def execute_ragged_flash_attention[
     var block_idx_set = Set[Int]()
     var idx = 0
     while idx < batch_size:
-        var randval = Int(random_ui64(0, num_continuous_blocks - 1))
+        var randval = Int(random_ui64(0, UInt64(num_continuous_blocks - 1)))
         if randval in block_idx_set:
             continue
 
@@ -248,8 +248,8 @@ def execute_ragged_flash_attention[
         kv_block_continuous_lt,
         cache_lengths_lt,
         lookup_table_lt,
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     # Initialize paged KV cache by copying from continuous
@@ -266,12 +266,14 @@ def execute_ragged_flash_attention[
         continuous_idx = Int(lookup_table_host_ptr[bs])
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
-            var randval = Int(random_ui64(0, num_paged_blocks - 1))
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
             while randval in paged_lut_set:
-                randval = Int(random_ui64(0, num_paged_blocks - 1))
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
 
             paged_lut_set.add(randval)
-            paged_lut_host_ptr[bs * paged_lut_shape[1] + block_idx] = randval
+            paged_lut_host_ptr[bs * paged_lut_shape[1] + block_idx] = UInt32(
+                randval
+            )
             block_sz = min(page_size, seq_len - block_idx * page_size)
 
             for kv_idx in range(2):
@@ -353,8 +355,8 @@ def execute_ragged_flash_attention[
         kv_block_paged_lt,
         cache_lengths_lt,
         paged_lut_lt,
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     # Create LayoutTensors for flash attention calls

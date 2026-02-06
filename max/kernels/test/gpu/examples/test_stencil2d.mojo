@@ -49,11 +49,11 @@ fn stencil2d(
     ):
         var idx = Int(tidy * UInt(num_cols) + tidx)
         b[idx] = (
-            coeff0 * a[idx - 1]
-            + coeff1 * a[idx]
-            + coeff2 * a[idx + 1]
-            + coeff3 * a[Int((tidy - 1) * UInt(num_cols) + tidx)]
-            + coeff4 * a[Int((tidy + 1) * UInt(num_cols) + tidx)]
+            Float32(coeff0) * a[idx - 1]
+            + Float32(coeff1) * a[idx]
+            + Float32(coeff2) * a[idx + 1]
+            + Float32(coeff3) * a[Int((tidy - 1) * UInt(num_cols) + tidx)]
+            + Float32(coeff4) * a[Int((tidy + 1) * UInt(num_cols) + tidx)]
         )
 
 
@@ -117,11 +117,11 @@ fn stencil2d_smem(
         and tidx < UInt(num_cols - 1)
     ):
         b[Int(tidy * UInt(num_cols) + tidx)] = (
-            coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
-            + coeff1 * a_shared[Index(lindex_y, lindex_x)]
-            + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]
-            + coeff3 * a_shared[Index(lindex_y - 1, lindex_x)]
-            + coeff4 * a_shared[Index(lindex_y + 1, lindex_x)]
+            Float32(coeff0) * a_shared[Index(lindex_y, lindex_x - 1)]
+            + Float32(coeff1) * a_shared[Index(lindex_y, lindex_x)]
+            + Float32(coeff2) * a_shared[Index(lindex_y, lindex_x + 1)]
+            + Float32(coeff3) * a_shared[Index(lindex_y - 1, lindex_x)]
+            + Float32(coeff4) * a_shared[Index(lindex_y + 1, lindex_x)]
         )
 
 
@@ -144,7 +144,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     var b_host = alloc[Float32](m)
 
     for i in range(m):
-        a_host[i] = i
+        a_host[i] = Float32(i)
         b_host[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](m)

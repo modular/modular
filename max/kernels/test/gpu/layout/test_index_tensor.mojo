@@ -96,7 +96,7 @@ fn test_index_tensor_DLRM(ctx: DeviceContext) raises:
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
         for i in range(dim_0 * dim_1 * dim_2):
-            input_host[i] = i
+            input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))
@@ -168,7 +168,7 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     # Initialize with sequential data for test purposes.
     with input.map_to_host() as input_host:
         for i in range(dim_0 * dim_1 * dim_2 * dim_3):
-            input_host[i] = i
+            input_host[i] = Int32(i)
 
     # We have a 2D tensor of shape (index_len, 2).
     comptime indices_layout = row_major((Idx[index_len](), Idx[2]()))

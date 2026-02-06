@@ -123,7 +123,7 @@ fn test_case_batched[
     )
     var K_host_ptr = alloc[Int64](K_shape.flattened_length())
     for i in range(batch_size):
-        K_host_ptr[i] = K
+        K_host_ptr[i] = Int64(K)
 
     var max_k = Int(
         reduce_max(Span(ptr=K_host_ptr, length=K_shape.flattened_length()))
@@ -360,7 +360,7 @@ fn test_case_multi_rank[
     var K_shape = IndexList[1](batch_size)
     var K_host_ptr = alloc[Int64](K_shape.flattened_length())
     for i in range(batch_size):
-        K_host_ptr[i] = K
+        K_host_ptr[i] = Int64(K)
 
     var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](
         K_shape.flattened_length()

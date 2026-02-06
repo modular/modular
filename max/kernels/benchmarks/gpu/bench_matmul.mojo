@@ -307,9 +307,9 @@ fn bench_matmul[
                 rand(b_host.data, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.data[i] = i
+                    a_host.data[i] = Scalar[dtype](i)
                 for i in range(b_host.num_elements()):
-                    b_host.data[i] = i
+                    b_host.data[i] = Scalar[dtype](i)
 
         ctx.enqueue_copy(buffer_a, a_host_ptr)
         ctx.enqueue_copy(buffer_b, b_host_ptr)

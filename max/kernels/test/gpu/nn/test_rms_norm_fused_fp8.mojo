@@ -55,16 +55,16 @@ fn initialize_test_data[
         # Use a wider range [0.05, 3.0] with varied spacing - all positive
         if pattern < 5:
             # Small values: 0.05, 0.1, 0.15, 0.2, 0.25
-            val = Float32(0.05 + pattern * 0.05)
+            val = Float32(0.05 + Float64(pattern) * 0.05)
         elif pattern < 10:
             # Medium values: 0.3, 0.4, 0.5, 0.6, 0.7
-            val = Float32(0.3 + (pattern - 5) * 0.1)
+            val = Float32(0.3 + Float64((pattern - 5)) * 0.1)
         elif pattern < 15:
             # Medium-large values: 0.8, 1.0, 1.2, 1.4, 1.6
-            val = Float32(0.8 + (pattern - 10) * 0.2)
+            val = Float32(0.8 + Float64((pattern - 10)) * 0.2)
         else:
             # Large values: 1.8, 2.1, 2.4, 2.7, 3.0
-            val = Float32(1.8 + (pattern - 15) * 0.3)
+            val = Float32(1.8 + Float64((pattern - 15)) * 0.3)
 
         data[i] = val.cast[dtype]()
 
@@ -94,7 +94,7 @@ fn compute_reference_static_scaling[
         for col in range(cols):
             var val = input_data[row * cols + col].cast[DType.float32]()
             mean_square += val * val
-        mean_square = mean_square / cols
+        mean_square = mean_square / Float32(cols)
 
         # Step 2: Compute normalization factor
         var norm_factor = rsqrt(mean_square + epsilon)
@@ -140,7 +140,7 @@ fn compute_reference_dynamic_scaling[
         for col in range(cols):
             var val = input_data[row * cols + col].cast[DType.float32]()
             mean_square += val * val
-        mean_square = mean_square / cols
+        mean_square = mean_square / Float32(cols)
 
         # Step 2: Compute normalization factor
         var norm_factor = rsqrt(mean_square + epsilon)
@@ -211,7 +211,7 @@ fn test_dynamic[
     initialize_test_data(in_host, input_size)
     for i in range(cols):
         # Gamma values between 0.5 and 1.5 to create variety after normalization
-        gamma_host[i] = Scalar[in_dtype](0.5 + (i % 11) * 0.1)
+        gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
 
     # Cast epsilon and weight_offset to in_dtype (matching kernel signature),
     # then back to Float32 so reference and kernel see the same values.
@@ -357,7 +357,7 @@ fn test_static[
     initialize_test_data(in_host, input_size)
     for i in range(cols):
         # Gamma values between 0.5 and 1.5 to create variety after normalization
-        gamma_host[i] = Scalar[in_dtype](0.5 + (i % 11) * 0.1)
+        gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
 
     # Cast epsilon and weight_offset to in_dtype (matching kernel signature),
     # then back to Float32 so reference and kernel see the same values.

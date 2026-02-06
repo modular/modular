@@ -35,7 +35,10 @@ fn compute_rms[
     for i in range(size):
         var val = data[i][0].cast[accum_type]()
         sum_of_squares += val * val
-    var result = sqrt((sum_of_squares / data.numel()) + eps.cast[accum_type]())
+    var result = sqrt(
+        (sum_of_squares / Scalar[accum_type](data.numel()))
+        + eps.cast[accum_type]()
+    )
     return result.cast[dtype]()
 
 

@@ -312,10 +312,10 @@ fn bench_prefill[
     var input_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     var cache_row_offsets = UnsafePointer[UInt32].alloc(batch_size + 1)
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
-        cache_row_offsets[i] = i * num_keys
-    input_row_offsets[batch_size] = batch_size * seq_len
-    cache_row_offsets[batch_size] = batch_size * num_keys
+        input_row_offsets[i] = UInt32(i * seq_len)
+        cache_row_offsets[i] = UInt32(i * num_keys)
+    input_row_offsets[batch_size] = UInt32(batch_size * seq_len)
+    cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     # Device pointers - use larger buffer sizes when cache busting.
     var alloc_q = buf_q if cache_busting else q_size

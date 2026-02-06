@@ -82,7 +82,7 @@ def main():
     # Initialize source data
     with src_buf.map_to_host() as host_data:
         for i in range(length):
-            host_data[i] = Float32(i * 0.5)
+            host_data[i] = Float32(Float64(i) * 0.5)
 
     # Launch the P2P copy kernel
     launch_p2p_copy_kernel(ctx1, dst_buf, src_buf, length)
@@ -93,6 +93,6 @@ def main():
     # Verify the data was copied correctly
     with dst_buf.map_to_host() as host_data:
         for i in range(length):
-            assert_almost_equal(host_data[i], Float32(i * 0.5))
+            assert_almost_equal(host_data[i], Float32(Float64(i) * 0.5))
 
     print("P2P Direct Addressing Copy Test Passed")

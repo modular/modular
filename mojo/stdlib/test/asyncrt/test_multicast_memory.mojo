@@ -27,7 +27,7 @@ fn _test_multicast_memory(contexts: List[DeviceContext]) raises:
         var dev_buf = multicast_buf.unicast_buffer_for(context)
         with dev_buf.map_to_host() as host_buf:
             for i in range(len(host_buf)):
-                host_buf[i] = i * 2
+                host_buf[i] = Int32(i * 2)
 
     print(multicast_buf.unicast_buffer_for(contexts[0]))
 

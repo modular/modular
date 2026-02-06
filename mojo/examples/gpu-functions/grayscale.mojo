@@ -49,9 +49,9 @@ def main():
         # Fill the image with initial colors.
         for row in range(HEIGHT):
             for col in range(WIDTH):
-                rgb_tensor[row, col, 0] = row + col
-                rgb_tensor[row, col, 1] = row + col + 20
-                rgb_tensor[row, col, 2] = row + col + 40
+                rgb_tensor[row, col, 0] = UInt8(row + col)
+                rgb_tensor[row, col, 1] = UInt8(row + col + 20)
+                rgb_tensor[row, col, 2] = UInt8(row + col + 40)
 
     var rgb_tensor = LayoutTensor[int_dtype, rgb_layout](rgb_buffer)
     var gray_tensor = LayoutTensor[int_dtype, gray_layout](gray_buffer)

@@ -59,7 +59,7 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):
-        in_data[i] = i + 1
+        in_data[i] = Float32(i + 1)
         out_data[i] = 0
 
     ctx.enqueue_copy(in_data_device, in_data)
@@ -99,7 +99,7 @@ fn copy_with_src_size(
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
     async_copy[16, fill = Float32(0)](
-        src.address_space_cast[AddressSpace.GLOBAL](), smem, src_size
+        src.address_space_cast[AddressSpace.GLOBAL](), smem, Int32(src_size)
     )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
@@ -149,10 +149,10 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     var b_host = UnsafePointer[Float32].alloc(2 * size)
 
     for i in range(size):
-        a_host[i] = i + 1
+        a_host[i] = Float32(i + 1)
 
     for i in range(2 * size):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](size)
     var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
@@ -197,7 +197,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     var b_host = UnsafePointer[BFloat16].alloc(2 * size)
 
     for i in range(size):
-        a_host[i] = i + 1
+        a_host[i] = BFloat16(i + 1)
 
     for i in range(2 * size):
         b_host[i] = 0

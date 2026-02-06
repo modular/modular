@@ -41,10 +41,10 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     var c_host_naive = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0
@@ -105,21 +105,21 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = ctx.execution_time[run_func_gemv](iterations)
+        nstime = Float64(ctx.execution_time[run_func_gemv](iterations))
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = ctx.execution_time[run_func_gevm](iterations)
+        nstime = Float64(ctx.execution_time[run_func_gevm](iterations))
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
         return
     var flops = 2 * M * N * K
-    var sectime = Float64(nstime) / iterations / 1000000000
+    var sectime = Float64(nstime) / Float64(iterations) / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
-    print(flops * 1e-9 / sectime, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime, " GFLOPS")
     print()
 
     # running naive
@@ -153,11 +153,11 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     ctx.enqueue_copy(c_host_naive, c_device)
     ctx.synchronize()
 
-    nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = Float64(nstime) / iterations / 1000000000
+    nstime = Float64(ctx.execution_time[run_func_naive](iterations))
+    var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
-    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime2, " GFLOPS")
     print()
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly
@@ -286,23 +286,23 @@ fn run_matvec_with_epilogue_fn(
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = ctx.execution_time[run_func_gemv](iterations)
+        nstime = Float64(ctx.execution_time[run_func_gemv](iterations))
         kernelType = "GEMV"
     elif M == 1:
         run_func_gevm(ctx)
         ctx.enqueue_copy(c_host, c_device)
-        nstime = ctx.execution_time[run_func_gevm](iterations)
+        nstime = Float64(ctx.execution_time[run_func_gevm](iterations))
         kernelType = "GEVM"
     else:
         print("Incorrect input shape [MNK]")
         return
 
     var flops = 2 * M * N * K
-    var sectime = Float64(nstime) / iterations / 1000000000
+    var sectime = Float64(nstime) / Float64(iterations) / 1000000000
 
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
-    print(flops * 1e-9 / sectime, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime, " GFLOPS")
     print()
 
     # running naive
@@ -337,11 +337,11 @@ fn run_matvec_with_epilogue_fn(
     run_func_naive(ctx)
     ctx.enqueue_copy(c_host_naive, c_device)
 
-    nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = Float64(nstime) / iterations / 1000000000
+    nstime = Float64(ctx.execution_time[run_func_naive](iterations))
+    var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("NAIVE MATMUL:")
     print(sectime2, "sec")
-    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime2, " GFLOPS")
     print()
 
     # Due to varied pattern of FP32 arith the accumulated sum isn't exactly

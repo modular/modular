@@ -112,7 +112,7 @@ fn gemm_kernel[
 
     comptime warp_layout = row_major[8, 4]()
 
-    for k_i in range(ceildiv(K, BK)):
+    for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
         var a_tile_dram = mat_a.tile[BM, BK](
             (Idx(Int(block_idx.y)), Idx(Int(k_i)))
         )
@@ -179,10 +179,10 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -326,10 +326,10 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     # Initialize with sequential integers like the main test
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)

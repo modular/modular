@@ -223,7 +223,7 @@ fn bench_p2p(
     fn verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:
-                assert_almost_equal(host_ptr[i], i)
+                assert_almost_equal(host_ptr[i], Float32(i))
             except e:
                 print("Verification failed at index", i)
                 print("Expected:", i, "Got:", host_ptr[i])

@@ -70,10 +70,10 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     # Fill with arange pattern
     for i in range(input_layout.product()):
-        input_0_host_buffer[i] = i
-        input_1_host_buffer[i] = i
-        input_2_host_buffer[i] = i
-        input_3_host_buffer[i] = i
+        input_0_host_buffer[i] = Float32(i)
+        input_1_host_buffer[i] = Float32(i)
+        input_2_host_buffer[i] = Float32(i)
+        input_3_host_buffer[i] = Float32(i)
 
     # Create device buffers
     var input_0_device_buffer = ctx.enqueue_create_buffer[dtype](
@@ -174,15 +174,17 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         )
 
     var nstime_kernel = ctx.execution_time[run_concat_inner_most_single_dim](1)
-    print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
+    print(
+        "concat_inner_most_single_dim time = ",
+        Float64(nstime_kernel) * 1e-6,
+        " ms",
+    )
     print(
         "transfer rate = ",
-        output_dyn.numel()
-        * size_of[UInt8]()
-        * 2
+        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
         * 1e9
-        / (1024**3)
-        / nstime_kernel,
+        / Float64((1024**3))
+        / Float64(nstime_kernel),
         "GB/s",
     )
 
@@ -197,22 +199,18 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 for k in range(d2):
                     for l in range(d3):
                         comptime tail_val = 1 if test_epilogue else 0
-                        var not_match_0 = (
-                            output_host[i, j, k, l, 0]
-                            != input_0_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_1 = (
-                            output_host[i, j, k, l, 1]
-                            != input_1_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_2 = (
-                            output_host[i, j, k, l, 2]
-                            != input_2_host[i, j, k, l, 0] + tail_val
-                        )
-                        var not_match_3 = (
-                            output_host[i, j, k, l, 3]
-                            != input_3_host[i, j, k, l, 0] + tail_val
-                        )
+                        var not_match_0 = output_host[
+                            i, j, k, l, 0
+                        ] != input_0_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_1 = output_host[
+                            i, j, k, l, 1
+                        ] != input_1_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_2 = output_host[
+                            i, j, k, l, 2
+                        ] != input_2_host[i, j, k, l, 0] + Float32(tail_val)
+                        var not_match_3 = output_host[
+                            i, j, k, l, 3
+                        ] != input_3_host[i, j, k, l, 0] + Float32(tail_val)
                         if (
                             not_match_0
                             or not_match_1
@@ -257,10 +255,13 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         )
 
     var nstime = ctx.execution_time[run_concat_gpu](1)
-    print("concat_gpu time = ", nstime * 1e-6, " ms")
+    print("concat_gpu time = ", Float64(nstime) * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_dyn.numel() * size_of[UInt8]() * 2 * 1e9 / (1024**3) / nstime,
+        Float64(output_dyn.numel() * size_of[UInt8]() * 2)
+        * 1e9
+        / Float64((1024**3))
+        / Float64(nstime),
         "GB/s",
     )
 

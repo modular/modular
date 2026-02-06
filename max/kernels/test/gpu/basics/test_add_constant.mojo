@@ -39,7 +39,7 @@ def run_add_constant(ctx: DeviceContext):
 
     with in_device.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = i
+            in_host[i] = Float32(i)
 
     var block_dim = 32
     comptime constant = Float32(33)
@@ -56,7 +56,7 @@ def run_add_constant(ctx: DeviceContext):
 
     with out_device.map_to_host() as out_host:
         for i in range(10):
-            assert_equal(out_host[i], i + constant)
+            assert_equal(out_host[i], Float32(i) + constant)
 
 
 def main():

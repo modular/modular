@@ -192,7 +192,7 @@ fn tma_wgmma_kernel[
 
     for i in range(num_iters):
         if thread_idx.x == 0:
-            mbar[0].expect_bytes(expected_bytes)
+            mbar[0].expect_bytes(Int32(expected_bytes))
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],

@@ -227,8 +227,8 @@ def execute_ragged_flash_attention(
         ),
         true_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        true_ce_max_prompt_length,
-        true_ce_max_full_context_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_full_context_length),
     )
 
     mixed_ce_kv_collection_device = PagedCollectionType(
@@ -238,8 +238,8 @@ def execute_ragged_flash_attention(
         ),
         mixed_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_full_context_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_full_context_length),
     )
 
     # Create device LayoutTensors for flash_attention

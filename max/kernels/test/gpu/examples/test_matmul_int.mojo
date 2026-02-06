@@ -79,7 +79,7 @@ fn matmul(
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
-        b_shared[i * TILE_SZ_B + j] = b_val
+        b_shared[i * TILE_SZ_B + j] = Scalar[DType.int](b_val)
 
         barrier()
 
@@ -95,7 +95,8 @@ fn matmul(
             # Compute the output element for each thread.
             for out_idx in range(TILE_SZ_B):
                 c_reg[out_idx] += (
-                    a_reg * b_shared[idx * TILE_SZ_RATIO + out_idx]
+                    Scalar[DType.int](a_reg)
+                    * b_shared[idx * TILE_SZ_RATIO + out_idx]
                 )
         barrier()
 

@@ -41,12 +41,12 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     var c_host_n = UnsafePointer[Float32].alloc(M * N)
 
     for i in range(M * K):
-        a_host[i] = i
-        a_host_n[i] = i
+        a_host[i] = BFloat16(i)
+        a_host_n[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
-        b_host_n[i] = i + 1
+        b_host[i] = BFloat16(i + 1)
+        b_host_n[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0
@@ -84,10 +84,10 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     var kernelType = "GEMV"
     var nstime = ctx.execution_time[run_func_gemv](iterations)
     var flops = 2 * M * N * K
-    var sectime = Float64(nstime) / iterations / 1000000000
+    var sectime = Float64(nstime) / Float64(iterations) / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
-    print(flops * 1e-9 / sectime, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime, " GFLOPS")
     print()
 
     ctx.enqueue_copy(c_host, c_device)
@@ -141,10 +141,10 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = Float64(nstime) / iterations / 1000000000
+    var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
-    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime2, " GFLOPS")
     print()
 
     ctx.enqueue_copy(c_host_n, c_device_n)

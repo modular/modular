@@ -36,7 +36,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
     ]()
 
     if thread_idx.x == 0:
-        mbar[0].init(NUM_THREADS)
+        mbar[0].init(Int32(NUM_THREADS))
 
     barrier()
 
@@ -46,7 +46,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
 
         _ = mbar[0].arrive()
     else:
-        mbar[0].wait(mbar[0].arrive())
+        mbar[0].wait(UInt32(mbar[0].arrive()))
         if thread_idx.x % 8 == 0:
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
@@ -222,7 +222,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
             @parameter
             for j in range(size_per_copy):
-                smem[offset + j] += i
+                smem[offset + j] += Float32(i)
 
             read_pipeline_states.step()
 
@@ -283,10 +283,10 @@ def test_cpasync_producer_consumer_pipeline[
             for i in range(num_stages):
                 for j in range(size_per_stage):
                     idx = i * size_per_stage + j
-                    if src[idx] + i != dst[idx]:
+                    if src[idx] + Float32(i) != dst[idx]:
                         print(idx, src[idx], dst[idx])
                         return
-                    assert_equal(src[idx] + i, dst[idx])
+                    assert_equal(src[idx] + Float32(i), dst[idx])
 
 
 def main():

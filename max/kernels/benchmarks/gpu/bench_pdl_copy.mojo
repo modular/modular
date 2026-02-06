@@ -109,9 +109,9 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime block_dim = 256
 
     for i in range(length):
-        a_host[i] = i
-        b_host[i] = i
-        d_host[i] = i
+        a_host[i] = Float32(i)
+        b_host[i] = Float32(i)
+        d_host[i] = Float32(i)
 
     for i in range(length):
         c_host[i] = 0
@@ -184,9 +184,9 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime block_dim = 256
 
     for i in range(length):
-        a_host[i] = i
-        b_host[i] = i
-        d_host[i] = i
+        a_host[i] = Float32(i)
+        b_host[i] = Float32(i)
+        d_host[i] = Float32(i)
 
     for i in range(length):
         c_host[i] = 0
