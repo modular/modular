@@ -918,6 +918,10 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
                          newBindings.getValue().take_front(numBindings))) {
       if (!isEqualCanon(actual, expected)) {
         DeclResolver::DeclScopeChanger x(funcIfDirect);
+        assert(resultType.getDecl(shared) &&
+               "result type should have an associated decl");
+        assert(resultType.getDecl(shared)->getIfOperation() &&
+               "result type decl should have an operation");
         auto declOp =
             cast<StructDeclOp>(resultType.getDecl(shared)->getIfOperation());
         auto paramType = declOp.getSignature().getInputParamTypes()[paramIdx];
