@@ -1306,6 +1306,39 @@ fn add_ftz(a: Float32, b: Float32) -> Float32:
 
 
 @always_inline
+fn max_ftz(a: Float32, b: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.ftz.f32 $0, $1, $2;
+        """,
+        Float32,
+        constraints="=f,f,f",
+    ](a, b)
+
+
+@always_inline
+fn max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.ftz.f32 $0, $1, $2, $3;
+        """,
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
+fn max3(a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.f32 $0, $1, $2, $3;
+        """,
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
 fn add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
@@ -1466,38 +1499,63 @@ fn elect_mma_arrive[
 
 @always_inline
 fn maximum[
-    dtype: DType, BN: Int, //, *, width: Int = 8
-](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, width]:
-    comptime assert BN % width == 0
-    vx = x.vectorize[width]()
-    acc = vx[0]
+    BN: Int, //, *, width: Int = 4
+](
+    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    out res: StaticTuple[Float32, width],
+):
+    comptime assert BN % (2 * width) == 0
+    res = {}
+
+    @parameter
+    for w in range(width):
+        res[w] = max_ftz(
+            rebind[Float32](x[2 * w]), rebind[Float32](x[2 * w + 1])
+        )
 
     # unroll (using SIMD) to break up dependency chain
     @parameter
-    for i in range(1, BN // width):
-        acc = max(acc, vx[i])
-    # return acc.reduce_max()
-    return rebind[SIMD[dtype, width]](acc)
+    for i in range(1, BN // (2 * width)):
+
+        @parameter
+        for w in range(width):
+            comptime j = i * 2 * width + 2 * w
+            res[w] = max_ftz(
+                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+            )
 
 
 @always_inline
 fn maximum[
-    dtype: DType,
-    BN: Int,
-    width: Int,
-    //,
+    BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[dtype, Layout.row_major(BN)], init: SIMD[dtype, width]
-) -> SIMD[dtype, width]:
-    comptime assert BN % width == 0
-    vx = x.vectorize[width]()
-    acc = rebind[vx.element_type](init)
+    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    init: StaticTuple[Float32, width],
+    out res: StaticTuple[Float32, width],
+):
+    comptime assert BN % (2 * width) == 0
+    res = init
 
     # unroll (using SIMD) to break up dependency chain
     @parameter
-    for i in range(BN // width):
-        acc = max(acc, vx[i])
-    return rebind[SIMD[dtype, width]](acc)
+    for i in range(BN // (2 * width)):
+
+        @parameter
+        for w in range(width):
+            comptime j = i * 2 * width + 2 * w
+            res[w] = max_ftz(
+                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+            )
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 4]) -> Float32:
+    return max_ftz(max_ftz(x[0], x[1], x[2]), x[3])
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
+    return max_ftz(max_ftz(x[0], x[1], x[2]), x[3], init)
 
 
 @always_inline
@@ -3710,9 +3768,9 @@ struct SM100MHA2Q[
 
         @parameter
         @always_inline
-        fn load_mask_max[
+        fn load_mask_max_impl[
             *, mask_strategy: MaskStrategy
-        ](kv_row: UInt32) -> Float32:
+        ](kv_row: UInt32) -> StaticTuple[Float32, 4]:
             pipeline_s.wait()
             tcgen05_fence_after()
             # break up into sets of 32
@@ -3728,7 +3786,7 @@ struct SM100MHA2Q[
                 s_tmem + UInt32(first_cols)
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum[width=8](s0)
+            vrow_max = maximum(s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
             # i = 0
@@ -3826,7 +3884,25 @@ struct SM100MHA2Q[
                     vrow_max = maximum(s2, vrow_max)
                     s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
 
-            return vrow_max.reduce_max()
+            return vrow_max
+
+        @parameter
+        @always_inline
+        fn load_mask_max[
+            *, mask_strategy: MaskStrategy
+        ](kv_row: UInt32) -> Float32:
+            return maximum(
+                load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
+            )
+
+        @parameter
+        @always_inline
+        fn load_mask_max[
+            *, mask_strategy: MaskStrategy
+        ](kv_row: UInt32, old_max: Float32) -> Float32:
+            return maximum(
+                load_mask_max_impl[mask_strategy=mask_strategy](kv_row), old_max
+            )
 
         comptime f32x2 = SIMD[DType.float32, 2]
 
@@ -4101,8 +4177,7 @@ struct SM100MHA2Q[
                     old_max = row_max
                     var new_row_max: Float32 = load_mask_max[
                         mask_strategy=mask_strategy
-                    ](kv_row)
-                    new_row_max = max(old_max, new_row_max)
+                    ](kv_row, old_max)
                     diff = sub_ftz(old_max, new_row_max)
                     var correction: Float32
 
@@ -4139,12 +4214,11 @@ struct SM100MHA2Q[
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.COMPUTED
                         | MaskStrategy.OUT_OF_BOUNDS
-                    ](kv_row)
+                    ](kv_row, old_max)
                 else:
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.OUT_OF_BOUNDS
-                    ](kv_row)
-                new_row_max = max(old_max, new_row_max)
+                    ](kv_row, old_max)
                 diff = sub_ftz(old_max, new_row_max)
                 var correction: Float32
 
