@@ -682,3 +682,66 @@ class TestStaticBroadcastToGPU:
         result_torch = torch.from_dlpack(y)
         expected = torch.broadcast_to(x_torch, shape)
         torch.testing.assert_close(result_torch, expected)
+
+
+class TestRangeGPU:
+    """Tests for GPU range operations via Tensor.arange with interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_range_basic_gpu(self, dtype: DType) -> None:
+        """Test basic range op on GPU with float dtypes."""
+        gpu = Accelerator()
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(10, dtype=dtype, device=gpu)
+
+        result_torch = torch.from_dlpack(t)
+        expected = torch.arange(0, 10, 1, dtype=torch_dtype, device="cuda")
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_range_with_step_gpu(self) -> None:
+        """Test range op with custom step on GPU."""
+        gpu = Accelerator()
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(0, 10, 2, dtype=DType.float32, device=gpu)
+
+        result_torch = torch.from_dlpack(t)
+        expected = torch.arange(0, 10, 2, dtype=torch.float32, device="cuda")
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_range_int_gpu(self, dtype: DType) -> None:
+        """Test range op with integer dtypes on GPU."""
+        gpu = Accelerator()
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            t = Tensor.arange(10, dtype=dtype, device=gpu)
+
+        result_torch = torch.from_dlpack(t)
+        expected = torch.arange(0, 10, 1, dtype=torch_dtype, device="cuda")
+        torch.testing.assert_close(result_torch, expected)

@@ -1240,15 +1240,11 @@ fn range_dispatcher(
         out_buffer: The output buffer object.
         start_buffer: Scalar buffer containing the start value.
         step_buffer: Scalar buffer containing the step value.
-        device_context_ptr: Device context pointer (must be null for CPU).
+        device_context_ptr: Device context pointer (null for CPU).
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
     var ctx = _get_ctx(device_context_ptr)
-
-    # CPU-only check
-    if ctx:
-        raise Error("GPU execution not supported for range in interpreter")
 
     # Float types
     if dtype == DType.float16:
@@ -1257,6 +1253,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.float16](start_buffer),
             _get_buffer_ptr[DType.float16](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.float32:
         range_op[DType.float32](
@@ -1264,6 +1261,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.float32](start_buffer),
             _get_buffer_ptr[DType.float32](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.float64:
         range_op[DType.float64](
@@ -1271,6 +1269,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.float64](start_buffer),
             _get_buffer_ptr[DType.float64](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.bfloat16:
         range_op[DType.bfloat16](
@@ -1278,6 +1277,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.bfloat16](start_buffer),
             _get_buffer_ptr[DType.bfloat16](step_buffer),
             size,
+            ctx,
         )
     # Integer types
     elif dtype == DType.int8:
@@ -1286,6 +1286,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.int8](start_buffer),
             _get_buffer_ptr[DType.int8](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.int16:
         range_op[DType.int16](
@@ -1293,6 +1294,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.int16](start_buffer),
             _get_buffer_ptr[DType.int16](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.int32:
         range_op[DType.int32](
@@ -1300,6 +1302,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.int32](start_buffer),
             _get_buffer_ptr[DType.int32](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.int64:
         range_op[DType.int64](
@@ -1307,6 +1310,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.int64](start_buffer),
             _get_buffer_ptr[DType.int64](step_buffer),
             size,
+            ctx,
         )
     # Unsigned integer types
     elif dtype == DType.uint8:
@@ -1315,6 +1319,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.uint8](start_buffer),
             _get_buffer_ptr[DType.uint8](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.uint16:
         range_op[DType.uint16](
@@ -1322,6 +1327,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.uint16](start_buffer),
             _get_buffer_ptr[DType.uint16](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.uint32:
         range_op[DType.uint32](
@@ -1329,6 +1335,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.uint32](start_buffer),
             _get_buffer_ptr[DType.uint32](step_buffer),
             size,
+            ctx,
         )
     elif dtype == DType.uint64:
         range_op[DType.uint64](
@@ -1336,6 +1343,7 @@ fn range_dispatcher(
             _get_buffer_ptr[DType.uint64](start_buffer),
             _get_buffer_ptr[DType.uint64](step_buffer),
             size,
+            ctx,
         )
     else:
         raise Error("Unsupported dtype for range: " + String(dtype))
@@ -1348,6 +1356,7 @@ fn range_op[
     start_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
+    ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
     """Range operation: out[i] = start + i * step.
 
@@ -1359,6 +1368,7 @@ fn range_op[
         start_ptr: Pointer to the start scalar value.
         step_ptr: Pointer to the step scalar value.
         size: Number of elements to produce.
+        ctx: Device context pointer (null for CPU).
     """
     var start = start_ptr.load()
     var step = step_ptr.load()
@@ -1371,10 +1381,30 @@ fn range_op[
         var result = start + (iota[dtype, width](Scalar[dtype](i)) * step)
         out_ptr.store[width=width](i, result)
 
-    # TODO(MXF-108): Remove use_blocking_impl=True
-    elementwise[
-        func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
-    ](IndexList[1](size))
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl=True
+        elementwise[
+            func, simd_width = simd_width_of[dtype](), use_blocking_impl=True
+        ](IndexList[1](size))
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for range with dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
 
 
 # ===----------------------------------------------------------------------=== #

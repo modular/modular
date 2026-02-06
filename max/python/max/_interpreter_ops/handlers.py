@@ -753,7 +753,6 @@ def _handle_range(
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
 
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
