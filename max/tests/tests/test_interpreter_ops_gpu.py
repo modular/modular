@@ -16,10 +16,12 @@ from typing import Any
 
 import pytest
 import torch
+from max import _realization_context as rc
 from max._interpreter import MOInterpreter
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
+from max.tensor import Tensor, realization_context
 
 # Mapping from MAX DType to torch dtype
 DTYPE_TO_TORCH = {
@@ -582,3 +584,101 @@ class TestMatmulGPU:
 
         with pytest.raises(Exception):
             interp.execute(graph, [lhs_cpu, rhs_gpu])
+
+
+class TestStaticBroadcastToGPU:
+    """Tests for GPU static broadcast_to operations in the interpreter."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+            DType.int32,
+            DType.int64,
+        ],
+    )
+    def test_broadcast_1d_to_2d(self, dtype: DType) -> None:
+        """Test broadcasting 1D tensor to 2D on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        target_shape = [2, 3]
+
+        x_torch = torch.tensor([1, 2, 3], dtype=torch_dtype, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=target_shape)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.broadcast_to(x_torch, target_shape)
+        torch.testing.assert_close(result_torch, expected)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.float32,
+            DType.float16,
+            DType.bfloat16,
+        ],
+    )
+    def test_broadcast_2d_to_3d(self, dtype: DType) -> None:
+        """Test broadcasting 2D tensor with size-1 dim to 3D on GPU."""
+        torch_dtype = DTYPE_TO_TORCH[dtype]
+        target_shape = [2, 4, 3]
+
+        x_torch = torch.tensor(
+            [[1.0, 2.0, 3.0]], dtype=torch_dtype, device="cuda"
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=target_shape)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.broadcast_to(x_torch, target_shape)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_broadcast_scalar_like(self) -> None:
+        """Test broadcasting scalar-like tensor [1] to higher rank on GPU."""
+        target_shape = [2, 3, 4]
+
+        x_torch = torch.tensor([5.0], dtype=torch.float32, device="cuda")
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=target_shape)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.broadcast_to(x_torch, target_shape)
+        torch.testing.assert_close(result_torch, expected)
+
+    def test_broadcast_same_shape(self) -> None:
+        """Test broadcasting to same shape (no-op) on GPU."""
+        shape = [2, 3]
+
+        x_torch = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cuda",
+        )
+        x = Tensor.from_dlpack(x_torch)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = x.broadcast_to(shape=shape)
+
+        result_torch = torch.from_dlpack(y)
+        expected = torch.broadcast_to(x_torch, shape)
+        torch.testing.assert_close(result_torch, expected)

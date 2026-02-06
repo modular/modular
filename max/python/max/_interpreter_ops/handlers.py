@@ -233,7 +233,6 @@ def _handle_static_broadcast_to(
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
     _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
@@ -253,7 +252,9 @@ def _handle_static_broadcast_to(
     )
 
     # Call Mojo kernel
-    ops.mojo_ops.StaticBroadcastTo(output, inputs[0], target_shape)
+    ops.mojo_ops.StaticBroadcastTo(
+        output, inputs[0], target_shape, target_device._device_context_ptr()
+    )
 
     return [output]
 

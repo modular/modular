@@ -1604,8 +1604,20 @@ fn static_broadcast_to_op[
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
+    ctx: OpaquePointer[MutExternalOrigin],
 ) raises:
-    """Call StaticBroadcastTo.execute with rank-5 tensors."""
+    """Call StaticBroadcastTo.execute with rank-5 tensors.
+
+    Parameters:
+        dtype: The data type of the arrays.
+
+    Args:
+        out_ptr: Pointer to the output buffer data.
+        in_ptr: Pointer to the input buffer data.
+        in_shape: Padded input shape (rank-5).
+        out_shape: Padded output shape (rank-5).
+        ctx: Device context pointer (null for CPU).
+    """
     # Create ManagedTensorSlice wrappers
     comptime in_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
     comptime out_spec = StaticTensorSpec[dtype, MAX_RANK].create_unknown()
@@ -1618,22 +1630,48 @@ fn static_broadcast_to_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    # Call the kernel (CPU target, no device context)
-    # TODO(MXF-108): Remove use_blocking_impl
-    StaticBroadcastTo.execute[
-        target="cpu",
-        dtype=dtype,
-        in_rank=MAX_RANK,
-        out_rank=MAX_RANK,
-        _trace_name="interpreter.static_broadcast_to",
-        use_blocking_impl=True,
-    ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
+    if not ctx:
+        # TODO(MXF-108): Remove use_blocking_impl
+        StaticBroadcastTo.execute[
+            target="cpu",
+            dtype=dtype,
+            in_rank=MAX_RANK,
+            out_rank=MAX_RANK,
+            _trace_name="interpreter.static_broadcast_to",
+            use_blocking_impl=True,
+        ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
+    else:
+
+        @parameter
+        if has_accelerator():
+
+            @parameter
+            if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx)
+                StaticBroadcastTo.execute[
+                    target="gpu",
+                    dtype=dtype,
+                    in_rank=MAX_RANK,
+                    out_rank=MAX_RANK,
+                    _trace_name="interpreter.static_broadcast_to",
+                ](output_tensor, input_tensor, out_shape, device_ctx)
+                # TODO(MXF-108): Remove device sync
+                device_ctx.get_device_context().synchronize()
+            else:
+                raise Error(
+                    "GPU execution not supported for static_broadcast_to"
+                    " with dtype "
+                    + String(dtype)
+                )
+        else:
+            raise Error("No GPU accelerator available")
 
 
 fn static_broadcast_to_dispatcher(
     out_buffer: PythonObject,
     in_buffer: PythonObject,
     out_shape_obj: PythonObject,
+    device_context_ptr: PythonObject,
 ) raises:
     """StaticBroadcastTo dispatcher - unwraps PythonObjects and dispatches.
 
@@ -1647,6 +1685,7 @@ fn static_broadcast_to_dispatcher(
     var out_rank = Int(py=len(out_shape_obj))
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
 
     # Validate ranks
     if in_rank > MAX_RANK or out_rank > MAX_RANK:
@@ -1678,6 +1717,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.float32](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.float64:
         static_broadcast_to_op[DType.float64](
@@ -1685,6 +1725,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.float64](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.float16:
         static_broadcast_to_op[DType.float16](
@@ -1692,6 +1733,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.float16](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.bfloat16:
         static_broadcast_to_op[DType.bfloat16](
@@ -1699,6 +1741,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.bfloat16](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.int8:
         static_broadcast_to_op[DType.int8](
@@ -1706,6 +1749,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.int8](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.int16:
         static_broadcast_to_op[DType.int16](
@@ -1713,6 +1757,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.int16](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.int32:
         static_broadcast_to_op[DType.int32](
@@ -1720,6 +1765,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.int32](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.int64:
         static_broadcast_to_op[DType.int64](
@@ -1727,6 +1773,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.int64](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.uint8:
         static_broadcast_to_op[DType.uint8](
@@ -1734,6 +1781,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.uint8](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.uint16:
         static_broadcast_to_op[DType.uint16](
@@ -1741,6 +1789,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.uint16](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.uint32:
         static_broadcast_to_op[DType.uint32](
@@ -1748,6 +1797,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.uint32](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.uint64:
         static_broadcast_to_op[DType.uint64](
@@ -1755,6 +1805,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.uint64](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     elif dtype == DType.bool:
         static_broadcast_to_op[DType.bool](
@@ -1762,6 +1813,7 @@ fn static_broadcast_to_dispatcher(
             _make_ptr[DType.bool](in_addr),
             padded_in_shape,
             padded_out_shape,
+            ctx,
         )
     else:
         raise Error(
