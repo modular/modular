@@ -1366,7 +1366,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     auto calleePVal = calleeRV.getIfPValue();
     if (!calleePVal) {
       emitError(callExpr->getLoc(),
-                "cannot call dynamic function with parameterized type");
+                "cannot call dynamic function with parameterized type ")
+          << calleeRV.getRValueType();
       dest.resetForError(*this);
       return {};
     }

@@ -61,13 +61,14 @@ static ASTDecl *getStructOrTargetStruct(ASTDecl &decl,
 /// Parse an expression and immediately resolve it to a type.  This returns
 /// failure on parse error.
 static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
-                             std::optional<size_t> stmtIndent) {
+                             std::optional<size_t> stmtIndent,
+                             bool allowUnbound) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
   IREmitter emitter(declScope, EC_Type);
-  result = emitter.emitExprType(expr);
+  result = emitter.emitExprType(expr, allowUnbound);
   if (!result)
     return failure();
 
@@ -2385,7 +2386,8 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
 
   ASTType type;
   if (p.consumeIf(Token::colon)) {
-    if (parseType(p, type, sigDecl, decl.getIndentation()))
+    if (parseType(p, type, sigDecl, decl.getIndentation(),
+                  /*allowUnbound=*/true))
       return failure();
   }
 
@@ -2552,7 +2554,8 @@ static ParseResult parseOptionalInheritanceList(
     ASTType type;
     SMLoc loc;
     if (p.getLocation(loc) ||
-        parseType(p, type, declScope, declScope.getIndentation()))
+        parseType(p, type, declScope, declScope.getIndentation(),
+                  /*allowUnbound=*/false))
       return failure();
 
     // Reject inheriting from types we don't support yet.
@@ -3510,7 +3513,8 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   if (p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
-      parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
+      parseType(p, type, *decl.getParentDecl(), decl.getIndentation(),
+                /*allowUnbound=*/false))
     return failure();
 
   if (sugarIsa<TraitType>(type)) {
