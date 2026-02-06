@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from max.interfaces import (
@@ -37,6 +38,7 @@ from max.profiler import Tracer, traced
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
+from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .utils import SchedulerLogger, get_cancelled_reqs
 
@@ -66,10 +68,24 @@ class TokenGenerationScheduler(Scheduler):
         self.response_queue = response_queue
         self.cancel_queue = cancel_queue
 
+        # Parse batch scheduling strategy from environment variable
+        batch_strategy = BatchSchedulingStrategy.PER_REPLICA
+        env_strategy = os.getenv("MAX_SERVE_BATCH_PRIORITY")
+        if env_strategy:
+            try:
+                batch_strategy = BatchSchedulingStrategy(env_strategy.lower())
+            except ValueError:
+                logger.warning(
+                    f"Invalid MAX_SERVE_BATCH_PRIORITY value '{env_strategy}'. "
+                    f"Valid values are: {', '.join([s.value for s in BatchSchedulingStrategy])}. "
+                    f"Using default: {BatchSchedulingStrategy.PER_REPLICA.value}"
+                )
+
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
             kv_cache=kv_cache,
+            batch_scheduling_strategy=batch_strategy,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches

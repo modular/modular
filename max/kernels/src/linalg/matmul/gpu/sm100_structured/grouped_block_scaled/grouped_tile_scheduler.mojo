@@ -297,7 +297,7 @@ struct GroupedWorkIterator[
         # Start at this cluster's first tile
         # For 2SM (cta_group=2), both CTAs in a cluster work on the same tile
         # Use cluster index = block_idx.x // cta_group
-        self.linear_tile_idx = UInt32(block_idx.x // Self.cta_group)
+        self.linear_tile_idx = UInt32(block_idx.x // UInt(Self.cta_group))
 
         # Delinearize initial position
         self.work_info = self._delinearize_to_group(self.linear_tile_idx)
@@ -319,7 +319,7 @@ struct GroupedWorkIterator[
         self.prev_group_idx = self.work_info.group_idx
 
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        self.linear_tile_idx += UInt32(grid_dim.x // Self.cta_group)
+        self.linear_tile_idx += UInt32(grid_dim.x // UInt(Self.cta_group))
 
         if self.linear_tile_idx >= self.total_tiles:
             self.work_info = GroupedWorkInfo()  # Invalid
@@ -349,7 +349,7 @@ struct GroupedWorkIterator[
         """
         # Pre-compute next state (read-only computation)
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(grid_dim.x // Self.cta_group)
+        var advance_step = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + advance_step
         var next_work: GroupedWorkInfo
 
@@ -383,7 +383,7 @@ struct GroupedWorkIterator[
         """
         # Pre-compute next state (same as next() for grouped GEMM)
         # For 2SM, advance by number of clusters (grid_dim.x // cta_group)
-        var advance_step = UInt32(grid_dim.x // Self.cta_group)
+        var advance_step = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + advance_step
         var next_work: GroupedWorkInfo
 
@@ -795,7 +795,7 @@ struct GroupedCLCWorkIterator[
         # Compute next work locally instead of reading from CLC response
         # (CLC response is in CTA 0's SMEM, not accessible to other CTAs)
         var linear_idx = self._current_linear_idx() + UInt32(
-            grid_dim.x // Self.cta_group
+            grid_dim.x // UInt(Self.cta_group)
         )
 
         fence_async_view_proxy()
@@ -824,7 +824,7 @@ struct GroupedCLCWorkIterator[
         """Compute next work item without CLC wait (for non-MMA warps)."""
         # Simple linear advance
         var linear_idx = self._current_linear_idx() + UInt32(
-            grid_dim.x // Self.cta_group
+            grid_dim.x // UInt(Self.cta_group)
         )
         if linear_idx >= self.total_tiles:
             return GroupedWorkInfo()  # Invalid
@@ -1006,7 +1006,7 @@ struct GroupedCLCSchedulerIterator[
     ]:
         """Get context manager for advance-after-work pattern."""
         # For 2SM: advance by number of clusters (each cluster processes different tiles)
-        var num_clusters = UInt32(grid_dim.x // Self.cta_group)
+        var num_clusters = UInt32(grid_dim.x // UInt(Self.cta_group))
         var next_linear_idx = self.linear_tile_idx + num_clusters
         var next_work: GroupedWorkInfo
 
@@ -1044,7 +1044,7 @@ struct GroupedCLCSchedulerIterator[
         # Produce next work item: write linear_idx to CLC response
         # For 2SM: advance by number of clusters (each cluster processes different tiles)
         # Always signal, even for "no more work" (consumer detects via total_tiles)
-        var num_clusters = grid_dim.x // Self.cta_group
+        var num_clusters = grid_dim.x // UInt(Self.cta_group)
         var next_linear_idx = self.linear_tile_idx + UInt32(num_clusters)
 
         # Wait for empty signal (consumers done with previous)
@@ -1070,7 +1070,9 @@ struct GroupedCLCSchedulerIterator[
 
             @parameter
             for cta in range(Self.cta_group):
-                self.full_mbar[self.producer_state.index()].arrive_cluster(cta)
+                self.full_mbar[self.producer_state.index()].arrive_cluster(
+                    UInt32(cta)
+                )
         self.signal_count += 1
 
         self.producer_state.step()

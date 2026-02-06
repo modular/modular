@@ -37,7 +37,7 @@ fn _fill[
     value: Scalar[dtype],
     count: Int,
 ):
-    _ = TileTensor[dtype, layout](dst, row_major(Idx(count))).fill(value)
+    _ = TileTensor(dst, row_major(Idx(count))).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -285,7 +285,9 @@ fn pad_shape[
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if paddings_buf.dim[0]() != 2 * input_buf.rank:
+    if paddings_buf.dim[0]() != Scalar[paddings_buf.linear_idx_type](
+        2 * input_buf.rank
+    ):
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
@@ -319,7 +321,6 @@ fn _do_pad[
     output: TileTensor[
         mut=True,
         dtype,
-        _,
         OutputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,

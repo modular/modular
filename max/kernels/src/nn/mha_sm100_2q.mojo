@@ -121,6 +121,7 @@ from sys import size_of, bit_width_of
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
 
+
 comptime logger = Logger()
 
 comptime LocalTensor[
@@ -1305,6 +1306,39 @@ fn add_ftz(a: Float32, b: Float32) -> Float32:
 
 
 @always_inline
+fn max_ftz(a: Float32, b: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.ftz.f32 $0, $1, $2;
+        """,
+        Float32,
+        constraints="=f,f,f",
+    ](a, b)
+
+
+@always_inline
+fn max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.ftz.f32 $0, $1, $2, $3;
+        """,
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
+fn max3(a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        """
+        max.f32 $0, $1, $2, $3;
+        """,
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
 fn add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
@@ -1316,6 +1350,26 @@ fn add_ftz(
         mov.b64 %ra, {$2, $3};
         mov.b64 %rb, {$4, $5};
         add.ftz.f32x2 %rc, %ra, %rb;
+        mov.b64 {$0, $1}, %rc;
+        }""",
+        _RegisterPackType[Float32, Float32],
+        constraints="=f,=f,f,f,f,f",
+    ](a[0], a[1], b[0], b[1])
+    return {ret[0], ret[1]}
+
+
+@always_inline
+fn add_ftz_rm(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    ret = inlined_assembly[
+        """{
+        .reg .b64 %ra;
+        .reg .b64 %rb;
+        .reg .b64 %rc;
+        mov.b64 %ra, {$2, $3};
+        mov.b64 %rb, {$4, $5};
+        add.rm.ftz.f32x2 %rc, %ra, %rb;
         mov.b64 {$0, $1}, %rc;
         }""",
         _RegisterPackType[Float32, Float32],
@@ -1369,6 +1423,42 @@ fn fma_ftz(
 
 
 @always_inline
+fn exp2_emulation[
+    use_exp2_emulation: Bool = False
+](x: SIMD[DType.float32, 2]) -> SIMD[DType.float32, 2]:
+    @parameter
+    if use_exp2_emulation:
+        comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
+        clamped = max(x, -127)
+        # We want to round down here, so that the fractional part is in [0, 1)
+        rounded = add_ftz_rm(clamped, fp32_round_int)
+        rounded_back = sub_ftz(rounded, fp32_round_int)
+        frac = sub_ftz(clamped, rounded_back)
+        # Tri Dao assumes x <= 127.0 and y <= 127.0
+        frac_ex2 = fma_ftz(
+            fma_ftz(
+                fma_ftz(
+                    0.077119089663028717041015625,
+                    frac,
+                    0.227564394474029541015625,
+                ),
+                frac,
+                0.695146143436431884765625,
+            ),
+            frac,
+            1.0,
+        )
+        # The integer floor of x & y are now in the last 8 bits of xy_rounded
+        # We want the next 2 ops to round to nearest even. The rounding mode is important.
+        return bitcast[DType.float32](
+            bitcast[DType.int32](frac_ex2)
+            + (bitcast[DType.int32](rounded) << 23)
+        )
+    else:
+        return exp2(x)
+
+
+@always_inline
 fn elect_mma_arrive[
     cta_group: Int = 1
 ](
@@ -1409,38 +1499,63 @@ fn elect_mma_arrive[
 
 @always_inline
 fn maximum[
-    dtype: DType, BN: Int, //, *, width: Int = 8
-](x: LocalTensor[dtype, Layout.row_major(BN)]) -> SIMD[dtype, width]:
-    comptime assert BN % width == 0
-    vx = x.vectorize[width]()
-    acc = vx[0]
+    BN: Int, //, *, width: Int = 4
+](
+    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    out res: StaticTuple[Float32, width],
+):
+    comptime assert BN % (2 * width) == 0
+    res = {}
+
+    @parameter
+    for w in range(width):
+        res[w] = max_ftz(
+            rebind[Float32](x[2 * w]), rebind[Float32](x[2 * w + 1])
+        )
 
     # unroll (using SIMD) to break up dependency chain
     @parameter
-    for i in range(1, BN // width):
-        acc = max(acc, vx[i])
-    # return acc.reduce_max()
-    return rebind[SIMD[dtype, width]](acc)
+    for i in range(1, BN // (2 * width)):
+
+        @parameter
+        for w in range(width):
+            comptime j = i * 2 * width + 2 * w
+            res[w] = max_ftz(
+                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+            )
 
 
 @always_inline
 fn maximum[
-    dtype: DType,
-    BN: Int,
-    width: Int,
-    //,
+    BN: Int, //, *, width: Int = 4
 ](
-    x: LocalTensor[dtype, Layout.row_major(BN)], init: SIMD[dtype, width]
-) -> SIMD[dtype, width]:
-    comptime assert BN % width == 0
-    vx = x.vectorize[width]()
-    acc = rebind[vx.element_type](init)
+    x: LocalTensor[DType.float32, Layout.row_major(BN)],
+    init: StaticTuple[Float32, width],
+    out res: StaticTuple[Float32, width],
+):
+    comptime assert BN % (2 * width) == 0
+    res = init
 
     # unroll (using SIMD) to break up dependency chain
     @parameter
-    for i in range(BN // width):
-        acc = max(acc, vx[i])
-    return rebind[SIMD[dtype, width]](acc)
+    for i in range(BN // (2 * width)):
+
+        @parameter
+        for w in range(width):
+            comptime j = i * 2 * width + 2 * w
+            res[w] = max_ftz(
+                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+            )
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 4]) -> Float32:
+    return max_ftz(max_ftz(x[0], x[1], x[2]), x[3])
+
+
+@always_inline
+fn maximum(x: StaticTuple[Float32, 4], init: Float32) -> Float32:
+    return max_ftz(max_ftz(x[0], x[1], x[2]), x[3], init)
 
 
 @always_inline
@@ -2503,7 +2618,7 @@ struct RolePipeline[
         ]()
         return (
             self.producer_mbar_base
-            + self.state.index() * Self.producer_sub_stages
+            + self.state.index() * UInt32(Self.producer_sub_stages)
             + sub_stage_idx
         )
 
@@ -2520,7 +2635,7 @@ struct RolePipeline[
         ]()
         return (
             self.consumer_mbar_base
-            + self.state.index() * Self.consumer_sub_stages
+            + self.state.index() * UInt32(Self.consumer_sub_stages)
             + sub_stage_idx
         )
 
@@ -2746,7 +2861,7 @@ fn apply_mask[
                     var val: Float32 = s[i]
                     s[i] = val if in_bound else MASK_VALUE
 
-                var score_col: Int32 = kv_tile_start_row + frag_col
+                var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
                 vs[frag_col_simd] = rebind[vs.element_type](
                     apply_oob_mask[
                         use_score_mod=use_score_mod,
@@ -2876,13 +2991,18 @@ struct FA4MiscMBars[
     fn init(self, *, lane_idx: Int32):
         @parameter
         if Self.size < WARP_SIZE:
-            if lane_idx < Self.size:
+            if lane_idx < Int32(Self.size):
                 self.mbar_base[lane_idx].init(
-                    128 if lane_idx < Self.number_warpgroup_count else 1
+                    Int32(
+                        128 if lane_idx
+                        < Int32(Self.number_warpgroup_count) else 1
+                    )
                 )
         elif Self.size == WARP_SIZE:
             self.mbar_base[lane_idx].init(
-                128 if lane_idx < Self.number_warpgroup_count else 1
+                Int32(
+                    128 if lane_idx < Int32(Self.number_warpgroup_count) else 1
+                )
             )
         else:
             comptime assert Self.number_warpgroup_count <= WARP_SIZE, String(
@@ -2894,10 +3014,12 @@ struct FA4MiscMBars[
                 "Number of count=1 barriers = ",
                 Self.size - Self.number_warpgroup_count,
             )
-            if lane_idx < Self.number_warpgroup_count:
+            if lane_idx < Int32(Self.number_warpgroup_count):
                 self.mbar_base[lane_idx].init(128)
-            if lane_idx < Self.size - Self.number_warpgroup_count:
-                self.mbar_base[Self.number_warpgroup_count + lane_idx].init(1)
+            if lane_idx < Int32(Self.size - Self.number_warpgroup_count):
+                self.mbar_base[
+                    Int32(Self.number_warpgroup_count) + lane_idx
+                ].init(1)
 
     # S pipeline type: 1 producer sub-stage, num_pv_stages consumer sub-stages
     comptime SPipelineProducer = RolePipeline[1, True, 1, Self.num_pv_stages]
@@ -2924,7 +3046,7 @@ struct FA4MiscMBars[
         """Get S consumer for given warp group."""
         return {
             self.mbar_base + Self.S0_producer_offset + wg_idx,
-            self.mbar_base + Self.num_pv_stages * wg_idx,
+            self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx,
         }
 
     @always_inline
@@ -2943,7 +3065,7 @@ struct FA4MiscMBars[
 
     @always_inline
     fn producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
-        base = Self.C0_offset + 2 * wg_idx
+        base = UInt32(Self.C0_offset) + 2 * wg_idx
         return {self.mbar_base + base, self.mbar_base + base + 1}
 
     @always_inline
@@ -3569,7 +3691,7 @@ struct SM100MHA2Q[
         var o_cons_mbar: MBarType = (
             mbars.mbar_base + Self.MiscMBarsType.O_consumer_offset
         )
-        var s_tmem: UInt32 = tmem_addr + Self.config.TMEM_S0
+        var s_tmem: UInt32 = tmem_addr + UInt32(Self.config.TMEM_S0)
 
         # var tid = UInt32(thread_idx.x)
         var tid = llvm_opaque_tid()
@@ -3646,9 +3768,9 @@ struct SM100MHA2Q[
 
         @parameter
         @always_inline
-        fn load_mask_max[
+        fn load_mask_max_impl[
             *, mask_strategy: MaskStrategy
-        ](kv_row: UInt32) -> Float32:
+        ](kv_row: UInt32) -> StaticTuple[Float32, 4]:
             pipeline_s.wait()
             tcgen05_fence_after()
             # break up into sets of 32
@@ -3664,7 +3786,7 @@ struct SM100MHA2Q[
                 s_tmem + UInt32(first_cols)
             ).load_async()
             mask_row[mask_strategy=mask_strategy](s0, kv_row)
-            vrow_max = maximum[width=8](s0)
+            vrow_max = maximum(s0)
 
             s.ptr.store(s0.ptr.load[width=first_cols]())
             # i = 0
@@ -3762,7 +3884,25 @@ struct SM100MHA2Q[
                     vrow_max = maximum(s2, vrow_max)
                     s.ptr.store(offset1, s2.ptr.load[width=batch_size]())
 
-            return vrow_max.reduce_max()
+            return vrow_max
+
+        @parameter
+        @always_inline
+        fn load_mask_max[
+            *, mask_strategy: MaskStrategy
+        ](kv_row: UInt32) -> Float32:
+            return maximum(
+                load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
+            )
+
+        @parameter
+        @always_inline
+        fn load_mask_max[
+            *, mask_strategy: MaskStrategy
+        ](kv_row: UInt32, old_max: Float32) -> Float32:
+            return maximum(
+                load_mask_max_impl[mask_strategy=mask_strategy](kv_row), old_max
+            )
 
         comptime f32x2 = SIMD[DType.float32, 2]
 
@@ -3803,9 +3943,10 @@ struct SM100MHA2Q[
             var vrow_max: f32x2 = f32x2(row_max)
             var acc: f32x2 = exp2(sub_ftz(rebind[f32x2](vs[0]), vrow_max))
             vs[0] = rebind[vs.element_type](acc)
-            vsi = exp2(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
+            vsi = exp2_emulation(sub_ftz(rebind[f32x2](vs[1]), vrow_max))
             vs[1] = rebind[vs.element_type](vsi)
             acc = add_ftz(acc, vsi)
+            comptime exp2_emulation_freq = 4
 
             @parameter
             for i in range(2, 8):
@@ -3815,22 +3956,37 @@ struct SM100MHA2Q[
 
             @parameter
             for i in range(2, 8):
-                vsi = exp2(rebind[f32x2](vs[i]))
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vsi = exp2_emulation(rebind[f32x2](vs[i]))
+                else:
+                    vsi = exp2(rebind[f32x2](vs[i]))
                 vs[i] = rebind[vs.element_type](vsi)
                 acc = add_ftz(acc, vsi)
 
             @parameter
             for i in range(8, batch_size // 2):
-                vsi = exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
+                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vsi = exp2_emulation(diff)
+                else:
+                    vsi = exp2(diff)
                 vs[i] = rebind[vs.element_type](vsi)
                 acc = add_ftz(acc, vsi)
 
             # at this point, we need 32 fewer fp32 registers but 16 more u32
             @parameter
             for i in range(batch_size // 2, batch_size):
-                vs[i] = rebind[vs.element_type](
-                    exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                )
+                diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                @parameter
+                if i % exp2_emulation_freq == 0:
+                    vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                else:
+                    vs[i] = rebind[vs.element_type](exp2(diff))
 
             BatchTileType(p_tmem).store(
                 LocalTensor[
@@ -3851,9 +4007,13 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + batch_size):
-                    vs[i] = rebind[vs.element_type](
-                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                    )
+                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                    @parameter
+                    if i % exp2_emulation_freq == 0:
+                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                    else:
+                        vs[i] = rebind[vs.element_type](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -3871,9 +4031,13 @@ struct SM100MHA2Q[
 
                 @parameter
                 for i in range(offset, offset + remainder):
-                    vs[i] = rebind[vs.element_type](
-                        exp2(sub_ftz(rebind[f32x2](vs[i]), vrow_max))
-                    )
+                    diff = sub_ftz(rebind[f32x2](vs[i]), vrow_max)
+
+                    @parameter
+                    if i % exp2_emulation_freq == 0:
+                        vs[i] = rebind[vs.element_type](exp2_emulation(diff))
+                    else:
+                        vs[i] = rebind[vs.element_type](exp2(diff))
 
                 comptime el_offset = offset * exp_simd
                 comptime tmem_offset = (
@@ -4013,8 +4177,7 @@ struct SM100MHA2Q[
                     old_max = row_max
                     var new_row_max: Float32 = load_mask_max[
                         mask_strategy=mask_strategy
-                    ](kv_row)
-                    new_row_max = max(old_max, new_row_max)
+                    ](kv_row, old_max)
                     diff = sub_ftz(old_max, new_row_max)
                     var correction: Float32
 
@@ -4051,12 +4214,11 @@ struct SM100MHA2Q[
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.COMPUTED
                         | MaskStrategy.OUT_OF_BOUNDS
-                    ](kv_row)
+                    ](kv_row, old_max)
                 else:
                     new_row_max = load_mask_max[
                         mask_strategy = MaskStrategy.OUT_OF_BOUNDS
-                    ](kv_row)
-                new_row_max = max(old_max, new_row_max)
+                    ](kv_row, old_max)
                 diff = sub_ftz(old_max, new_row_max)
                 var correction: Float32
 

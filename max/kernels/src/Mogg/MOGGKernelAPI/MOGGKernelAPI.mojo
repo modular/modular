@@ -1850,6 +1850,7 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
         _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
     ](
         z: OutputTensor[dtype=dtype, rank=out_rank],
         x: InputTensor[dtype=dtype, rank=in_rank],
@@ -1864,6 +1865,7 @@ struct StaticBroadcastTo:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
+            use_blocking_impl=use_blocking_impl,
         ](z, x_view, ctx)
 
 
@@ -4589,8 +4591,8 @@ struct Split:
         var output_bufs = StaticTuple[
             TileTensor[
                 output.dtype,
-                MutAnyOrigin,
                 TileLayout[shape_types=shape_types, stride_types=stride_types],
+                MutAnyOrigin,
             ],
             output.size,
         ]()
@@ -7772,7 +7774,7 @@ struct Struct_grouped_matmul_dynamic_scaled_nvfp4:
         var a_scale_offsets_layout_tensor = a_scale_offsets.to_layout_tensor()
         var expert_ids_layout_tensor = expert_ids.to_layout_tensor()
         var expert_scales_layout_tensor = expert_scales.to_layout_tensor()
-        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target,](
+        grouped_matmul_dynamic_scaled_nvfp4[transpose_b=True, target=target](
             c_layout_tensor,
             a_layout_tensor,
             b_layout_tensor,
@@ -7994,7 +7996,7 @@ struct Struct_interleave_block_scales:
         )
 
         cuda_ctx = context.get_device_context()
-        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target,](
+        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
             managed_tensor_slice_to_ndbuffer(output_scales),
             managed_tensor_slice_to_ndbuffer(input_scales),
             cuda_ctx,
@@ -9388,7 +9390,7 @@ struct IndexTensor:
         indices: InputTensor[dtype=indices_type, rank=indices_rank],
         ctx: DeviceContextPtr,
     ) raises:
-        index_tensor[dtype, indices_type, batch_dims, target=target,](
+        index_tensor[dtype, indices_type, batch_dims, target=target](
             data.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             output.to_tile_tensor[DType.int64](),

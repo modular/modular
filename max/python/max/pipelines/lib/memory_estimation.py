@@ -712,6 +712,9 @@ class MemoryEstimator:
         """
         if not isinstance(arch_config, ArchConfigWithKVCache):
             return _MIN_DEFAULT_BATCH_SIZE
+        if len(devices) == 1 and devices[0].is_host:
+            # batching on CPU is generally not useful, so we hard-code a batch size of 1.
+            return 1
 
         kv_params = arch_config.get_kv_params()
         max_seq_len = arch_config.get_max_seq_len()

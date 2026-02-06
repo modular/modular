@@ -136,10 +136,10 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         )
 
     comptime kernel = _concat_inner_most_single_dim[
-        output_origin=MutAnyOrigin,
         OutputLayoutType = output_dyn.LayoutType,
-        input_origin=ImmutAnyOrigin,
+        output_origin=MutAnyOrigin,
         InputLayoutType = input_0_dyn.LayoutType,
+        input_origin=ImmutAnyOrigin,
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
@@ -161,7 +161,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel, kernel](
             output_dyn.as_any_origin(),
             StaticTuple[
-                TileTensor[dtype, ImmutAnyOrigin, input_0_dyn.LayoutType],
+                TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
                 input_0_dyn.as_any_origin().as_immut(),
@@ -245,7 +245,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
             output_dyn.as_any_origin(),
             4,
             StaticTuple[
-                TileTensor[dtype, ImmutAnyOrigin, input_0_dyn.LayoutType],
+                TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],
                 4,
             ](
                 input_0_dyn.as_any_origin().as_immut(),

@@ -25,11 +25,11 @@ modular_py_test(
         exclude = _MULTI_VERSION_TEST_SRCS + _MACOS_INCOMPATIBLE_TESTS,
     ),
     data = [
-        "//max/tests/integration:test_user_op",
+        "//max/tests/integration/Inputs/test_user_op",
         "//max/tests/tests/graph/testdata",
     ],
     env = {
-        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration:test_user_op)",
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/test_user_op)",
         "MODULAR_PATH": ".",
         "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
     },
@@ -40,7 +40,7 @@ modular_py_test(
     imports = ["."],
     mojo_deps = [
         "//max:MOGGKernelAPI",
-        "//max/tests/integration:test_user_op",
+        "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
     deps = [

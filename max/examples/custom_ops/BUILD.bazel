@@ -10,28 +10,19 @@ filegroup(
     srcs = glob(["kernels/*.mojo"]),
 )
 
-# TODO(GEX-3156): Investigate and enable on Apple GPU
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
-
 custom_op_example_py_binary(
     name = "addition",
     srcs = ["addition.py"],
-    target_compatible_with = _APPLE_GPU_INCOMPATIBLE,
 )
 
 custom_op_example_py_binary(
     name = "parametric_addition",
     srcs = ["parametric_addition.py"],
-    target_compatible_with = _APPLE_GPU_INCOMPATIBLE,
 )
 
 custom_op_example_py_binary(
     name = "mandelbrot",
     srcs = ["mandelbrot.py"],
-    target_compatible_with = _APPLE_GPU_INCOMPATIBLE,
 )
 
 custom_op_example_py_binary(
@@ -41,13 +32,11 @@ custom_op_example_py_binary(
     extra_deps = [
         requirement("pillow"),
     ],
-    target_compatible_with = _APPLE_GPU_INCOMPATIBLE,
 )
 
 custom_op_example_py_binary(
     name = "vector_addition",
     srcs = ["vector_addition.py"],
-    target_compatible_with = _APPLE_GPU_INCOMPATIBLE,
 )
 
 custom_op_example_py_binary(

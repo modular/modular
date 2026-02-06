@@ -141,16 +141,21 @@ fn pool_shape_impl[
     comptime assert paddings_buf.rank == 1
 
     if (
-        filter_buf.dim(0) != input_buf.rank - 2
-        or strides_buf.dim(0) != input_buf.rank - 2
-        or dilations_buf.dim(0) != input_buf.rank - 2
+        filter_buf.dim(0)
+        != Scalar[filter_buf.linear_idx_type](input_buf.rank - 2)
+        or strides_buf.dim(0)
+        != Scalar[strides_buf.linear_idx_type](input_buf.rank - 2)
+        or dilations_buf.dim(0)
+        != Scalar[dilations_buf.linear_idx_type](input_buf.rank - 2)
     ):
         raise Error(
             "[pooling] requires (len(filter) == len(strides) == len(dilations)"
             " == input rank - 2)"
         )
 
-    if paddings_buf.dim(0) != 2 * (input_buf.rank - 2):
+    if paddings_buf.dim(0) != Scalar[paddings_buf.linear_idx_type](
+        2 * (input_buf.rank - 2)
+    ):
         raise Error(
             "[pooling] requires (len(paddings) == 2 * (input rank - 2))"
         )

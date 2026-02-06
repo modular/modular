@@ -219,10 +219,9 @@ def _handle_rebind(
 
 @register_op_handler(mo.StaticBroadcastToOp)
 def _handle_static_broadcast_to(
-    op: mo.StaticBroadcastToOp,
-    inputs: Sequence[Buffer | None],
+    op: mo.StaticBroadcastToOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.static.broadcast_to by broadcasting to the target shape.
+    """Handle mo.static.broadcast_to using Mojo kernel.
 
     Args:
         op: The static broadcast operation.
@@ -231,15 +230,12 @@ def _handle_static_broadcast_to(
     Returns:
         List containing the broadcast tensor buffer.
     """
-    # Get target shape from result type
     result_type = graph.Type.from_mlir(list(op.results)[0].type)
     assert isinstance(result_type, graph.TensorType)
     target_device = result_type.device.to_device()
-    _check_cpu_only(op, target_device)
     _check_buffers_on_device(inputs, target_device)
 
     assert isinstance(inputs[0], Buffer)
-    input_np = inputs[0].to_numpy()
 
     shape = result_type.shape
     if not graph.Shape.is_static(shape):
@@ -248,11 +244,19 @@ def _handle_static_broadcast_to(
         )
     target_shape = graph.Shape(shape).static_dims
 
-    # Perform broadcast using numpy
-    broadcast_np = np.broadcast_to(input_np, target_shape)
-    # broadcast_to returns a view, make a copy
-    output_np = broadcast_np.copy()
-    return [Buffer.from_numpy(output_np)]
+    # Allocate output buffer
+    output = Buffer(
+        shape=target_shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.StaticBroadcastTo(
+        output, inputs[0], target_shape, target_device._device_context_ptr()
+    )
+
+    return [output]
 
 
 @register_op_handler(mo.BroadcastToOp)
@@ -677,3 +681,109 @@ def _handle_param_to_value(
     raise NotImplementedError(
         f"Unsupported param.to_value result type: {result_type}, attr: {value_attr}"
     )
+
+
+# Reduce operations
+
+
+@register_op_handler(mo.ReduceMaxOp)
+def _handle_reduce_max(
+    op: mo.ReduceMaxOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.max by dispatching to Mojo reduce_max kernel.
+
+    Args:
+        op: The reduce max operation.
+        inputs: Input buffers - first is the tensor to reduce,
+            second is the axis tensor (scalar si64).
+
+    Returns:
+        List containing the reduced tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_buffer = inputs[0]
+    axis_buffer = inputs[1]
+
+    # Extract axis value from the axis tensor (scalar si64)
+    axis_np = axis_buffer.to_numpy()
+    axis = int(axis_np.item())
+
+    # Calculate output shape (same as input with reduced axis dim = 1)
+    output_shape = list(input_buffer.shape)
+    output_shape[axis] = 1
+
+    # Allocate output buffer
+    output = Buffer(
+        shape=tuple(output_shape),
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.ReduceMax(
+        output, input_buffer, axis, target_device._device_context_ptr()
+    )
+
+    return [output]
+
+
+# Range operations
+
+
+@register_op_handler(mo.RangeOp)
+def _handle_range(
+    op: mo.RangeOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.range by dispatching to Mojo range kernel.
+
+    Args:
+        op: The range operation.
+        inputs: Input buffers - start, limit, step (all scalar tensors on CPU).
+
+    Returns:
+        List containing the range tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+    assert isinstance(inputs[2], Buffer)
+
+    start_buffer = inputs[0]
+    limit_buffer = inputs[1]
+    step_buffer = inputs[2]
+
+    # Compute output size from inputs: ceil((limit - start) / step)
+    shape = result_type.shape
+    if graph.Shape.is_static(shape):
+        output_shape = graph.Shape(shape).static_dims
+    else:
+        import math
+
+        start_val = start_buffer.to_numpy().item()
+        limit_val = limit_buffer.to_numpy().item()
+        step_val = step_buffer.to_numpy().item()
+        size = max(0, math.ceil((limit_val - start_val) / step_val))
+        output_shape = [size]
+
+    # Allocate output buffer
+    output = Buffer(
+        shape=tuple(output_shape),
+        dtype=result_type.dtype,
+        device=target_device,
+    )
+
+    # Call Mojo kernel
+    ops.mojo_ops.Range(
+        output, start_buffer, step_buffer, target_device._device_context_ptr()
+    )
+
+    return [output]

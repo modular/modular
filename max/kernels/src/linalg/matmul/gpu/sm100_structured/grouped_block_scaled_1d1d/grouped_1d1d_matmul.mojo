@@ -526,7 +526,7 @@ fn grouped_matmul_dynamic_scaled_nvfp4[
     )
 
     # Call the new structured kernel
-    grouped_matmul_1d1d_nvfp4[transpose_b=transpose_b, config=matmul_config,](
+    grouped_matmul_1d1d_nvfp4[transpose_b=transpose_b, config=matmul_config](
         c,
         a,
         a_offsets,

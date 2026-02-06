@@ -74,14 +74,14 @@ fn fused_rope_rmsnorm_kernel[
     n_rms_blocks: Int,
 ](
     q_rope_output: TileTensor[
-        mut=True, dtype, MutExternalOrigin, QRopeOutputLayoutType
+        mut=True, dtype, QRopeOutputLayoutType, MutExternalOrigin
     ],
-    q_rope: TileTensor[dtype, ImmutExternalOrigin, QRopeLayoutType],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutExternalOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, ImmutExternalOrigin, InputRowOffsetsLayoutType
+        DType.uint32, InputRowOffsetsLayoutType, ImmutExternalOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, ImmutExternalOrigin, FreqsCisLayoutType],
-    gamma: TileTensor[gamma_dtype, ImmutExternalOrigin, GammaLayoutType],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutExternalOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutExternalOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -1420,7 +1420,7 @@ fn mla_prefill_branch_bf16[
         ctx,
     )
 
-    matmul[target=target, transpose_b=True,](
+    matmul[target=target, transpose_b=True](
         kv.to_layout_tensor(),
         k_latent.to_layout_tensor(),
         kv_b_proj.to_layout_tensor(),
