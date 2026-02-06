@@ -272,7 +272,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     # Mock decode to return combined tokens text
     pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
-    pipeline.engine_queue.stream = mock_stream
+    pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
 
     # Patch METRICS and call the real next_token_chunk method.

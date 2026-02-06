@@ -13,25 +13,23 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import sys
-from collections.abc import AsyncGenerator, Coroutine
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     AudioGenerationOutput,
     AudioGenerationRequest,
-    BaseContext,
+    BaseContextType,
     EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
-    PipelineOutput,
+    PipelineOutputType,
     PipelineTokenizer,
-    Request,
+    RequestType,
     TextGenerationOutput,
     TextGenerationRequest,
 )
@@ -40,23 +38,10 @@ from max.profiler import Tracer
 from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
-from max.serve.worker_interface.worker_interface import (
-    EngineQueue,
-    ModelWorkerInterface,
-)
-from typing_extensions import Self
-
-if sys.version_info < (3, 11):
-    from taskgroup import TaskGroup
-else:
-    from asyncio import TaskGroup
 
 logger = logging.getLogger("max.serve")
-
-ContextType = TypeVar("ContextType", bound=BaseContext)
-RequestType = TypeVar("RequestType", bound=Request)
-OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 
 @dataclass(frozen=True)
@@ -80,16 +65,14 @@ class TokenGeneratorOutput:
     is_done: bool = False
 
 
-class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
+class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[ContextType, Any, RequestType],
-        model_worker_interface: ModelWorkerInterface,
+        tokenizer: PipelineTokenizer[BaseContextType, Any, RequestType],
+        model_worker: ModelWorkerProxy[BaseContextType, PipelineOutputType],
         lora_queue: LoRAQueue | None = None,
     ) -> None:
-        super().__init__()  # TaskGroup
-
         self.logger = logging.getLogger(
             self.__class__.__module__ + "." + self.__class__.__qualname__
         )
@@ -99,51 +82,7 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.lora_queue = lora_queue
-
-        self.engine_queue = EngineQueue[ContextType, OutputType](
-            model_worker_interface=model_worker_interface,
-        )
-
-        self.tasks: set[asyncio.Task[Any]] = set()
-
-    async def __aenter__(self) -> Self:
-        await super().__aenter__()  # TaskGroup
-
-        self.logger.debug("%s: Starting workers:", self.model_name)
-
-        # Add global fanout worker.
-        self.create_background_task(self.engine_queue.response_worker())
-
-        self.logger.debug("%s: Started workers", self.model_name)
-        return self
-
-    async def __aexit__(
-        self, et: type[BaseException] | None, exc: BaseException | None, tb: Any
-    ) -> bool | None:
-        # If parent wants to exit this context for any reason
-        # we stop / cancel all our child tasks
-        for t in self.tasks:
-            if not t.done():
-                t.cancel()
-        self.tasks.clear()
-        self.logger.info("Pipeline completed: %s", self.model_name)
-        return await super().__aexit__(et, exc, tb)
-
-    def create_background_task(
-        self, coro: Coroutine[Any, Any, None]
-    ) -> asyncio.Task[Any]:
-        task = super().create_task(coro, name=coro.__name__)
-        task.add_done_callback(self.log_task_done)
-        self.tasks.add(task)
-        self.logger.debug(
-            "%s: Task Added: %s", self.model_name, task.get_name()
-        )
-        return task
-
-    def log_task_done(self, task: asyncio.Task[Any]) -> None:
-        self.logger.debug(
-            "%s: Task completed: %s", self.model_name, task.get_name()
-        )
+        self.model_worker = model_worker
 
 
 class TokenGeneratorPipeline(
@@ -212,7 +151,7 @@ class TokenGeneratorPipeline(
                 stop_detector = StopDetector(stop=request.sampling_params.stop)
                 has_stop_sequences = len(stop_detector.stop) > 0
 
-                async for response in self.engine_queue.stream(
+                async for response in self.model_worker.stream(
                     context.request_id, context
                 ):
                     assert isinstance(response, TextGenerationOutput)
@@ -238,9 +177,7 @@ class TokenGeneratorPipeline(
                             if stop_sequence_match := stop_detector.step(
                                 decoded_tokens
                             ):
-                                self.engine_queue.cancel_queue.put_nowait(
-                                    [request.request_id]
-                                )
+                                self.model_worker.cancel(request.request_id)
                                 logger.debug(
                                     f"Cancelling {request.request_id} because stop "
                                     f"sequence ({stop_sequence_match}) detected"
@@ -313,7 +250,7 @@ class TokenGeneratorPipeline(
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
                 # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
                 # this based on the model_worker_interface pipeline_task.
-                async for response in self.engine_queue.stream(
+                async for response in self.model_worker.stream(
                     request.request_id, context
                 ):
                     # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
@@ -363,7 +300,7 @@ class AudioGeneratorPipeline(
                 context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
-                async for response in self.engine_queue.stream(
+                async for response in self.model_worker.stream(
                     request.request_id, context
                 ):
                     yield response

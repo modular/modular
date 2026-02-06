@@ -12,14 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-import contextlib
 import queue
 import sys
 import time
-from collections.abc import Generator
 from dataclasses import fields, is_dataclass
 from typing import Any
-from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -35,7 +32,9 @@ from max.interfaces import (
     msgpack_numpy_encoder,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.serve.worker_interface.worker_interface import EngineQueue
+from max.serve.worker_interface.zmq_interface import (
+    ZmqModelWorkerProxy,
+)
 from max.serve.worker_interface.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
@@ -435,30 +434,21 @@ async def test_engine_queue_stream_propagates_scheduler_error(
         tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
     )
 
-    mock_out_queue: asyncio.Queue[SchedulerResult[Any]] = asyncio.Queue()
-    await mock_out_queue.put(error_result)
-
-    engine_queue: EngineQueue[TextContext, Any] = EngineQueue.__new__(
-        EngineQueue
+    response_queue = queue.Queue[dict[RequestID, SchedulerResult[Any]]]()
+    model_worker = ZmqModelWorkerProxy[TextContext, Any](
+        queue.Queue[TextContext](),
+        response_queue,
+        queue.Queue[list[RequestID]](),
     )
-    engine_queue.pending_out_queues = {}
-    engine_queue.request_queue = Mock()
+    response_queue.put({req_id: error_result})
 
-    @contextlib.contextmanager
-    def mock_open_channel(
-        rid: RequestID, data: TextContext
-    ) -> Generator[asyncio.Queue[SchedulerResult[Any]], None, None]:
-        engine_queue.pending_out_queues[rid] = mock_out_queue
-        try:
-            yield mock_out_queue
-        finally:
-            del engine_queue.pending_out_queues[rid]
-
-    mocker.patch.object(engine_queue, "open_channel", mock_open_channel)
-
-    with pytest.raises(RuntimeError) as exc_info:
-        async for _ in engine_queue.stream(req_id, context):
-            pass
+    worker_task = asyncio.create_task(model_worker.response_worker())
+    try:
+        with pytest.raises(RuntimeError) as exc_info:
+            async for _ in model_worker.stream(req_id, context):
+                pass
+    finally:
+        worker_task.cancel()
 
     # Verify error message includes type, message, and remote traceback
     error_msg = str(exc_info.value)

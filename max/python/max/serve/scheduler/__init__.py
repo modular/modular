@@ -12,18 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import cast
+import contextlib
+from collections.abc import AsyncGenerator
+from typing import Any, cast
 
 from max.interfaces import (
+    AudioGenerationOutput,
+    BaseContext,
+    BaseContextType,
     EmbeddingsContext,
+    EmbeddingsGenerationOutput,
     MAXPullQueue,
+    MAXPushQueue,
     Pipeline,
     PipelineInputsType,
+    PipelineOutput,
     PipelineOutputType,
+    RequestID,
     Scheduler,
+    SchedulerResult,
+    TextGenerationOutput,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.pipelines.core import TextContext
+from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
@@ -34,7 +45,7 @@ from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
 from max.serve.config import Settings
-from max.serve.worker_interface.worker_interface import ModelWorkerInterface
+from max.serve.worker_interface import WorkerQueues
 
 from .audio_generation_scheduler import (
     AudioGenerationScheduler,
@@ -64,11 +75,11 @@ def load_scheduler(
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     pipeline_config: PipelineConfig,
     settings: Settings,
-    model_worker_interface: ModelWorkerInterface,
+    worker_queues: WorkerQueues[BaseContextType, PipelineOutputType],
 ) -> Scheduler:
-    request_queue, response_queue, cancel_queue = (
-        model_worker_interface.model_worker_queues()
-    )
+    request_queue = worker_queues.request_queue
+    response_queue = worker_queues.response_queue
+    cancel_queue = worker_queues.cancel_queue
 
     if pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
@@ -84,7 +95,12 @@ def load_scheduler(
                 MAXPullQueue[EmbeddingsContext],
                 request_queue,
             ),
-            response_queue=response_queue,
+            response_queue=cast(
+                MAXPushQueue[
+                    dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
+                ],
+                response_queue,
+            ),
             cancel_queue=cancel_queue,
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
@@ -112,12 +128,16 @@ def load_scheduler(
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
         audio_pipeline = cast(AudioGeneratorPipelineType, pipeline)
-
         return AudioGenerationScheduler(
             scheduler_config=token_gen_config,
             pipeline=audio_pipeline,
-            request_queue=request_queue,
-            response_queue=response_queue,
+            request_queue=cast(MAXPullQueue[TTSContext], request_queue),
+            response_queue=cast(
+                MAXPushQueue[
+                    dict[RequestID, SchedulerResult[AudioGenerationOutput]]
+                ],
+                response_queue,
+            ),
             cancel_queue=cancel_queue,
             kv_cache=kv_cache,
         )
@@ -127,7 +147,12 @@ def load_scheduler(
             text_pipeline,
             pipeline_config,
             request_queue=cast(MAXPullQueue[TextContext], request_queue),
-            response_queue=response_queue,
+            response_queue=cast(
+                MAXPushQueue[
+                    dict[RequestID, SchedulerResult[TextGenerationOutput]]
+                ],
+                response_queue,
+            ),
             cancel_queue=cancel_queue,
         )
     elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
@@ -136,7 +161,12 @@ def load_scheduler(
             text_pipeline,
             pipeline_config,
             request_queue=cast(MAXPullQueue[TextContext], request_queue),
-            response_queue=response_queue,
+            response_queue=cast(
+                MAXPushQueue[
+                    dict[RequestID, SchedulerResult[TextGenerationOutput]]
+                ],
+                response_queue,
+            ),
             cancel_queue=cancel_queue,
             settings=settings,
         )

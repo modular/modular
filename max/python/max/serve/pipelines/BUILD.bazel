@@ -20,9 +20,7 @@ modular_py_library(
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
-        requirement("typing-extensions"),
         requirement("numpy"),
         requirement("uvloop"),
-        requirement("taskgroup"),  # only for python < 3.11
     ],
 )
