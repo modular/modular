@@ -42,7 +42,14 @@ from .pipeline import ProducerConsumerPipeline
 
 @fieldwise_init
 struct WarpRole(TrivialRegisterType):
-    """Warp role identifiers for SM100 warp-specialized kernel."""
+    """Warp role identifiers for SM100 warp-specialized kernel.
+
+    Warp assignment (7 warps total = 224 threads):
+    - Epilogue: warp IDs 0-3 (4 warps, 128 threads)
+    - Scheduler: warp ID 4 (1 warp, 32 threads)
+    - MainLoad: warp ID 5 (1 warp, 32 threads)
+    - Mma: warp ID 6 (1 warp, 32 threads)
+    """
 
     var _role: Int32
 
