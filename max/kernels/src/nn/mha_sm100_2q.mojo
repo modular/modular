@@ -1274,30 +1274,41 @@ fn llvm_opaque_tid() -> UInt32:
 
 
 @always_inline
-fn sub_ftz(a: Float32, b: Float32) -> Float32:
+fn intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
     return inlined_assembly[
-        """
-        sub.ftz.f32 $0, $1, $2;
-        """,
+        String(intrin, ".ftz.f32 $0, $1, $2;"),
         Float32,
         constraints="=f,f,f",
     ](a, b)
 
 
 @always_inline
-fn sub_ftz(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
+fn intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
+    return inlined_assembly[
+        String(intrin, ".f32 $0, $1, $2, $3;"),
+        Float32,
+        constraints="=f,f,f,f",
+    ](a, b, c)
+
+
+@always_inline
+fn intrin_ftz_x2[
+    intrin: String
+](a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]) -> SIMD[
+    DType.float32, 2
+]:
+    comptime s0 = """{
         .reg .b64 %ra;
         .reg .b64 %rb;
         .reg .b64 %rc;
         mov.b64 %ra, {$2, $3};
         mov.b64 %rb, {$4, $5};
-        sub.ftz.f32x2 %rc, %ra, %rb;
+        """
+    comptime s1 = """.ftz.f32x2 %rc, %ra, %rb;
         mov.b64 {$0, $1}, %rc;
-        }""",
+        }"""
+    ret = inlined_assembly[
+        String(s0, intrin, s1),
         _RegisterPackType[Float32, Float32],
         constraints="=f,=f,f,f,f,f",
     ](a[0], a[1], b[0], b[1])
@@ -1306,106 +1317,60 @@ fn sub_ftz(
 
 @always_inline
 fn add_ftz(a: Float32, b: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        add.ftz.f32 $0, $1, $2;
-        """,
-        Float32,
-        constraints="=f,f,f",
-    ](a, b)
+    return intrin_ftz["add"](a, b)
+
+
+@always_inline
+fn sub_ftz(a: Float32, b: Float32) -> Float32:
+    return intrin_ftz["sub"](a, b)
+
+
+@always_inline
+fn mul_ftz(a: Float32, b: Float32) -> Float32:
+    return intrin_ftz["mul"](a, b)
 
 
 @always_inline
 fn max_ftz(a: Float32, b: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.ftz.f32 $0, $1, $2;
-        """,
-        Float32,
-        constraints="=f,f,f",
-    ](a, b)
+    return intrin_ftz["max"](a, b)
 
 
 @always_inline
 fn max_ftz(a: Float32, b: Float32, c: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.ftz.f32 $0, $1, $2, $3;
-        """,
-        Float32,
-        constraints="=f,f,f,f",
-    ](a, b, c)
+    return intrin["max.ftz"](a, b, c)
 
 
 @always_inline
 fn max3(a: Float32, b: Float32, c: Float32) -> Float32:
-    return inlined_assembly[
-        """
-        max.f32 $0, $1, $2, $3;
-        """,
-        Float32,
-        constraints="=f,f,f,f",
-    ](a, b, c)
+    return intrin["max"](a, b, c)
 
 
 @always_inline
 fn add_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        add.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["add"](a, b)
 
 
 @always_inline
-fn add_ftz_rm(
+fn sub_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        add.rm.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["sub"](a, b)
 
 
 @always_inline
 fn mul_ftz(
     a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        mul.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    return intrin_ftz_x2["mul"](a, b)
+
+
+@always_inline
+fn add_ftz_rm(
+    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
+) -> SIMD[DType.float32, 2]:
+    return intrin_ftz_x2["add.rm"](a, b)
 
 
 @always_inline
