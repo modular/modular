@@ -212,6 +212,29 @@ struct ConvertPOPTrunc : public ConvertPOPToLLVMPattern<TruncOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPRound
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPRound : public ConvertPOPToLLVMPattern<RoundOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(RoundOp op, RoundOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    KGENDType dtype = *op.getType().getResolvedDType();
+    if (!dtype.isFloat()) {
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return success();
+    }
+    Type type = this->convertType(op.getType());
+    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+        op, type, rewriter.getStringAttr("llvm.roundeven"),
+        SmallVector<Value>{adaptor.getOperand()});
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPAbs
 //===----------------------------------------------------------------------===//
 
@@ -3165,6 +3188,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPPointerBitcast,
       ConvertPOPPointerToIndex,
       ConvertPOPRem,
+      ConvertPOPRound,
       ConvertPOPSelect,
       ConvertPOPShl,
       ConvertPOPShr,

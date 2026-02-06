@@ -448,4 +448,30 @@ kgen.func @abs_simd(
   kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
 }
 
+// CHECK-LABEL: @round_simd
+kgen.func @round_simd(
+  %arg0: !pop.simd<4, f32>, %arg1 : !pop.scalar<uindex>,
+  %arg2 : !pop.scalar<index>, %arg3 : !pop.scalar<bool>
+) -> (
+  !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
+) {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+
+  // CHECK: [[FROUND:%.*]] = llvm.call_intrinsic "llvm.roundeven"([[ARG0]])
+  // CHECK: [[FROUND_RET:%.*]] = builtin.unrealized_conversion_cast [[FROUND]]
+  %0 = pop.round %arg0 : !pop.simd<4, f32>
+
+  // Deleted; replaced with %arg1 itself
+  %1 = pop.round %arg1 : !pop.scalar<uindex>
+
+  // Deleted; replaced with %arg2 itself
+  %2 = pop.round %arg2 : !pop.scalar<index>
+
+  // Deleted; replaced with %arg3 itself
+  %3 = pop.round %arg3 : !pop.scalar<bool>
+
+  // CHECK: kgen.return [[FROUND_RET]], %arg1, %arg2, %arg3
+  kgen.return %0, %1, %2, %3 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.scalar<index>, !pop.scalar<bool>
+}
+
 }

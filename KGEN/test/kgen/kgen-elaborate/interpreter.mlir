@@ -1079,3 +1079,61 @@ kgen.generator @callAbs() -> !pop.simd<4, f32> {
 
   kgen.return %0 : !pop.simd<4, f32>
 }
+
+// -----
+
+// COM: Check round
+
+kgen.generator @round_f32(%arg0: !pop.simd<8, f32>) -> !pop.simd<8, f32> {
+  %0 = pop.round %arg0 : !pop.simd<8, f32>
+  kgen.return %0 : !pop.simd<8, f32>
+}
+
+kgen.generator @round_si32(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  %0 = pop.round %arg0 : !pop.simd<4, si32>
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+kgen.generator @round_ui32(%arg0: !pop.simd<4, ui32>) -> !pop.simd<4, ui32> {
+  %0 = pop.round %arg0 : !pop.simd<4, ui32>
+  kgen.return %0 : !pop.simd<4, ui32>
+}
+
+kgen.generator @round_bool(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
+  %0 = pop.round %arg0 : !pop.simd<2, bool>
+  kgen.return %0 : !pop.simd<2, bool>
+}
+
+kgen.generator @round_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
+  %0 = pop.round %arg0 : !pop.simd<4, index>
+  kgen.return %0 : !pop.simd<4, index>
+}
+
+kgen.generator @callRound() -> !pop.simd<8, f32> {
+  kgen.param.declare F0: simd<8, f32> = <<"7.0", "-7.0", "1.5", "1.1", "1.7", "-1.2", "-1.7", "-inf">>
+  kgen.param.declare F1: simd<8, f32> = <apply(:(!pop.simd<8, f32>) -> !pop.simd<8, f32> @round_f32, F0)>
+  // CHECK: <<"7", "-7", "2", "1", "2", "-1", "-2", "-Inf">>
+  %0 = kgen.param.constant: !pop.simd<8, f32> = <F1>
+
+  kgen.param.declare S0: simd<4, si32> = <<7, 7, 0, -2147483648>>
+  kgen.param.declare S1: simd<4, si32> = <apply(:(!pop.simd<4, si32>) -> !pop.simd<4, si32> @round_si32, S0)>
+  // CHECK: <<7, 7, 0, -2147483648>>
+  %1 = kgen.param.constant: !pop.simd<4, si32> = <S1>
+
+  kgen.param.declare U0: simd<4, ui32> = <<7, 7, 0, 1>>
+  kgen.param.declare U1: simd<4, ui32> = <apply(:(!pop.simd<4, ui32>) -> !pop.simd<4, ui32> @round_ui32, U0)>
+  // CHECK: <<7, 7, 0, 1>>
+  %2 = kgen.param.constant: !pop.simd<4, ui32> = <U1>
+
+  kgen.param.declare B0: simd<2, bool> = <<true, false>>
+  kgen.param.declare B1: simd<2, bool> = <apply(:(!pop.simd<2, bool>) -> !pop.simd<2, bool> @round_bool, B0)>
+  // CHECK: <<true, false>>
+  %3 = kgen.param.constant: !pop.simd<2, bool> = <B1>
+
+  kgen.param.declare I0: simd<4, index> = <<-1, -8, 9223090564025548800, -9223372036854775808>>
+  kgen.param.declare I1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @round_index, I0)>
+  // CHECK: <<-1, -8, 9223090564025548800, -9223372036854775808>>
+  %4 = kgen.param.constant: !pop.simd<4, index> = <I1>
+
+  kgen.return %0 : !pop.simd<8, f32>
+}

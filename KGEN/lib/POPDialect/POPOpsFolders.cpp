@@ -136,6 +136,38 @@ AbsOp::parametric_interpret(ArrayRef<Attribute> operands,
   return ErrorTree(getLoc(), "failed to interpret POP::AbsOp");
 }
 
+OpFoldResult RoundOp::fold(FoldAdaptor adaptor) {
+  if (auto fold =
+          foldSIMDRound(adaptor.getOperand(), lookupTargetInfo(*this))) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
+      return ret;
+  }
+  return {};
+}
+
+ErrorTreeOrSuccess RoundOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  if (auto fold = foldSIMDRound(operands[0], state.getTarget())) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
+      state.mapResults(ret);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::RoundOp");
+}
+
+ErrorTreeOrSuccess
+RoundOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  if (auto fold = foldSIMDRound(operands[0], state.getTarget())) {
+    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold))) {
+      state.mapResults(ret);
+      return success();
+    }
+  }
+  return ErrorTree(getLoc(), "failed to interpret POP::RoundOp");
+}
+
 //===----------------------------------------------------------------------===//
 // Binary Operations
 

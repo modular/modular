@@ -544,6 +544,26 @@ OpFoldResult POP::foldSIMDAbs(Attribute operand, TargetInfoAttr targetInfo) {
   return {};
 }
 
+OpFoldResult POP::foldSIMDRound(Attribute operand, TargetInfoAttr targetInfo) {
+  auto operandSIMD = dyn_cast_if_present<SIMDAttr>(operand);
+  if (!operandSIMD)
+    return {};
+  std::optional<KGENDType> dtype = operandSIMD.getType().getResolvedDType();
+  if (!dtype || dtype->isInvalid())
+    return {};
+
+  // Anything that isn't a floating-point value is already rounded
+  if (!dtype->isFloat())
+    return operand;
+
+  return foldSIMDOp(operand, [](APFloat operand) -> APFloat {
+    operand.roundToIntegral(APFloat::rmNearestTiesToEven);
+    return operand;
+  });
+
+  return {};
+}
+
 template <typename State>
 static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                                           Attribute len, Location loc,
