@@ -28,6 +28,10 @@ from memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
+    Strides1D,
+    Strides2D,
+    Strides3D,
+    Strides4D,
 )
 from testing import TestSuite, assert_almost_equal
 
@@ -69,6 +73,7 @@ fn silu_ref(val: Float32) -> Float32:
 
 fn run_selective_scan_fwd[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -77,13 +82,12 @@ fn run_selective_scan_fwd[
     batch: Int,
     dim: Int,
     seqlen: Int,
-    dstate: Int,
     n_groups: Int,
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan forward kernel against reference implementation."""
-    if dstate > MAX_DSTATE:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
     var chunk_size = 2048
@@ -228,41 +232,28 @@ fn run_selective_scan_fwd[
     var output_ref_buf = output_ref_h
 
     # Strides for row-major layout
-    var output_b_stride: UInt32 = dim * seqlen
-    var output_d_stride: UInt32 = seqlen
-    var output_t_stride: UInt32 = 1
-    var x_b_stride: UInt32 = dim * n_chunks * 2 * dstate
-    var x_d_stride: UInt32 = n_chunks * 2 * dstate
-    var x_chunk_stride: UInt32 = 2 * dstate
-    var x_n_stride: UInt32 = 1
-    var out_z_b_stride: UInt32 = dim * seqlen
-    var out_z_d_stride: UInt32 = seqlen
-    var out_z_t_stride: UInt32 = 1
-    var u_b_stride: UInt32 = dim * seqlen
-    var u_d_stride: UInt32 = seqlen
-    var u_t_stride: UInt32 = 1
-    var delta_b_stride: UInt32 = dim * seqlen
-    var delta_d_stride: UInt32 = seqlen
-    var delta_t_stride: UInt32 = 1
-    var A_d_stride: UInt32 = dstate
-    var A_n_stride: UInt32 = 1
-    var B_b_stride: UInt32 = n_groups * dstate * seqlen
-    var B_g_stride: UInt32 = dstate * seqlen
-    var B_n_stride: UInt32 = seqlen
-    var B_t_stride: UInt32 = 1
-    var C_b_stride: UInt32 = n_groups * dstate * seqlen
-    var C_g_stride: UInt32 = dstate * seqlen
-    var C_n_stride: UInt32 = seqlen
-    var C_t_stride: UInt32 = 1
-    var D_stride: UInt32 = 1
-    var z_b_stride: UInt32 = dim * seqlen
-    var z_d_stride: UInt32 = seqlen
-    var z_t_stride: UInt32 = 1
-    var delta_bias_stride: UInt32 = 1
+    var output_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var x_strides = Strides4D(
+        dim * n_chunks * 2 * dstate, n_chunks * 2 * dstate, 2 * dstate, 1
+    )
+    var out_z_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var u_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var delta_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var A_strides = Strides2D(dstate, 1)
+    var B_strides = Strides4D(
+        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
+    )
+    var C_strides = Strides4D(
+        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
+    )
+    var D_strides = Strides1D(1)
+    var z_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var delta_bias_strides = Strides1D(1)
 
     # Call fused kernel
     selective_scan_fwd_cpu[
         dtype,
+        DSTATE,
         output_buf.layout,
         x_buf.layout,
         out_z_buf.layout,
@@ -278,7 +269,6 @@ fn run_selective_scan_fwd[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         output_buf,
@@ -292,37 +282,17 @@ fn run_selective_scan_fwd[
         D_buf,
         z_buf,
         delta_bias_buf,
-        output_b_stride,
-        output_d_stride,
-        output_t_stride,
-        x_b_stride,
-        x_d_stride,
-        x_chunk_stride,
-        x_n_stride,
-        out_z_b_stride,
-        out_z_d_stride,
-        out_z_t_stride,
-        u_b_stride,
-        u_d_stride,
-        u_t_stride,
-        delta_b_stride,
-        delta_d_stride,
-        delta_t_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        B_t_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        C_t_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        z_t_stride,
-        delta_bias_stride,
+        output_strides,
+        x_strides,
+        out_z_strides,
+        u_strides,
+        delta_strides,
+        A_strides,
+        B_strides,
+        C_strides,
+        D_strides,
+        z_strides,
+        delta_bias_strides,
     )
 
     # For now, just verify the kernel executes without errors
@@ -359,20 +329,15 @@ fn run_selective_scan_fwd[
 
 fn run_selective_scan_update[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
     delta_softplus: Bool = False,
-](
-    batch: Int,
-    dim: Int,
-    dstate: Int,
-    n_groups: Int,
-    rtol: Float64 = 0.01,
-) raises:
+](batch: Int, dim: Int, n_groups: Int, rtol: Float64 = 0.01,) raises:
     """Test selective scan update kernel against reference implementation."""
-    if dstate > MAX_DSTATE:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
 
@@ -505,44 +470,22 @@ fn run_selective_scan_update[
     var dt_bias_buf = dt_bias_h
 
     # Strides for row-major layout
-    var state_out_b_stride: UInt32 = dim * dstate
-    var state_out_d_stride: UInt32 = dstate
-    var state_out_n_stride: UInt32 = 1
-
-    var output_b_stride: UInt32 = dim
-    var output_d_stride: UInt32 = 1
-
-    var state_in_b_stride: UInt32 = dim * dstate
-    var state_in_d_stride: UInt32 = dstate
-    var state_in_n_stride: UInt32 = 1
-
-    var x_b_stride: UInt32 = dim
-    var x_d_stride: UInt32 = 1
-
-    var dt_b_stride: UInt32 = dim
-    var dt_d_stride: UInt32 = 1
-
-    var A_d_stride: UInt32 = dstate
-    var A_n_stride: UInt32 = 1
-
-    var B_b_stride: UInt32 = n_groups * dstate
-    var B_g_stride: UInt32 = dstate
-    var B_n_stride: UInt32 = 1
-
-    var C_b_stride: UInt32 = n_groups * dstate
-    var C_g_stride: UInt32 = dstate
-    var C_n_stride: UInt32 = 1
-
-    var D_stride: UInt32 = 1
-
-    var z_b_stride: UInt32 = dim
-    var z_d_stride: UInt32 = 1
-
-    var dt_bias_stride: UInt32 = 1
+    var state_out_strides = Strides3D(dim * dstate, dstate, 1)
+    var output_strides = Strides2D(dim, 1)
+    var state_in_strides = Strides3D(dim * dstate, dstate, 1)
+    var x_strides = Strides2D(dim, 1)
+    var dt_strides = Strides2D(dim, 1)
+    var A_strides = Strides2D(dstate, 1)
+    var B_strides = Strides3D(n_groups * dstate, dstate, 1)
+    var C_strides = Strides3D(n_groups * dstate, dstate, 1)
+    var D_strides = Strides1D(1)
+    var z_strides = Strides2D(dim, 1)
+    var dt_bias_strides = Strides1D(1)
 
     # Run kernel
     selective_scan_update_cpu[
         dtype,
+        DSTATE,
         state_out_buf.layout,
         output_buf.layout,
         state_in_buf.layout,
@@ -557,7 +500,6 @@ fn run_selective_scan_update[
     ](
         batch,
         dim,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         state_out_buf,
@@ -571,30 +513,17 @@ fn run_selective_scan_update[
         D_buf,
         z_buf,
         dt_bias_buf,
-        state_out_b_stride,
-        state_out_d_stride,
-        state_out_n_stride,
-        output_b_stride,
-        output_d_stride,
-        state_in_b_stride,
-        state_in_d_stride,
-        state_in_n_stride,
-        x_b_stride,
-        x_d_stride,
-        dt_b_stride,
-        dt_d_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        dt_bias_stride,
+        state_out_strides,
+        output_strides,
+        state_in_strides,
+        x_strides,
+        dt_strides,
+        A_strides,
+        B_strides,
+        C_strides,
+        D_strides,
+        z_strides,
+        dt_bias_strides,
     )
 
     # Reference implementation
@@ -713,55 +642,60 @@ fn test_selective_scan_fwd_basic() raises:
     """Test basic selective scan forward."""
     run_selective_scan_fwd[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
 fn test_selective_scan_fwd_without_D() raises:
     """Test selective scan forward without D tensor."""
     run_selective_scan_fwd[
         DType.float32,
+        2,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
 fn test_selective_scan_fwd_without_z() raises:
     """Test selective scan forward without z tensor."""
     run_selective_scan_fwd[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
 fn test_selective_scan_fwd_with_delta_softplus() raises:
     """Test selective scan forward with delta softplus activation."""
     run_selective_scan_fwd[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1)
+    ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
 fn test_selective_scan_fwd_longer_sequence() raises:
     """Test selective scan forward with longer sequence."""
     run_selective_scan_fwd[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1)
+    ](batch=1, dim=4, seqlen=16, n_groups=1)
 
 
 # =============================================================================
@@ -773,55 +707,60 @@ fn test_selective_scan_update_basic() raises:
     """Test basic selective scan update."""
     run_selective_scan_update[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
+    ](batch=1, dim=2, n_groups=1)
 
 
 fn test_selective_scan_update_without_D() raises:
     """Test selective scan update without D tensor."""
     run_selective_scan_update[
         DType.float32,
+        2,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
+    ](batch=1, dim=2, n_groups=1)
 
 
 fn test_selective_scan_update_without_z() raises:
     """Test selective scan update without z tensor."""
     run_selective_scan_update[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
+    ](batch=1, dim=2, n_groups=1)
 
 
 fn test_selective_scan_update_with_delta_softplus() raises:
     """Test selective scan update with delta softplus activation."""
     run_selective_scan_update[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=1, dim=2, dstate=2, n_groups=1)
+    ](batch=1, dim=2, n_groups=1)
 
 
 fn test_selective_scan_update_larger_dimensions() raises:
     """Test selective scan update with larger dimensions."""
     run_selective_scan_update[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1)
+    ](batch=2, dim=4, n_groups=1)
 
 
 def main():

@@ -28,6 +28,10 @@ from state_space.selective_scan import (
     selective_scan_fwd_gpu,
     selective_scan_update_cpu,
     selective_scan_update_gpu,
+    Strides1D,
+    Strides2D,
+    Strides3D,
+    Strides4D,
 )
 from testing import TestSuite, assert_almost_equal
 
@@ -40,6 +44,7 @@ def main():
 
 fn run_selective_scan_gpu[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -48,14 +53,13 @@ fn run_selective_scan_gpu[
     batch: Int,
     dim: Int,
     seqlen: Int,
-    dstate: Int,
     n_groups: Int,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan GPU kernel against CPU reference."""
-    if dstate > 16:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
     var chunk_size = 2048
@@ -312,43 +316,30 @@ fn run_selective_scan_gpu[
     )
 
     # Strides for row-major layout
-    var output_b_stride: UInt32 = dim * seqlen
-    var output_d_stride: UInt32 = seqlen
-    var output_t_stride: UInt32 = 1
-    var x_b_stride: UInt32 = dim * n_chunks * 2 * dstate
-    var x_d_stride: UInt32 = n_chunks * 2 * dstate
-    var x_chunk_stride: UInt32 = 2 * dstate
-    var x_n_stride: UInt32 = 1
-    var out_z_b_stride: UInt32 = dim * seqlen
-    var out_z_d_stride: UInt32 = seqlen
-    var out_z_t_stride: UInt32 = 1
-    var u_b_stride: UInt32 = dim * seqlen
-    var u_d_stride: UInt32 = seqlen
-    var u_t_stride: UInt32 = 1
-    var delta_b_stride: UInt32 = dim * seqlen
-    var delta_d_stride: UInt32 = seqlen
-    var delta_t_stride: UInt32 = 1
-    var A_d_stride: UInt32 = dstate
-    var A_n_stride: UInt32 = 1
-    var B_b_stride: UInt32 = n_groups * dstate * seqlen
-    var B_g_stride: UInt32 = dstate * seqlen
-    var B_n_stride: UInt32 = seqlen
-    var B_t_stride: UInt32 = 1
-    var C_b_stride: UInt32 = n_groups * dstate * seqlen
-    var C_g_stride: UInt32 = dstate * seqlen
-    var C_n_stride: UInt32 = seqlen
-    var C_t_stride: UInt32 = 1
-    var D_stride: UInt32 = 1
-    var z_b_stride: UInt32 = dim * seqlen
-    var z_d_stride: UInt32 = seqlen
-    var z_t_stride: UInt32 = 1
-    var delta_bias_stride: UInt32 = 1
+    var output_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var x_strides = Strides4D(
+        dim * n_chunks * 2 * dstate, n_chunks * 2 * dstate, 2 * dstate, 1
+    )
+    var out_z_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var u_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var delta_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var A_strides = Strides2D(dstate, 1)
+    var B_strides = Strides4D(
+        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
+    )
+    var C_strides = Strides4D(
+        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
+    )
+    var D_strides = Strides1D(1)
+    var z_strides = Strides3D(dim * seqlen, seqlen, 1)
+    var delta_bias_strides = Strides1D(1)
 
     comptime delta_softplus_int8: Int8 = Int8(1) if delta_softplus else Int8(0)
 
     # Run CPU kernel
     selective_scan_fwd_cpu[
         dtype,
+        DSTATE,
         output_cpu_buf.layout,
         x_cpu_buf.layout,
         out_z_cpu_buf.layout,
@@ -364,7 +355,6 @@ fn run_selective_scan_gpu[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         delta_softplus_int8,
         output_cpu_buf,
@@ -378,37 +368,17 @@ fn run_selective_scan_gpu[
         D_cpu_buf,
         z_cpu_buf,
         delta_bias_cpu_buf,
-        output_b_stride,
-        output_d_stride,
-        output_t_stride,
-        x_b_stride,
-        x_d_stride,
-        x_chunk_stride,
-        x_n_stride,
-        out_z_b_stride,
-        out_z_d_stride,
-        out_z_t_stride,
-        u_b_stride,
-        u_d_stride,
-        u_t_stride,
-        delta_b_stride,
-        delta_d_stride,
-        delta_t_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        B_t_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        C_t_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        z_t_stride,
-        delta_bias_stride,
+        output_strides,
+        x_strides,
+        out_z_strides,
+        u_strides,
+        delta_strides,
+        A_strides,
+        B_strides,
+        C_strides,
+        D_strides,
+        z_strides,
+        delta_bias_strides,
     )
 
     # Run GPU kernel
@@ -421,6 +391,7 @@ fn run_selective_scan_gpu[
     var compiled_kernel = ctx.compile_function[
         selective_scan_fwd_gpu[
             dtype,
+            DSTATE,
             output_gpu_buf.layout,
             x_gpu_buf.layout,
             out_z_gpu_buf.layout,
@@ -435,6 +406,7 @@ fn run_selective_scan_gpu[
         ],
         selective_scan_fwd_gpu[
             dtype,
+            DSTATE,
             output_gpu_buf.layout,
             x_gpu_buf.layout,
             out_z_gpu_buf.layout,
@@ -455,7 +427,6 @@ fn run_selective_scan_gpu[
         batch,
         dim,
         seqlen,
-        dstate,
         group_size,
         delta_softplus_int8,
         output_gpu_buf,
@@ -469,37 +440,17 @@ fn run_selective_scan_gpu[
         D_gpu_buf,
         z_gpu_buf,
         delta_bias_gpu_buf,
-        output_b_stride,
-        output_d_stride,
-        output_t_stride,
-        x_b_stride,
-        x_d_stride,
-        x_chunk_stride,
-        x_n_stride,
-        out_z_b_stride,
-        out_z_d_stride,
-        out_z_t_stride,
-        u_b_stride,
-        u_d_stride,
-        u_t_stride,
-        delta_b_stride,
-        delta_d_stride,
-        delta_t_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        B_t_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        C_t_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        z_t_stride,
-        delta_bias_stride,
+        output_strides,
+        x_strides,
+        out_z_strides,
+        u_strides,
+        delta_strides,
+        A_strides,
+        B_strides,
+        C_strides,
+        D_strides,
+        z_strides,
+        delta_bias_strides,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )
@@ -536,6 +487,7 @@ fn run_selective_scan_gpu[
 
 fn run_selective_scan_update_gpu[
     dtype: DType,
+    DSTATE: Int,
     has_D: Bool = True,
     has_z: Bool = True,
     has_delta_bias: Bool = True,
@@ -543,14 +495,13 @@ fn run_selective_scan_update_gpu[
 ](
     batch: Int,
     dim: Int,
-    dstate: Int,
     n_groups: Int,
     ctx: DeviceContext,
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan update GPU kernel against CPU reference."""
-    if dstate > 16:
-        return  # Skip if dstate exceeds kernel limit
+    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime dstate = DSTATE
 
     var group_size = dim // n_groups
 
@@ -723,40 +674,17 @@ fn run_selective_scan_update_gpu[
     )
 
     # Strides for row-major layout
-    var state_out_b_stride: UInt32 = dim * dstate
-    var state_out_d_stride: UInt32 = dstate
-    var state_out_n_stride: UInt32 = 1
-
-    var output_b_stride: UInt32 = dim
-    var output_d_stride: UInt32 = 1
-
-    var state_in_b_stride: UInt32 = dim * dstate
-    var state_in_d_stride: UInt32 = dstate
-    var state_in_n_stride: UInt32 = 1
-
-    var x_b_stride: UInt32 = dim
-    var x_d_stride: UInt32 = 1
-
-    var dt_b_stride: UInt32 = dim
-    var dt_d_stride: UInt32 = 1
-
-    var A_d_stride: UInt32 = dstate
-    var A_n_stride: UInt32 = 1
-
-    var B_b_stride: UInt32 = n_groups * dstate
-    var B_g_stride: UInt32 = dstate
-    var B_n_stride: UInt32 = 1
-
-    var C_b_stride: UInt32 = n_groups * dstate
-    var C_g_stride: UInt32 = dstate
-    var C_n_stride: UInt32 = 1
-
-    var D_stride: UInt32 = 1
-
-    var z_b_stride: UInt32 = dim
-    var z_d_stride: UInt32 = 1
-
-    var dt_bias_stride: UInt32 = 1
+    var state_out_strides = Strides3D(dim * dstate, dstate, 1)
+    var output_strides = Strides2D(dim, 1)
+    var state_in_strides = Strides3D(dim * dstate, dstate, 1)
+    var x_strides = Strides2D(dim, 1)
+    var dt_strides = Strides2D(dim, 1)
+    var A_strides = Strides2D(dstate, 1)
+    var B_strides = Strides3D(n_groups * dstate, dstate, 1)
+    var C_strides = Strides3D(n_groups * dstate, dstate, 1)
+    var D_strides = Strides1D(1)
+    var z_strides = Strides2D(dim, 1)
+    var dt_bias_strides = Strides1D(1)
 
     # Run GPU kernel
     var total_batch_dim = batch * dim
@@ -764,6 +692,7 @@ fn run_selective_scan_update_gpu[
         var compiled_func = ctx.compile_function[
             selective_scan_update_gpu[
                 dtype,
+                DSTATE,
                 state_out_device_tensor.layout,
                 output_device_tensor.layout,
                 state_in_device_tensor.layout,
@@ -778,6 +707,7 @@ fn run_selective_scan_update_gpu[
             ],
             selective_scan_update_gpu[
                 dtype,
+                DSTATE,
                 state_out_device_tensor.layout,
                 output_device_tensor.layout,
                 state_in_device_tensor.layout,
@@ -796,7 +726,6 @@ fn run_selective_scan_update_gpu[
             total_batch_dim,
             batch,
             dim,
-            dstate,
             group_size,
             Int8(1) if delta_softplus else Int8(0),
             state_out_device_tensor,
@@ -810,30 +739,17 @@ fn run_selective_scan_update_gpu[
             D_device_tensor,
             z_device_tensor,
             dt_bias_device_tensor,
-            state_out_b_stride,
-            state_out_d_stride,
-            state_out_n_stride,
-            output_b_stride,
-            output_d_stride,
-            state_in_b_stride,
-            state_in_d_stride,
-            state_in_n_stride,
-            x_b_stride,
-            x_d_stride,
-            dt_b_stride,
-            dt_d_stride,
-            A_d_stride,
-            A_n_stride,
-            B_b_stride,
-            B_g_stride,
-            B_n_stride,
-            C_b_stride,
-            C_g_stride,
-            C_n_stride,
-            D_stride,
-            z_b_stride,
-            z_d_stride,
-            dt_bias_stride,
+            state_out_strides,
+            output_strides,
+            state_in_strides,
+            x_strides,
+            dt_strides,
+            A_strides,
+            B_strides,
+            C_strides,
+            D_strides,
+            z_strides,
+            dt_bias_strides,
             grid_dim=(ceildiv(total_batch_dim, 256),),
             block_dim=(256,),
         )
@@ -886,6 +802,7 @@ fn run_selective_scan_update_gpu[
     # Run CPU reference
     selective_scan_update_cpu[
         dtype,
+        DSTATE,
         state_out_cpu.layout,
         output_cpu.layout,
         state_in_cpu.layout,
@@ -900,7 +817,6 @@ fn run_selective_scan_update_gpu[
     ](
         batch,
         dim,
-        dstate,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
         state_out_cpu,
@@ -914,30 +830,17 @@ fn run_selective_scan_update_gpu[
         D_cpu,
         z_cpu,
         dt_bias_cpu,
-        state_out_b_stride,
-        state_out_d_stride,
-        state_out_n_stride,
-        output_b_stride,
-        output_d_stride,
-        state_in_b_stride,
-        state_in_d_stride,
-        state_in_n_stride,
-        x_b_stride,
-        x_d_stride,
-        dt_b_stride,
-        dt_d_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        dt_bias_stride,
+        state_out_strides,
+        output_strides,
+        state_in_strides,
+        x_strides,
+        dt_strides,
+        A_strides,
+        B_strides,
+        C_strides,
+        D_strides,
+        z_strides,
+        dt_bias_strides,
     )
 
     # Compare results
@@ -985,11 +888,12 @@ fn test_selective_scan_gpu_basic() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_without_D() raises:
@@ -999,11 +903,12 @@ fn test_selective_scan_gpu_without_D() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_without_z() raises:
@@ -1013,11 +918,12 @@ fn test_selective_scan_gpu_without_z() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_with_delta_softplus() raises:
@@ -1027,11 +933,12 @@ fn test_selective_scan_gpu_with_delta_softplus() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=1, dim=2, seqlen=4, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, seqlen=4, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_longer_sequence() raises:
@@ -1041,11 +948,12 @@ fn test_selective_scan_gpu_longer_sequence() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=4, seqlen=16, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=1, dim=4, seqlen=16, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_edge_case_seqlen() raises:
@@ -1057,11 +965,12 @@ fn test_selective_scan_gpu_edge_case_seqlen() raises:
     for seqlen in [5, 7]:
         run_selective_scan_gpu[
             DType.float32,
+            2,  # DSTATE
             has_D=True,
             has_z=True,
             has_delta_bias=True,
             delta_softplus=False,
-        ](batch=1, dim=2, seqlen=seqlen, dstate=2, n_groups=1, ctx=ctx)
+        ](batch=1, dim=2, seqlen=seqlen, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_gpu_realistic_dimensions() raises:
@@ -1071,11 +980,12 @@ fn test_selective_scan_gpu_realistic_dimensions() raises:
         return
     run_selective_scan_gpu[
         DType.float32,
+        8,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=1, dim=64, seqlen=7, dstate=8, n_groups=1, ctx=ctx)
+    ](batch=1, dim=64, seqlen=7, n_groups=1, ctx=ctx)
 
 
 # =============================================================================
@@ -1090,11 +1000,12 @@ fn test_selective_scan_update_gpu_basic() raises:
         return
     run_selective_scan_update_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_update_gpu_without_D() raises:
@@ -1104,11 +1015,12 @@ fn test_selective_scan_update_gpu_without_D() raises:
         return
     run_selective_scan_update_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=False,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_update_gpu_without_z() raises:
@@ -1118,11 +1030,12 @@ fn test_selective_scan_update_gpu_without_z() raises:
         return
     run_selective_scan_update_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=False,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_update_gpu_with_delta_softplus() raises:
@@ -1132,11 +1045,12 @@ fn test_selective_scan_update_gpu_with_delta_softplus() raises:
         return
     run_selective_scan_update_gpu[
         DType.float32,
+        2,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=True,
-    ](batch=1, dim=2, dstate=2, n_groups=1, ctx=ctx)
+    ](batch=1, dim=2, n_groups=1, ctx=ctx)
 
 
 fn test_selective_scan_update_gpu_larger_dimensions() raises:
@@ -1146,8 +1060,9 @@ fn test_selective_scan_update_gpu_larger_dimensions() raises:
         return
     run_selective_scan_update_gpu[
         DType.float32,
+        4,  # DSTATE
         has_D=True,
         has_z=True,
         has_delta_bias=True,
         delta_softplus=False,
-    ](batch=2, dim=4, dstate=4, n_groups=1, ctx=ctx)
+    ](batch=2, dim=4, n_groups=1, ctx=ctx)
