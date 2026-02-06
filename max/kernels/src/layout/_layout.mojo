@@ -106,6 +106,11 @@ trait TensorLayout(TrivialRegisterType):
         ...
 
 
+comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
+    shape_types, _RowMajor[*shape_types]
+]
+
+
 struct Layout[
     shape_types: Variadic.TypesOfTrait[CoordLike],
     stride_types: Variadic.TypesOfTrait[CoordLike],
@@ -316,9 +321,7 @@ comptime _RowMajorMapper[
 
 
 @always_inline
-fn row_major(
-    var shape: Coord,
-) -> Layout[shape.element_types, _RowMajor[*shape.element_types]]:
+fn row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
     # Flatten the shape and compute row-major strides on the flattened representation
     # For now, we keep both shape and strides flat (not nested)
 
@@ -368,12 +371,7 @@ fn row_major(
 
 
 @always_inline("nodebug")
-fn row_major[
-    *idxs: Int
-]() -> Layout[
-    shape_types = _IntToComptimeInt[*idxs],
-    stride_types = _RowMajor[*_IntToComptimeInt[*idxs]],
-]:
+fn row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
     var shape = Coord[*_IntToComptimeInt[*idxs]]()
     return row_major(shape)
 
