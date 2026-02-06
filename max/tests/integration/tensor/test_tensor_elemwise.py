@@ -54,6 +54,16 @@ def test_max() -> None:
     assert result.real
 
 
+def test_min() -> None:
+    tensor = Tensor.ones(
+        [4, 6],
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.min()
+    assert result.real
+
+
 def test_mean() -> None:
     tensor = Tensor.ones(
         [4, 6],
@@ -627,6 +637,22 @@ def test_max_axis_none() -> None:
     expected_max = 4.2
     result_value = result.item()
     assert abs(result_value - expected_max) < 1e-5
+
+
+def test_min_axis_none() -> None:
+    """Test that tensor.min with axis=None reduces over all dimensions."""
+    data = [[1.2, 3.5, 2.1], [2.3, 1.9, 4.2]]
+    tensor = Tensor.constant(
+        data,
+        dtype=DType.float32,
+        device=Accelerator() if accelerator_count() else CPU(),
+    )
+    result = tensor.min(axis=None)
+    result._sync_realize()
+    assert result.shape == [1]
+    expected_min = 1.2
+    result_value = result.item()
+    assert abs(result_value - expected_min) < 1e-5
 
 
 def test_mean_axis_none() -> None:
