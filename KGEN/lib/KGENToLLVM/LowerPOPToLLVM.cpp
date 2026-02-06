@@ -2875,6 +2875,9 @@ struct ConvertPOPMinToAIR : public ConvertSymbolOpToAIR<MinOp> {
   LogicalResult
   matchAndRewrite(MinOp op, MinOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    if (!isMetalTriple(getTypeConverter()->getTarget().getTriple()))
+      return failure();
+
     SmallVector<Type> types;
     if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
       return failure();
@@ -2921,6 +2924,10 @@ struct ConvertPOPMaxToAIR : public ConvertSymbolOpToAIR<MaxOp> {
   LogicalResult
   matchAndRewrite(MaxOp op, MaxOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+
+    if (!isMetalTriple(getTypeConverter()->getTarget().getTriple()))
+      return failure();
+
     SmallVector<Type> types;
     if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
       return failure();
@@ -3193,6 +3200,32 @@ struct ConvertPOPSIMDReduceAnd
 };
 
 //===----------------------------------------------------------------------===//
+// Hexagon Conversions
+//===----------------------------------------------------------------------===//
+
+template <typename POPOpT, typename FOpT, typename SOpT, typename UOpT>
+struct ConvertOneToOneFloatOrIntOnHexagon
+    : public OneToOneFloatOrIntConversion<POPOpT, FOpT, SOpT, UOpT> {
+  using BaseT = OneToOneFloatOrIntConversion<POPOpT, FOpT, SOpT, UOpT>;
+  using BaseT::BaseT;
+
+  LogicalResult
+  matchAndRewrite(POPOpT op, typename POPOpT::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (!isHexagonTriple(this->getTypeConverter()->getTarget().getTriple()))
+      return failure();
+    return BaseT::matchAndRewrite(op, adaptor, rewriter);
+  }
+};
+
+using ConvertPOPMinOnHexagon =
+    ConvertOneToOneFloatOrIntOnHexagon<MinOp, LLVM::MinimumOp, LLVM::SMinOp,
+                                       LLVM::UMinOp>;
+using ConvertPOPMaxOnHexagon =
+    ConvertOneToOneFloatOrIntOnHexagon<MaxOp, LLVM::MaximumOp, LLVM::SMaxOp,
+                                       LLVM::UMaxOp>;
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -3261,9 +3294,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPFMA,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
-      ConvertPOPMax,
       ConvertPOPMemcpy,
-      ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,
       ConvertPOPOffset,
@@ -3396,6 +3427,13 @@ void LowerPOPToLLVMPass::runOnOperation() {
   // Populate patterns and run the conversion.
   mlir::RewritePatternSet patterns(&getContext());
   populatePOPToLLVMPatterns(typeConverter, patterns);
+
+  if (isHexagonTriple(targetInfo.getTriple())) {
+    patterns.insert<ConvertPOPMaxOnHexagon, ConvertPOPMinOnHexagon>(
+        typeConverter);
+  } else {
+    patterns.insert<ConvertPOPMax, ConvertPOPMin>(typeConverter);
+  }
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   mlir::populateNVVMToLLVMConversionPatterns(patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,

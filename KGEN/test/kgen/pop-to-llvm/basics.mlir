@@ -1111,3 +1111,76 @@ kgen.func @memcpy_struct_64(%p: !kgen.pointer<!kgen.struct<(index, index)>>, %q:
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "hexagon-unknown-unknown-elf", arch = "hexagonv68", features = "", data_layout = "e-m:e-p:32:32:32-a:0-n16:32-i64:64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-f64:64:64-v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048",  simd_bit_width = 1024, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+// CHECK-LABEL: @max_si32
+kgen.func @max_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  // CHECK: llvm.intr.smax
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @max_index
+kgen.func @max_index(%arg0: !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<index> {
+  // CHECK: llvm.intr.smax
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<index>
+  kgen.return %0 : !pop.scalar<index>
+}
+
+// CHECK-LABEL: @max_ui32
+kgen.func @max_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.scalar<ui32> {
+  // CHECK: llvm.intr.umax
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<ui32>
+  kgen.return %0 : !pop.scalar<ui32>
+}
+
+// CHECK-LABEL: @max_f32
+kgen.func @max_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.intr.maximum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @max_bool
+kgen.func @max_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: llvm.intr.umax
+  %0 = pop.max %arg0, %arg1 : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @min_si32
+kgen.func @min_si32(%arg0: !pop.scalar<si32>, %arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  // CHECK: llvm.intr.smin
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+// CHECK-LABEL: @min_ui32
+kgen.func @min_ui32(%arg0: !pop.scalar<ui32>, %arg1: !pop.scalar<ui32>) -> !pop.scalar<ui32> {
+  // CHECK: llvm.intr.umin
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<ui32>
+  kgen.return %0 : !pop.scalar<ui32>
+}
+
+// CHECK-LABEL: @min_f32
+kgen.func @min_f32(%arg0: !pop.scalar<f32>, %arg1: !pop.scalar<f32>) -> !pop.scalar<f32> {
+  // CHECK-DAG: [[ARG0:%.*]] = builtin.unrealized_conversion_cast %arg0
+  // CHECK-DAG: [[ARG1:%.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK: llvm.intr.minimum([[ARG0]], [[ARG1]]) {fastmathFlags = #llvm.fastmath<contract>}
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<f32>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
+// CHECK-LABEL: @min_bool
+kgen.func @min_bool(%arg0: !pop.scalar<bool>, %arg1: !pop.scalar<bool>) -> !pop.scalar<bool> {
+  // CHECK: llvm.intr.umin
+  %0 = pop.min %arg0, %arg1 : !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+}

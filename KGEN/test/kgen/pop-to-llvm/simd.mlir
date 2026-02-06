@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
+// RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' %s | FileCheck %s
 
 // Test trivial vector conversions to LLVM.
 
@@ -508,6 +508,40 @@ kgen.func @floordiv_simd(
   %2 = pop.floordiv %arg4, %arg5 : !pop.simd<2, index>
 
   kgen.return %0, %1, %2 : !pop.simd<4, f32>, !pop.scalar<uindex>, !pop.simd<2, index>
+}
+
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "hexagon-unknown-unknown-elf", arch = "hexagonv68", features = "", data_layout = "e-m:e-p:32:32:32-a:0-n16:32-i64:64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-f64:64:64-v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048",  simd_bit_width = 1024, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+
+// CHECK-LABEL: @max_simd
+kgen.func @max_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  // CHECK: llvm.intr.smax
+  %0 = pop.max %arg0, %arg1: !pop.simd<4, si32>
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+// CHECK-LABEL: @fmax_simd
+kgen.func @fmax_simd(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // CHECK: llvm.intr.maximum
+  %0 = pop.max %arg0, %arg1: !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
+}
+
+// CHECK-LABEL: @min_simd
+kgen.func @min_simd(%arg0: !pop.simd<4, si32>, %arg1: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
+  // CHECK: llvm.intr.smin
+  %0 = pop.min %arg0, %arg1: !pop.simd<4, si32>
+  kgen.return %0 : !pop.simd<4, si32>
+}
+
+// CHECK-LABEL: @fmin_simd
+kgen.func @fmin_simd(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
+  // CHECK: llvm.intr.minimum
+  %0 = pop.min %arg0, %arg1: !pop.simd<4, f32>
+  kgen.return %0 : !pop.simd<4, f32>
 }
 
 }

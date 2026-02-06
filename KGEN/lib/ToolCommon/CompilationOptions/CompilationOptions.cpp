@@ -153,6 +153,10 @@ bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
   return triple.isNVPTX() || triple.isAMDGCN() || isMetalTriple(triple);
 }
 
+bool M::KGEN::isHexagonTriple(const llvm::Triple &triple) {
+  return triple.getArch() == llvm::Triple::hexagon;
+}
+
 bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
   // Metal GPU targets use ARM64 during compilation, then get converted to AIR
   // iOS/tvOS/watchOS don't have discrete GPUs suitable for compute kernels
@@ -184,7 +188,7 @@ bool M::KGEN::isMetalBackend(const CompilationOptions &options) {
 
 bool M::KGEN::isHexagonBackend(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
-  return triple.getArch() == llvm::Triple::hexagon;
+  return isHexagonTriple(triple);
 }
 
 bool M::KGEN::isARMBackend(const CompilationOptions &options) {
