@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attention import VAEAttention
+from .downsampling import Downsample2D
 from .resnet import ResnetBlock2D
 from .upsampling import Upsample2D
