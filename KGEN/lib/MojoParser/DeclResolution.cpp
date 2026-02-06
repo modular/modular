@@ -2659,6 +2659,10 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
                                                     ASTDecl &traitDecl) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
+      // MOCO-3233: Mark deprecated and remove after 26.2.
+      shared.emitWarning(
+          decorator->getLoc(),
+          "@register_passable is deprecated, conform to RegisterType instead");
       traitOp.setConvention(TypeConvention::RegisterPassable);
       return success();
     }
@@ -2667,7 +2671,7 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (isTrivialRegisterPassable(callNode)) {
       // MOCO-3189: Mark deprecated and remove after 26.2.
-      shared.emitWarning(traitOp->getLoc(),
+      shared.emitWarning(decorator->getLoc(),
                          "@register_passable(\"trivial\") is deprecated, "
                          "conform to TrivialRegisterType instead");
       traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
@@ -2685,6 +2689,10 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
                                 SmallVectorImpl<SymbolRefAttr> &traits) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "register_passable") {
+      // MOCO-3233: Mark deprecated and remove after 26.2.
+      shared.emitWarning(
+          decorator->getLoc(),
+          "@register_passable is deprecated, conform to RegisterType instead");
       structOp.setConvention(TypeConvention::RegisterPassable);
       // RP types implicitly conforms to Movable
       if (ASTDecl *decl = shared.lookupBuiltinTrait(
@@ -2704,10 +2712,9 @@ processStructSignatureDecorator(ExprNode *decorator, StructDeclOp structOp,
   // `x()` forms.
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
-      // @register_passable("trivial")
       if (isTrivialRegisterPassable(callNode)) {
         // MOCO-3189: Mark deprecated and remove after 26.2.
-        shared.emitWarning(structOp->getLoc(),
+        shared.emitWarning(decorator->getLoc(),
                            "@register_passable(\"trivial\") is deprecated, "
                            "conform to TrivialRegisterType instead");
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
