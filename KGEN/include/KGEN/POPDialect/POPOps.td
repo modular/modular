@@ -44,6 +44,17 @@ class POP_ArithmeticUnaryOp<string mnemonic, list<Trait> traits = []> :
   let hasFolder = 1;
 }
 
+// Base class for unary arithmetic or bool pop operations.
+class POP_ArithmeticOrBoolUnaryOp<string mnemonic, list<Trait> traits = []> :
+    POPOp<mnemonic, traits # [Pure, SameOperandsAndResultType]> {
+  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
+  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
+
+  let hasFolder = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // NegOp
 //===----------------------------------------------------------------------===//
@@ -68,7 +79,7 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 // FloorOp
 //===----------------------------------------------------------------------===//
 
-def POP_FloorOp : POPOp<"floor", [Pure, SameOperandsAndResultType]> {
+def POP_FloorOp : POP_ArithmeticOrBoolUnaryOp<"floor"> {
   let summary = "floor";
   let description = [{
     The `pop.floor` operation takes a `!pop.simd` value and returns the element
@@ -82,20 +93,13 @@ def POP_FloorOp : POPOp<"floor", [Pure, SameOperandsAndResultType]> {
     %b = pop.floor %a : !pop.simd<size, f32>
     ```
   }];
-
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // CeilOp
 //===----------------------------------------------------------------------===//
 
-def POP_CeilOp : POPOp<"ceil", [Pure, SameOperandsAndResultType]> {
+def POP_CeilOp : POP_ArithmeticOrBoolUnaryOp<"ceil"> {
   let summary = "ceil";
   let description = [{
     The `pop.ceil` operation takes a `!pop.simd` value and returns the element
@@ -109,20 +113,13 @@ def POP_CeilOp : POPOp<"ceil", [Pure, SameOperandsAndResultType]> {
     %b = pop.ceil %a : !pop.simd<size, f32>
     ```
   }];
-
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // TruncOp
 //===----------------------------------------------------------------------===//
 
-def POP_TruncOp : POPOp<"trunc", [Pure, SameOperandsAndResultType]> {
+def POP_TruncOp : POP_ArithmeticOrBoolUnaryOp<"trunc"> {
   let summary = "trunc";
   let description = [{
     The `pop.trunc` operation takes a `!pop.simd` value and returns the element
@@ -136,20 +133,13 @@ def POP_TruncOp : POPOp<"trunc", [Pure, SameOperandsAndResultType]> {
     %b = pop.trunc %a : !pop.simd<size, f32>
     ```
   }];
-
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // RoundOp
 //===----------------------------------------------------------------------===//
 
-def POP_RoundOp : POPOp<"round", [Pure, SameOperandsAndResultType, NoMemoryEffect,
+def POP_RoundOp : POP_ArithmeticOrBoolUnaryOp<"round", [NoMemoryEffect,
                   DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "round";
   let description = [{
@@ -165,20 +155,13 @@ def POP_RoundOp : POPOp<"round", [Pure, SameOperandsAndResultType, NoMemoryEffec
     %b = pop.round %a : !pop.simd<size, f32>
     ```
   }];
-
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
 // AbsOp
 //===----------------------------------------------------------------------===//
 
-def POP_AbsOp : POPOp<"abs", [Pure, SameOperandsAndResultType, NoMemoryEffect,
+def POP_AbsOp : POP_ArithmeticOrBoolUnaryOp<"abs", [NoMemoryEffect,
                 DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "abs";
   let description = [{
@@ -195,13 +178,6 @@ def POP_AbsOp : POPOp<"abs", [Pure, SameOperandsAndResultType, NoMemoryEffect,
     %r = pop.abs %x : !pop.simd<size, si32>
     ```
   }];
-
-  let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$operand);
-  let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
