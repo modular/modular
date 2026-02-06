@@ -130,6 +130,17 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_verify",
+    size = "small",
+    srcs = ["test_verify.py"],
+    deps = [
+        ":verify",
+        "//max/tests/integration/test_common:numpy_encoder",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_generate_llm_logits_gpu",
     size = "medium",
     srcs = ["test_generate_llm_logits_gpu.py"],
