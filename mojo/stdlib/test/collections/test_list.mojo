@@ -908,12 +908,14 @@ def test_list_contains():
 
     # Test with UInt8.
     var bytes = List[UInt8]()
-    for i in range(256):
+    for i in range(128):
         bytes.append(UInt8(i))
 
     assert_true(UInt8(0) in bytes)
+    assert_true(UInt8(64) in bytes)
     assert_true(UInt8(127) in bytes)
-    assert_true(UInt8(255) in bytes)
+    assert_false(UInt8(128) in bytes)
+    assert_false(UInt8(255) in bytes)
 
     # Test empty list of scalar type.
     var empty = List[Int]()
