@@ -80,7 +80,7 @@ def test_set_and_get_items():
 
     for i in range(4):
         for j in range(4):
-            tensor[i, j] = i * 4 + j + 2
+            tensor[i, j] = Float32(i * 4 + j + 2)
 
     # CHECK: 2.0 3.0 4.0 5.0
     # CHECK: 6.0 7.0 8.0 9.0
@@ -593,13 +593,13 @@ fn test_random_fill():
     var sum: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
         sum += rebind[Float32](src_tensor[i])
-    var mean = sum / src_tensor.runtime_layout.size()
+    var mean = sum / Float32(src_tensor.runtime_layout.size())
 
     var variance: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
         var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
-    variance = sqrt(variance / src_tensor.runtime_layout.size())
+    variance = sqrt(variance / Float32(src_tensor.runtime_layout.size()))
     src_tensor.ptr.free()
     # Check that the mean value is close to 0.5 and variance is more than 0.1
     # CHECK: ----mean-variance----

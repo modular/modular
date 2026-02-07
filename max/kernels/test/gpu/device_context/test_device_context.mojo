@@ -39,7 +39,7 @@ fn vec_func(
     var tid = global_idx.x
     if tid >= UInt(len):
         return
-    output[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
 def test_is_compatible(ctx: DeviceContext):
@@ -56,7 +56,7 @@ fn test_basic(ctx: DeviceContext) raises:
 
     # Initialize inputs
     for i in range(length):
-        in0_host[i] = i
+        in0_host[i] = Float32(i)
         in1_host[i] = 2
 
     # Device memory buffers for the kernel input and output

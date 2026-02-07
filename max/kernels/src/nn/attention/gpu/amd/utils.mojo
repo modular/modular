@@ -431,13 +431,13 @@ fn _load_tr16_b64_row(
     # to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
     # Then they are exchanged such that at the end of this operation you get a
     # SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
-    __comptime_assert size_of[tile.dtype]() == 2, String(
+    comptime assert size_of[tile.dtype]() == 2, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == 4, String(
+    comptime assert tile.shape[0]() == 4, String(
         "Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()
     )
-    __comptime_assert tile.shape[1]() == 16, String(
+    comptime assert tile.shape[1]() == 16, String(
         "Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()
     )
 
@@ -480,20 +480,16 @@ fn _load_tr16_b64_warp[
     comptime row_layout = Layout.row_major(2, 2) if mma_shape[
         0
     ] == 32 else Layout.row_major(4, 1)
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert (
-        tile.shape[0]() == row_layout.shape[0].value() * 4
-    ), String(
+    comptime assert tile.shape[0]() == row_layout.shape[0].value() * 4, String(
         "Expected tile.shape[0]() to be ",
         row_layout.shape[0].value() * 4,
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert (
-        tile.shape[1]() == row_layout.shape[1].value() * 16
-    ), String(
+    comptime assert tile.shape[1]() == row_layout.shape[1].value() * 16, String(
         "Expected tile.shape[1]() to be ",
         row_layout.shape[1].value() * 16,
         ", but got ",
@@ -530,7 +526,7 @@ fn load_b_tr[
         SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
     """
     # only support double-rate mfma shapes for now
-    __comptime_assert mma_shape in (
+    comptime assert mma_shape in (
         IndexList[3](32, 32, 16),
         IndexList[3](16, 16, 32),
     ), String(
@@ -542,16 +538,16 @@ fn load_b_tr[
         mma_shape[2],
         ". Supported shapes: 32x32x16, 16x16x32",
     )
-    __comptime_assert tile.dtype == DType.bfloat16, String(
+    comptime assert tile.dtype == DType.bfloat16, String(
         "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
     )
-    __comptime_assert tile.shape[0]() == mma_shape[2], String(
+    comptime assert tile.shape[0]() == mma_shape[2], String(
         "Expected tile.shape[0]() to be mma_shape[2]=",
         mma_shape[2],
         ", but got ",
         tile.shape[0](),
     )
-    __comptime_assert tile.shape[1]() == mma_shape[1], String(
+    comptime assert tile.shape[1]() == mma_shape[1], String(
         "Expected tile.shape[1]() to be mma_shape[1]=",
         mma_shape[1],
         ", but got ",
@@ -609,8 +605,8 @@ fn copy_dram_to_sram_lds[
         )
         comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
-        __comptime_assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        __comptime_assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
         var worker_idx_with_offset = worker_idx + UInt(m_sub_tile * WARP_SIZE)
         var src_dist = src_partitions.vectorize[
             1, simd_width_of[src.dtype]()
@@ -685,7 +681,7 @@ fn load_b_[
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
-    __comptime_assert src.shape[0]() == MMA_M
+    comptime assert src.shape[0]() == MMA_M
     comptime simd_width = simd_width_of[src.dtype]()
     var tile = src.tile[MMA_M, MMA_K](0, k_tile_idx)
     comptime thread_layout = Layout.col_major(32, 2) if mma_shape[

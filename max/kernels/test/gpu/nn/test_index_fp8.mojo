@@ -74,10 +74,10 @@ fn test_index_fp8[
 
     # input row offsets and cache row offsets
     for i in range(batch_size):
-        input_row_offsets[i] = i * seq_len
-        cache_row_offsets[i] = i * num_keys
-    input_row_offsets[batch_size] = batch_size * seq_len
-    cache_row_offsets[batch_size] = batch_size * num_keys
+        input_row_offsets[i] = UInt32(i * seq_len)
+        cache_row_offsets[i] = UInt32(i * num_keys)
+    input_row_offsets[batch_size] = UInt32(batch_size * seq_len)
+    cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
 
     ctx.enqueue_copy(q_device_ptr, q_ptr)
     ctx.enqueue_copy(qs_device_ptr, qs_ptr)

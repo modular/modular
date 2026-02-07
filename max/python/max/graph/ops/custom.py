@@ -20,6 +20,7 @@ from typing import Any
 from max import mlir
 from max._core import graph as _graph
 from max._core.dialects import builtin
+from max._mlir_context import default_mlir_context
 from max.dtype import DType
 from max.mlir import BoolAttr, DictAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
@@ -36,26 +37,22 @@ from ..value import (
 )
 
 
-def _parameter_attribute(
-    param: bool | int | str | DType, context: mlir.Context
-) -> mlir.Attribute:
+def _parameter_attribute(param: bool | int | str | DType) -> mlir.Attribute:
     """Converts a Python type to an MLIR attribute to parametrize a kernel."""
+    context = default_mlir_context()
     if isinstance(param, bool):
         return BoolAttr.get(param, context)
-    elif isinstance(param, int):
+    if isinstance(param, int):
         return IntegerAttr.get(IndexType.get(context), param)
-    elif isinstance(param, str):
+    if isinstance(param, str):
         return StringAttr.get(param, context)
-    elif isinstance(param, DType):
+    if isinstance(param, DType):
         # Wrap the MLIR type corresponding to dtype in a TypeAttr,
         # which MOToKGENLowering expects.
         dtype = _graph.dtype_to_type(param)
         attr = builtin.TypeAttr(dtype)
         return mlir.Attribute._CAPICreate(attr._CAPIPtr)  # type: ignore
-    else:
-        raise TypeError(
-            f"unsupported parameter type {type(param)} for custom op"
-        )
+    raise TypeError(f"unsupported parameter type {type(param)} for custom op")
 
 
 def custom(
@@ -84,7 +81,8 @@ def custom(
         These correspond 1:1 with the types passed as ``out_types``.
     """
     graph = Graph.current
-    symbol_attr = StringAttr.get(name, graph._context)
+    context = default_mlir_context()
+    symbol_attr = StringAttr.get(name, context)
     device = DeviceRef.from_device(device)
 
     if any(isinstance(val, BufferValue | _OpaqueValue) for val in values):
@@ -104,10 +102,10 @@ def custom(
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
             {
-                name: _parameter_attribute(param, graph._context)
+                name: _parameter_attribute(param)
                 for name, param in parameters.items()
             },
-            graph._context,
+            context,
         )
 
     custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore
@@ -161,7 +159,6 @@ def inplace_custom(
     out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
-
     values = [
         TensorValue(v) if _is_strong_tensor_value_like(v) else v for v in values
     ]
@@ -169,21 +166,24 @@ def inplace_custom(
     device = DeviceRef.from_device(device)
     chain_operand = graph.device_chains[device]
 
+    context = default_mlir_context()
+    symbol_attr = StringAttr.get(name, context)
+
     (*results, out_chain), custom_op = graph._add_op_get_op_with_results(
         mo.custom,
         results_=[*out_mlir_types, _ChainType().to_mlir()],
         operands_=[*values, chain_operand],
-        symbol=StringAttr.get(name, graph._context),
+        symbol=symbol_attr,
     )
     graph.device_chains[device] = out_chain
 
     if parameters is not None:
         custom_op.parameters = DictAttr.get(
             {
-                name: _parameter_attribute(param, graph._context)
+                name: _parameter_attribute(param)
                 for name, param in parameters.items()
             },
-            graph._context,
+            context,
         )
 
     custom_op.device = mlir.Attribute._CAPICreate(  # type: ignore

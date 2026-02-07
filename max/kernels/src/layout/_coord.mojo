@@ -482,7 +482,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         Returns:
             The inner product of the two values.
         """
-        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
             "Length of Coord ("
             + String(Self.__len__())
             + ") and Coord[*other_types] ("
@@ -520,7 +520,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """Check if this tuple's elements are equal to the other tuple's elements.
         """
 
-        __comptime_assert Self.__len__() == Coord[*other_types].__len__(), (
+        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
             "Length of Coord ("
             + String(Self.__len__())
             + ") and Coord[*other_types] ("
@@ -624,7 +624,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         # For the test cases in test_mixed_layout (which are all non-nested), this works
         # Deep nesting like Coord(A, Coord(B, Coord(C))) is not yet supported
 
-        __comptime_assert flat_size == Self.__len__(), (
+        comptime assert flat_size == Self.__len__(), (
             "flatten() currently only supports non-nested Coords -"
             " nested tuple flattening not yet implemented"
         )
@@ -1544,7 +1544,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
         for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[
+            comptime assert _type_is_eq[
                 self_type, other_type
             ](), "Tuple elements must be of the same type to compare."
             if self[i] != rebind[self_type](other[i]):
@@ -1595,7 +1595,7 @@ struct _RegTuple[*element_types: TrivialRegisterType](
         for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
-            __comptime_assert _type_is_eq[self_type, other_type](), String(
+            comptime assert _type_is_eq[self_type, other_type](), String(
                 "Mismatch between tuple elements at index ",
                 i,
                 " must be of the same type to compare.",

@@ -18,7 +18,7 @@ import gpu.primitives.block as block
 from algorithm.functional import elementwise
 from gpu import block_idx, thread_idx
 from gpu.host.info import is_gpu
-from layout._coord import CoordLike
+from layout._layout import TensorLayout
 from layout._tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
@@ -50,27 +50,27 @@ fn apply_penalties_to_logits[
     - frequency_data[i, 1] is the frequency of the token in the sequence
     """
 
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert repetition_penalty.rank == 1
-    __comptime_assert presence_penalty.rank == 1
-    __comptime_assert frequency_penalty.rank == 1
-    __comptime_assert logits.rank == 2
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert repetition_penalty.rank == 1
+    comptime assert presence_penalty.rank == 1
+    comptime assert frequency_penalty.rank == 1
+    comptime assert logits.rank == 2
 
     # all scalars
-    __comptime_assert frequency_offsets.element_size == 1
-    __comptime_assert compressed_frequency_data.element_size == 1
-    __comptime_assert repetition_penalty.element_size == 1
-    __comptime_assert presence_penalty.element_size == 1
-    __comptime_assert frequency_penalty.element_size == 1
-    __comptime_assert logits.element_size == 1
+    comptime assert frequency_offsets.element_size == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert repetition_penalty.element_size == 1
+    comptime assert presence_penalty.element_size == 1
+    comptime assert frequency_penalty.element_size == 1
+    comptime assert logits.element_size == 1
 
     @always_inline
     @parameter
     fn apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        __comptime_assert rank_ == 1, "apply_penalties_fn: rank must be 1"
+        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
 
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
         var token = Int(compressed_frequency_data[idx[0], 0])
@@ -109,35 +109,21 @@ fn apply_penalties_to_logits[
 
 fn update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
-    freq_data_shape_types: Variadic.TypesOfTrait[CoordLike],
-    freq_data_stride_types: Variadic.TypesOfTrait[CoordLike],
+    FreqDataLayoutType: TensorLayout,
     freq_offsets_origin: ImmutOrigin,
-    freq_offsets_shape_types: Variadic.TypesOfTrait[CoordLike],
-    freq_offsets_stride_types: Variadic.TypesOfTrait[CoordLike],
+    FreqOffsetsLayoutType: TensorLayout,
     new_tokens_origin: ImmutOrigin,
-    new_tokens_shape_types: Variadic.TypesOfTrait[CoordLike],
-    new_tokens_stride_types: Variadic.TypesOfTrait[CoordLike],
+    NewTokensLayoutType: TensorLayout,
     token_type: DType,
     block_size: Int,
 ](
     compressed_frequency_data: TileTensor[
-        shape_types=freq_data_shape_types,
-        stride_types=freq_data_stride_types,
-        DType.int32,
-        freq_data_origin,
+        DType.int32, FreqDataLayoutType, freq_data_origin
     ],
     frequency_offsets: TileTensor[
-        shape_types=freq_offsets_shape_types,
-        stride_types=freq_offsets_stride_types,
-        DType.uint32,
-        freq_offsets_origin,
+        DType.uint32, FreqOffsetsLayoutType, freq_offsets_origin
     ],
-    new_tokens: TileTensor[
-        shape_types=new_tokens_shape_types,
-        stride_types=new_tokens_stride_types,
-        token_type,
-        new_tokens_origin,
-    ],
+    new_tokens: TileTensor[token_type, NewTokensLayoutType, new_tokens_origin],
 ):
     """
     GPU kernel to update token frequency data in CSR format.
@@ -146,9 +132,9 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert new_tokens.rank == 1
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert new_tokens.rank == 1
 
     comptime simd_width = simd_width_of[DType.int32]()
     comptime PADDING_TOKEN = -1
@@ -228,11 +214,11 @@ fn update_frequency_data[
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
     """
-    __comptime_assert frequency_offsets.rank == 1
-    __comptime_assert compressed_frequency_data.rank == 2
-    __comptime_assert new_tokens.rank == 1
-    __comptime_assert compressed_frequency_data.element_size == 1
-    __comptime_assert new_tokens.element_size == 1
+    comptime assert frequency_offsets.rank == 1
+    comptime assert compressed_frequency_data.rank == 2
+    comptime assert new_tokens.rank == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert new_tokens.element_size == 1
 
     @parameter
     if is_gpu[target]():
@@ -241,14 +227,11 @@ fn update_frequency_data[
         dev_ctx = ctx.get_device_context()
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin = compressed_frequency_data.origin,
-            freq_data_shape_types = compressed_frequency_data.shape_types,
-            freq_data_stride_types = compressed_frequency_data.stride_types,
+            FreqDataLayoutType = compressed_frequency_data.LayoutType,
             freq_offsets_origin = ImmutOrigin(frequency_offsets.origin),
-            freq_offsets_shape_types = frequency_offsets.shape_types,
-            freq_offsets_stride_types = frequency_offsets.stride_types,
+            FreqOffsetsLayoutType = frequency_offsets.LayoutType,
             new_tokens_origin = ImmutOrigin(new_tokens.origin),
-            new_tokens_shape_types = new_tokens.shape_types,
-            new_tokens_stride_types = new_tokens.stride_types,
+            NewTokensLayoutType = new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,
         ]
@@ -267,7 +250,7 @@ fn update_frequency_data[
         fn update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
-            __comptime_assert (
+            comptime assert (
                 rank_ == 1
             ), "update_frequency_data_fn: rank must be 1"
 

@@ -17,10 +17,10 @@ modular_py_test(
         "test_stop_cpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -56,10 +56,10 @@ modular_py_test(
         "test_tinyllama_serving_cpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     tags = [
         "no-pydeps",  # TODO: Fix and re-enable
@@ -76,8 +76,8 @@ modular_py_test(
         "//max/python/max/pipelines/core",
         "//max/python/max/serve",
         "//max/python/max/serve/schemas",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
@@ -130,10 +130,10 @@ modular_py_test(
         "test_smollm_serving_gpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     exec_properties = {
         # Ensure the test has at least 23GB of GPU memory available.
@@ -167,7 +167,7 @@ modular_py_test(
         "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
-        "//max/tests/integration/pipelines/python/test_common:test_data",
+        "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),

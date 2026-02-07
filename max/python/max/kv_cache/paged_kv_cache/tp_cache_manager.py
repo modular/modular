@@ -23,6 +23,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
+from max.kv_cache.kv_connector import KVConnector
 from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.nn.legacy.kv_cache.utils import build_max_lengths_tensor
@@ -32,7 +33,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: igno
 )
 from max.support.math import ceildiv
 
-from .block_copy_engine import BlockCopyEngine
+from ..connectors import create_connector
 from .block_manager import BlockManager
 
 logger = logging.getLogger("max.pipelines")
@@ -126,20 +127,14 @@ class _TPPagedKVCacheManager:
     device_tensors: list[Buffer]
     """List of tensors holding the KV cache blocks, one per device."""
 
-    host_tensors: list[Buffer] | None
-    """Tensor holding the KV cache blocks on the host for swapping (if enabled)."""
-
     device_scale_tensors: list[Buffer] | None
     """List of scales for the quantized KV cache blocks, one per device."""
 
-    host_scale_tensors: list[Buffer] | None
-    """List of tensors holding the KV cache scales on the host for swapping (if enabled)."""
-
-    total_num_host_pages: int
-    """Total number of blocks allocated on the host for swapping (if enabled)."""
-
     block_manager: BlockManager
     """Manages allocation, eviction, and reuse of KV cache blocks."""
+
+    connector: KVConnector
+    """Connector for external cache tiers (host memory, LMCache, etc.)."""
 
     enable_prefix_caching: bool
     """Flag indicating if prefix caching (block reuse) is enabled."""
@@ -231,59 +226,19 @@ class _TPPagedKVCacheManager:
                     )
                 )
 
-        self.host_tensors = None
-        self.host_scale_tensors = None
-        if params.enable_kvcache_swapping_to_host:
-            self.host_tensors = []
-            if self.params.dtype in (
-                DType.float8_e4m3fn,
-                DType.float8_e4m3fnuz,
-            ):
-                self.host_scale_tensors = []
-            # Construct host tensors for each device.
-            for dev in self.devices:
-                if dev.is_host:
-                    raise ValueError(
-                        "Host device detected. Paging to host is not supported when executing on CPU."
-                    )
-                # Initializing the CPU host tensors introduces significant latency, and it's not expected that this memory will be accessed via TMA operations.
-                self.host_tensors.append(
-                    Buffer(
-                        shape=[total_num_host_pages, *params.shape_per_block],
-                        dtype=self.params.dtype,
-                        device=dev,
-                        pinned=True,
-                    )
-                )
+        # Initialize connector for external cache tiers (host memory, LMCache, etc.)
+        # The connector owns host memory, host block pool, and handles H2D/D2H transfers.
+        self.connector: KVConnector = create_connector(
+            params=params,
+            devices=devices,
+            device_tensors=self.device_tensors,
+            device_scale_tensors=self.device_scale_tensors,
+            total_num_host_blocks=total_num_host_pages,
+            session=session,
+        )
 
-                if self.host_scale_tensors:
-                    assert params.kvcache_quant_config is not None
-                    self.host_scale_tensors.append(
-                        Buffer(
-                            shape=[
-                                total_num_pages,
-                                *params.shape_per_scale_block,
-                            ],
-                            dtype=params.kvcache_quant_config.scale_dtype,
-                            device=device,
-                            pinned=True,
-                        )
-                    )
-
-        # Initialize block copy engine.
-        self.block_copy_engine: BlockCopyEngine | None = None
-        if self.enable_prefix_caching:
-            self.block_copy_engine = BlockCopyEngine(
-                block_size=self.page_size,
-                num_device_blocks=self.total_num_pages,
-                device_tensors=self.device_tensors,
-                num_host_blocks=self.total_num_host_pages,
-                host_tensors=self.host_tensors,
-                device_scale_tensors=self.device_scale_tensors,
-                host_scale_tensors=self.host_scale_tensors,
-            )
-
-        # Initialize block manager
+        # Initialize block manager for device-side allocation and prefix caching.
+        # The connector is passed to BlockManager for host cache operations.
         device_memory_tier = (
             MemoryTier.MEMORY_TIER_CPU
             if devices[0].is_host
@@ -292,9 +247,8 @@ class _TPPagedKVCacheManager:
         self.block_manager = BlockManager(
             device_memory_tier=device_memory_tier,
             total_num_blocks=self.total_num_pages,
-            total_num_host_blocks=self.total_num_host_pages,
             block_size=self.page_size,
-            block_copy_engine=self.block_copy_engine,
+            connector=self.connector,
             enable_prefix_caching=self.params.enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
         )
@@ -357,8 +311,8 @@ class _TPPagedKVCacheManager:
             num_steps: Number of steps to run for
         """
 
-        if self.block_copy_engine is not None:
-            self.block_copy_engine.wait_for_completion()
+        # Wait for any pending connector operations (H2D loads from host cache).
+        self.connector.sync()
 
         max_seq_len = -1
         for batch_idx, ctx in enumerate(batch):  # noqa: B007
@@ -422,7 +376,8 @@ class _TPPagedKVCacheManager:
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
-        self.block_manager.eagerly_offload_recently_committed_blocks()
+        # Initiate any pending async saves to external cache tiers.
+        self.connector.flush()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row. This should not be allocated
@@ -471,8 +426,14 @@ class _TPPagedKVCacheManager:
 
         self._claimed_requests.remove(request_id)
 
+        # Get block IDs before releasing
+        block_ids = self.block_manager.get_req_blocks(request_id)
+
         # Call the block manager release method with the request_id
         self.block_manager.release(request_id)
+
+        # Notify connector of request completion
+        self.connector.on_request_complete(request_id, block_ids)
 
     @traced
     def step(self, batch: Sequence[TextGenerationContext]) -> None:
@@ -496,13 +457,23 @@ class _TPPagedKVCacheManager:
 
     @property
     def num_host_pages(self) -> int:
-        return self.total_num_host_pages
+        """Total number of host blocks available."""
+        return self.connector.num_host_blocks
 
     @property
     def num_used_host_pages(self) -> int:
-        if self.block_manager.host_block_pool is None:
-            return 0
-        return len(self.block_manager.host_block_pool.hash_to_committed_block)
+        """Number of host blocks currently in use."""
+        return self.connector.num_used_host_blocks
+
+    @property
+    def host_tensors(self) -> list[Buffer] | None:
+        """Host tensors for KV cache swapping (owned by connector)."""
+        return self.connector.host_tensors
+
+    @property
+    def host_scale_tensors(self) -> list[Buffer] | None:
+        """Host scale tensors for FP8 quantization (owned by connector)."""
+        return self.connector.host_scale_tensors
 
     def get_req_blocks(self, request_id: RequestID) -> Sequence[int]:
         """Get the block ids for a request."""
@@ -533,4 +504,6 @@ class _TPPagedKVCacheManager:
         self.block_manager.reset_metrics()
 
     def reset_prefix_cache(self) -> None:
+        """Reset the prefix cache on both device and host."""
         self.block_manager.reset_prefix_cache()
+        self.connector.reset_prefix_cache()

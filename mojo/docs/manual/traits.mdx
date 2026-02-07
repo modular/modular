@@ -112,7 +112,7 @@ example, `quack` is a *required method* and must be implemented by
 any conforming struct.
 
 A trait can supply a default implementation, so conforming structs
-don’t need to implement the method themselves. You can provide a full
+don't need to implement the method themselves. You can provide a full
 implementation or use the `pass` keyword. Using `pass` creates a
 no-op method that does nothing. In your conforming struct, you
 can chose to override this default implementation:
@@ -444,6 +444,9 @@ correctly. If you run into an issue, add the traits to your struct explicitly.
 
 `@register_passable("trivial")` decorator is deprecated. Please extend with
 `TrivialRegisterType` trait instead.
+
+`@register_passable` decorator is also deprecated. Please extend with
+`RegisterType` trait instead.
 
 :::
 

@@ -74,7 +74,11 @@ fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return
-        var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
+        var cx = (
+            min_x
+            + (Scalar[float_type](col) + iota[float_type, simd_width]())
+            * scale_x
+        )
         var cy = min_y + SIMD[float_type, 1](row) * SIMD[
             float_type, simd_width
         ](scale_y)
@@ -105,7 +109,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        ctx.execution_time[run_mandelbrot](1) / 1_000_000_000.0,
+        Float64(ctx.execution_time[run_mandelbrot](1)) / 1_000_000_000.0,
     )
 
     ctx.enqueue_copy(out_host, out_device)

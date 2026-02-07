@@ -34,6 +34,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",

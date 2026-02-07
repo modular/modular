@@ -28,11 +28,18 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.legacy.kv_cache import KVCacheStrategy
-from pydantic import ConfigDict, Field, PrivateAttr, computed_field
+from pydantic import (
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    computed_field,
+    field_validator,
+)
 from transformers import AutoConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
+from .device_specs import coerce_device_specs_input
 from .hf_utils import (
     HuggingFaceRepo,
     try_to_load_from_cache,
@@ -152,6 +159,11 @@ class MAXModelConfig(MAXModelConfigBase):
             "directly via the CLI entrypoint."
         ),
     )
+
+    @field_validator("device_specs", mode="before")
+    @classmethod
+    def _coerce_device_specs(cls, value: Any) -> list[DeviceSpec]:
+        return coerce_device_specs_input(value)
 
     force_download: bool = Field(
         default=False,
@@ -507,7 +519,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         import json
 
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, list_repo_files
 
         # Extract class name and version
         class_name = model_index.get("_class_name")
@@ -515,6 +527,48 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Build components dict with loaded configs
         components = {}
+        repo = self.huggingface_model_repo
+        repo_root: Path | None = None
+        if repo.repo_type == RepoType.local:
+            repo_root = Path(repo.repo_id)
+            assert repo_root.exists(), (
+                "Local Hugging Face repository path does not exist: "
+                f"{repo_root}"
+            )
+            repo_files = [
+                path.relative_to(repo_root).as_posix()
+                for path in repo_root.rglob("*")
+                if path.is_file()
+            ]
+        else:
+            repo_files = list_repo_files(
+                repo_id=repo.repo_id,
+                revision=repo.revision,
+            )
+
+        component_configs = {}
+        for file_name in repo_files:
+            if file_name.endswith("config.json") and "/" in file_name:
+                try:
+                    component_name = file_name.split("/")[0]
+                    if repo.repo_type == RepoType.local:
+                        assert repo_root is not None, (
+                            "repo_root must be set for local repo types."
+                        )
+                        cfg_path = repo_root / file_name
+                    else:
+                        cfg_path = Path(
+                            hf_hub_download(
+                                repo_id=repo.repo_id,
+                                filename=file_name,
+                                revision=repo.revision,
+                            )
+                        )
+                    with open(cfg_path) as f:
+                        component_configs[component_name] = json.load(f)
+                except Exception as e:
+                    logger.debug(f"Could not load config for {file_name}: {e}")
+
         for component_name, component_info in model_index.items():
             if component_name.startswith("_"):
                 continue
@@ -524,23 +578,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             library, class_type = component_info
 
-            # Try to load the component's config file
-            component_config = {}
-            try:
-                config_file_path = hf_hub_download(
-                    repo_id=self.huggingface_model_repo.repo_id,
-                    filename=f"{component_name}/config.json",
-                    revision=self.huggingface_model_repo.revision,
-                )
-                with open(config_file_path) as f:
-                    component_config = json.load(f)
-            except Exception as e:
-                logger.debug(f"Could not load config for {component_name}: {e}")
-
             components[component_name] = {
                 "library": library,
                 "class_name": class_type,
-                "config_dict": component_config,
+                "config_dict": component_configs.get(component_name, {}),
             }
 
         # Build the final config structure
@@ -1128,8 +1169,10 @@ class MAXModelConfig(MAXModelConfigBase):
         if cache_dtype := self._get_cache_override():
             self.kv_cache._cache_dtype = cache_dtype
 
-    def set_default_cache_dtype_if_needed(self) -> None:
-        """Determine the KV cache dtype based on configuration.
+    def set_cache_dtype_given_quantization_encoding(
+        self,
+    ) -> None:
+        """Determine the KV cache dtype based on quantization encoding configuration.
 
         The dtype is determined in the following priority order:
         1. Explicit override from kv_cache.kv_cache_format (if set)

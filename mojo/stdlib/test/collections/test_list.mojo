@@ -39,7 +39,7 @@ from testing.prop.strategy import SIMD, List
 def test_mojo_issue_698():
     var list = List[Float64]()
     for i in range(5):
-        list.append(i)
+        list.append(Float64(i))
 
     assert_equal(0.0, list[0])
     assert_equal(1.0, list[1])
@@ -1029,7 +1029,7 @@ def _test_copyinit_trivial_types[dt: DType]():
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
-            x.append(i)
+            x.append(Scalar[dt](i))
         y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os.path import realpath
-from sys.ffi import ErrNo, get_errno, set_errno
+from ffi import ErrNo, get_errno, set_errno
 from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_raises

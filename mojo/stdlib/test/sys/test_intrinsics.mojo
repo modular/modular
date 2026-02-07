@@ -102,7 +102,7 @@ fn test_strided_load() raises:
     var vector = alloc[Float32](size)
 
     for i in range(size):
-        vector[i] = i
+        vector[i] = Float32(i)
 
     var s = strided_load[4](vector, 4)
     assert_equal(s, SIMD[DType.float32, 4](0, 4, 8, 12))

@@ -70,7 +70,7 @@ from builtin.int import (
 )
 from builtin.int_literal import IntLiteral
 from builtin.len import Sized, SizedRaising, UIntSized, len
-from builtin.math import (
+from math.math import (
     Absable,
     Powable,
     Roundable,
@@ -139,13 +139,14 @@ from builtin.type_aliases import (
     unsafe_origin_mutcast,
 )
 from builtin.value import (
-    TrivialRegisterType,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     materialize,
+    RegisterType,
+    TrivialRegisterType,
 )
 from builtin.variadics import (
     Variadic,

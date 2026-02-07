@@ -126,10 +126,12 @@ struct MLAPositionSummary(TrivialRegisterType):
                 k_rope_lut.cache_length(Int(seq_info.prompt_idx))
             )
             var seq_len = warp.broadcast(seq_info.seq_len)
-            return cache_len - seq_len
+            return UInt32(cache_len) - seq_len
         else:
-            return warp.broadcast(
-                k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+            return UInt32(
+                warp.broadcast(
+                    k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+                )
             )
 
     @staticmethod
@@ -137,7 +139,9 @@ struct MLAPositionSummary(TrivialRegisterType):
     fn get_num_keys[
         KVLUTType: MHAOperand,
     ](kv_lut: KVLUTType, seq_info: SeqInfo) -> UInt32:
-        return warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+        return UInt32(
+            warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
+        )
 
     @staticmethod
     @always_inline
@@ -218,10 +222,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         mbar: MBarType,
         smem: Self.SMemType,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
+        comptime assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = {mbar}
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -234,10 +238,10 @@ struct MLAKVProducerPipeline[dtype: DType, config: FA4Config](
         ],
         smem: Self.SMemType,
     ):
-        __comptime_assert (
+        comptime assert (
             Self.config.padded_depth % Self.config.num_qk_stages == 0
         )
-        __comptime_assert Self.config.BN % Self.config.num_qk_stages == 0
+        comptime assert Self.config.BN % Self.config.num_qk_stages == 0
         self.kv_pipeline = kv_pipeline
         self.smem = smem
         self.kv_pipeline.state._phase = 1
@@ -479,9 +483,9 @@ struct SM100MLA[
             Self.PartitionType,
         ],
     ):
-        __comptime_assert Self.MMA_M == 64 or Self.MMA_M == 128
-        __comptime_assert _is_decoding[Self.MaxSeqLenType]() == False
-        __comptime_assert Self.config.supported(), (
+        comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
+        comptime assert _is_decoding[Self.MaxSeqLenType]() == False
+        comptime assert Self.config.supported(), (
             "depth = "
             + String(Self.config.depth)
             + "\nBN = "
@@ -493,7 +497,7 @@ struct SM100MLA[
             + "\nsmem_used = "
             + String(Self.config.smem_used)
         )
-        __comptime_assert (
+        comptime assert (
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
@@ -506,7 +510,7 @@ struct SM100MLA[
 
         comptime num_qo = Self.config.num_qo()
         # TODO: We may want to support num_qo>2 for depth=64?
-        __comptime_assert (
+        comptime assert (
             num_qo == 1 or num_qo == 2
         ), "Currently only support num_qo == 1 or 2"
         smem_ptr = external_memory[
@@ -534,7 +538,7 @@ struct SM100MLA[
         comptime num_reg_other = 48
         comptime num_reg_empty = 24
 
-        __comptime_assert not Self.PartitionType.do_partition, (
+        comptime assert not Self.PartitionType.do_partition, (
             "Neither partitioning nor decoding are supported by the 2-q"
             " implementation."
         )
@@ -678,7 +682,7 @@ struct SM100MLA[
         mask: Self.MaskType,
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
-        __comptime_assert size_of[Self.accum_type]() == 4
+        comptime assert size_of[Self.accum_type]() == 4
 
         o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
         o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
@@ -723,8 +727,8 @@ struct SM100MLA[
                 if change:
                     # TODO: experiment with different batch sizes.
                     # The idea here is to both pipeline, and reduce peak register use.
-                    __comptime_assert load_iters > 1
-                    __comptime_assert Self.config.depth % batch_size == 0
+                    comptime assert load_iters > 1
+                    comptime assert Self.config.depth % batch_size == 0
 
                     var o_tmem: UInt32
 
@@ -914,7 +918,7 @@ struct SM100MLA[
         ](kv_row: UInt32) -> Scalar[Self.accum_type]:
             # break up into sets of 32
             # minimize wait time by using smallest first
-            __comptime_assert Self.config.BN == 64, String(Self.config.BN)
+            comptime assert Self.config.BN == 64, String(Self.config.BN)
             comptime BM = Self.config.BM // 2
             comptime batch_size = 32
             comptime has_remainder = (Self.config.BN % batch_size) != 0
@@ -1006,8 +1010,8 @@ struct SM100MLA[
             for i in range(1, num_sets):
                 mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
 
-        __comptime_assert num_sets >= 1 and num_sets <= 3
-        __comptime_assert (
+        comptime assert num_sets >= 1 and num_sets <= 3
+        comptime assert (
             num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
         )
 
@@ -1052,14 +1056,14 @@ struct SM100MLA[
             comptime batch_size = 32
             comptime num_batch_iters = vs_len // batch_size
             comptime remainder = vs_len % batch_size
-            __comptime_assert num_batch_iters > 0
+            comptime assert num_batch_iters > 0
             comptime BatchTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, batch_size * exp_simd
             ]
             comptime RemainderTileType = TMemTile[
                 Self.qkv_type, Self.config.BM // 2, remainder * exp_simd
             ]
-            __comptime_assert (Self.config.BN % exp_simd) == 0
+            comptime assert (Self.config.BN % exp_simd) == 0
 
             vs = s.vectorize[exp_simd]()
             # We batch stores, e.g. use `tcgen_05.st.x32`.
@@ -1260,9 +1264,7 @@ struct SM100MLA[
             + warp_group_idx * UInt32(Self.padded_depth)
         )
         # wait on the o_pipeline producer
-        __comptime_assert (
-            size_of[Self.output_type]() == size_of[Self.qkv_type]()
-        )
+        comptime assert size_of[Self.output_type]() == size_of[Self.qkv_type]()
         if num_output_rows > 0:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
@@ -1984,7 +1986,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime SchedulerType = TransientScheduler[
-        fa4_config.BM, fa4_config.num_q_heads
+        UInt32(fa4_config.BM), UInt32(fa4_config.num_q_heads)
     ]
     comptime ValidLengthType = NonNullPointer[DType.uint32]
     comptime SinkType = NullPointer[output_type]
@@ -2057,7 +2059,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
         scale,
         UInt32(batch_size),
         pack,
-        grid_dim=SchedulerType.grid_dim(batch_size, num_blocks),
+        grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
