@@ -20,6 +20,7 @@ from gpu.intrinsics import AMDBufferResource
 from gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from memory import UnsafePointer
 from memory.unsafe import bitcast
 
 from utils import IndexList
