@@ -221,46 +221,6 @@ fn run_mamba_split_conv1d_scan_combined[
 
     var epsilon = Scalar[dtype](0.001)
 
-    # Strides for row-major layout
-    var zxbcdt_b_stride: UInt32 = seqlen * zxbcdt_channels
-    var zxbcdt_s_stride: UInt32 = zxbcdt_channels
-    var zxbcdt_c_stride: UInt32 = 1
-    var conv_weight_c_stride: UInt32 = width
-    var conv_weight_w_stride: UInt32 = 1
-    var conv_bias_stride: UInt32 = 1
-    var output_b_stride: UInt32 = seqlen * (out_dim if has_outproj else dim)
-    var output_s_stride: UInt32 = out_dim if has_outproj else dim
-    var output_c_stride: UInt32 = 1
-    var x_b_stride: UInt32 = dim * n_chunks * 2 * dstate
-    var x_d_stride: UInt32 = n_chunks * 2 * dstate
-    var x_chunk_stride: UInt32 = 2 * dstate
-    var x_n_stride: UInt32 = 1
-    var out_z_b_stride: UInt32 = dim * seqlen
-    var out_z_d_stride: UInt32 = seqlen
-    var out_z_t_stride: UInt32 = 1
-    var dt_b_stride: UInt32 = nheads * seqlen
-    var dt_h_stride: UInt32 = seqlen
-    var dt_s_stride: UInt32 = 1
-    var A_stride: UInt32 = 1
-    var B_b_stride: UInt32 = ngroups * dstate * seqlen
-    var B_g_stride: UInt32 = dstate * seqlen
-    var B_n_stride: UInt32 = seqlen
-    var B_t_stride: UInt32 = 1
-    var C_b_stride: UInt32 = ngroups * dstate * seqlen
-    var C_g_stride: UInt32 = dstate * seqlen
-    var C_n_stride: UInt32 = seqlen
-    var C_t_stride: UInt32 = 1
-    var D_h_stride: UInt32 = headdim if has_D and D_size > nheads else 1
-    var D_p_stride: UInt32 = 1
-    var z_b_stride: UInt32 = dim * seqlen
-    var z_d_stride: UInt32 = seqlen
-    var z_t_stride: UInt32 = 1
-    var dt_bias_stride: UInt32 = 1
-    var rmsnorm_weight_stride: UInt32 = 1
-    var outproj_weight_out_stride: UInt32 = dim
-    var outproj_weight_in_stride: UInt32 = 1
-    var outproj_bias_stride: UInt32 = 1
-
     # Call kernel
     mamba_split_conv1d_scan_combined_cpu[
         dtype,
@@ -311,44 +271,6 @@ fn run_mamba_split_conv1d_scan_combined[
         outproj_bias_h,
         output_h,
         epsilon,
-        zxbcdt_b_stride,
-        zxbcdt_s_stride,
-        zxbcdt_c_stride,
-        conv_weight_c_stride,
-        conv_weight_w_stride,
-        conv_bias_stride,
-        output_b_stride,
-        output_s_stride,
-        output_c_stride,
-        x_b_stride,
-        x_d_stride,
-        x_chunk_stride,
-        x_n_stride,
-        out_z_b_stride,
-        out_z_d_stride,
-        out_z_t_stride,
-        dt_b_stride,
-        dt_h_stride,
-        dt_s_stride,
-        A_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        B_t_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        C_t_stride,
-        D_h_stride,
-        D_p_stride,
-        z_b_stride,
-        z_d_stride,
-        z_t_stride,
-        dt_bias_stride,
-        rmsnorm_weight_stride,
-        outproj_weight_out_stride,
-        outproj_weight_in_stride,
-        outproj_bias_stride,
     )
 
     # Basic sanity check: output should not be all zeros

@@ -25,7 +25,7 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
+from gpu.host.info import is_gpu
 from gpu.memory import external_memory
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
@@ -73,7 +73,7 @@ fn _rms_norm_fused_residual_cpu_2d[
 
     Uses simple (row, col) indexing to avoid compile-time evaluation issues.
     """
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     var num_rows = out_shape[0]
     var num_cols = out_shape[1]
@@ -211,7 +211,7 @@ fn rms_norm_fused_residual_cpu[
     Creates 2D wrapper lambdas that translate (row, col) to IndexList[rank]
     at runtime, avoiding compile-time evaluation issues with _lambda_load.
     """
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
@@ -312,7 +312,7 @@ fn rms_norm_fused_residual_gpu_block[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ):
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     var shared_mem = external_memory[
         Scalar[dtype],
@@ -414,7 +414,7 @@ fn rms_norm_fused_residual_gpu[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     if rank == 0:
         return
@@ -532,7 +532,7 @@ fn _rms_norm_fused_residual_impl[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
     if gamma.runtime_layout.shape.value[0] != shape[rank - 1]:
@@ -653,7 +653,7 @@ fn rms_norm_fused_residual[
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
-    __comptime_assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
 
     @always_inline
     @parameter

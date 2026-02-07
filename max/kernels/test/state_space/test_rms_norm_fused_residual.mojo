@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for RMSNorm with fused residual connection."""
 
-from math import rsqrt, sqrt
+from math import sqrt
 from sys.info import CompilationTarget
 
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE

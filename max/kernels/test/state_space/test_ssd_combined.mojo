@@ -11,19 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log, rsqrt
-from sys.info import simd_width_of
-
-from algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
 from memory import alloc
 from state_space.selective_scan import (
     ssd_combined_cpu,
@@ -33,37 +27,7 @@ from testing import TestSuite, assert_almost_equal
 from utils.index import Index, IndexList
 
 
-# LOG2E constant for converting exp to exp2
-comptime LOG2E = 1.4426950408889634
 comptime MAX_DSTATE = 16
-
-
-@always_inline
-fn softplus_ref(val: Float32) -> Float32:
-    """Reference softplus implementation: log(1 + exp(x))."""
-    if val > 20.0:
-        return val
-    var exp_val = exp(val)
-    var one = Float32(1.0)
-    return log(one + exp_val)
-
-
-@always_inline
-fn sigmoid_ref(val: Float32) -> Float32:
-    """Reference sigmoid implementation."""
-    if val < -20.0:
-        return 0.0
-    var exp_neg = exp(-val)
-    return 1.0 / (1.0 + exp_neg)
-
-
-@always_inline
-fn silu_ref(val: Float32) -> Float32:
-    """Reference SiLU implementation."""
-    if val < -20.0:
-        return 0.0
-    var exp_neg = exp(-val)
-    return val / (1.0 + exp_neg)
 
 
 fn run_ssd_combined[
@@ -218,43 +182,6 @@ fn run_ssd_combined[
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
-    # Strides for row-major layout
-    var output_b_stride: UInt32 = dim * seqlen
-    var output_d_stride: UInt32 = seqlen
-    var output_t_stride: UInt32 = 1
-    var x_b_stride: UInt32 = dim * n_chunks * 2 * dstate
-    var x_d_stride: UInt32 = n_chunks * 2 * dstate
-    var x_chunk_stride: UInt32 = 2 * dstate
-    var x_n_stride: UInt32 = 1
-    var out_z_b_stride: UInt32 = dim * seqlen
-    var out_z_d_stride: UInt32 = seqlen
-    var out_z_t_stride: UInt32 = 1
-    var residual_b_stride: UInt32 = dim * seqlen
-    var residual_d_stride: UInt32 = seqlen
-    var residual_t_stride: UInt32 = 1
-    var u_b_stride: UInt32 = dim * seqlen
-    var u_d_stride: UInt32 = seqlen
-    var u_t_stride: UInt32 = 1
-    var delta_b_stride: UInt32 = dim * seqlen
-    var delta_d_stride: UInt32 = seqlen
-    var delta_t_stride: UInt32 = 1
-    var A_d_stride: UInt32 = dstate
-    var A_n_stride: UInt32 = 1
-    var B_b_stride: UInt32 = n_groups * dstate * seqlen
-    var B_g_stride: UInt32 = dstate * seqlen
-    var B_n_stride: UInt32 = seqlen
-    var B_t_stride: UInt32 = 1
-    var C_b_stride: UInt32 = n_groups * dstate * seqlen
-    var C_g_stride: UInt32 = dstate * seqlen
-    var C_n_stride: UInt32 = seqlen
-    var C_t_stride: UInt32 = 1
-    var D_stride: UInt32 = 1
-    var z_b_stride: UInt32 = dim * seqlen
-    var z_d_stride: UInt32 = seqlen
-    var z_t_stride: UInt32 = 1
-    var delta_bias_stride: UInt32 = 1
-    var gamma_stride: UInt32 = 1
-
     # Call kernel
     ssd_combined_cpu[
         dtype,
@@ -293,41 +220,6 @@ fn run_ssd_combined[
         gamma_h,
         epsilon,
         weight_offset,
-        output_b_stride,
-        output_d_stride,
-        output_t_stride,
-        x_b_stride,
-        x_d_stride,
-        x_chunk_stride,
-        x_n_stride,
-        out_z_b_stride,
-        out_z_d_stride,
-        out_z_t_stride,
-        residual_b_stride,
-        residual_d_stride,
-        residual_t_stride,
-        u_b_stride,
-        u_d_stride,
-        u_t_stride,
-        delta_b_stride,
-        delta_d_stride,
-        delta_t_stride,
-        A_d_stride,
-        A_n_stride,
-        B_b_stride,
-        B_g_stride,
-        B_n_stride,
-        B_t_stride,
-        C_b_stride,
-        C_g_stride,
-        C_n_stride,
-        C_t_stride,
-        D_stride,
-        z_b_stride,
-        z_d_stride,
-        z_t_stride,
-        delta_bias_stride,
-        gamma_stride,
     )
 
     # Basic sanity check: output should not be all zeros
