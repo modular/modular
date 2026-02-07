@@ -37,6 +37,10 @@ from sys import align_of, llvm_intrinsic, simd_width_of, size_of
 from sys._assembly import inlined_assembly
 
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._tensormap import (
+    SwizzleMode as _SwizzleMode,
+    create_tensormap_im2col as _create_tensormap_im2col,
+)
 from gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
@@ -50,6 +54,8 @@ from gpu.memory import (
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce,
     cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_im2col,
+    cp_async_bulk_tensor_shared_cluster_global_im2col_multicast,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
     CacheEviction,
 )
@@ -4297,3 +4303,783 @@ struct RaggedTensorMap[
         """
 
         prefetch_tma_descriptor(self._get_descriptor_ptr())
+
+
+struct TMATensorTileIm2col[
+    dtype: DType,
+    layout: Layout,
+    desc_layout: Layout = layout,
+](DevicePassable, ImplicitlyCopyable):
+    """TMA tensor tile with im2col coordinate transformation for convolution.
+
+    This struct enables hardware-accelerated im2col transformation during TMA loads,
+    used for implicit GEMM convolution. The TMA descriptor encodes the convolution
+    geometry (padding, stride, dilation) and performs coordinate transformation
+    on-the-fly.
+
+    The coordinate system uses GEMM-style 2D coordinates:
+    - coords[0]: K coordinate (indexes into R * S * C reduction dimension)
+    - coords[1]: M coordinate (indexes into batch * H_out * W_out spatial)
+
+    Internally:
+    - K is decomposed into (c, r, s) where K = r*S*C + s*C + c (filter-first, channel-last for NHWC)
+    - M is decomposed into (n, h, w) where M = n*H_out*W_out + h*W_out + w
+    - 4D coordinates (c, w, h, n) and filter offsets (s, r) are passed to the
+      PTX im2col instruction.
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        layout: The layout of the tile in shared memory.
+        desc_layout: The layout of the descriptor (may differ for WGMMA compatibility).
+    """
+
+    var descriptor: TMADescriptor
+    """The TMA descriptor encoding im2col transformation parameters."""
+
+    var out_height: UInt32
+    """Output height (H_out) for M coordinate decomposition."""
+
+    var out_width: UInt32
+    """Output width (W_out) for M coordinate decomposition."""
+
+    var filter_h: UInt32
+    """Filter height (R) for K coordinate decomposition."""
+
+    var filter_w: UInt32
+    """Filter width (S) for K coordinate decomposition."""
+
+    var in_channels: UInt32
+    """Input channels (C) for K coordinate decomposition."""
+
+    var lower_corner_h: Int32
+    """Lower corner offset for height (H dimension) - matches CUTLASS ArithmeticTupleIterator pattern."""
+
+    var lower_corner_w: Int32
+    """Lower corner offset for width (W dimension) - matches CUTLASS ArithmeticTupleIterator pattern."""
+
+    comptime device_type: AnyType = Self
+    """The device-side type representation."""
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
+        """Device type mapping is the identity function."""
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        """Gets this type's name for error messages.
+
+        Returns:
+            This type's name.
+        """
+        return String(
+            "TMATensorTileIm2col[dtype = ",
+            Self.dtype,
+            ", layout = ",
+            materialize[Self.layout](),
+            ", desc_layout = ",
+            materialize[Self.desc_layout](),
+            "]",
+        )
+
+    @always_inline
+    fn __init__(
+        out self,
+        descriptor: TMADescriptor,
+        out_height: UInt32,
+        out_width: UInt32,
+        filter_h: UInt32,
+        filter_w: UInt32,
+        in_channels: UInt32,
+        lower_corner_h: Int32 = 0,
+        lower_corner_w: Int32 = 0,
+    ):
+        """Initializes with the provided TMA im2col descriptor and dimensions.
+
+        Args:
+            descriptor: The TMA descriptor that encodes im2col transformation.
+            out_height: Output height (H_out) for M coordinate decomposition.
+            out_width: Output width (W_out) for M coordinate decomposition.
+            filter_h: Filter height (R) for K coordinate decomposition.
+            filter_w: Filter width (S) for K coordinate decomposition.
+            in_channels: Input channels (C) for K coordinate decomposition.
+            lower_corner_h: Lower corner offset for H dimension (matches CUTLASS pattern).
+            lower_corner_w: Lower corner offset for W dimension (matches CUTLASS pattern).
+        """
+        self.descriptor = descriptor
+        self.out_height = out_height
+        self.out_width = out_width
+        self.filter_h = filter_h
+        self.filter_w = filter_w
+        self.in_channels = in_channels
+        self.lower_corner_h = lower_corner_h
+        self.lower_corner_w = lower_corner_w
+
+    @always_inline
+    fn __copyinit__(out self, other: Self):
+        """Copy initializes from another instance.
+
+        Args:
+            other: The other instance to copy from.
+        """
+        self.descriptor = other.descriptor
+        self.out_height = other.out_height
+        self.out_width = other.out_width
+        self.filter_h = other.filter_h
+        self.filter_w = other.filter_w
+        self.in_channels = other.in_channels
+        self.lower_corner_h = other.lower_corner_h
+        self.lower_corner_w = other.lower_corner_w
+
+    @always_inline
+    fn prefetch_descriptor(self):
+        """Prefetches the TMA descriptor into cache."""
+        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        prefetch_tma_descriptor(desc_ptr)
+
+    @always_inline
+    fn async_copy[
+        cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt],
+    ):
+        """Schedules an asynchronous im2col TMA load.
+
+        Uses 2D GEMM-style coordinates:
+        - coords[0]: K coordinate (indexes into C * R * S reduction dimension)
+        - coords[1]: M coordinate (indexes into batch * H_out * W_out spatial)
+
+        Internally:
+        - K is decomposed into (c, r, s) where K = c*R*S + r*S + s
+        - M is decomposed into (n, h, w) where M = n*H_out*W_out + h*W_out + w
+        - 4D coordinates (c, w, h, n) and filter offsets (s, r) are passed to
+          the PTX im2col instruction.
+
+        Note: The cta_group parameter defaults to 2 because SM100/Blackwell
+        im2col TMA with padding (negative corners) requires the cta_group::2
+        PTX format. This is consistent with CUTLASS which only provides
+        SM100_TMA_2SM_LOAD_IM2COL (no cta_group::1 variant for im2col).
+
+        Parameters:
+            cta_group: CTA group size for TMA operations.
+            eviction_policy: Cache eviction policy for the TMA load.
+
+        Args:
+            dst: Destination tensor in shared memory.
+            mem_barrier: Memory barrier for synchronization.
+            coords: GEMM coordinates (k_coord, m_coord).
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+
+        # Precompute spatial size for M decomposition
+        var hw = UInt(self.out_height) * UInt(self.out_width)
+        var out_w = UInt(self.out_width)
+
+        # Precompute filter window size for K decomposition
+        # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
+        var num_channels = UInt(self.in_channels)
+        var filter_w = UInt(self.filter_w)
+
+        # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
+        # For typical configs (num_copies_dim1=1), K coords don't change within tile.
+        var k_coord = coords[0]
+        var filter_idx, c = divmod(k_coord, num_channels)
+        var r, s = divmod(filter_idx, filter_w)
+
+        # Initial M decomposition (done once, then use iterator)
+        var m_coord_init = coords[1]
+        var n, m_remainder = divmod(m_coord_init, hw)
+        var h_out, w_out = divmod(m_remainder, out_w)
+
+        # Pre-add lower_corner offset
+        var h = Int(h_out) + Int(self.lower_corner_h)
+        var w = Int(w_out) + Int(self.lower_corner_w)
+
+        # Cache bounds for iterator wraparound
+        var out_w_int = Int(out_w)
+        var out_h_int = Int(self.out_height)
+        var lower_h = Int(self.lower_corner_h)
+        var lower_w = Int(self.lower_corner_w)
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                # K recomputation only needed when j > 0 (rare in practice)
+                @parameter
+                if j > 0:
+                    k_coord = coords[0] + UInt(j * copy_dim1)
+                    filter_idx, c = divmod(k_coord, num_channels)
+                    r, s = divmod(filter_idx, filter_w)
+
+                # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
+                cp_async_bulk_tensor_shared_cluster_global_im2col[
+                    cta_group=cta_group,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(Int(c), w, h, Int(n)),
+                    Index(Int(s), Int(r)),
+                )
+
+            # Iterator pattern: advance M by copy_dim0 using addition (not division)
+            # This avoids 4 divisions per sub-tile, reducing from O(n*8) to O(8+n*3)
+            w += copy_dim0
+            if w >= out_w_int + lower_w:
+                w -= out_w_int
+                h += 1
+                if h >= out_h_int + lower_h:
+                    h -= out_h_int
+                    n += 1
+
+    @always_inline
+    fn async_multicast_load[
+        cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space = AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt],
+        multicast_mask: UInt16,
+    ):
+        """Schedules an asynchronous im2col TMA load with multicast.
+
+        Uses 2D GEMM-style coordinates:
+        - coords[0]: K coordinate (indexes into C * R * S reduction dimension)
+        - coords[1]: M coordinate (indexes into batch * H_out * W_out spatial)
+
+        Internally:
+        - K is decomposed into (c, r, s) where K = c*R*S + r*S + s
+        - M is decomposed into (n, h, w) where M = n*H_out*W_out + h*W_out + w
+        - 4D coordinates (c, w, h, n) and filter offsets (s, r) are passed to
+          the PTX im2col instruction with multicast.
+
+        Note: The cta_group parameter defaults to 2 because SM100/Blackwell
+        im2col TMA with padding (negative corners) requires the cta_group::2
+        PTX format. This is consistent with CUTLASS which only provides
+        SM100_TMA_2SM_LOAD_IM2COL_MULTICAST (no cta_group::1 variant).
+
+        Parameters:
+            cta_group: CTA group size for TMA operations.
+            eviction_policy: Cache eviction policy for the TMA load.
+
+        Args:
+            dst: Destination tensor in shared memory.
+            mem_barrier: Memory barrier for synchronization.
+            coords: GEMM coordinates (k_coord, m_coord).
+            multicast_mask: Bitmask specifying target CTAs for multicast.
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+
+        # Precompute spatial size for M decomposition
+        var hw = UInt(self.out_height) * UInt(self.out_width)
+        var out_w = UInt(self.out_width)
+
+        # Precompute filter window size for K decomposition
+        # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
+        var num_channels = UInt(self.in_channels)
+        var filter_w = UInt(self.filter_w)
+
+        # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
+        var k_coord = coords[0]
+        var filter_idx, c = divmod(k_coord, num_channels)
+        var r, s = divmod(filter_idx, filter_w)
+
+        # Initial M decomposition (done once, then use iterator)
+        var m_coord_init = coords[1]
+        var n, m_remainder = divmod(m_coord_init, hw)
+        var h_out, w_out = divmod(m_remainder, out_w)
+
+        # Pre-add lower_corner offset
+        var h = Int(h_out) + Int(self.lower_corner_h)
+        var w = Int(w_out) + Int(self.lower_corner_w)
+
+        # Cache bounds for iterator wraparound
+        var out_w_int = Int(out_w)
+        var out_h_int = Int(self.out_height)
+        var lower_h = Int(self.lower_corner_h)
+        var lower_w = Int(self.lower_corner_w)
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                # K recomputation only needed when j > 0
+                @parameter
+                if j > 0:
+                    k_coord = coords[0] + UInt(j * copy_dim1)
+                    filter_idx, c = divmod(k_coord, num_channels)
+                    r, s = divmod(filter_idx, filter_w)
+
+                # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
+                cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
+                    cta_group=cta_group,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(Int(c), w, h, Int(n)),
+                    Index(Int(s), Int(r)),
+                    multicast_mask,
+                )
+
+            # Iterator pattern: advance M by copy_dim0 using addition
+            w += copy_dim0
+            if w >= out_w_int + lower_w:
+                w -= out_w_int
+                h += 1
+                if h >= out_h_int + lower_h:
+                    h -= out_h_int
+                    n += 1
+
+    @always_inline
+    fn async_copy[
+        cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype = Self.dtype,
+            address_space = AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt],
+    ):
+        """Schedules an asynchronous im2col TMA load.
+
+        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+
+        Uses 2D GEMM-style coordinates:
+        - coords[0]: K coordinate (indexes into C * R * S reduction dimension)
+        - coords[1]: M coordinate (indexes into batch * H_out * W_out spatial)
+
+        Internally:
+        - K is decomposed into (c, r, s) where K = c*R*S + r*S + s
+        - M is decomposed into (n, h, w) where M = n*H_out*W_out + h*W_out + w
+        - 4D coordinates (c, w, h, n) and filter offsets (s, r) are passed to
+          the PTX im2col instruction.
+
+        Note: Uses cta_group=1 (SM90-style TMA) for single-CTA clusters.
+
+        Parameters:
+            cta_group: CTA group size for TMA operations.
+            eviction_policy: Cache eviction policy for the TMA load.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: Memory barrier for synchronization.
+            coords: GEMM coordinates (k_coord, m_coord).
+        """
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+
+        # Precompute spatial size for M decomposition
+        var hw = UInt(self.out_height) * UInt(self.out_width)
+        var out_w = UInt(self.out_width)
+
+        # Precompute filter window size for K decomposition
+        # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
+        var num_channels = UInt(self.in_channels)
+        var filter_w = UInt(self.filter_w)
+
+        # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
+        var k_coord = coords[0]
+        var filter_idx, c = divmod(k_coord, num_channels)
+        var r, s = divmod(filter_idx, filter_w)
+
+        # Initial M decomposition (done once, then use iterator)
+        var m_coord_init = coords[1]
+        var n, m_remainder = divmod(m_coord_init, hw)
+        var h_out, w_out = divmod(m_remainder, out_w)
+
+        # Pre-add lower_corner offset
+        var h = Int(h_out) + Int(self.lower_corner_h)
+        var w = Int(w_out) + Int(self.lower_corner_w)
+
+        # Cache bounds for iterator wraparound
+        var out_w_int = Int(out_w)
+        var out_h_int = Int(self.out_height)
+        var lower_h = Int(self.lower_corner_h)
+        var lower_w = Int(self.lower_corner_w)
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                # K recomputation only needed when j > 0
+                @parameter
+                if j > 0:
+                    k_coord = coords[0] + UInt(j * copy_dim1)
+                    filter_idx, c = divmod(k_coord, num_channels)
+                    r, s = divmod(filter_idx, filter_w)
+
+                # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
+                cp_async_bulk_tensor_shared_cluster_global_im2col[
+                    cta_group=cta_group,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(Int(c), w, h, Int(n)),
+                    Index(Int(s), Int(r)),
+                )
+
+            # Iterator pattern: advance M by copy_dim0 using addition
+            w += copy_dim0
+            if w >= out_w_int + lower_w:
+                w -= out_w_int
+                h += 1
+                if h >= out_h_int + lower_h:
+                    h -= out_h_int
+                    n += 1
+
+    @always_inline
+    fn async_multicast_load[
+        cta_group: Int = 1,  # Use SM90-style TMA for cluster 1x1x1
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype = Self.dtype,
+            address_space = AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[UInt, UInt],
+        multicast_mask: UInt16,
+    ):
+        """Schedules an asynchronous im2col TMA load with multicast.
+
+        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+
+        Uses 2D GEMM-style coordinates:
+        - coords[0]: K coordinate (indexes into C * R * S reduction dimension)
+        - coords[1]: M coordinate (indexes into batch * H_out * W_out spatial)
+
+        Internally:
+        - K is decomposed into (c, r, s) where K = c*R*S + r*S + s
+        - M is decomposed into (n, h, w) where M = n*H_out*W_out + h*W_out + w
+        - 4D coordinates (c, w, h, n) and filter offsets (s, r) are passed to
+          the PTX im2col instruction with multicast.
+
+        Note: Uses cta_group=1 (SM90-style TMA) for single-CTA clusters.
+
+        Parameters:
+            cta_group: CTA group size for TMA operations.
+            eviction_policy: Cache eviction policy for the TMA load.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: Memory barrier for synchronization.
+            coords: GEMM coordinates (k_coord, m_coord).
+            multicast_mask: Bitmask specifying target CTAs for multicast.
+        """
+        comptime copy_dim0 = Self.desc_layout.shape[0].value()
+        comptime copy_dim1 = Self.desc_layout.shape[1].value()
+        comptime copy_size = Self.desc_layout.size()
+        comptime num_copies_dim0 = Self.layout.shape[0].value() // copy_dim0
+        comptime num_copies_dim1 = Self.layout.shape[1].value() // copy_dim1
+
+        # Precompute spatial size for M decomposition
+        var hw = UInt(self.out_height) * UInt(self.out_width)
+        var out_w = UInt(self.out_width)
+
+        # Precompute filter window size for K decomposition
+        # K = r * S * C + s * C + c (filter-first, channel-last ordering for NHWC)
+        var num_channels = UInt(self.in_channels)
+        var filter_w = UInt(self.filter_w)
+
+        # OPTIMIZATION: Hoist K decomposition outside loop (constant when j=0).
+        var k_coord = coords[0]
+        var filter_idx, c = divmod(k_coord, num_channels)
+        var r, s = divmod(filter_idx, filter_w)
+
+        # Initial M decomposition (done once, then use iterator)
+        var m_coord_init = coords[1]
+        var n, m_remainder = divmod(m_coord_init, hw)
+        var h_out, w_out = divmod(m_remainder, out_w)
+
+        # Pre-add lower_corner offset
+        var h = Int(h_out) + Int(self.lower_corner_h)
+        var w = Int(w_out) + Int(self.lower_corner_w)
+
+        # Cache bounds for iterator wraparound
+        var out_w_int = Int(out_w)
+        var out_h_int = Int(self.out_height)
+        var lower_h = Int(self.lower_corner_h)
+        var lower_w = Int(self.lower_corner_w)
+
+        @parameter
+        for i in range(num_copies_dim0):
+
+            @parameter
+            for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                # K recomputation only needed when j > 0
+                @parameter
+                if j > 0:
+                    k_coord = coords[0] + UInt(j * copy_dim1)
+                    filter_idx, c = divmod(k_coord, num_channels)
+                    r, s = divmod(filter_idx, filter_w)
+
+                # Pass 4D coords (c, w, h, n) and filter offsets (s, r) to im2col PTX
+                cp_async_bulk_tensor_shared_cluster_global_im2col_multicast[
+                    cta_group=cta_group,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(Int(c), w, h, Int(n)),
+                    Index(Int(s), Int(r)),
+                    multicast_mask,
+                )
+
+            # Iterator pattern: advance M by copy_dim0 using addition
+            w += copy_dim0
+            if w >= out_w_int + lower_w:
+                w -= out_w_int
+                h += 1
+                if h >= out_h_int + lower_h:
+                    h -= out_h_int
+                    n += 1
+
+
+@always_inline
+fn _im2col_desc_tile_layout[
+    dtype: DType,
+    tile_shape: IndexList[2],
+    swizzle_mode: TensorMapSwizzle,
+]() -> Layout:
+    """Compute the TMA descriptor layout for im2col.
+
+    For im2col TMA, each transaction loads multiple output pixels with multiple channels.
+    Following CUTLASS's approach (copy_traits_sm90_im2col.hpp:650-651):
+    - channels_per_pixel = min(K_tile, swizzle_width) (contiguous channels)
+    - pixels_per_column = computed from tile shape and TMA box constraints
+
+    The TMA im2col box is constrained by hardware limits. The maximum box size
+    is typically 256 elements for im2col TMA. This function computes the largest
+    box that fits within these constraints.
+
+    The descriptor layout is row_major(pixels_per_column, channels_per_pixel).
+    """
+    # Swizzle width in elements (bytes / element_size)
+    comptime swizzle_bytes = (
+        16 if swizzle_mode
+        == TensorMapSwizzle.SWIZZLE_NONE else (
+            32 if swizzle_mode
+            == TensorMapSwizzle.SWIZZLE_32B else (
+                64 if swizzle_mode == TensorMapSwizzle.SWIZZLE_64B else 128
+            )
+        )
+    )
+    comptime element_size = size_of[dtype]()
+    comptime swizzle_width = swizzle_bytes // element_size
+
+    # Channels per pixel is the minimum of K_tile and swizzle width
+    comptime k_tile = tile_shape[1]
+    comptime channels_per_pixel = swizzle_width if swizzle_width < k_tile else k_tile
+
+    # Maximum TMA im2col box size in elements (hardware constraint)
+    # Based on CUDA TMA documentation and CUTLASS patterns, 256 elements is
+    # a safe limit for im2col TMA transactions.
+    comptime max_tma_box_elements = 256
+
+    # Compute pixels_per_column from tile shape and TMA constraints
+    # pixels = min(M_tile, max_box_elements / channels_per_pixel)
+    comptime m_tile = tile_shape[0]
+    comptime max_pixels_from_box = max_tma_box_elements // channels_per_pixel
+    comptime pixels_per_column = (
+        m_tile if m_tile < max_pixels_from_box else max_pixels_from_box
+    )
+
+    return Layout.row_major(pixels_per_column, channels_per_pixel)
+
+
+@always_inline
+fn create_tensor_tile_im2col[
+    dtype: DType,
+    tile_shape: IndexList[2],  # [M_tile, K_tile] = [pixels, channels]
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    *,
+    __tile_layout: Layout = Layout.row_major(tile_shape[0], tile_shape[1]),
+    __desc_layout: Layout = _im2col_desc_tile_layout[
+        dtype, tile_shape, swizzle_mode
+    ](),
+](
+    ctx: DeviceContext,
+    tensor: LayoutTensor[dtype, ...],  # 4D NHWC tensor
+    lower_corner_h: Int,
+    lower_corner_w: Int,
+    upper_corner_h: Int,
+    upper_corner_w: Int,
+    out_height: Int,
+    out_width: Int,
+    filter_h: Int,
+    filter_w: Int,
+) raises -> TMATensorTileIm2col[dtype, __tile_layout, __desc_layout]:
+    """Creates a TMA tensor tile with im2col transformation for 2D convolution.
+
+    This factory function creates a TMA descriptor that performs hardware
+    im2col transformation during loads. The descriptor encodes the convolution
+    geometry and the TMA hardware computes addresses on-the-fly.
+
+    For im2col TMA, each transaction loads one output pixel with multiple channels.
+    This follows CUTLASS's approach where:
+    - pixels_per_column = 1 (one pixel per TMA transaction)
+    - channels_per_pixel = min(K_tile, swizzle_width) (contiguous channels)
+
+    Parameters:
+        dtype: The data type of tensor elements.
+        tile_shape: Shape `[M_tile, K_tile]` for the GEMM tile.
+            - M_tile: Number of output pixels (batch * H_out * W_out slice).
+            - K_tile: Number of channels (C_in * R * S slice for filter).
+        swizzle_mode: Memory swizzling pattern.
+        __tile_layout: Internal layout parameter (full tile shape).
+        __desc_layout: Internal descriptor layout parameter (TMA box shape).
+
+    Args:
+        ctx: The CUDA device context.
+        tensor: The 4D activation tensor in NHWC layout.
+        lower_corner_h: Lower corner offset for height (negative for padding).
+        lower_corner_w: Lower corner offset for width (negative for padding).
+        upper_corner_h: Upper corner offset for height.
+        upper_corner_w: Upper corner offset for width.
+        out_height: Output height (H_out) for M coordinate decomposition.
+        out_width: Output width (W_out) for M coordinate decomposition.
+        filter_h: Filter height (R) for K coordinate decomposition.
+        filter_w: Filter width (S) for K coordinate decomposition.
+
+    Returns:
+        A TMATensorTileIm2col configured for im2col loads.
+
+    Raises:
+        Error if TMA descriptor creation fails.
+
+    Note:
+        For stride=1, dilation=1 convolution with padding (following CUTLASS convention):
+        - lower_corner_h = -pad_h
+        - lower_corner_w = -pad_w
+        - upper_corner_h = pad_h - (filter_h - 1)
+        - upper_corner_w = pad_w - (filter_w - 1)
+
+        The filter offsets passed to the PTX instruction range from 0 to (filter_size - 1)
+        and are added to lower_corner to compute actual input coordinates.
+    """
+    comptime assert tensor.rank == 4, "Im2col TMA requires 4D NHWC tensor"
+
+    # Extract tensor dimensions
+    var batch = tensor.dim(0)
+    var height = tensor.dim(1)
+    var width = tensor.dim(2)
+    var channels = tensor.dim(3)
+
+    # Create device buffer wrapper
+    var global_buf = DeviceBuffer(
+        ctx,
+        tensor.ptr.mut_cast[True]().address_space_cast[AddressSpace.GENERIC](),
+        1,
+        owning=False,
+    )
+
+    # Global shape in NHWC order
+    var global_shape = IndexList[4](batch, height, width, channels)
+
+    # Compute row-major strides for NHWC layout
+    # When tensor.stride() returns -1 (unknown at compile-time), compute from dims
+    # For row-major NHWC: stride(i) = product of all dims after i
+    var stride_n = height * width * channels  # batch stride
+    var stride_h = width * channels  # height stride
+    var stride_w = channels  # width stride
+    var stride_c = 1  # channel stride (innermost)
+
+    var global_strides = IndexList[4](stride_n, stride_h, stride_w, stride_c)
+
+    # Spatial corners (H, W order)
+    var lower_corner = IndexList[2](lower_corner_h, lower_corner_w)
+    var upper_corner = IndexList[2](upper_corner_h, upper_corner_w)
+
+    # Tile dimensions for TMA im2col box (from desc_layout)
+    # desc_layout is row_major(pixels_per_column, channels_per_pixel)
+    comptime pixels_per_column = __desc_layout.shape[0].value()
+    comptime channels_per_pixel = __desc_layout.shape[1].value()
+
+    # Convert TensorMapSwizzle to SwizzleMode (same underlying values)
+    var swizzle = _SwizzleMode(Int32(Int(swizzle_mode)))
+
+    var tensormap = _create_tensormap_im2col[dtype, 4, 2](
+        global_buf,
+        global_shape,
+        global_strides,
+        lower_corner,
+        upper_corner,
+        channels_per_pixel,
+        pixels_per_column,
+        swizzle,
+    )
+
+    # Convert TensorMap to TMADescriptor (both are 128-byte aligned, same layout)
+    var descriptor = TMADescriptor()
+    descriptor.data = tensormap.data
+
+    return TMATensorTileIm2col[dtype, __tile_layout, __desc_layout](
+        descriptor,
+        UInt32(out_height),
+        UInt32(out_width),
+        UInt32(filter_h),
+        UInt32(filter_w),
+        UInt32(channels),  # in_channels from the NHWC tensor
+        Int32(lower_corner_h),  # CUTLASS ArithmeticTupleIterator pattern
+        Int32(lower_corner_w),
+    )

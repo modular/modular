@@ -129,7 +129,12 @@ class BlockManager:
 
         hashes = self.req_to_hashes[ctx.request_id]
 
-        num_unhashed_tokens = len(ctx.tokens) - (len(hashes) * self.block_size)
+        num_hashed_tokens = len(hashes) * self.block_size
+        # We do not compute the hash for the last token because it is ineligible
+        # for prefix caching. This is because 100% prefix cache hit is illegal
+        # and will result in a 0 input tokens for the request. Hence the minus 1.
+        num_hashable_tokens = len(ctx.tokens) - 1
+        num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
         if num_unhashed_tokens < self.block_size:
             return
 
@@ -137,16 +142,14 @@ class BlockManager:
         if len(hashes) > 0:
             parent_hash_value = hashes[-1]
 
-        unhashed_tokens = ctx.tokens[
-            len(hashes) * self.block_size : len(ctx.tokens)
-        ]
+        unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
 
         images = ctx.images if isinstance(ctx, VLMTextGenerationContext) else []
         new_hashes = hash_request_tokens(
             token_ids=unhashed_tokens,
             block_size=self.block_size,
             parent_hash=parent_hash_value,
-            prefix_length=len(hashes) * self.block_size,
+            prefix_length=num_hashed_tokens,
             images=images,
         )
         hashes.extend(new_hashes)
@@ -193,6 +196,11 @@ class BlockManager:
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
             ctx.tokens.skip_processing(
                 new_committed_idx - ctx.tokens.processed_length
+            )
+            assert ctx.tokens.active_length >= 1, (
+                "No active tokens after prefix caching! "
+                "We should never get 100% prefix cache hit rate. "
+                "Something went wrong!"
             )
 
     @traced
@@ -309,16 +317,11 @@ class BlockManager:
 
         assert self.enable_prefix_caching
 
-        req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
         )
-        # we exclude the last inflight token to ensure that there is at least
-        # one prompt token to be encoded.
-        num_inflight_blocks = (len(ctx.tokens) - 1) // self.block_size
-        uncommitted_hashes = req_hashes[
-            num_committed_blocks:num_inflight_blocks
-        ]
+        req_hashes = self.req_to_hashes[ctx.request_id]
+        uncommitted_hashes = req_hashes[num_committed_blocks:]
 
         return self._count_full_blocks_from_prefix_cache(
             ctx, uncommitted_hashes
@@ -338,12 +341,7 @@ class BlockManager:
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
         )
-        # we exclude the last inflight token to ensure that there is at least
-        # one prompt token to be encoded.
-        num_inflight_blocks = (len(ctx.tokens) - 1) // self.block_size
-        uncommitted_hashes = req_hashes[
-            num_committed_blocks:num_inflight_blocks
-        ]
+        uncommitted_hashes = req_hashes[num_committed_blocks:]
 
         # query the device prefix cache for full blocks
         device_blocks = self._get_full_blocks_from_device_prefix_cache(

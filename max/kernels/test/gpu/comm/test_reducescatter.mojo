@@ -18,10 +18,14 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from collections import Optional
 from comm import Signal, MAX_GPUS
-from comm.reducescatter import reducescatter, elementwise_epilogue_type
+from comm.reducescatter import (
+    reducescatter,
+    ReduceScatterConfig,
+    elementwise_epilogue_type,
+)
 from internal_utils import human_readable_size
 from comm_test_utils import test_value_for_gpu_element
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from testing import assert_almost_equal, assert_true
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -29,8 +33,12 @@ from utils.numerics import get_accum_type
 # Shared test configurations
 comptime test_lengths = (
     8 * 1024,  # Small
+    8 * 1024 + 8,  # Ragged: +1 bf16 SIMD vector / +2 f32 SIMD vectors
+    8 * 1024 + 24,  # Ragged: +3 bf16 SIMD vectors / +6 f32 SIMD vectors
     256 * 1024,  # Medium
     16 * 1024 * 1024,  # Large
+    16 * 1024 * 1024 + 8,  # Ragged: +1 bf16 SIMD vector / +2 f32 SIMD vectors
+    16 * 1024 * 1024 + 24,  # Ragged: +3 bf16 SIMD vectors / +6 f32 SIMD vectors
 )
 
 # Test hyperparameters
@@ -64,14 +72,16 @@ fn reducescatter_test[
         )
     )
 
-    # TODO(KERN-2295): generalize to uneven shapes, & consider
-    # ceildiv(length, ngpus) for output lengths
-    # Each GPU gets 1/ngpus of the output
-    var output_length = length // ngpus
+    # Compute partition sizes matching ReduceScatterConfig logic.
+    # Lower ranks get an extra simd vector when there's a remainder.
+    var rs_config = ReduceScatterConfig[dtype, ngpus](
+        length, 0
+    )  # dummy num_threads
 
     # Create device buffers for all GPUs
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var output_lengths = List[Int](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
     )
@@ -84,6 +94,9 @@ fn reducescatter_test[
 
     # Initialize buffers for each GPU
     for i in range(ngpus):
+        var output_length = rs_config.rank_part(i)
+        output_lengths.append(output_length)
+
         # Create input and output device buffers
         in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
         out_bufs_list.append(
@@ -121,7 +134,7 @@ fn reducescatter_test[
             in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_length)
+            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
         )
 
     # Synchronize all devices before reduce-scatter
@@ -135,7 +148,7 @@ fn reducescatter_test[
 
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_length)
+            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
         )
 
     # Custom epilogue that negates values to distinguish from default
@@ -173,20 +186,21 @@ fn reducescatter_test[
 
     # Verify results:
     # For each element j in GPU gpu_idx's output, we sum across all GPUs
-    # at the global index (gpu_idx * output_length + j)
+    # at the global index rank_start(gpu_idx) + j
     for gpu_idx in range(ngpus):
-        var result_host = alloc[Scalar[dtype]](output_length)
+        var gpu_output_length = output_lengths[gpu_idx]
+        var result_host = alloc[Scalar[dtype]](gpu_output_length)
         list_of_ctx[gpu_idx].enqueue_copy(result_host, out_bufs_list[gpu_idx])
         list_of_ctx[gpu_idx].synchronize()
 
         # Verify each element in this GPU's partition
-        for j in range(output_length):
+        for j in range(gpu_output_length):
             # Compute expected value: sum of test values across all GPUs
-            # at global index (gpu_idx * output_length + j)
+            # at global index rank_start(gpu_idx) + j
             # Use higher precision accumulation like allreduce does
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
-            var global_idx = gpu_idx * output_length + j
+            var global_idx = rs_config.rank_start(gpu_idx) + j
 
             @parameter
             for k in range(ngpus):

@@ -92,7 +92,9 @@ fn check_expert_stats(
         expert_usage_stats[0], mx_value, "most frequent expert is incorrect"
     )
     assert_equal(
-        expert_usage_stats[1], total_experts, "number of experts is incorrect"
+        expert_usage_stats[1],
+        UInt32(total_experts),
+        "number of experts is incorrect",
     )
 
 
@@ -214,7 +216,7 @@ fn test_moe_create_indices[
     ctx.synchronize()
 
     # Fill top_k_host with random expert IDs
-    random(top_k_host, min=0, max=num_experts)
+    random(top_k_host, min=0, max=UInt32(num_experts))
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
     moe_create_indices["gpu", expected_count=expected_count](

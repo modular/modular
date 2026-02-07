@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import PipelineRole, RopeType, SupportedEncoding
+from .config_enums import PipelineRole, RepoType, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
@@ -57,7 +58,6 @@ from .pipeline_variants.overlap_text_generation import (
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
-    SpeculativeMethod,
     StandaloneSpeculativeDecodingPipeline,
 )
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
@@ -116,9 +116,12 @@ def get_pipeline_for_task(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
 
-        if spec_method == SpeculativeMethod.STANDALONE:
+        if pipeline_config.speculative.is_standalone():
             return StandaloneSpeculativeDecodingPipeline
-        elif spec_method == SpeculativeMethod.EAGLE:
+        elif (
+            pipeline_config.speculative.is_eagle()
+            or pipeline_config.speculative.is_mtp()
+        ):
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
@@ -521,14 +524,19 @@ class PipelineRegistry:
                 # Check if model_index.json exists to identify diffusion pipelines
                 import json
 
-                from huggingface_hub import hf_hub_download
+                if huggingface_repo.repo_type == RepoType.local:
+                    config_path = os.path.join(
+                        huggingface_repo.repo_id, "model_index.json"
+                    )
+                else:
+                    from huggingface_hub import hf_hub_download
 
-                # Try to download model_index.json
-                config_path = hf_hub_download(
-                    repo_id=huggingface_repo.repo_id,
-                    filename="model_index.json",
-                    revision=huggingface_repo.revision,
-                )
+                    # Try to download model_index.json
+                    config_path = hf_hub_download(
+                        repo_id=huggingface_repo.repo_id,
+                        filename="model_index.json",
+                        revision=huggingface_repo.revision,
+                    )
 
                 # Load the config
                 with open(config_path) as f:

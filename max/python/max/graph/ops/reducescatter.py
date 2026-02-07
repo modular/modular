@@ -27,7 +27,7 @@ from .utils import _buffer_values, _tensor_values
 def sum(
     inputs: Iterable[TensorValueLike],
     signal_buffers: Iterable[BufferValueLike],
-    axis: int = 0,
+    axis: int = -1,
 ) -> list[TensorValue]:
     """Collective reduce-scatter summation operation.
 
@@ -77,10 +77,10 @@ def sum(
             f"axis {axis} is out of bounds for tensor with rank {input_shape.rank}"
         )
 
-    # TODO(KERN-2337): Support axis != 0 in the kernel.
-    if axis != 0:
+    # TODO(KERN-2337): Support axis != -1 in the kernel.
+    if axis != input_shape.rank - 1:
         raise NotImplementedError(
-            f"reducescatter.sum only supports axis=0, got axis={axis}"
+            f"reducescatter.sum only supports axis=-1, got axis={axis}"
         )
 
     # Per-device execution model:
@@ -89,15 +89,17 @@ def sum(
     # Do not merge device chains.
     results = []
     graph = Graph.current
-    for device in devices:
+    for dev_idx, device in enumerate(devices):
         in_chain = graph.device_chains[device]
 
         # Compute output shape for this device's portion
         output_shape_list = list(input_shape)
         scatter_dim = input_shape[axis]
         if scatter_dim is not None:
-            # TODO(KERN-2337): Handle uneven division.
-            output_shape_list[axis] = scatter_dim // num_devices
+            remainder = int(scatter_dim) % num_devices
+            output_shape_list[axis] = (scatter_dim // num_devices) + (
+                1 if dev_idx < remainder else 0
+            )
         else:
             output_shape_list[axis] = None
         output_type = TensorType(

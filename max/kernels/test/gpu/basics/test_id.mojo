@@ -38,7 +38,7 @@ def test_fill_thread_idx(ctx: DeviceContext):
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], j)
+            assert_equal(output_host[i + j], Scalar[DType.int](j))
 
     output_host.free()
 
@@ -62,7 +62,7 @@ def test_fill_block_idx(ctx: DeviceContext):
 
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
-            assert_equal(output_host[i + j], i // block_dim)
+            assert_equal(output_host[i + j], Scalar[DType.int](i // block_dim))
 
     output_host.free()
 

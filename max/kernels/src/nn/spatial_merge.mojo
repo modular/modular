@@ -21,16 +21,16 @@ from utils.index import Index, IndexList
 
 fn spatial_merge_kernel[
     dtype: DType,
-    input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
-    output_origin: MutOrigin,
+    input_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
-    grid_thw_origin: ImmutOrigin,
+    output_origin: MutOrigin,
     GridThwLayoutType: TensorLayout,
+    grid_thw_origin: ImmutOrigin,
 ](
-    output: TileTensor[dtype, output_origin, OutputLayoutType],
-    input: TileTensor[dtype, input_origin, InputLayoutType],
-    grid_thw: TileTensor[DType.int64, grid_thw_origin, GridThwLayoutType],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    input: TileTensor[dtype, InputLayoutType, input_origin],
+    grid_thw: TileTensor[DType.int64, GridThwLayoutType, grid_thw_origin],
     batch_size: Int,
     hidden_size: Int,
     merge_size: Int,
@@ -179,12 +179,12 @@ fn spatial_merge[
 
     comptime kernel = spatial_merge_kernel[
         dtype,
-        ImmutOrigin(input.origin),
         input.LayoutType,
-        output.origin,
+        ImmutOrigin(input.origin),
         output.LayoutType,
-        ImmutOrigin(grid_thw.origin),
+        output.origin,
         grid_thw.LayoutType,
+        ImmutOrigin(grid_thw.origin),
     ]
 
     ctx.enqueue_function_experimental[kernel](

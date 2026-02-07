@@ -235,7 +235,6 @@ fn interpolate_point_1d[
     input: TileTensor[
         mut=True,
         dtype,
-        _,
         InputLayoutType,
         address_space = AddressSpace.GENERIC,
         ...,

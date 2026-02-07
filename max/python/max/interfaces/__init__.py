@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
     BatchLogitsProcessor,
@@ -54,7 +55,6 @@ from .pipeline_variants import (
     PixelGenerationContextType,
     PixelGenerationInputs,
     PixelGenerationOutput,
-    PixelGenerationRequest,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -68,7 +68,13 @@ from .pipeline_variants import (
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
-from .request import DUMMY_REQUEST_ID, Request, RequestID, RequestType
+from .request import (
+    DUMMY_REQUEST_ID,
+    OpenResponsesRequest,
+    Request,
+    RequestID,
+    RequestType,
+)
 from .scheduler import Scheduler, SchedulerError, SchedulerResult
 from .status import GenerationStatus
 from .task import PipelineTask
@@ -113,6 +119,7 @@ __all__ = [
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
     "EmbeddingsGenerationOutput",
+    "GenerationOutput",
     "GenerationStatus",
     "ImageContentPart",
     "ImageMetadata",
@@ -125,6 +132,7 @@ __all__ = [
     "LogitsProcessor",
     "MAXPullQueue",
     "MAXPushQueue",
+    "OpenResponsesRequest",
     "Pipeline",
     "PipelineInputs",
     "PipelineInputsType",
@@ -138,7 +146,6 @@ __all__ = [
     "PixelGenerationContextType",
     "PixelGenerationInputs",
     "PixelGenerationOutput",
-    "PixelGenerationRequest",
     "ProcessorInputs",
     "Request",
     "RequestID",

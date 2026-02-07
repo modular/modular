@@ -137,7 +137,7 @@ fn tma_reduction_kernel[
     if thread_idx.x == 0:
         # Add expected_bytes requirement to barrier.
         var expected_bytes = cols * size_of[dtype]()
-        mbarrier_arrive_expect_tx_shared(mbar, expected_bytes)
+        mbarrier_arrive_expect_tx_shared(mbar, Int32(expected_bytes))
         cp_async_bulk_tensor_shared_cluster_global(
             shmem,
             descriptor_ptr,

@@ -55,7 +55,7 @@ fn multistage_gemm_simple[
 
     var gemm_kernel = ctx.compile_function_experimental[gemm_kernel_type](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            config.shared_mem_usage()
+            UInt32(config.shared_mem_usage())
         ),
     )
 

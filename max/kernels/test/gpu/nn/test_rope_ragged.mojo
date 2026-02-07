@@ -101,7 +101,7 @@ def test_rope_ragged_gpu[
 
     # Fill input row offsets: [0, seq_len, 2*seq_len] = [0, 3, 6]
     for i in range(batch_size):
-        input_row_offsets_host_buffer[i] = i * seq_len
+        input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
     input_row_offsets_host_buffer[batch_size] = batch_size * seq_len
 
     # Fill start positions

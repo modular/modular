@@ -32,7 +32,7 @@ from tqdm import tqdm
 from ..autoencoders import AutoencoderKLModel
 from ..clip import ClipModel
 from ..t5 import T5Model
-from .model import Flux1Model
+from .model import Flux1TransformerModel
 
 if TYPE_CHECKING:
     pass
@@ -84,13 +84,13 @@ class FluxPipeline(DiffusionPipeline):
     vae: AutoencoderKLModel
     text_encoder: ClipModel
     text_encoder_2: T5Model
-    transformer: Flux1Model
+    transformer: Flux1TransformerModel
 
     components = {
         "vae": AutoencoderKLModel,
         "text_encoder": ClipModel,
         "text_encoder_2": T5Model,
-        "transformer": Flux1Model,
+        "transformer": Flux1TransformerModel,
     }
 
     def init_remaining_components(self) -> None:

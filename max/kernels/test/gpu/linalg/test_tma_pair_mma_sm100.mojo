@@ -156,7 +156,7 @@ fn tma_umma_kernel_pair_cta[
     comptime max_tmem_cols = 512
 
     if elect_one_warp:
-        tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[Int32(cta_group)](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
@@ -164,7 +164,9 @@ fn tma_umma_kernel_pair_cta[
 
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
-        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
+        mma_mbar[0].init(
+            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+        )
 
     cluster_sync()
 
@@ -221,11 +223,11 @@ fn tma_umma_kernel_pair_cta[
     # TODO: find a generic way to calculate multicast mask
     @parameter
     for i in range(CLUSTER_N):
-        a_multicast_mask |= 1 << (i * CLUSTER_M)
+        a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
     @parameter
     for i in range(CLUSTER_M // cta_group):
-        b_multicast_mask |= 1 << (i * cta_group)
+        b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
@@ -240,7 +242,7 @@ fn tma_umma_kernel_pair_cta[
     for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
-                tma_mbar[0].expect_bytes(expected_bytes)
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
                 a_tma_rows
@@ -319,8 +321,8 @@ fn tma_umma_kernel_pair_cta[
     tcgen05_load_wait()
 
     if elect_one_warp:
-        tcgen05_release_allocation_lock[cta_group]()
-        tcgen05_dealloc[cta_group](tmem_addr, max_tmem_cols)
+        tcgen05_release_allocation_lock[Int32(cta_group)]()
+        tcgen05_dealloc[Int32(cta_group)](tmem_addr, max_tmem_cols)
 
     var c_gmem_block = c.tile[MMA_M, MMA_N](
         Int(peer_cta_coord[1]), Int(peer_cta_coord[2])
@@ -434,12 +436,14 @@ def test_tma_umma_pair_cta[
     ](ctx)
 
     a_tma_op = create_tensor_tile[
-        Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
     b_tma_op = create_tensor_tile[
         Index(
-            BN // (cluster_shape[0] // cta_group), BK
-        ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),
+            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
+        ) if transpose_b else Index(
+            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
+        ),
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -477,7 +481,9 @@ def test_tma_umma_pair_cta[
         ),
         block_dim=(128),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_size)
+        ),
     )
 
     @parameter

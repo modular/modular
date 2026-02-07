@@ -17,7 +17,11 @@ import multiprocessing
 import os
 import uuid
 from collections.abc import AsyncGenerator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+)
 from multiprocessing.synchronize import Event
 from typing import Any
 
@@ -26,6 +30,7 @@ from max.driver import Buffer, Device
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.interfaces import (
+    BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
@@ -38,14 +43,15 @@ from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import ProcessManager, subprocess_manager
+from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
-from max.serve.worker_interface.worker_interface import (
+from max.serve.worker_interface import (
     ModelWorkerInterface,
+    ModelWorkerProxy,
     sleep_with_backoff,
 )
 
@@ -153,7 +159,9 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        model_worker_interface: ModelWorkerInterface,
+        model_worker_interface: ModelWorkerInterface[
+            BaseContextType, PipelineOutputType
+        ],
     ) -> None:
         """Runs a model worker process.
 
@@ -171,8 +179,12 @@ class ModelWorker:
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
-        # Configure Metrics
-        async with metric_client_factory() as metric_client:
+        async with AsyncExitStack() as exit_stack:
+            # Configure Metrics
+            metric_client = await exit_stack.enter_async_context(
+                metric_client_factory()
+            )
+
             ModelWorker._configure_metrics(settings, metric_client)
 
             # Prime the pinned memory cache in the model worker process.
@@ -185,12 +197,17 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
+            # Boot up the api worker comms
+            worker_queues = await exit_stack.enter_async_context(
+                model_worker_interface.model_worker_queues()
+            )
+
             # Retrieve Scheduler.
             scheduler = load_scheduler(
                 pipeline,
                 pipeline_config,
                 settings,
-                model_worker_interface,
+                worker_queues,
             )
 
             # Get the reset prefix cache backend.
@@ -245,7 +262,9 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        model_worker_interface: ModelWorkerInterface,
+        model_worker_interface: ModelWorkerInterface[
+            BaseContextType, PipelineOutputType
+        ],
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -285,8 +304,10 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    model_worker_interface: ModelWorkerInterface,
-) -> AsyncGenerator[ProcessManager]:
+    model_worker_interface: ModelWorkerInterface[
+        BaseContextType, PipelineOutputType
+    ],
+) -> AsyncGenerator[ModelWorkerProxy[BaseContextType, PipelineOutputType]]:
     """Starts a model worker and associated process.
 
     Args:
@@ -326,4 +347,5 @@ async def start_model_worker(
 
         logger.debug("Model worker task is ready")
 
-        yield proc
+        async with model_worker_interface.model_worker_proxy() as model_worker:
+            yield model_worker
