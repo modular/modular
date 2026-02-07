@@ -77,8 +77,10 @@ We're constantly open-sourcing more of the Modular Platform and you can find
 all of it in here. As of May, 2025, this repo includes over 450,000 lines of
 code from over 6000 contributors, providing developers with production-grade
 reference implementations and tools to extend the Modular Platform with new
-algorithms, operations, and hardware targets. It is quite likely **the world's
-largest repository of open source CPU and GPU kernels**!
+algorithms, operations, and hardware targets.
+
+It's quite likely **the world's largest repository of open source CPU and GPU
+kernels**!
 
 Highlights include:
 
@@ -101,6 +103,23 @@ build](https://docs.modular.com/max/packages).
 is in sync with the last stable released version of Mojo. Use the examples in
 here if you [installed the stable
 build](https://docs.modular.com/max/packages).
+
+## Contribute
+
+We accept contributions to the [Mojo standard library](./mojo), [MAX AI
+kernels](./max/kernels), [MAX model
+architectures](/max/python/max/pipelines/architectures), code examples, Mojo
+docs, and more.
+
+First, please read the [Contribution Guide](./CONTRIBUTING.md), and then refer
+to the following documentation about how to develop in the repo:
+
+- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework codebase.
+- [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
+  Mojo standard library.
+
+We also welcome your bug reports. If you have a bug, please [file an issue
+here](https://github.com/modular/modular/issues/new/choose).
 
 ## News & Announcements
 
@@ -177,19 +196,6 @@ We host regular meetups, hackathons, and community calls. Join us!
 [forum]: https://forum.modular.com/
 [meetup-group]: https://www.meetup.com/modular-meetup-group/
 [youtube]: https://www.youtube.com/@modularinc
-
-## Contribute
-
-Thanks for your interest in contributing to this repository!
-
-We accept contributions to the [Mojo standard library](./mojo), [MAX AI
-kernels](./max/kernels), code examples, and Mojo docs, but currently not to any
-other parts of the repository.
-
-Please see the [Contribution Guide](./CONTRIBUTING.md) for instructions.
-
-We also welcome your bug reports.  If you have a bug, please [file an issue
-here](https://github.com/modular/modular/issues/new/choose).
 
 ## Contact us
 
