@@ -74,7 +74,7 @@ logger = logging.getLogger("max.pipelines")
 
 @dataclasses.dataclass
 class BatchInfo:
-    """Information about a batch of requests passed to the pipeline"""
+    """Information about a batch of requests passed to the pipeline."""
 
     past_seq_lens: list[int]
     """Coordinated list of past sequence lengths (i.e. context lengths)"""
@@ -362,10 +362,10 @@ class TextGenerationPipeline(
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]
     ) -> npt.NDArray[np.int32] | None:
-        """Allocate a per-request token bitmask for structured decoding.
+        """Allocates a per-request token bitmask for structured decoding.
 
         Args:
-            batch_size: Number of requests in the batch.
+            batch: The generation contexts for the batch.
 
         Returns:
             A bitmask array of shape [batch_size, vocab_size] if structured
@@ -464,9 +464,9 @@ class TextGenerationPipeline(
     def _maybe_sort_loras(
         self, batch: list[TextGenerationContextType]
     ) -> list[TextGenerationContextType]:
-        """
-        Maybe sorts the batch by LoRA Ids. Requests that use the same LoRA need
-        to be adjacent to each other.
+        """Optionally sorts the batch by LoRA IDs.
+
+        Requests that use the same LoRA are placed adjacent to each other.
         """
         if self._pipeline_model._lora_manager is None:
             return batch
@@ -514,8 +514,11 @@ class TextGenerationPipeline(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
     ) -> PipelineOutputsDict[TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Processes the batch and returns decoded tokens.
+
+        Given a batch, executes the graph for num_steps in a multi-step
+        scenario, then decodes the tokens and returns the list of decoded
+        tokens.
         """
         device0 = self._devices[0]
         pinned = not device0.is_host

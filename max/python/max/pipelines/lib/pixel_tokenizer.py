@@ -254,22 +254,21 @@ class PixelGenerationTokenizer(
         sigmas: npt.NDArray[np.float32] | None = None,
         **kwargs,
     ) -> tuple[npt.NDArray[np.float32], int]:
-        r"""
-        Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-        custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
+        r"""Calls the scheduler's set_timesteps and returns timesteps.
+
+        Handles custom timesteps. Any ``**kwargs`` are passed to
+        ``scheduler.set_timesteps``.
 
         Args:
-            scheduler (`Any`):
-                The scheduler to get timesteps from.
-            num_inference_steps (`int`):
-                The number of diffusion steps used when generating samples with a pre-trained model.
-            sigmas (`List[float]`, *optional*):
-                Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
-                `num_inference_steps` must be `None`.
+            scheduler: The scheduler to get timesteps from.
+            num_inference_steps: The number of diffusion steps when generating
+                samples with a pre-trained model.
+            sigmas: Optional custom sigmas to override the timestep spacing
+                strategy. If provided, ``num_inference_steps`` must be None.
+            **kwargs: Passed through to ``scheduler.set_timesteps``.
 
         Returns:
-            `Tuple[npt.NDArray[np.float32], int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-            second element is the number of inference steps.
+            A tuple of (timestep schedule array, number of inference steps).
         """
         if sigmas is not None:
             try:
@@ -337,10 +336,12 @@ class PixelGenerationTokenizer(
 
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID."""
         return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return False
 
     async def encode(
@@ -350,8 +351,7 @@ class PixelGenerationTokenizer(
         *,
         use_secondary: bool = False,
     ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]]:
-        """Transform the provided prompt into a token array."""
-
+        """Transforms the provided prompt into a token array."""
         delegate = self.delegate_2 if use_secondary else self.delegate
         max_sequence_length = (
             self.secondary_max_length if use_secondary else self.max_length
@@ -393,6 +393,7 @@ class PixelGenerationTokenizer(
         encoded: tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]],
         **kwargs,
     ) -> str:
+        """Decodes token arrays to text (not implemented for this tokenizer)."""
         raise NotImplementedError(
             "Decoding is not implemented for this tokenizer."
         )

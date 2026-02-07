@@ -138,12 +138,11 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     def sync_and_process_outputs(
         self,
     ) -> PipelineOutputsDict[TextGenerationOutput]:
-        """Sync on the completion of this batch and process the outputs.
+        """Syncs on completion of this batch and processes the outputs.
 
-        This method will replace the placeholder future tokens in the TextContext
-        CPU numpy token buffers with the real token values.
+        Replaces the placeholder future tokens in the TextContext CPU numpy
+        token buffers with the real token values.
         """
-
         if self._is_processed:
             raise ValueError("Outputs have already been processed.")
         self._is_processed = True
@@ -168,8 +167,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
 @traced
 def build_scatter_future_tokens_graph() -> Graph:
-    """Build a trivial scatter_nd graph"""
-
+    """Builds a trivial scatter_nd graph."""
     with Graph(
         "my_scatter_future_tokens_graph",
         input_types=[
@@ -206,8 +204,7 @@ def build_scatter_future_tokens_graph() -> Graph:
 
 
 class ScatterFutureTokenProcessor:
-    """Processor for realizing the placeholder future tokens in the ragged input
-    tokens on the gpu.
+    """Processor for realizing placeholder future tokens in ragged input on the GPU.
 
     We scatter the generated tokens from the previous batch into the slots
     containing placeholder future tokens in the current batch. This all occurs
@@ -228,8 +225,9 @@ class ScatterFutureTokenProcessor:
         inputs: TextGenerationInputs[TextGenerationContextType],
         ragged_input_tokens: Buffer,
     ) -> Buffer:
-        """Scatter the generated tokens from the previous batch into the slots
-        containing placeholder future tokens in the current batch on the gpu.
+        """Scatters generated tokens from the previous batch into placeholder slots.
+
+        Fills placeholder future tokens in the current batch on the GPU.
         """
         prev_generated_tokens = prev_batch.generated_tokens_device
         device = prev_generated_tokens.device

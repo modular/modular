@@ -113,15 +113,18 @@ class IdentityPipelineTokenizer(
 ):
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID (0 for identity)."""
         return 0
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return False
 
     async def encode(
         self, prompt: str, add_special_tokens: bool = False
     ) -> str:
+        """Returns the prompt unchanged (identity encoding)."""
         return prompt
 
     async def decode(
@@ -129,6 +132,7 @@ class IdentityPipelineTokenizer(
         encoded: str,
         **kwargs,
     ) -> str:
+        """Returns the encoded string unchanged (identity decoding)."""
         if isinstance(encoded, str):
             return encoded
         return ""
@@ -152,6 +156,7 @@ class PreTrainedPipelineTokenizer(
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
+        """Applies the delegate's chat template to the messages."""
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
@@ -162,20 +167,24 @@ class PreTrainedPipelineTokenizer(
 
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID from the delegate."""
         return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return False
 
     async def encode(
         self, prompt: str, add_special_tokens: bool = False
     ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes the prompt to token ids via the delegate."""
         return np.array(self.delegate.encode(prompt))
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
+        """Decodes token ids to text via the delegate."""
         try:
             return self.delegate.decode(encoded, **kwargs)
         except OverflowError as e:
@@ -219,7 +228,7 @@ class TextTokenizer(
         enable_llama_whitespace_fix: Enable whitespace fix for Llama tokenizers
         pipeline_config: Optional pipeline configuration
         chat_template: Optional custom chat template string to override the one
-                        shipped with the HuggingFace model config. This allows
+                        shipped with the Hugging Face model config. This allows
                         customizing the prompt formatting for different use cases.
     """
 
@@ -300,6 +309,7 @@ class TextTokenizer(
         tools: list[TextGenerationRequestTool] | None,
         chat_template_options: dict[str, Any] | None = None,
     ) -> str:
+        """Applies the delegate chat template to messages (and optional tools)."""
         chat_template_options = chat_template_options or {
             "add_generation_prompt": True
         }
@@ -334,17 +344,18 @@ class TextTokenizer(
 
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID from the delegate."""
         return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return False
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
-        """Transform the provided prompt into a token array."""
-
+        """Transforms the provided prompt into a token array."""
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
 
@@ -613,6 +624,7 @@ class TextAndVisionTokenizer(
     def apply_chat_template(
         self, messages: list[TextGenerationRequestMessage]
     ) -> str:
+        """Applies the processor's chat template to the messages."""
         # This converts between the Pydantic TextGenerationRequestMessage
         # to a dict for the HF delegate
         templated_message = self.processor.apply_chat_template(
@@ -625,17 +637,18 @@ class TextAndVisionTokenizer(
 
     @property
     def eos(self) -> int:
+        """Returns the end-of-sequence token ID from the delegate."""
         return self.delegate.eos_token_id
 
     @property
     def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
         return True
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True
     ) -> npt.NDArray[np.integer[Any]]:
-        """Transform the provided prompt into a token array."""
-
+        """Transforms the provided prompt into a token array."""
         encoded_prompt: npt.NDArray[np.integer[Any]]
         if isinstance(prompt, str):
 

@@ -64,8 +64,11 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
         num_steps: int,
         tokens_to_generate: dict[RequestID, int],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
-        then decode the tokens holistically and return the list of decoded tokens.
+        """Processes the batch and returns decoded tokens.
+
+        Given a batch, executes the graph for num_steps in a multi-step
+        scenario, then decodes the tokens holistically and returns the list
+        of decoded tokens.
         """
         if not batch or num_steps == 0:
             return {}

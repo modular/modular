@@ -29,10 +29,10 @@ class RepoType(str, Enum):
     """
 
     online = "online"
-    """Indicates an online repository, typically hosted on HuggingFace Hub.
+    """Indicates an online repository, typically hosted on Hugging Face Hub.
 
     Paths for weights within an online repository are resolved primarily
-    through the local HuggingFace cache, but fall back to downloading through
+    through the local Hugging Face cache, but fall back to downloading through
     the HF API if the local cache isn't populated.
     """
 
@@ -100,6 +100,7 @@ class SupportedEncoding(str, Enum):
 
     @classmethod
     def parse_from_file_name(cls, name: str):  # noqa: ANN206
+        """Infers a SupportedEncoding from a file name string."""
         # TODO(AITLIB-127): Robustify detection of quantization encoding
         name = name.lower()
         if "f32" in name or "fp32" in name or "float32" in name:
@@ -126,6 +127,7 @@ class SupportedEncoding(str, Enum):
 
     @property
     def quantization_encoding(self) -> QuantizationEncoding | None:
+        """Returns the QuantizationEncoding for this encoding, or None if unsupported."""
         if self not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
             raise ValueError(
                 f"SupportedEncoding({self}) does not have corresponding QuantizationEncoding."

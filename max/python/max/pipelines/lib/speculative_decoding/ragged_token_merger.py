@@ -47,6 +47,7 @@ class RaggedTokenMerger(Module):
         prompt_offsets: TensorValue,
         draft_tokens: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Merges prompt and draft tokens into a single ragged token sequence."""
         num_steps = ops.cast(
             ops.shape_to_tensor([draft_tokens.shape[1]]).reshape(()),
             DType.uint32,

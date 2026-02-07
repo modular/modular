@@ -92,6 +92,7 @@ class PixelGenerationPipeline(
         self,
         inputs: PixelGenerationInputs[PixelGenerationContextType],
     ) -> PipelineOutputsDict[GenerationOutput]:
+        """Runs the pixel generation pipeline for the given inputs."""
         model_inputs, flat_batch = self.prepare_batch(inputs.batch)
         if not flat_batch or model_inputs is None:
             return {}

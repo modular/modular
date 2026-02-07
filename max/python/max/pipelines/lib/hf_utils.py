@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Utilities for interacting with HuggingFace Files/Repos."""
+"""Utilities for interacting with Hugging Face Files/Repos."""
 
 from __future__ import annotations
 
@@ -93,12 +93,9 @@ def _create_repo_not_exists_error_message(repo_id: str, revision: str) -> str:
 def try_to_load_from_cache(
     repo_id: str, filename: str, revision: str
 ) -> str | Any | None:
-    """
-    Wrapper around huggingface_hub.try_to_load_from_cache. We also validate
-    that the repo exists.
+    """Wrapper around ``huggingface_hub.try_to_load_from_cache``; validates repo exists.
 
-    validate_hf_repo_access is called before this function to ensure the repo
-    exists.
+    ``validate_hf_repo_access`` is called first to ensure the repo exists.
     """
     validate_hf_repo_access(repo_id=repo_id, revision=revision)
     return huggingface_hub.try_to_load_from_cache(
@@ -110,14 +107,13 @@ def try_to_load_from_cache(
 
 @lru_cache(maxsize=64)
 def validate_hf_repo_access(repo_id: str, revision: str) -> None:
-    """
-    Validate repository access and raise clear, user-friendly errors.
+    """Validates repository access and raises clear, user-friendly errors.
 
-    Results are cached to avoid redundant HuggingFace API calls when the same
+    Results are cached to avoid redundant Hugging Face API calls when the same
     repository is validated multiple times within a process.
 
     Args:
-        repo_id: The HuggingFace repository ID to validate
+        repo_id: The Hugging Face repository ID to validate
         revision: The revision/branch to validate
 
     Raises:
@@ -195,21 +191,20 @@ def download_weight_files(
     force_download: bool = False,
     max_workers: int = 8,
 ) -> list[Path]:
-    """Provided a HuggingFace model id, and filenames, download weight files
-        and return the list of local paths.
+    """Downloads weight files for a Hugging Face model and returns local paths.
 
     Args:
         huggingface_model_id:
-          The huggingface model identifier, ie. `modularai/Llama-3.1-8B-Instruct-GGUF`
+          The Hugging Face model identifier, ie. `modularai/Llama-3.1-8B-Instruct-GGUF`
 
         filenames:
-          A list of file paths relative to the root of the HuggingFace repo.
+          A list of file paths relative to the root of the Hugging Face repo.
           If files provided are available locally, download is skipped, and
           the local files are used.
 
         revision:
-          The HuggingFace revision to use. If provided, we check our cache
-          directly without needing to go to HuggingFace directly, saving a
+          The Hugging Face revision to use. If provided, we check our cache
+          directly without needing to go to Hugging Face directly, saving a
           network call.
 
         force_download:
@@ -254,16 +249,12 @@ def download_weight_files(
 
 
 def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
+    """Wrapper around ``huggingface_hub.revision_exists`` with retry logic.
+
+    Uses exponential backoff with 25% jitter, starting at 1s and doubling
+    each retry. Uses revision_exists (not repo_exists) because it accepts
+    a revision parameter. See ``huggingface_hub.revision_exists`` for details.
     """
-    Wrapper around huggingface_hub.revision_exists with retry logic.
-    Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
-
-    We use revision_exists here instead of repo_exists because repo_exists
-    does not take in a revision parameter.
-
-    See huggingface_hub.revision_exists for details
-    """
-
     if huggingface_hub.constants.HF_HUB_OFFLINE:
         generate_local_model_path(
             repo_id, revision
@@ -317,12 +308,10 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
 
 @dataclass(frozen=True)
 class HuggingFaceRepo:
-    """
-    A class for interacting with HuggingFace Repos.
-    """
+    """Handle for interacting with a Hugging Face repository (remote or local)."""
 
     repo_id: str
-    """The HuggingFace repo id. While it's called repo_id, it can be a HF
+    """The Hugging Face repo id. While it's called repo_id, it can be a HF
     remote or local path altogether."""
 
     revision: str = huggingface_hub.constants.DEFAULT_REVISION
@@ -372,6 +361,7 @@ class HuggingFaceRepo:
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:
+        """Returns Hugging Face model info (online repos only)."""
         if self.repo_type == RepoType.local:
             raise ValueError(
                 "using model info, on local repos is not supported."
@@ -385,6 +375,7 @@ class HuggingFaceRepo:
 
     @cached_property
     def weight_files(self) -> dict[WeightsFormat, list[str]]:
+        """Returns weight file paths grouped by format (safetensors, gguf)."""
         safetensor_search_pattern = "**/*.safetensors"
         gguf_search_pattern = "**/*.gguf"
 
@@ -432,6 +423,7 @@ class HuggingFaceRepo:
         return weight_files
 
     def size_of(self, filename: str) -> int | None:
+        """Returns file size in bytes for online repos, or None."""
         if self.repo_type == RepoType.online:
             url = huggingface_hub.hf_hub_url(self.repo_id, filename)
             metadata = huggingface_hub.get_hf_file_metadata(url)
@@ -440,6 +432,7 @@ class HuggingFaceRepo:
 
     @cached_property
     def supported_encodings(self) -> list[SupportedEncoding]:
+        """Returns encodings supported by this repo's weight files."""
         # TODO(AITLIB-128): Detection of supported encodings in weights can be cleaned up
         supported_encodings = set([])
 
@@ -593,6 +586,7 @@ class HuggingFaceRepo:
         encoding: SupportedEncoding,
         weights_format: WeightsFormat | None = None,
     ) -> dict[WeightsFormat, list[Path]]:
+        """Returns paths to weight files for the given encoding (and optionally format)."""
         if weights_format is WeightsFormat.gguf:
             return self._get_gguf_files_for_encoding(encoding)
         elif weights_format == WeightsFormat.safetensors:
@@ -606,15 +600,18 @@ class HuggingFaceRepo:
         return gguf_files
 
     def file_exists(self, filename: str) -> bool:
+        """Returns whether the given file exists in the repo."""
         if self.repo_type == RepoType.local:
             return os.path.exists(os.path.join(self.repo_id, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 
     @property
     def formats_available(self) -> list[WeightsFormat]:
+        """Returns the weight formats available in this repo."""
         return list(self.weight_files.keys())
 
     def encoding_for_file(self, file: str | Path) -> SupportedEncoding:
+        """Infers the supported encoding for a given weight file path."""
         if str(file).endswith(".safetensors"):
             # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
             return self.supported_encodings[0]
@@ -636,7 +633,7 @@ class HuggingFaceRepo:
 # automatically handles locally cached vs. remotely fetched artifacts via
 # specified repo_ids and revisions.
 def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
-    """Check if a HuggingFace repository is a diffusion pipeline.
+    """Check if a Hugging Face repository is a diffusion pipeline.
 
     Diffusion pipelines typically have a model_index.json file that describes
     the pipeline components.
@@ -654,13 +651,13 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 
 
 def generate_local_model_path(repo_id: str, revision: str) -> str:
-    """Generate the local filesystem path where a HuggingFace model repo is cached.
+    """Generate the local filesystem path where a Hugging Face model repo is cached.
 
-    This function uses HuggingFace's official snapshot_download with local_files_only=True
+    This function uses Hugging Face's official snapshot_download with local_files_only=True
     to resolve the local cache path for a model repository.
 
     Args:
-        repo_id: The HuggingFace repository ID in the format "org/model"
+        repo_id: The Hugging Face repository ID in the format "org/model"
                 (e.g. "HuggingFaceTB/SmolLM2-135M")
         revision: The specific model revision hash to use, typically from a repo lock file
 

@@ -357,14 +357,12 @@ def rejection_sampler_with_residuals(
     seed: int = 0,
     debug: bool = False,
 ) -> Graph:
-    """
-    Rejection sampler with residual sampling for speculative decoding.
+    """Builds a rejection sampler with residual sampling for speculative decoding.
 
     Computes acceptance ratios for draft tokens, finds first rejection,
-    samples from residual distribution (target - draft), and generates bonus tokens.
-
+    samples from residual distribution (target - draft), and generates bonus
+    tokens.
     """
-
     graph_inputs = [
         # Sampled Draft Tokens
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),

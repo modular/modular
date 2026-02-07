@@ -449,6 +449,7 @@ class SpeculativeDecodingPipelineBase(
         context: TextContext,
         is_draft: bool = False,
     ) -> int:
+        """Computes the number of steps to run for the given context."""
         max_seq_len = model.calculate_max_seq_len(
             self.pipeline_config, huggingface_config=huggingface_config
         )
@@ -465,6 +466,7 @@ class SpeculativeDecodingPipelineBase(
 
     @property
     def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
         return self._pipeline_config
 
     @property
@@ -475,6 +477,7 @@ class SpeculativeDecodingPipelineBase(
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
+        """Returns the tokenizer for this speculative pipeline."""
         return self._tokenizer
 
     def _create_sampling_parameters(
@@ -530,6 +533,7 @@ class SpeculativeDecodingPipelineBase(
         min_top_p: Buffer,
         seed: Buffer,
     ) -> tuple[Buffer, Buffer, Buffer]:
+        """Samples draft tokens from the draft model logits."""
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -551,6 +555,7 @@ class SpeculativeDecodingPipelineBase(
     def kv_managers(
         self,
     ) -> list[PagedKVCacheManager]:
+        """Returns the KV cache managers for target and draft models."""
         return [self._target_model.kv_manager, self._draft_model.kv_manager]
 
     @property
