@@ -864,12 +864,14 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     ParamBindings newBindings(paramBindings.declScope, getExpr());
     for (TypedAttr bind : candidateBindings.front())
       newBindings.addPrechecked(getExpr(), bind);
+    newBindings.doNotApplyDefaults = paramBindings.doNotApplyDefaults;
 
     // Use an emitter with invalid context, since errors aren't expected.
-    IREmitter emitter(declScope, EC_InvalidContext);
+    IREmitter emitter(declScope, EC_OverloadResolution);
     PValue callee = getCallee(selectedMethod, newBindings, syntax);
-    PValue result =
-        emitter.emitPValue({callee, getExpr()}, EC_Trait, functionType);
+    PValue result = emitter.emitPValue({callee, getExpr()},
+                                       EC_OverloadResolution, functionType);
+    assert(result && "Conversion should always succeed");
     return {result, selectedMethod};
   }
 

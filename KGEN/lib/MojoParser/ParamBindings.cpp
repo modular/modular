@@ -92,6 +92,7 @@ void ParamBindings::operator=(ParamBindings &&other) {
   numKwOnlyCtadParams = other.numKwOnlyCtadParams;
   numPosCtadParams = other.numPosCtadParams;
   numPreTypeChecked = other.numPreTypeChecked;
+  doNotApplyDefaults = other.doNotApplyDefaults;
 }
 
 SMLoc ParamBindings::getExprLoc() const { return getExpr()->getLoc(); }

@@ -92,6 +92,7 @@ enum ExprContext {
   EC_RefBinding,           // ref r = x
   EC_SynthesizedMethod,    // synthesized method call
   EC_ConversionThunk,      // conversion thunk call
+  EC_OverloadResolution,   // internal overload resolution error
 };
 const char *getContextMessage(ExprContext context);
 

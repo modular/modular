@@ -1016,3 +1016,12 @@ fn mlir_type_trait_conformance():
     comptime Move: Movable = __mlir_type.index
     # CHECK: !alias_Composition1 = <#kgen.type<!lit.struct<#MLIRType <:type index>>, index>>
     comptime Comp: Composition = __mlir_type.index
+
+# Check to ensure default params don't bind too early.
+trait TraitWDefault:
+    fn test[linear_idx_type: Int = 0](self) -> Int:
+        ...
+
+struct TestTraitWDefault(TraitWDefault):
+    fn test[linear_idx_type: Int = 0](self) -> Int:
+        pass
