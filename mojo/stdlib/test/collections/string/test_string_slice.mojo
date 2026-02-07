@@ -660,6 +660,16 @@ def test_split():
     assert_equal(S(",1,2,3,").split(","), S("123").split(""))
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
+    # Test split with >32 items to exercise pre-scanned capacity allocation
+    var parts = List[String]()
+    for _ in range(50):
+        parts.append("x")
+    var many_items = S(",").join(Span(parts))
+    var split_many = StringSlice(many_items).split(",")
+    assert_equal(len(split_many), 50)
+    for i in range(50):
+        assert_equal(split_many[i], "x")
+
 
 def test_splitlines():
     comptime S = StaticString
