@@ -151,3 +151,11 @@ toolchain(
     toolchain = ":_mojo_copts_toolchain",
     toolchain_type = "@rules_mojo//:copts_toolchain_type",
 )
+
+modular_py_binary(
+    name = "run_mojo",
+    srcs = ["run_mojo.py"],
+    deps = [
+        "@mojo//:python",
+    ],
+)
