@@ -908,8 +908,14 @@ def test_lower():
 
     assert_equal(StringSlice("MOJO🔥").lower(), "mojo🔥")
 
-    assert_equal(StringSlice("É").lower(), "é")
-    assert_equal(StringSlice("é").lower(), "é")
+    # latin-1 range
+    assert_equal(
+        StringSlice("ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞß").lower(),
+        "àáâãäåæçèéêëìíîïðñòóôõö×øùúûüýþß",
+    )
+    for i in range(0x7F + 1, ord("À")):
+        var s = String(Codepoint(i))
+        assert_equal(s.lower(), s)
 
 
 def test_upper():
@@ -919,8 +925,14 @@ def test_upper():
 
     assert_equal(StringSlice("mojo🔥").upper(), "MOJO🔥")
 
-    assert_equal(StringSlice("É").upper(), "É")
-    assert_equal(StringSlice("é").upper(), "É")
+    # latin-1 range
+    assert_equal(
+        StringSlice("àáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþß").upper(),
+        "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ÷ØÙÚÛÜÝÞSS",
+    )
+    for i in range(0x7F + 1, ord("À")):
+        var s = String(Codepoint(i))
+        assert_equal(s.upper(), s)
 
 
 def test_is_ascii_digit():
