@@ -2883,13 +2883,15 @@ fn _split[
         output.append(S(ptr=ptr + i_len - 1, length=0))
         return
 
-    comptime prealloc = 32  # guessing, Python's implementation uses 12
-    var amnt = prealloc
+    var amnt: Int
 
     @parameter
     if has_maxsplit:
-        amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
-    output = {capacity = amnt}
+        amnt = maxsplit + 1
+        output = {capacity = amnt}
+    else:
+        amnt = src_str.count(sep) + 1
+        output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
     var lhs = 0
     var rhs: Int
