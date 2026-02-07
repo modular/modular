@@ -219,6 +219,9 @@ what we publish.
   instead of the previously deprecated `Float64`. Use explicit `Float64` casts
   for floating-point division.
 
+- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
+  that indexes by unicode codepoint offsets.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
