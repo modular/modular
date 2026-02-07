@@ -186,13 +186,13 @@ fn cpu_bicubic_kernel(
 
 fn gpu_bicubic_kernel[
     dtype: DType,
-    output_origin: MutOrigin,
     OutputLayoutType: TensorLayout,
-    input_origin: ImmutOrigin,
+    output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
 ](
-    output: TileTensor[dtype, output_origin, OutputLayoutType],
-    input: TileTensor[dtype, input_origin, InputLayoutType],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    input: TileTensor[dtype, InputLayoutType, input_origin],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 

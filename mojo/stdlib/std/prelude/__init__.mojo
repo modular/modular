@@ -139,13 +139,14 @@ from builtin.type_aliases import (
     unsafe_origin_mutcast,
 )
 from builtin.value import (
-    TrivialRegisterType,
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
     ImplicitlyCopyable,
     Movable,
     materialize,
+    RegisterType,
+    TrivialRegisterType,
 )
 from builtin.variadics import (
     Variadic,

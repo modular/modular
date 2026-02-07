@@ -21,7 +21,11 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVCacheStrategy,
+)
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
@@ -126,6 +130,16 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             raise ValueError(
                 "data_parallel_degree must be 1 or match the number of devices"
             )
+
+        kvcache_quant_config = None
+        if kv_cache_config.cache_dtype in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ):
+            # Configure the KVCacheParams quantization parameters.
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32, quantization_granularity=32
+            )
         return KVCacheParams(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
@@ -142,6 +156,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            kvcache_quant_config=kvcache_quant_config,
         )
 
     @staticmethod

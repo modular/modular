@@ -70,6 +70,14 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "_mlir_context",
+    srcs = ["_mlir_context.py"],
+    deps = [
+        "//max/python/max/mlir",
+    ],
+)
+
+modular_py_library(
     name = "tensor",
     srcs = [
         "_passes.py",
@@ -88,12 +96,12 @@ modular_py_library(
     ],
     deps = [
         ":_core",
+        ":_mlir_context",
         ":interpreter",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/mlir",
         requirement("rich"),
         requirement("typing-extensions"),
     ],

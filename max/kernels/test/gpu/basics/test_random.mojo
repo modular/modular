@@ -46,7 +46,7 @@ def run_elementwise[
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
 
-        var rng_state = Random(seed=idx0[0])
+        var rng_state = Random(seed=UInt64(idx0[0]))
         var rng = rng_state.step_uniform()
 
         @parameter
@@ -67,7 +67,7 @@ def run_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
-        var rng_state = NormalRandom(seed=idx0[0])
+        var rng_state = NormalRandom(seed=UInt64(idx0[0]))
         var rng = rng_state.step_normal()
 
         @parameter

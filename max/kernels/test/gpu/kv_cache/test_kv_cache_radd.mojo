@@ -70,8 +70,8 @@ fn test_kv_cache_radd[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets_host[i] = total_length
-        cache_lengths_host[i] = cache_lens[i]
+        input_row_offsets_host[i] = UInt32(total_length)
+        cache_lengths_host[i] = UInt32(cache_lens[i])
         max_full_context_length = max(
             max_full_context_length, cache_lens[i] + prompt_lens[i]
         )
@@ -80,13 +80,13 @@ fn test_kv_cache_radd[
         if i >= num_active_loras_slice_start:
             input_row_offsets_slice_host[
                 i - num_active_loras_slice_start
-            ] = total_length
+            ] = UInt32(total_length)
             total_slice_length += prompt_lens[i]
 
         total_length += prompt_lens[i]
 
-    input_row_offsets_host[batch_size] = total_length
-    input_row_offsets_slice_host[num_active_loras] = total_length
+    input_row_offsets_host[batch_size] = UInt32(total_length)
+    input_row_offsets_slice_host[num_active_loras] = UInt32(total_length)
 
     num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
@@ -163,8 +163,8 @@ fn test_kv_cache_radd[
             ),
         ),
         paged_lut.device_tensor(),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     var a_shape = IndexList[2](total_slice_length, num_heads * head_dim * 2)
@@ -174,7 +174,7 @@ fn test_kv_cache_radd[
         dtype, 2, _, DimList(Dim(), num_heads * head_dim * 2)
     ](a_host_ptr, a_shape)
     for i in range(a_host.num_elements()):
-        a_host.data[i] = i
+        a_host.data[i] = Scalar[dtype](i)
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     ctx.enqueue_copy(a_device, a_host_ptr)
     var a_device_nd = NDBuffer[
@@ -204,8 +204,8 @@ fn test_kv_cache_radd[
                 input_row_offsets_slice_device_nd.dynamic_stride.canonicalize(),
             ),
         ),
-        num_active_loras_slice_start,
-        layer_idx,
+        UInt32(num_active_loras_slice_start),
+        UInt32(layer_idx),
         ctx,
     )
     ctx.synchronize()
@@ -236,8 +236,8 @@ fn test_kv_cache_radd[
             ),
         ),
         paged_lut.host_tensor(),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
@@ -298,7 +298,7 @@ fn test_kv_cache_radd[
                 for d in range(head_dim):
                     var k_val = k_cache_host.load[width=1](i, h, actual_len, d)
                     var expected_k_val = 1 + arange_counter
-                    if k_val != expected_k_val:
+                    if k_val != Scalar[dtype](expected_k_val):
                         raise Error(
                             "Mismatch in output for k, expected "
                             + String(expected_k_val)
@@ -312,7 +312,7 @@ fn test_kv_cache_radd[
                 for d in range(head_dim):
                     var v_val = v_cache_host.load[width=1](i, h, actual_len, d)
                     var expected_v_val = 1 + arange_counter
-                    if v_val != expected_v_val:
+                    if v_val != Scalar[dtype](expected_v_val):
                         raise Error(
                             "Mismatch in output for v, expected "
                             + String(expected_v_val)

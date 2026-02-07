@@ -16,16 +16,27 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeGuard, TypeVar, overload
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    TypeAlias,
+    TypeGuard,
+    overload,
+    runtime_checkable,
+)
 
 from max.driver import Buffer
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
+from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
 
+T = TypeVar("T", default=Any)
+
 
 @dataclass
-class NestedIterableDataclass:
+class NestedIterableDataclass(Generic[T]):
     """
     Base class for input symbols for KV cache managers.
 
@@ -36,14 +47,14 @@ class NestedIterableDataclass:
     .. code-block:: python
 
         @dataclass
-        class PagedCacheValues(NestedIterableDataclass):
+        class PagedCacheValues(NestedIterableDataclass[TensorType]):
             kv_blocks: TensorType
             cache_lengths: TensorType
             lookup_table: TensorType
             max_lengths: TensorType
     """
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[T]:
         """Iterates through each field in order."""
         for field in self.__dataclass_fields__:
             value = getattr(self, field)
@@ -57,9 +68,22 @@ class NestedIterableDataclass:
     def __getitem__(self, index: int | slice) -> Any:
         return list(self)[index]
 
+    def flatten(self) -> list[T]:
+        return list(self)
+
+
+@runtime_checkable
+class InputSymbolInterface(Protocol):
+    def flatten(self) -> list[TensorType | BufferType]: ...
+
+
+IterableInputSymbols: TypeAlias = NestedIterableDataclass[
+    TensorType | BufferType
+]
+
 
 @dataclass
-class PagedCacheInputSymbols(NestedIterableDataclass):
+class PagedCacheInputSymbols(IterableInputSymbols, InputSymbolInterface):
     kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
@@ -68,12 +92,73 @@ class PagedCacheInputSymbols(NestedIterableDataclass):
 
 
 @dataclass
-class PagedCacheValues(NestedIterableDataclass):
+class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     kv_blocks: BufferValue
     cache_lengths: TensorValue
     lookup_table: TensorValue
     max_lengths: TensorValue
     kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
+
+
+@dataclass
+class PagedCacheInputSymbolsByReplica(
+    Sequence[PagedCacheInputSymbols], InputSymbolInterface
+):
+    """A class that holds the symbolic inputs for the paged ache for all replicas.
+
+    This is separate from `MultiKVCacheInputSymbols` for more convenient typing.
+    """
+
+    values: list[PagedCacheInputSymbols]
+
+    def __iter__(self) -> Iterator[PagedCacheInputSymbols]:
+        return iter(self.values)
+
+    @overload
+    def __getitem__(self, index: int) -> PagedCacheInputSymbols: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[PagedCacheInputSymbols]: ...
+
+    def __getitem__(self, index: int | slice) -> Any:
+        return self.values[index]
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    def flatten(self) -> list[TensorType | BufferType]:
+        items = []
+        for item in self.values:
+            items.extend(item.flatten())
+        return items
+
+
+@dataclass
+class MultiKVCacheInputSymbols(
+    Sequence[InputSymbolInterface], InputSymbolInterface
+):
+    values: list[InputSymbolInterface]
+
+    def __iter__(self) -> Iterator[InputSymbolInterface]:
+        return iter(self.values)
+
+    @overload
+    def __getitem__(self, index: int) -> InputSymbolInterface: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[InputSymbolInterface]: ...
+
+    def __getitem__(self, index: int | slice) -> Any:
+        return self.values[index]
+
+    def __len__(self) -> int:
+        return len(self.values)
+
+    def flatten(self) -> list[TensorType | BufferType]:
+        items = []
+        for item in self.values:
+            items.extend(item.flatten())
+        return items
 
 
 _T = TypeVar("_T")

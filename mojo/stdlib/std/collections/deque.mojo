@@ -24,6 +24,7 @@ from collections import Deque
 
 from bit import next_power_of_two
 from builtin.constrained import _constrained_conforms_to
+import format._utils as fmt
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -404,33 +405,50 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         offset = self._physical_index(self._head + normalized_idx)
         return (self._data + offset)[]
 
+    fn _write_self_to[
+        f: fn(Self.ElementType, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+
+        var iterator = self.__iter__()
+
+        @parameter
+        fn iterate(mut w: Some[Writer]) raises StopIteration:
+            f(iterator.__next__(), w)
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = iterator^
+
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         """Writes `my_deque.__str__()` to a `Writer`.
 
         Constraints:
-            ElementType must conform to `Representable`.
+            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
 
-        writer.write("Deque(")
-        for i in range(len(self)):
-            offset = self._physical_index(self._head + i)
-            ref element = (self._data + offset)[]
-            ref representable_element = trait_downcast[Representable](element)
-            writer.write(repr(representable_element))
-            if i < len(self) - 1:
-                writer.write(", ")
-        writer.write(")")
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr representation of this deque to a `Writer`.
+
+        Constraints:
+            ElementType must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+
+        fmt.FormatStruct(writer, "Deque").params(
+            fmt.TypeNames[Self.ElementType](),
+        ).fields[FieldsFn=write_fields]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -450,7 +468,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             A string representation of the deque.
         """
-        return self.__str__()
+        output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods

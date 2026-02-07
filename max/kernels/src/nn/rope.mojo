@@ -134,7 +134,6 @@ fn rope_ragged[
     position_ids: OptionalReg[
         TileTensor[
             DType.uint32,
-            MutAnyOrigin,
             Layout[
                 Variadic.types[
                     RuntimeInt[DType.int64], RuntimeInt[DType.int64]
@@ -145,6 +144,7 @@ fn rope_ragged[
                     ]
                 ],
             ],
+            MutAnyOrigin,
         ]
     ] = None,
 ) raises where (

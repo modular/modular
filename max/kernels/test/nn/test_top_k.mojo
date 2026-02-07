@@ -38,16 +38,15 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
         ref self,
     ) -> TileTensor[
         Self.dtype,
-        origin_of(self.storage),
         Layout[
             shape_types = DynamicCoord[DType.int64, Self.rank].element_types,
             stride_types = DynamicCoord[DType.int64, Self.rank].element_types,
         ],
+        origin_of(self.storage),
     ]:
         return rebind[
             TileTensor[
                 Self.dtype,
-                origin_of(self.storage),
                 Layout[
                     shape_types = DynamicCoord[
                         DType.int64, Self.rank
@@ -56,6 +55,7 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
                         DType.int64, Self.rank
                     ].element_types,
                 ],
+                origin_of(self.storage),
             ]
         ](
             TileTensor(
@@ -325,7 +325,7 @@ def main():
 
         for i in range(flat_buf.numel()):
             var idx = flat_buf.layout(Coord(Idx(i)))
-            flat_buf.ptr[idx] = flat_buf.numel() - i - 1
+            flat_buf.ptr[idx] = Scalar[dtype](flat_buf.numel() - i - 1)
         flat_buf[0] = -1
 
     fn test_5d():

@@ -51,7 +51,7 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         if len(devices) != data_parallel_degree:
             raise ValueError(
-                "Number of devices must match data parallel degree"
+                f"Number of devices {len(devices)} must match data parallel degree: {data_parallel_degree}"
             )
         return KVCacheParams(
             dtype=cache_dtype,

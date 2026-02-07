@@ -1308,7 +1308,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -3289,7 +3289,7 @@ fn generic_flare_mla_decompress_k_cache_ragged_paged[
         buffer_length_int, latent_last_dim
     )
 
-    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout,](
+    var k_latent_buffer_dynamic = LayoutTensor[dtype, k_latent_layout](
         k_latent_buffer.ptr,
         RuntimeLayout[k_latent_layout].row_major(k_latent_dynamic_shape),
     )

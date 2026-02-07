@@ -113,13 +113,15 @@ When the framework doesn't fit:
 """
 
 from gpu.memory import AddressSpace
+from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout
 from layout.tma_async import SharedMemBarrier
+from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from linalg.structuring import SMemArray, SMemPtr
 
-# LayoutTensor-based SMemTileArray for C output tiles (used by tile_writer)
+# LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 
 # TileTensor-based tile arrays for input tiles (A, B, scales)
@@ -228,7 +230,7 @@ struct BlockScaledTileStorage[
     Single source of truth for block-scaled tile arrays and storage.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
@@ -360,7 +362,7 @@ struct BlockwiseFP8TileStorage[
     B-scales are read directly from global memory during epilogue.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
@@ -460,7 +462,7 @@ struct OutputTileStorage[
     Separate from input tiles since output has different stage count.
 
     All tiles use TileTensor natively. C tiles also store as TileTensor but
-    provide a LayoutTensor accessor for tile_writer.mojo compatibility with
+    provide a LayoutTensor accessor for epilogue_components.mojo compatibility with
     .reshape[] and .tile[] methods.
 
     Parameters:
@@ -707,6 +709,140 @@ struct TmemDeallocStorage:
 
 
 # =============================================================================
+# Source Tile Storage - For residual/skip connection input (tensor C)
+# =============================================================================
+
+
+struct SourceTileStorage[
+    src_type: DType,
+    src_dim0: Int,
+    src_dim1: Int,
+    num_epi_load_stages: Int,
+]:
+    """Storage for source tensor C tiles (residual/skip connection input).
+
+    Used by the epilogue load warp to pre-fetch source tensor C via TMA,
+    enabling overlap with MMA computation for residual operations like
+    D = Conv(A,B) + beta*C or D = MatMul(A,B) + beta*C.
+
+    Parameters:
+        src_type: Data type for source tiles (same as output type).
+        src_dim0: First dimension for source tiles (OutputM).
+        src_dim1: Second dimension for source tiles (OutputN).
+        num_epi_load_stages: Number of epilogue load pipeline stages.
+    """
+
+    # Source tile layout (row_major for TMA compatibility, matches output)
+    comptime src_tile_layout = Layout.row_major(Self.src_dim0, Self.src_dim1)
+
+    # TileTensor-based for source storage
+    comptime SrcTileArray = SMemTileArray2DRowMajor[
+        Self.src_type,
+        Self.src_dim0,
+        Self.src_dim1,
+        Self.num_epi_load_stages,
+        128,
+    ]
+    # LayoutTensor-based accessor (for compatibility with tile_writer)
+    comptime SrcTileArrayLT = LTSMemTileArray[
+        Self.src_type,
+        Self.src_tile_layout,
+        Self.num_epi_load_stages,
+        alignment=128,
+    ]
+
+    var src_tiles_storage: Self.SrcTileArray.Storage
+
+    @always_inline
+    fn src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArrayLT:
+        """Get source tile array accessor (LayoutTensor-based).
+
+        Returns LayoutTensor view for compatibility with tile_writer.mojo.
+        """
+        return Self.SrcTileArrayLT(self.src_tiles_storage.unsafe_ptr())
+
+    @always_inline
+    fn src_tiles_tt(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
+        """Get source tile array accessor (TileTensor-based).
+
+        Returns native TileTensor for future TileTensor-native code paths.
+        """
+        return Self.SrcTileArray(self.src_tiles_storage.unsafe_ptr())
+
+
+# =============================================================================
+# Epilogue Load Pipeline Storage - For EpilogueLoad → Epilogue transfer
+# =============================================================================
+
+
+struct EpiLoadPipelineStorage[num_stages: Int]:
+    """Storage for epilogue load pipeline (source C loading).
+
+    For EpilogueLoad warp → Epilogue warps synchronization.
+    The epilogue load warp loads source tensor C into SMEM, and the
+    epilogue warps consume it for residual operations.
+
+    Producer: EpilogueLoad warp (1 warp, 32 threads)
+    Consumer: Epilogue warps (4 warps, 128 threads)
+
+    Parameters:
+        num_stages: Number of epilogue load pipeline stages (typically 2).
+    """
+
+    # Type alias for barrier array (exposed for type-level access)
+    comptime BarrierArray = SMemArray[SharedMemBarrier, Self.num_stages * 2]
+
+    var barriers: BarrierPair[Self.num_stages]
+
+    @always_inline
+    fn create_pipeline(
+        ref[AddressSpace.SHARED] self,
+    ) -> ProducerConsumerPipeline[Self.num_stages]:
+        """Create runtime pipeline from this storage."""
+        return self.barriers.create_pipeline()
+
+    @always_inline
+    fn barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Escape hatch: Get raw barrier pointer."""
+        return self.barriers.barriers().ptr
+
+
+# =============================================================================
+# Load Order Barrier Storage - For MainLoad → EpilogueLoad coordination
+# =============================================================================
+
+
+struct LoadOrderBarrierStorage:
+    """Storage for load order barrier (mainloop → epilogue load coordination).
+
+    This single barrier coordinates the mainloop load warp with the epilogue
+    load warp, ensuring the epilogue load doesn't start before the mainloop
+    has issued its prologue TMA operations.
+
+    Protocol:
+    1. Mainloop load warp issues prologue loads
+    2. Mainloop load warp calls arrive() on this barrier
+    3. Epilogue load warp waits on this barrier before starting
+
+    This prevents TMA resource contention between mainloop and epilogue loads.
+    """
+
+    comptime BarrierArray = SMemArray[SharedMemBarrier, 1]
+
+    var barrier_storage: Self.BarrierArray.Storage
+
+    @always_inline
+    fn barrier(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
+        """Get the load order barrier."""
+        return Self.BarrierArray(self.barrier_storage)
+
+    @always_inline
+    fn ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Get raw barrier pointer for initialization."""
+        return self.barrier().ptr
+
+
+# =============================================================================
 # Escape Hatch - Raw barrier storage for custom patterns
 # =============================================================================
 
@@ -744,3 +880,216 @@ struct RawBarrierStorage[count: Int]:
     fn ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw pointer for custom usage."""
         return self.barriers().ptr
+
+
+# =============================================================================
+# SmemPipelineBundle - Composed pipeline storage + barrier accessors
+# =============================================================================
+
+
+struct SmemPipelineBundle[
+    num_group_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    num_clc_pipeline_stages: Int,
+    Payload: TilePayload,
+]:
+    """Composed pipeline storage with unified barrier accessors.
+
+    Bundles InputPipelineStorage, OutputPipelineStorage, ClcPipelineStorage,
+    and TmemDeallocStorage into a single composed struct, eliminating ~60 lines
+    of duplicated pipeline declarations, barrier type aliases, and barrier
+    accessor methods from each SMEM struct.
+
+    Parameters:
+        num_group_pipeline_stages: Number of grouped pipeline stages for input.
+        num_accum_pipeline_stages: Number of accumulator pipeline stages.
+        num_clc_pipeline_stages: Number of CLC scheduler pipeline stages.
+        Payload: Tile payload type (e.g. StandardTilePayload, BlockScaledTilePayload).
+    """
+
+    # ========== Pipeline Storage Types ==========
+    comptime InputPipeline = InputPipelineStorage[
+        Self.num_group_pipeline_stages, Self.Payload
+    ]
+    comptime OutputPipeline = OutputPipelineStorage[
+        Self.num_accum_pipeline_stages
+    ]
+    comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
+    comptime TmemDeallocPipeline = TmemDeallocStorage
+
+    # ========== Barrier Type Aliases ==========
+    comptime InputBarriers = Self.InputPipeline.BarrierArray
+    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
+    comptime ClcBarriers = Self.ClcPipeline.BarrierArray
+    comptime ClcThrottleBarriers = Self.ClcPipeline.ThrottleArray
+    comptime ClcResponse = Self.ClcPipeline.ResponseArray
+    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
+    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
+
+    # ========== Storage Fields ==========
+    var input_pipeline: Self.InputPipeline
+    var output_pipeline: Self.OutputPipeline
+    var clc_pipeline: Self.ClcPipeline
+    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
+
+    # ========== Barrier Accessors ==========
+    @always_inline
+    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
+        """Returns input tile pipeline barriers."""
+        return self.input_pipeline.barriers.barriers()
+
+    @always_inline
+    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
+        """Returns accumulator pipeline barriers."""
+        return self.output_pipeline.barriers.barriers()
+
+    @always_inline
+    fn clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
+        """Returns CLC full barriers."""
+        return self.clc_pipeline.full()
+
+    @always_inline
+    fn clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
+        """Returns CLC empty barriers."""
+        return self.clc_pipeline.empty()
+
+    @always_inline
+    fn clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
+        """Returns CLC throttle barriers."""
+        return self.clc_pipeline.throttle()
+
+    @always_inline
+    fn clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
+        """Returns CLC response storage."""
+        return self.clc_pipeline.response()
+
+    @always_inline
+    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
+        """Returns TMEM deallocation barrier."""
+        return self.tmem_dealloc_pipeline.barrier()
+
+    @always_inline
+    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
+        """Returns TMEM address storage."""
+        return self.tmem_dealloc_pipeline.addr()
+
+
+# =============================================================================
+# SmemPipelineBundleNoClc - Pipeline bundle without CLC scheduler
+# =============================================================================
+
+
+struct SmemPipelineBundleNoClc[
+    num_group_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    Payload: TilePayload,
+]:
+    """Composed pipeline storage without CLC scheduler.
+
+    Used by kernels with 3-warp specialization (Load, MMA, Epilogue) that
+    don't use a scheduler warp (e.g. Grouped1D1DSmem).
+
+    Parameters:
+        num_group_pipeline_stages: Number of grouped pipeline stages for input.
+        num_accum_pipeline_stages: Number of accumulator pipeline stages.
+        Payload: Tile payload type.
+    """
+
+    # ========== Pipeline Storage Types ==========
+    comptime InputPipeline = InputPipelineStorage[
+        Self.num_group_pipeline_stages, Self.Payload
+    ]
+    comptime OutputPipeline = OutputPipelineStorage[
+        Self.num_accum_pipeline_stages
+    ]
+    comptime TmemDeallocPipeline = TmemDeallocStorage
+
+    # ========== Barrier Type Aliases ==========
+    comptime InputBarriers = Self.InputPipeline.BarrierArray
+    comptime AccumBarriers = Self.OutputPipeline.BarrierArray
+    comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
+    comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
+
+    # ========== Storage Fields ==========
+    var input_pipeline: Self.InputPipeline
+    var output_pipeline: Self.OutputPipeline
+    var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
+
+    # ========== Barrier Accessors ==========
+    @always_inline
+    fn input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
+        """Returns input tile pipeline barriers."""
+        return self.input_pipeline.barriers.barriers()
+
+    @always_inline
+    fn accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
+        """Returns accumulator pipeline barriers."""
+        return self.output_pipeline.barriers.barriers()
+
+    @always_inline
+    fn tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
+        """Returns TMEM deallocation barrier."""
+        return self.tmem_dealloc_pipeline.barrier()
+
+    @always_inline
+    fn tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
+        """Returns TMEM address storage."""
+        return self.tmem_dealloc_pipeline.addr()
+
+
+# =============================================================================
+# SmemLayouts - Common SMEM layout definitions for matmul-family kernels
+# =============================================================================
+
+
+struct SmemLayouts[
+    a_type: DType,
+    b_type: DType,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    OutputM: Int,
+    OutputN: Int,
+    a_swizzle: TensorMapSwizzle,
+    b_swizzle: TensorMapSwizzle,
+    transpose_b: Bool,
+]:
+    """Common SMEM layout definitions for matmul-family kernels.
+
+    Centralizes the A/B/C tile layout computation including the
+    transpose-conditional B layout logic, eliminating ~10 lines of
+    duplicated layout definitions from each SMEM struct.
+
+    Parameters:
+        a_type: Data type for A matrix tiles.
+        b_type: Data type for B matrix tiles.
+        BM: Block tile M dimension.
+        BN: Block tile N dimension.
+        BK: Block tile K dimension.
+        OutputM: Output tile M dimension.
+        OutputN: Output tile N dimension.
+        a_swizzle: Swizzle mode for A tiles.
+        b_swizzle: Swizzle mode for B tiles.
+        transpose_b: Whether B is transposed (K-major).
+    """
+
+    comptime a_smem_layout = tile_layout_k_major[
+        Self.a_type,
+        Self.BM,
+        Self.BK,
+        swizzle_mode = Self.a_swizzle,
+    ]()
+
+    comptime b_smem_layout = tile_layout_k_major[
+        Self.b_type,
+        Self.BN,
+        Self.BK,
+        swizzle_mode = Self.b_swizzle,
+    ]() if Self.transpose_b else tile_layout_mn_major[
+        Self.b_type,
+        Self.BN,
+        Self.BK,
+        swizzle_mode = Self.b_swizzle,
+    ]()
+
+    comptime c_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)

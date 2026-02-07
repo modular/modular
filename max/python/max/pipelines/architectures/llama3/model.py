@@ -45,11 +45,11 @@ from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.profiler import traced
 from max.support.algorithm import flatten2d
 from transformers import AutoConfig
 
-from .data_parallel_llama import compute_data_parallel_splits
 from .data_parallel_llama import create_graph as create_data_parallel_graph
 from .distributed_llama import DistributedLlama3
 from .llama3 import Llama3
@@ -173,7 +173,7 @@ class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
         ] = {}
 
     # TODO(zheng): Remove these wrappers once get_kv_params doesn't have to be
-    # called from PipelineModel's infer_optimal_batch_size method.
+    # called from PipelineModel's __init__ method.
     @classmethod
     def get_kv_params(
         cls,

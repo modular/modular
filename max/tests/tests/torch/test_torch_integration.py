@@ -22,7 +22,6 @@ from unittest import mock
 import numpy as np
 import pytest
 import torch
-from max import mlir
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
@@ -326,11 +325,6 @@ def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
             event.set()
         torch.testing.assert_close(f1.result(), f2.result())
         assert load_count == 1  # only one thread should have compiled the graph
-
-
-# This just gut-checks that we run other tests without an active MLIR context
-def test_GEX_2285(op_library: CustomOpLibrary) -> None:
-    assert not mlir.Context.current
 
 
 def test_dtype_torch_import_exception_handling() -> None:

@@ -5,6 +5,7 @@ requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settin
 dependencies = [
   "levenshtein",
   "absl-py",
+  "aioboto3",
   "aiofiles",
   "aiohttp",
   "anyio>=4.12.1",
@@ -55,7 +56,7 @@ dependencies = [
   "opentelemetry-sdk",
   "packaging",
   "prometheus-client",
-  "protobuf==6.31.1 ", # Must match bazel protobuf version since it doesn't the codegen
+  "protobuf==6.33.5 ", # Must match bazel protobuf version
   "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
   "py-cpuinfo",
   "pyarrow",
@@ -93,6 +94,8 @@ dependencies = [
   "tomli",
   "tqdm",
   "transformers>=4.57",
+  "types-aioboto3[essential]",
+  "types-boto3[essential]",
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",

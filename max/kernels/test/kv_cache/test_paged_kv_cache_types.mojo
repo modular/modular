@@ -59,9 +59,9 @@ def do_test[
         ),
     ).fill(0)
     for i in range(batch_size):
-        cache_lengths[i] = i
+        cache_lengths[i] = UInt32(i)
         for j in range(max_num_blocks):
-            lookup_table[i, j] = j
+            lookup_table[i, j] = UInt32(j)
 
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)

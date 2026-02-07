@@ -90,7 +90,7 @@ fn test_tma_4d_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy_4d(
             smem_tile,
             mbar[0],
