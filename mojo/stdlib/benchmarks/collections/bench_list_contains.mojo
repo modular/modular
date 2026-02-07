@@ -32,9 +32,13 @@ fn make_list_float64[size: Int]() -> List[Float64]:
 
 
 fn make_list_uint8[size: Int]() -> List[UInt8]:
+    """Creates a UInt8 list where value 0 first appears at position size // 2."""
     var l = List[UInt8](capacity=size)
     for i in range(size):
-        l.append(UInt8(i % 256))
+        if i < size // 2:
+            l.append(UInt8((i % 255) + 1))  # 1-255, never 0
+        else:
+            l.append(UInt8(i % 256))
     return l^
 
 
@@ -103,9 +107,9 @@ fn bench_list_contains_float64[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_list_contains_uint8[size: Int](mut b: Bencher) raises:
-    """Search for a UInt8 element present in the middle of the list."""
+    """Search for a UInt8 element whose first occurrence is at size // 2."""
     var items = make_list_uint8[size]()
-    var target = UInt8((size // 2) % 256)
+    var target = UInt8(0)
 
     @always_inline
     @parameter
